@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
 	
 	// ----	Initialise Lua
 
-    lua_State *luaState = lua_open();
+    lua_State *luaState = luaL_newstate();
     luaL_openlibs(luaState);
     luaL_dofile(luaState, luaFile.c_str());
     luabind::open(luaState);
