@@ -47,6 +47,20 @@ Once you've installed those, then `cd` back to your Tilemaker directory and simp
 
 If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again.
 
+On Fedora start with:
+
+    dnf install lua-devel luajit-devel luabind-devel sqlite-devel protobuf-devel protobuf-compiler
+
+then build either with lua:
+
+    make LUA_CFLAGS="$(pkg-config --cflags lua)" LUA_LIBS="$(pkg-config --libs lua)"
+    make install
+
+or with luajit:
+
+    make LUA_CFLAGS="$(pkg-config --cflags luajit)" LUA_LIBS="$(pkg-config --libs luajit)"
+    make install
+
 Configuring
 -----------
 
