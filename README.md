@@ -38,7 +38,7 @@ Finally, we need to install luabind manually because the Ubuntu package (sigh) r
 	ln -s /usr/lib/x86_64-linux-gnu/liblua5.1.so /usr/lib/
 	bjam install
 	ln -s /usr/local/lib/libluabindd.so /usr/local/lib/libluabind.so
-	ldconfig
+	sudo ldconfig
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
