@@ -21,7 +21,7 @@ rapidjson (MIT) and sqlite_modern_cpp (MIT) are bundled in the include/ director
 
 On OS X, you can install all dependencies with Homebrew. On Ubuntu, start with:
 
-	apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-c-compiler
+	apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler
 
 You'll then need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
 
