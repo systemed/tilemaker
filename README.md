@@ -13,7 +13,7 @@ Installing
 Tilemaker is written in C++11. The chief dependencies are:
 
 * Google Protocol Buffers
-* Boost 1.57 (for boost::geometry, boost::program_options, boost::filesystem)
+* Boost 1.56 or later (for boost::geometry, boost::program_options, boost::filesystem)
 * Lua 5.1 and Luabind
 * sqlite3
 
@@ -21,15 +21,15 @@ rapidjson (MIT) and sqlite_modern_cpp (MIT) are bundled in the include/ director
 
 On OS X, you can install all dependencies with Homebrew. On Ubuntu, start with:
 
-	apt-get install liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-c-compiler
+	apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-c-compiler
 
-You'll then need to install libboost1.57-all-dev from [this PPA](https://launchpad.net/~afrank/+archive/ubuntu/boost):
+You'll then need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
 
-	add-apt-repository ppa:afrank/boost
+	add-apt-repository ppa:ostogvin/tjo-develop
 	apt-get update
-	apt-get install libboost1.57-all-dev
+	apt-get install libboost1.58-all-dev
 
-Finally, we need to install luabind manually because the Ubuntu package (sigh) requires Boost 1.54, whereas we need 1.57. So:
+Finally, we need to install luabind manually because the Ubuntu package (sigh) requires Boost 1.54, whereas we need 1.56 or later. So:
 
 	git clone https://github.com/rpavlik/luabind.git
 	cd luabind
