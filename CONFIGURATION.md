@@ -27,6 +27,7 @@ It also includes these global settings:
 * `maxzoom` - the maximum zoom level at which any tiles will be generated
 * `basezoom` - the zoom level for which Tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles
+* `compress` - whether to compress (deflate) vector tiles
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 
 A typical config file would look like this:
@@ -42,6 +43,7 @@ A typical config file would look like this:
 			"maxzoom": 14,
 			"basezoom": 14,
 			"include_ids": false,
+			"compress": true,
 			"name": "Tilemaker example",
 			"version": "0.1",
 			"description": "Sample vector tiles for Tilemaker"
@@ -54,6 +56,23 @@ Note that all options are compulsory. If Tilemaker baulks at the JSON file, chec
 
 By default Tilemaker expects to find this file at config.json, but you can specify another filename with the `--config` command-line option.
 
+### Additional metadata
+
+If you need to add additional metadata fields to your .mbtiles output, include the keys/values as an (optional) "metadata" entry under "settings". These will usually be string key/value pairs. (The value can also be another JSON entity - hash, array etc. - in which case it'll be encoded as JSON when written into the .mbtiles metadata table.)
+
+For example:
+
+	{
+		"layers": { ... },
+		"settings": { ... ,
+			"metadata": {
+				"author": "THERE Data Inc",
+				"licence": "ODbL 1.1",
+				"layer_order": { "water": 1, "buildings": 2, "roads": 3 }
+			}
+		}
+	}
+	
 Lua processing
 --------------
 
