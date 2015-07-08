@@ -123,17 +123,17 @@ int main(int argc, char* argv[]) {
 
 	uint baseZoom, startZoom, endZoom;
 	string projectName, projectVersion, projectDesc;
-	bool includeID = false;
+	bool includeID = false, compress = true;
+	rapidjson::Document jsonConfig;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
 		char readBuffer[65536];
 		rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-		rapidjson::Document document;
-		document.ParseStream(is);
-		if (document.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
+		jsonConfig.ParseStream(is);
+		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 	
-		rapidjson::Value& layerHash = document["layers"];
+		rapidjson::Value& layerHash = jsonConfig["layers"];
 		for (rapidjson::Value::MemberIterator it = layerHash.MemberBegin(); it != layerHash.MemberEnd(); ++it) {
 		    // work with (*itr)["status"], etc.
 			string layerName = it->name.GetString();
@@ -143,13 +143,14 @@ int main(int argc, char* argv[]) {
 			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")" << endl;
 		}
 
-		baseZoom       = document["settings"]["basezoom"].GetUint();
-		startZoom      = document["settings"]["minzoom" ].GetUint();
-		endZoom        = document["settings"]["maxzoom" ].GetUint();
-		includeID      = document["settings"]["include_ids"].GetBool();
-		projectName    = document["settings"]["name"].GetString();
-		projectVersion = document["settings"]["version"].GetString();
-		projectDesc    = document["settings"]["description"].GetString();
+		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
+		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
+		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
+		includeID      = jsonConfig["settings"]["include_ids"].GetBool();
+		compress       = jsonConfig["settings"]["compress"].GetBool();
+		projectName    = jsonConfig["settings"]["name"].GetString();
+		projectVersion = jsonConfig["settings"]["version"].GetString();
+		projectDesc    = jsonConfig["settings"]["description"].GetString();
 		if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; return -1; }
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
@@ -177,6 +178,19 @@ int main(int argc, char* argv[]) {
 		mbtiles.writeMetadata("version",projectVersion);
 		mbtiles.writeMetadata("description",projectDesc);
 		mbtiles.writeMetadata("format","pbf");
+		if (jsonConfig["settings"].HasMember("metadata")) {
+			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
+			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
+				if (it->value.IsString()) {
+					mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
+				} else {
+					rapidjson::StringBuffer strbuf;
+					rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+					it->value.Accept(writer);
+					mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
+				}
+			}
+		}
 	}
 
 	// ----	Read all PBFs
@@ -472,11 +486,12 @@ int main(int argc, char* argv[]) {
 
 			// Write to file or sqlite
 
+			string data, compressed;
 			if (sqlite) {
 				// Write to sqlite
-				string data;
 				tile.SerializeToString(&data);
-				mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, &data);
+				if (compress) { compressed = compress_string(data); }
+				mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
 
 			} else {
 				// Write to file
@@ -485,13 +500,14 @@ int main(int argc, char* argv[]) {
 				filename << outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
 				boost::filesystem::create_directories(dirname.str());
 				fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
-				if (!tile.SerializeToOstream(&outfile)) {
-					cerr << "Couldn't write to " << filename.str() << endl;
-					return -1;
+				if (compress) {
+					tile.SerializeToString(&data);
+					outfile << compress_string(data);
+				} else {
+					if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 				}
 				outfile.close();
 			}
-
 		}
 	}
 

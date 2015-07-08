@@ -19,6 +19,7 @@ class MBTiles { public:
 	}
 	
 	void saveTile(int zoom, int x, int y, string *data) {
-		db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);" << zoom << x << y && *data;
+		int tmsY = pow(2,zoom) - 1 - y;
+		db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);" << zoom << x << tmsY && *data;
 	}
 };

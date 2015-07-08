@@ -12,6 +12,14 @@
 		"include_ids": false,
 		"name": "Tilemaker example",
 		"version": "0.1",
-		"description": "Sample vector tiles for Tilemaker"
+		"description": "Sample vector tiles for Tilemaker",
+		"compress": true,
+		"metadata": {
+			"json": { "vector_layers": [
+						{ "id": "roads",     "description": "roads",     "fields": {"name":"String","type":"String"}},
+						{ "id": "water",     "description": "water",     "fields": {}},
+						{ "id": "buildings", "description": "buildings", "fields": {}}
+					] }
+		}
 	}
 }
