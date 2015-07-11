@@ -47,6 +47,7 @@ typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
 typedef boost::geometry::model::box<Point> Box;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
+typedef std::map< uint32_t, LatLon > node_container_t;
 
 // Namespaces
 using namespace std;
@@ -66,7 +67,7 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
 
-	map< uint32_t, LatLon > nodes;						// lat/lon for all nodes (node ids fit into uint32, at least for now)
+	node_container_t nodes;						// lat/lon for all nodes (node ids fit into uint32, at least for now)
 	map< uint32_t, WayStore > ways;						// node list for all ways
 	map< uint, unordered_set<OutputObject> > tileIndex;	// objects to be output
 	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
@@ -452,7 +453,7 @@ int main(int argc, char* argv[]) {
 					} else {
 						try {
 							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							jt->buildWayGeometry(&nodes, &ways, &bbox, featurePtr);
+							jt->buildWayGeometry(nodes, &ways, &bbox, featurePtr);
 							if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 							jt->writeAttributes(&keyList, &valueList, featurePtr);
 							if (includeID) { featurePtr->set_id(jt->osmID); }

@@ -39,7 +39,7 @@ class OutputObject { public:
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// (the linestring code is the easiest way to understand this - the polygon code 
 	//  is greatly complicated by multipolygon support)
-	void buildWayGeometry(map< uint32_t, LatLon > *nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
+	void buildWayGeometry(const node_container_t &nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 		uint32_t objID = osmID;
 		if (outerWays.size()>0) { objID = outerWays[0]; }
 		vector <uint32_t> *nodelistPtr = &(waysPtr->at(objID).nodelist);
@@ -117,10 +117,10 @@ class OutputObject { public:
 	}
 	
 	// Helper to make a vector of Boost points from a vector of node IDs
-	vector<Point> createPointArray(vector<uint32_t> *nodelistPtr, map< uint32_t, LatLon > *nodes) const {
+	vector<Point> createPointArray(vector<uint32_t> *nodelistPtr, const node_container_t &nodes) const {
 		vector<Point> points;
 		for (uint i=0; i<nodelistPtr->size(); i++) {
-			LatLon ll = nodes->at(nodelistPtr->at(i));
+			LatLon ll = nodes.at(nodelistPtr->at(i));
 			points.push_back(geom::make<Point>(ll.lon/10000000.0, ll.lat/10000000.0));
 		}
 		return points;
