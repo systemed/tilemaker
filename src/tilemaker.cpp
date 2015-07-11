@@ -47,7 +47,6 @@ typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
 typedef boost::geometry::model::box<Point> Box;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
-typedef std::map< uint32_t, LatLon > node_container_t;
 
 // Namespaces
 using namespace std;
@@ -59,6 +58,9 @@ namespace geom = boost::geometry;
 #include "helpers.cpp"
 #include "pbf_blocks.cpp"
 #include "coordinates.cpp"
+
+typedef std::map< uint32_t, LatLon > node_container_t;
+
 #include "output_object.cpp"
 #include "osm_object.cpp"
 #include "mbtiles.cpp"
