@@ -8,6 +8,7 @@
 #include <fstream>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include <string>
 #include <cmath>
@@ -59,7 +60,7 @@ namespace geom = boost::geometry;
 #include "pbf_blocks.cpp"
 #include "coordinates.cpp"
 
-typedef std::map< uint32_t, LatLon > node_container_t;
+typedef std::unordered_map< uint32_t, LatLon > node_container_t;
 
 #include "output_object.cpp"
 #include "osm_object.cpp"
