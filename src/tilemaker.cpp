@@ -332,7 +332,7 @@ int main(int argc, char* argv[]) {
 							// and save the nodelist in the global way hash
 							nodeId = 0;
 							vector <uint32_t> nodelist;
-							unordered_set <uint32_t> tilelist = {};
+							unordered_set <uint32_t> tilelist;
 							uint lastX, lastY, lastId;
 							for (k=0; k<pbfWay.refs_size(); k++) {
 								nodeId += pbfWay.refs(k);
