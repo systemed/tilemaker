@@ -39,10 +39,11 @@ class OutputObject { public:
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// (the linestring code is the easiest way to understand this - the polygon code 
 	//  is greatly complicated by multipolygon support)
-	void buildWayGeometry(map< uint32_t, LatLon > *nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
+	void buildWayGeometry(const node_container_t &nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 		uint32_t objID = osmID;
 		if (outerWays.size()>0) { objID = outerWays[0]; }
-		vector <uint32_t> *nodelistPtr = &(waysPtr->at(objID).nodelist);
+		const vector <uint32_t> &nodelist = waysPtr->at(objID).nodelist;
+		vector<Point> points;
 		
 		if (geomType==vector_tile::Tile_GeomType_POLYGON) {
 			// polygon
@@ -51,10 +52,11 @@ class OutputObject { public:
 
 			// main outer way and inners
 			Polygon poly;
-			geom::assign_points(poly, createPointArray(nodelistPtr, nodes));
+			fillPointArray(points, nodelist, nodes);
+			geom::assign_points(poly, points);
 			geom::interior_rings(poly).resize(innerWays.size());
 			for (uint i=0; i<innerWays.size(); i++) {
-				vector<Point> points = createPointArray(&(waysPtr->at(innerWays[i]).nodelist), nodes);
+				fillPointArray(points, waysPtr->at(innerWays[i]).nodelist, nodes);
 				geom::append(poly, points, i);
 			}
 			mp.push_back(poly);
@@ -62,7 +64,8 @@ class OutputObject { public:
 			// additional outer ways - we don't match them up with inners, that shit is insane
 			for (uint i = 1; i < outerWays.size(); i++) {
 				Polygon outer;
-				geom::assign_points(outer, createPointArray(&(waysPtr->at(outerWays[i]).nodelist), nodes));
+				fillPointArray(points, waysPtr->at(outerWays[i]).nodelist, nodes);
+				geom::assign_points(outer, points);
 				mp.push_back(outer);
 			}
 
@@ -96,7 +99,8 @@ class OutputObject { public:
 		} else { 
 			// linestring
 			Linestring ls;
-			geom::assign_points(ls, createPointArray(nodelistPtr, nodes));
+			fillPointArray(points, nodelist, nodes);
+			geom::assign_points(ls, points);
 			// clip
 			MultiLinestring out;
 			geom::intersection(ls, bboxPtr->clippingBox, out);
@@ -117,13 +121,13 @@ class OutputObject { public:
 	}
 	
 	// Helper to make a vector of Boost points from a vector of node IDs
-	vector<Point> createPointArray(vector<uint32_t> *nodelistPtr, map< uint32_t, LatLon > *nodes) const {
-		vector<Point> points;
-		for (uint i=0; i<nodelistPtr->size(); i++) {
-			LatLon ll = nodes->at(nodelistPtr->at(i));
-			points.push_back(geom::make<Point>(ll.lon/10000000.0, ll.lat/10000000.0));
+	void fillPointArray(vector<Point> &points, const vector<uint32_t> &nodelist, const node_container_t &nodes) const {
+		points.clear();
+		if (points.capacity() < nodelist.size()) { points.reserve(nodelist.size()); }
+		for (auto node_id : nodelist) {
+			LatLon ll = nodes.at(node_id);
+			points.emplace_back(geom::make<Point>(ll.lon/10000000.0, ll.lat/10000000.0));
 		}
-		return points;
 	}
 	
 	// Add a node geometry 
