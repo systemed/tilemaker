@@ -494,7 +494,7 @@ int main(int argc, char* argv[]) {
 			if (sqlite) {
 				// Write to sqlite
 				tile.SerializeToString(&data);
-				if (compress) { compressed = compress_string(data); }
+				if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, true); }
 				mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
 
 			} else {
@@ -506,7 +506,7 @@ int main(int argc, char* argv[]) {
 				fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 				if (compress) {
 					tile.SerializeToString(&data);
-					outfile << compress_string(data);
+					outfile << compress_string(data, Z_DEFAULT_COMPRESSION, true);
 				} else {
 					if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 				}

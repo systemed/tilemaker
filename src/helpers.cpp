@@ -6,6 +6,10 @@
 #include <cstring>
 #include <zlib.h>
 
+#define MOD_GZIP_ZLIB_WINDOWSIZE 15
+#define MOD_GZIP_ZLIB_CFACTOR 9
+#define MOD_GZIP_ZLIB_BSIZE 8096
+
 // General helper routines
 
 inline void endian_swap(unsigned int& x) {
@@ -24,12 +28,19 @@ inline bool ends_with(std::string const & value, std::string const & ending) {
 
 // Compress a STL string using zlib with given compression level, and return the binary data
 std::string compress_string(const std::string& str,
-                            int compressionlevel = Z_DEFAULT_COMPRESSION) {
+                            int compressionlevel = Z_DEFAULT_COMPRESSION,
+                            bool asGzip = false) {
     z_stream zs;                        // z_stream is zlib's control structure
     memset(&zs, 0, sizeof(zs));
 
-    if (deflateInit(&zs, compressionlevel) != Z_OK)
-        throw(std::runtime_error("deflateInit failed while compressing."));
+	if (asGzip) {
+		if (deflateInit2(&zs, compressionlevel, Z_DEFLATED,
+		                MOD_GZIP_ZLIB_WINDOWSIZE + 16, MOD_GZIP_ZLIB_CFACTOR, Z_DEFAULT_STRATEGY) != Z_OK)
+	        throw(std::runtime_error("deflateInit2 failed while compressing."));
+	} else {
+	    if (deflateInit(&zs, compressionlevel) != Z_OK)
+	        throw(std::runtime_error("deflateInit failed while compressing."));
+	}
 
     zs.next_in = (Bytef*)str.data();
     zs.avail_in = str.size();           // set the z_stream's input
