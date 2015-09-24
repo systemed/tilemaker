@@ -19,7 +19,11 @@ Tilemaker is written in C++11. The chief dependencies are:
 
 rapidjson (MIT) and sqlite_modern_cpp (MIT) are bundled in the include/ directory.
 
-On OS X, you can install all dependencies with Homebrew. On Ubuntu, start with:
+On OS X, you can install all dependencies with Homebrew:
+
+	brew install protobuf boost lua51 luabind
+
+On Ubuntu, start with:
 
 	apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler
 
