@@ -42,7 +42,7 @@ class OutputObject { public:
 	void buildWayGeometry(const node_container_t &nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 		uint32_t objID = osmID;
 		if (outerWays.size()>0) { objID = outerWays[0]; }
-		const vector <uint32_t> &nodelistPtr = waysPtr->at(objID).nodelist;
+		const vector <uint32_t> &nodelist = waysPtr->at(objID).nodelist;
 		vector<Point> points;
 		
 		if (geomType==vector_tile::Tile_GeomType_POLYGON) {
@@ -56,7 +56,7 @@ class OutputObject { public:
 			geom::assign_points(poly, points);
 			geom::interior_rings(poly).resize(innerWays.size());
 			for (uint i=0; i<innerWays.size(); i++) {
-				fillPointArray(waysPtr->at(innerWays[i]).nodelist, nodes);
+				fillPointArray(points, waysPtr->at(innerWays[i]).nodelist, nodes);
 				geom::append(poly, points, i);
 			}
 			mp.push_back(poly);
@@ -123,12 +123,11 @@ class OutputObject { public:
 	// Helper to make a vector of Boost points from a vector of node IDs
 	void fillPointArray(vector<Point> &points, const vector<uint32_t> &nodelist, const node_container_t &nodes) const {
 		points.clear();
-      if (points.capacity() < nodelist.size()) { points.reserve(nodelist.size()); }
+		if (points.capacity() < nodelist.size()) { points.reserve(nodelist.size()); }
 		for (auto node_id : nodelist) {
 			LatLon ll = nodes.at(node_id);
 			points.emplace_back(geom::make<Point>(ll.lon/10000000.0, ll.lat/10000000.0));
 		}
-		return points;
 	}
 	
 	// Add a node geometry 
