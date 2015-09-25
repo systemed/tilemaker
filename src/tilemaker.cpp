@@ -262,13 +262,15 @@ int main(int argc, char* argv[]) {
 						nodes[nodeId] = node;
 						bool significant = false;
 						int kvStart = kvPos;
-						while (dense.keys_vals(kvPos)>0) {
-							if (nodeKeyPositions.find(dense.keys_vals(kvPos)) != nodeKeyPositions.end()) {
-								significant = true;
+						if (dense.keys_vals_size()>0) {
+							while (dense.keys_vals(kvPos)>0) {
+								if (nodeKeyPositions.find(dense.keys_vals(kvPos)) != nodeKeyPositions.end()) {
+									significant = true;
+								}
+								kvPos+=2;
 							}
-							kvPos+=2;
+							kvPos++;
 						}
-						kvPos++;
 						// For tagged nodes, call Lua, then save the OutputObject
 						if (significant) {
 							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1);
