@@ -143,8 +143,11 @@ int main(int argc, char* argv[]) {
 			string layerName = it->name.GetString();
 			int minZoom = it->value["minzoom"].GetInt();
 			int maxZoom = it->value["maxzoom"].GetInt();
-			osmObject.addLayer(layerName, minZoom, maxZoom);
-			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")" << endl;
+			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
+			osmObject.addLayer(layerName, minZoom, maxZoom, writeTo);
+			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
+			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
+			cout << endl;
 		}
 
 		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
@@ -437,36 +440,39 @@ int main(int argc, char* argv[]) {
 			unordered_set<OutputObject> ooList = it->second;
 
 			// Loop through layers
-			for (uint layerNum = 0; layerNum < osmObject.layers.size(); layerNum++) {
-				LayerDef ld = osmObject.layers[layerNum];
-				if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-
+			for (auto lt = osmObject.layerOrder.begin(); lt != osmObject.layerOrder.end(); ++lt) {
 				vector<string> keyList;
 				vector<vector_tile::Tile_Value> valueList;
-
-				// Loop through output objects
 				vector_tile::Tile_Layer *vtLayer = tile.add_layers();
-				for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {
-					if (jt->layer != layerNum) { continue; }
-					if (jt->geomType == vector_tile::Tile_GeomType_POINT) {
-						vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-						jt->buildNodeGeometry(nodes[jt->osmID], &bbox, featurePtr);
-						jt->writeAttributes(&keyList, &valueList, featurePtr);
-						if (includeID) { featurePtr->set_id(jt->osmID); }
-					} else {
-						try {
+
+				for (auto mt = lt->begin(); mt != lt->end(); ++mt) {
+					uint layerNum = *mt;
+					LayerDef ld = osmObject.layers[layerNum];
+					if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
+
+					// Loop through output objects
+					for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {
+						if (jt->layer != layerNum) { continue; }
+						if (jt->geomType == vector_tile::Tile_GeomType_POINT) {
 							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							jt->buildWayGeometry(nodes, &ways, &bbox, featurePtr);
-							if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+							jt->buildNodeGeometry(nodes[jt->osmID], &bbox, featurePtr);
 							jt->writeAttributes(&keyList, &valueList, featurePtr);
 							if (includeID) { featurePtr->set_id(jt->osmID); }
-						} catch (...) {
-							cerr << "Exception when writing output object " << jt->osmID << endl;
-							for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
-								if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-							}
-							for (auto et = jt->innerWays.begin(); et != jt->innerWays.end(); ++et) { 
-								if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+						} else {
+							try {
+								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+								jt->buildWayGeometry(nodes, &ways, &bbox, featurePtr);
+								if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+								jt->writeAttributes(&keyList, &valueList, featurePtr);
+								if (includeID) { featurePtr->set_id(jt->osmID); }
+							} catch (...) {
+								cerr << "Exception when writing output object " << jt->osmID << endl;
+								for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
+									if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+								}
+								for (auto et = jt->innerWays.begin(); et != jt->innerWays.end(); ++et) { 
+									if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+								}
 							}
 						}
 					}
@@ -474,7 +480,7 @@ int main(int argc, char* argv[]) {
 
 				// If there are any objects, then add tags
 				if (vtLayer->features_size()>0) {
-					vtLayer->set_name(ld.name);
+					vtLayer->set_name(osmObject.layers[lt->at(0)].name);
 					vtLayer->set_version(1);
 					for (uint j=0; j<keyList.size()  ; j++) {
 						vtLayer->add_keys(keyList[j]);

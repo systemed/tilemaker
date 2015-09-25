@@ -21,6 +21,7 @@ class OSMObject { public:
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
+	vector< vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
 
 	vector<OutputObject> outputs;			// All output objects
 
@@ -43,10 +44,23 @@ class OSMObject { public:
 	}
 
 	// Define a layer (as read from the .json file)
-	void addLayer(string name, int minzoom, int maxzoom) {
+	void addLayer(string name, int minzoom, int maxzoom, string writeTo) {
 		LayerDef layer = { name, minzoom, maxzoom };
 		layers.push_back(layer);
-		layerMap[name] = layers.size()-1;
+		uint layerNum = layers.size()-1;
+		layerMap[name] = layerNum;
+
+		if (writeTo.empty()) {
+			vector<uint> r = { layerNum };
+			layerOrder.push_back(r);
+		} else {
+			uint lookingFor = layerMap[writeTo];
+			for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
+				if (it->at(0)==lookingFor) {
+					it->push_back(layerNum);
+				}
+			}
+		}
 	}
 	
 	// Read string dictionary from the .pbf
