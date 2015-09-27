@@ -39,7 +39,11 @@ class OutputObject { public:
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// (the linestring code is the easiest way to understand this - the polygon code 
 	//  is greatly complicated by multipolygon support)
-	void buildWayGeometry(const node_container_t &nodes, map< uint32_t, WayStore > *waysPtr, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
+	void buildWayGeometry(const node_container_t &nodes, 
+	                      map< uint32_t, WayStore > *waysPtr, 
+	                      TileBbox *bboxPtr, 
+	                      vector_tile::Tile_Feature *featurePtr, 
+	                      double simplifyLevel) const {
 		uint32_t objID = osmID;
 		if (outerWays.size()>0) { objID = outerWays[0]; }
 		const vector <uint32_t> &nodelist = waysPtr->at(objID).nodelist;
@@ -88,6 +92,13 @@ class OutputObject { public:
 				// full polygon
 				geom::intersection(bboxPtr->clippingBox, mp, out); // clip
 
+				// simplify
+				if (simplifyLevel>0) {
+					MultiPolygon out2;
+					geom::simplify(out, out2, simplifyLevel);
+					out = out2;
+				}
+
 				pair<int,int> lastPos(0,0);
 				for (MultiPolygon::const_iterator it = out.begin(); it != out.end(); ++it) {
 					XYString scaledString;
@@ -119,6 +130,12 @@ class OutputObject { public:
 			// clip
 			MultiLinestring out;
 			geom::intersection(ls, bboxPtr->clippingBox, out);
+			// simplify
+			if (simplifyLevel>0) {
+				MultiLinestring out2;
+				geom::simplify(out, out2, simplifyLevel);
+				out = out2;
+			}
 			// write out
 			pair<int,int> lastPos(0,0);
 			for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
