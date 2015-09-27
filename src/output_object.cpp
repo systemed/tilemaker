@@ -79,7 +79,7 @@ class OutputObject { public:
 				geom::centroid(mp, p);
 				if (geom::within(p, bboxPtr->clippingBox)) {
 					featurePtr->add_geometry(9);					// moveTo, repeat x1
-					pair<int,int> xy = bboxPtr->scaleLatLon(p.y(), p.x());
+					pair<int,int> xy = bboxPtr->scaleLatpLon(p.y(), p.x());
 					featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
 					featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 				}
@@ -93,7 +93,7 @@ class OutputObject { public:
 					XYString scaledString;
 					Ring ring = geom::exterior_ring(*it);
 					for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
-						pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
+						pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
 						scaledString.push_back(xy);
 					}
 					writeDeltaString(&scaledString, featurePtr, &lastPos);
@@ -103,7 +103,7 @@ class OutputObject { public:
 						scaledString.clear();
 						XYString scaledInterior;
 						for (auto jt = ii->begin(); jt != ii->end(); ++jt) {
-							pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
+							pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
 							scaledString.push_back(xy);
 						}
 						writeDeltaString(&scaledString, featurePtr, &lastPos);
@@ -124,7 +124,7 @@ class OutputObject { public:
 			for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
 				XYString scaledString;
 				for (Linestring::const_iterator jt = it->begin(); jt != it->end(); ++jt) {
-					pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
+					pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
 					scaledString.push_back(xy);
 				}
 				writeDeltaString(&scaledString, featurePtr, &lastPos);
@@ -140,15 +140,15 @@ class OutputObject { public:
 		points.clear();
 		if (points.capacity() < nodelist.size()) { points.reserve(nodelist.size()); }
 		for (auto node_id : nodelist) {
-			LatLon ll = nodes.at(node_id);
-			points.emplace_back(geom::make<Point>(ll.lon/10000000.0, ll.lat/10000000.0));
+			LatpLon ll = nodes.at(node_id);
+			points.emplace_back(geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
 		}
 	}
 	
 	// Add a node geometry 
-	void buildNodeGeometry(LatLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
+	void buildNodeGeometry(LatpLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 		featurePtr->add_geometry(9);					// moveTo, repeat x1
-		pair<int,int> xy = bboxPtr->scaleLatLon(ll.lat/10000000.0, ll.lon/10000000.0);
+		pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
 		featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
 		featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 		featurePtr->set_type(geomType);

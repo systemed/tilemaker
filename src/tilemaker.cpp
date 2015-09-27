@@ -60,7 +60,7 @@ namespace geom = boost::geometry;
 #include "pbf_blocks.cpp"
 #include "coordinates.cpp"
 
-typedef std::unordered_map< uint32_t, LatLon > node_container_t;
+typedef std::unordered_map< uint32_t, LatpLon > node_container_t;
 
 #include "output_object.cpp"
 #include "osm_object.cpp"
@@ -259,7 +259,7 @@ int main(int argc, char* argv[]) {
 						nodeId += dense.id(j);
 						lon    += dense.lon(j);
 						lat    += dense.lat(j);
-						LatLon node = { lat, lon };
+						LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
 						nodes[nodeId] = node;
 						bool significant = false;
 						int kvStart = kvPos;
@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) {
 								return -1;
 							}
 							if (!osmObject.empty()) {
-								uint32_t index = latLon2index(node, baseZoom);
+								uint32_t index = latpLon2index(node, baseZoom);
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 									tileIndex[index].insert(*jt);
 								}
@@ -347,8 +347,8 @@ int main(int argc, char* argv[]) {
 							for (k=0; k<pbfWay.refs_size(); k++) {
 								nodeId += pbfWay.refs(k);
 								nodelist.push_back(uint32_t(nodeId));
-								int tileX = lon2tilex(nodes[nodeId].lon / 10000000.0, baseZoom);
-								int tileY = lat2tiley(nodes[nodeId].lat / 10000000.0, baseZoom);
+								int tileX =  lon2tilex(nodes[nodeId].lon  / 10000000.0, baseZoom);
+								int tileY = latp2tiley(nodes[nodeId].latp / 10000000.0, baseZoom);
 								if (k>0) {
 									// Check we're not skipping any tiles, and insert intermediate nodes if so
 									// (we should have a simple fill algorithm for polygons, too)
