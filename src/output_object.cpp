@@ -76,8 +76,8 @@ class OutputObject { public:
 			if (geomType==vector_tile::Tile_GeomType_UNKNOWN) {
 				// centroid only
 				Point p;
-				boost::geometry::centroid(mp, p);
-				if (boost::geometry::within(p, bboxPtr->clippingBox)) {
+				geom::centroid(mp, p);
+				if (geom::within(p, bboxPtr->clippingBox)) {
 					featurePtr->add_geometry(9);					// moveTo, repeat x1
 					pair<int,int> xy = bboxPtr->scaleLatLon(p.y(), p.x());
 					featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
