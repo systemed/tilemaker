@@ -157,6 +157,12 @@ class OSMObject { public:
 						osmID);
 		outputs.push_back(oo);
 	}
+	void LayerAsCentroid(const string &layerName, bool area) {
+		OutputObject oo(vector_tile::Tile_GeomType_UNKNOWN,
+						layerMap[layerName],
+						osmID);
+		outputs.push_back(oo);
+	}
 	
 	// Set attributes in a vector tile's Attributes table
 	// Called from Lua

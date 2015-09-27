@@ -117,6 +117,7 @@ int main(int argc, char* argv[]) {
 		.def("Holds", &OSMObject::Holds)
 		.def("Id", &OSMObject::Id)
 		.def("Layer", &OSMObject::Layer)
+		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
 		.def("Attribute", &OSMObject::Attribute)
 		.def("AttributeNumeric", &OSMObject::AttributeNumeric)
 		.def("AttributeBoolean", &OSMObject::AttributeBoolean)

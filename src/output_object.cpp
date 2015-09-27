@@ -14,7 +14,7 @@ typedef vector<pair<int,int>> XYString;
 
 class OutputObject { public:
 
-	vector_tile::Tile_GeomType geomType;				// point, linestring, polygon?
+	vector_tile::Tile_GeomType geomType;				// point, linestring, polygon? (UNKNOWN = centroid from polygon)
 	uint_least8_t layer;								// what layer is it in?
 	uint32_t osmID;										// id of way (linestring/polygon) or node (point)
 	map <string, vector_tile::Tile_Value> attributes;	// attributes
@@ -45,7 +45,7 @@ class OutputObject { public:
 		const vector <uint32_t> &nodelist = waysPtr->at(objID).nodelist;
 		vector<Point> points;
 		
-		if (geomType==vector_tile::Tile_GeomType_POLYGON) {
+		if (geomType==vector_tile::Tile_GeomType_POLYGON || geomType==vector_tile::Tile_GeomType_UNKNOWN) {
 			// polygon
 			MultiPolygon mp;
 			MultiPolygon out;
@@ -69,30 +69,45 @@ class OutputObject { public:
 				mp.push_back(outer);
 			}
 
-			// clip (fixing winding first)
+			// fix winding
 			geom::correct(mp);
-			geom::intersection(bboxPtr->clippingBox, mp, out);
 
 			// write out
-			pair<int,int> lastPos(0,0);
-			for (MultiPolygon::const_iterator it = out.begin(); it != out.end(); ++it) {
-				XYString scaledString;
-				Ring ring = geom::exterior_ring(*it);
-				for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
-					pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
-					scaledString.push_back(xy);
+			if (geomType==vector_tile::Tile_GeomType_UNKNOWN) {
+				// centroid only
+				Point p;
+				boost::geometry::centroid(mp, p);
+				if (boost::geometry::within(p, bboxPtr->clippingBox)) {
+					featurePtr->add_geometry(9);					// moveTo, repeat x1
+					pair<int,int> xy = bboxPtr->scaleLatLon(p.y(), p.x());
+					featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
+					featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 				}
-				writeDeltaString(&scaledString, featurePtr, &lastPos);
+				
+			} else {
+				// full polygon
+				geom::intersection(bboxPtr->clippingBox, mp, out); // clip
 
-				InteriorRing interiors = geom::interior_rings(*it);
-				for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
-					scaledString.clear();
-					XYString scaledInterior;
-					for (auto jt = ii->begin(); jt != ii->end(); ++jt) {
+				pair<int,int> lastPos(0,0);
+				for (MultiPolygon::const_iterator it = out.begin(); it != out.end(); ++it) {
+					XYString scaledString;
+					Ring ring = geom::exterior_ring(*it);
+					for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
 						pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
 						scaledString.push_back(xy);
 					}
 					writeDeltaString(&scaledString, featurePtr, &lastPos);
+
+					InteriorRing interiors = geom::interior_rings(*it);
+					for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
+						scaledString.clear();
+						XYString scaledInterior;
+						for (auto jt = ii->begin(); jt != ii->end(); ++jt) {
+							pair<int,int> xy = bboxPtr->scaleLatLon(jt->get<1>(), jt->get<0>());
+							scaledString.push_back(xy);
+						}
+						writeDeltaString(&scaledString, featurePtr, &lastPos);
+					}
 				}
 			}
 
