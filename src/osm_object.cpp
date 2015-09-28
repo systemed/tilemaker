@@ -159,7 +159,7 @@ class OSMObject { public:
 						osmID);
 		outputs.push_back(oo);
 	}
-	void LayerAsCentroid(const string &layerName, bool area) {
+	void LayerAsCentroid(const string &layerName) {
 		OutputObject oo(vector_tile::Tile_GeomType_UNKNOWN,
 						layerMap[layerName],
 						osmID);
