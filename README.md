@@ -73,7 +73,7 @@ Vector tiles contain (generally thematic) 'layers'. For example, your tiles migh
 * a JSON file listing each layer, and the zoom levels at which to apply it
 * a Lua program that looks at each node/way's tags, and places it into layers accordingly
 
-You can read more about these in [CONFIGURATION.md](CONFIGURATION.md). Sample files are provided to work out-of-the-box.
+You can read more about these in [CONFIGURATION.md](CONFIGURATION.md). Sample files are provided to work out-of-the-box: you may find more in the `resources` directory.
 
 Running
 -------

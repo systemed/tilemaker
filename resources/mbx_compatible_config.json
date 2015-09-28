@@ -1,0 +1,50 @@
+{
+	"layers": {
+		"water": { "minzoom": 0, "maxzoom": 15 },
+		"waterway": { "minzoom": 0, "maxzoom": 15 },
+		"road": { "minzoom": 0, "maxzoom": 15 },
+		"road_bridge": {"minzoom": 0, "maxzoom": 12, "write_to": "road" },
+		"bridge": { "minzoom": 12, "maxzoom": 15 },
+		"building": { "minzoom": 15, "maxzoom": 20 },
+		"poi": { "minzoom": 0, "maxzoom": 15 },
+		"admin": { "minzoom": 0, "maxzoom": 15 }, 
+		"aeroway": { "minzoom": 0, "maxzoom": 15 },
+		"barrier_line": { "minzoom": 0, "maxzoom": 15 },
+		"contour": { "minzoom": 0, "maxzoom": 15 }, 
+		"housenum_label": { "minzoom": 0, "maxzoom": 15 },
+		"landcover": { "minzoom": 0, "maxzoom": 15 },
+		"landuse": { "minzoom": 0, "maxzoom": 15 },
+		"country_label": { "minzoom": 0, "maxzoom": 15 },
+		"state_label": { "minzoom": 0, "maxzoom": 15 },
+		"place_label": { "minzoom": 0, "maxzoom": 15 },
+		"poi_label": { "minzoom": 15, "maxzoom": 20 },
+		"road_label": { "minzoom": 0, "maxzoom": 15 },
+		"tunnel": { "minzoom": 0, "maxzoom": 15 },
+		"water": { "minzoom": 0, "maxzoom": 15 },
+		"water_label": { "minzoom": 0, "maxzoom": 15 },
+		"waterway": { "minzoom": 0, "maxzoom": 15 },
+		"waterway_label": { "minzoom": 0, "maxzoom": 15 },
+		"marine_label": { "minzoom": 0, "maxzoom": 15 }
+	},
+	"settings": {
+		"minzoom": 0,
+		"maxzoom": 15,
+		"basezoom": 15,
+		"include_ids": false,
+		"name": "OSM Vector Tiles",
+		"version": "0.1",
+		"description": "Vector Tiles from OSM data, created with tilemaker",
+		"compress": true,
+		"metadata": {
+			"json": { "vector_layers": [
+						{ "id": "road",     "description": "road",     "fields": {"name":"String","type":"String"}},
+						{ "id": "water",     "description": "water",     "fields": {}},
+						{ "id": "waterway",     "description": "waterway",     "fields": {}},
+						{ "id": "buildings", "description": "buildings", "fields": {}},
+						{ "id": "place_label", "description": "place_label", "fields": {"name":"String","type":"String"}},
+						{ "id": "poi_label", "description": "place_label", "fields": {"name":"String","type":"String","maki":"string"}},
+						{ "id": "road_label",     "description": "road_label",     "fields": {"name":"String","class":"String"}}
+					] }
+		}
+	}
+}
