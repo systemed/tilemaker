@@ -1,7 +1,7 @@
 {
 	"layers": {
 		"water": { "minzoom": 11, "maxzoom": 14 },
-		"roads": { "minzoom": 12, "maxzoom": 14 },
+		"roads": { "minzoom": 12, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0001 },
 		"buildings": { "minzoom": 14, "maxzoom": 14 },
 		"pois": { "minzoom": 13, "maxzoom": 14 }
 	},
