@@ -3,7 +3,7 @@ Configuring Tilemaker
 
 Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers.
 
-You'll generally assign OSM data into layers by making decisions based on their tags. You might put anything with a `highway=` tag into the roads layer, anything with a `railway=` tag into the railway layer, and so on.
+You'll generally assign OpenStreetMap data into layers by making decisions based on their tags. You might put anything with a `highway=` tag into the roads layer, anything with a `railway=` tag into the railway layer, and so on.
 
 In Tilemaker, you achieve this by writing a short script in the Lua programming language. Lua is a simple and fast language used by several other OpenStreetMap tools, such as the OSRM routing engine and osm2pgsql.
 
@@ -29,6 +29,7 @@ It also includes these global settings:
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles
 * `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
+* `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
 
 A typical config file would look like this:
 
@@ -52,7 +53,7 @@ A typical config file would look like this:
 
 The order of layers will be carried forward into the vector tile.
 
-Note that all options are compulsory. If Tilemaker baulks at the JSON file, check everything's included, and run it through an online JSON validator to check for syntax errors.
+All options are compulsory unless stated otherwise. If Tilemaker baulks at the JSON file, check everything's included, and run it through an online JSON validator to check for syntax errors.
 
 By default Tilemaker expects to find this file at config.json, but you can specify another filename with the `--config` command-line option.
 
@@ -72,6 +73,8 @@ Use these options to combine different layer specs within one outputted layer. F
     }
 
 This would combine the `roads` (z12-14) and `low_roads` (z9-11) layers into a single `roads` layer on writing, with simplified geometries for `low_roads`.
+
+(See also 'Shapefiles' below.)
 
 ### Additional metadata
 
@@ -138,3 +141,25 @@ Relations
 Tilemaker handles multipolygon relations natively. The combined geometries are processed as ways (i.e. by `way_function`), so if your function puts buildings in a 'buildings' layer, Tilemaker will cope with this whether the building is mapped as a simple way or a multipolygon. The only difference is that they're given an artificial ID.
 
 Multipolygons are expected to have tags on the relation, not the outer way. The vector tile spec is [slightly vague](https://github.com/mapbox/vector-tile-spec/issues/30) on multipolygon encoding. Tilemaker will enforce correct winding order, but in the case of a multipolygon with multiple outer ways, it assigns all inner ways to the first outer way.
+
+Shapefiles
+----------
+
+Tilemaker chiefly works with OpenStreetMap .osm.pbf data, but you can also bring in shapefiles. These are useful for rarely-changing data such as coastlines and built-up area outlines.
+
+Shapefiles are imported directly in your layer config like this:
+
+    "urban_areas": {
+      "minzoom": 11, "maxzoom": 14,
+      "source": "data/urban_areas.shp",
+      "simplify_below": 13, "simplify_level": 0.0003
+    },
+    "bridges": {
+      "minzoom": 13, "maxzoom": 14,
+      "source": "data/Bridges_WGS84.shp", 
+      "source_columns": ["SAP_DESCRI"]
+    }
+
+You can import attribute columns from a shapefile using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. Lua transformations are not available for shapefiles: it's assumed that you have processed your shapefiles before running Tilemaker.
+
+Shapefiles **must** be in WGS84 projection, i.e. pure latitude/longitude. (Use ogr2ogr to reproject them if your source material is in a different projection.) They will be clipped to the bounds of the first .pbf that you import, unless you specify otherwise with a `bounding_box` setting in your JSON file.
