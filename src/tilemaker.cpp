@@ -1,4 +1,4 @@
-/*	
+/*
 	tilemaker
 	Richard Fairhurst, June 2015
 */
@@ -16,6 +16,7 @@
 // Other utilities
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
+#include <boost/variant.hpp>
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
@@ -25,6 +26,9 @@
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
+
+// Shapelib
+#include "shapefil.h"
 
 // Lua
 extern "C" {
@@ -48,6 +52,7 @@ typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
 typedef boost::geometry::model::box<Point> Box;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
+typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
 
 // Namespaces
 using namespace std;
@@ -65,16 +70,19 @@ typedef std::unordered_map< uint32_t, LatpLon > node_container_t;
 #include "output_object.cpp"
 #include "osm_object.cpp"
 #include "mbtiles.cpp"
+#include "read_shp.cpp"
+#include "write_geometry.cpp"
 
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
 
-	node_container_t nodes;						// lat/lon for all nodes (node ids fit into uint32, at least for now)
+	node_container_t nodes;								// lat/lon for all nodes (node ids fit into uint32, at least for now)
 	map< uint32_t, WayStore > ways;						// node list for all ways
 	map< uint, unordered_set<OutputObject> > tileIndex;	// objects to be output
 	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
 	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
+	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 
 	// ----	Read command-line options
 	
@@ -104,6 +112,25 @@ int main(int argc, char* argv[]) {
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) {
 		sqlite=true;
 	}
+
+	// ---- Read bounding box from first .pbf
+
+	Box clippingBox;
+	bool hasClippingBox = false;
+	fstream infile(inputFiles[0], ios::in | ios::binary);
+	if (!infile) { cerr << "Couldn't open .pbf file " << inputFiles[0] << endl; return -1; }
+	HeaderBlock block;
+	readBlock(&block, &infile);
+	if (block.has_bbox()) {
+		hasClippingBox = true;
+		double minLon = block.bbox().left()  /1000000000.0;
+		double maxLon = block.bbox().right() /1000000000.0;
+		double minLat = block.bbox().bottom()/1000000000.0;
+		double maxLat = block.bbox().top()   /1000000000.0;
+		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+			              geom::make<Point>(maxLon, lat2latp(maxLat)));
+	}
+	infile.close();
 	
 	// ----	Initialise Lua
 
@@ -137,22 +164,8 @@ int main(int argc, char* argv[]) {
 		jsonConfig.ParseStream(is);
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
-	
-		rapidjson::Value& layerHash = jsonConfig["layers"];
-		for (rapidjson::Value::MemberIterator it = layerHash.MemberBegin(); it != layerHash.MemberEnd(); ++it) {
-		    // work with (*itr)["status"], etc.
-			string layerName = it->name.GetString();
-			int minZoom = it->value["minzoom"].GetInt();
-			int maxZoom = it->value["maxzoom"].GetInt();
-			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
-			int   simplifyBelow = it->value.HasMember("simplify_below") ? it->value["simplify_below"].GetInt()    : 0;
-			float simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
-			osmObject.addLayer(layerName, minZoom, maxZoom, simplifyBelow, simplifyLevel, writeTo);
-			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
-			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
-			cout << endl;
-		}
 
+		// Global config
 		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
@@ -161,7 +174,48 @@ int main(int argc, char* argv[]) {
 		projectName    = jsonConfig["settings"]["name"].GetString();
 		projectVersion = jsonConfig["settings"]["version"].GetString();
 		projectDesc    = jsonConfig["settings"]["description"].GetString();
+		if (jsonConfig["settings"].HasMember("bounding_box")) {
+			hasClippingBox = true;
+			double minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
+			double minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
+			double maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
+			double maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
+			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+				              geom::make<Point>(maxLon, lat2latp(maxLat)));
+		}
 		if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; return -1; }
+
+		// Layers
+		rapidjson::Value& layerHash = jsonConfig["layers"];
+		for (rapidjson::Value::MemberIterator it = layerHash.MemberBegin(); it != layerHash.MemberEnd(); ++it) {
+
+			// Basic layer settings
+			string layerName = it->name.GetString();
+			int minZoom = it->value["minzoom"].GetInt();
+			int maxZoom = it->value["maxzoom"].GetInt();
+			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
+			int   simplifyBelow = it->value.HasMember("simplify_below") ? it->value["simplify_below"].GetInt()    : 0;
+			float simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
+			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom, simplifyBelow, simplifyLevel, writeTo);
+			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
+			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
+			cout << endl;
+
+			// External layer sources
+			if (it->value.HasMember("source")) {
+				if (!hasClippingBox) {
+					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+					return EXIT_FAILURE;
+				}
+				vector<string> sourceColumns;
+				if (it->value.HasMember("source_columns")) {
+					for (uint i=0; i<it->value["source_columns"].Size(); i++) {
+						sourceColumns.push_back(it->value["source_columns"][i].GetString());
+					}
+				}
+				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex, cachedGeometries, baseZoom, layerNum);
+			}
+		}
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
@@ -207,14 +261,15 @@ int main(int argc, char* argv[]) {
 	
 	for (auto inputFile : inputFiles) {
 	
-		cout << "Reading " << inputFile << endl;
-		fstream infile(inputFile, ios::in | ios::binary);
-		if (!infile) { cerr << "Couldn't open .pbf input file." << endl; return -1; }
-		HeaderBlock block;
-		readBlock(&block, &infile);
-
 		// ---- Read PBF
 		//		note that the order of reading is nodes, (skip ways), relations, (rewind), ways
+
+		cout << "Reading " << inputFile << endl;
+
+		fstream infile(inputFile, ios::in | ios::binary);
+		if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+		HeaderBlock block;
+		readBlock(&block, &infile);
 
 		PrimitiveBlock pb;
 		PrimitiveGroup pg;
@@ -243,14 +298,14 @@ int main(int argc, char* argv[]) {
 			for (auto it : nodeKeys) {
 				nodeKeyPositions.insert(osmObject.findStringPosition(it));
 			}
-		
+
 			for (i=0; i<pb.primitivegroup_size(); i++) {
 				pg = pb.primitivegroup(i);
 				cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 				cout.flush();
 
 				// ----	Read nodes
-			
+
 				if (pg.has_dense()) {
 					nodeId  = 0;
 					int lon = 0;
@@ -291,7 +346,7 @@ int main(int argc, char* argv[]) {
 						}
 					}
 				}
-			
+
 				// ----	Read relations
 				// 		(just multipolygons for now; we should do routes in time)
 
@@ -322,7 +377,7 @@ int main(int argc, char* argv[]) {
 						}
 					}
 				}
-			
+
 				// ----	Read ways
 
 				if (pg.ways_size() > 0 && processedRelations) {
@@ -367,7 +422,7 @@ int main(int argc, char* argv[]) {
 								lastId= nodeId;
 							}
 							ways[wayId].nodelist = nodelist;
-						
+
 							// then, for each tile, store the OutputObject for each layer
 							for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
 								uint32_t index = *it;
@@ -459,20 +514,22 @@ int main(int argc, char* argv[]) {
 					// Loop through output objects
 					for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {
 						if (jt->layer != layerNum) { continue; }
-						if (jt->geomType == vector_tile::Tile_GeomType_POINT) {
+						if (jt->geomType == POINT) {
 							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							jt->buildNodeGeometry(nodes[jt->osmID], &bbox, featurePtr);
+							jt->buildNodeGeometry(nodes[jt->objectID], &bbox, featurePtr);
 							jt->writeAttributes(&keyList, &valueList, featurePtr);
-							if (includeID) { featurePtr->set_id(jt->osmID); }
+							if (includeID) { featurePtr->set_id(jt->objectID); }
 						} else {
 							try {
+								Geometry g = jt->buildWayGeometry(nodes, &ways, &bbox, cachedGeometries);
 								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-								jt->buildWayGeometry(nodes, &ways, &bbox, featurePtr, simplifyLevel);
+								WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
+								boost::apply_visitor(w, g);
 								if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 								jt->writeAttributes(&keyList, &valueList, featurePtr);
-								if (includeID) { featurePtr->set_id(jt->osmID); }
+								if (includeID) { featurePtr->set_id(jt->objectID); }
 							} catch (...) {
-								cerr << "Exception when writing output object " << jt->osmID << endl;
+								cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
 								for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
 									if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
 								}
@@ -493,7 +550,7 @@ int main(int argc, char* argv[]) {
 					}
 					for (uint j=0; j<valueList.size(); j++) { 
 						vector_tile::Tile_Value *v = vtLayer->add_values();
-						*v = valueList[j];	// check this actually works!
+						*v = valueList[j];
 					}
 				} else {
 					tile.mutable_layers()->RemoveLast();

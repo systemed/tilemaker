@@ -19,7 +19,7 @@ class OSMObject { public:
 	lua_State *luaState;					// Lua reference
 	bool isWay;								// Way or node?
 	uint32_t osmID;							// ID of OSM object
-	uint32_t newID = 4294967295;			// decrementing new ID for relations
+	uint32_t newWayID = 4294967295;			// decrementing new ID for relations
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
@@ -46,7 +46,7 @@ class OSMObject { public:
 	}
 
 	// Define a layer (as read from the .json file)
-	void addLayer(string name, int minzoom, int maxzoom, int simplifyBelow, double simplifyLevel, string writeTo) {
+	uint addLayer(string name, int minzoom, int maxzoom, int simplifyBelow, double simplifyLevel, string writeTo) {
 		LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel };
 		layers.push_back(layer);
 		uint layerNum = layers.size()-1;
@@ -63,6 +63,7 @@ class OSMObject { public:
 				}
 			}
 		}
+		return layerNum;
 	}
 	
 	// Read string dictionary from the .pbf
@@ -124,7 +125,7 @@ class OSMObject { public:
 		keysPtr = relation->mutable_keys();
 		valsPtr = relation->mutable_vals();
 		tagLength = relation->keys_size();
-		osmID = --newID;
+		osmID = --newWayID;
 		isWay = true;
 	}
 	
@@ -154,13 +155,13 @@ class OSMObject { public:
 	// Write this way/node to a vector tile's Layer
 	// Called from Lua
 	void Layer(const string &layerName, bool area) {
-		OutputObject oo(isWay ? (area ? vector_tile::Tile_GeomType_POLYGON : vector_tile::Tile_GeomType_LINESTRING) : vector_tile::Tile_GeomType_POINT,
+		OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 						layerMap[layerName],
 						osmID);
 		outputs.push_back(oo);
 	}
 	void LayerAsCentroid(const string &layerName) {
-		OutputObject oo(vector_tile::Tile_GeomType_UNKNOWN,
+		OutputObject oo(CENTROID,
 						layerMap[layerName],
 						osmID);
 		outputs.push_back(oo);
