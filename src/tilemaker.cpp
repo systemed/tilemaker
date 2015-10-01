@@ -225,6 +225,10 @@ int main(int argc, char* argv[]) {
 
 	unordered_set<string> nodeKeys;
 	lua_getglobal( luaState, "node_keys");
+	if (lua_isnil(luaState,-1)) {
+		cerr << "Error found in Lua script when reading node_keys - check your script for syntax errors." << endl;
+		return -1;
+	}
 	lua_pushnil( luaState );
 	while(lua_next( luaState, -2) != 0) {
 		string key = lua_tostring( luaState, -1 );
