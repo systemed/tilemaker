@@ -11,7 +11,7 @@
 #   ruby mbtileserver.rb path_to.mbtiles otherstaticfile.1 otherstaticfile.2
 
 # Example:
-#   ruby mbtileserver.rb oxfordshire.mbtiles style.json
+#   ruby mbtileserver.rb oxfordshire.mbtiles *.json sprites*
 # will make files accessible at:
 #   http://localhost:8080/14/8124/5421.output.pbf
 #   http://localhost:8080/style.json
@@ -21,6 +21,10 @@ require 'rack'
 require 'sqlite3'
 
 db = SQLite3::Database.new(ARGV[0])
+content_types = {
+	json: "application/json",
+	png: "image/png"
+}
 
 app = Proc.new do |env|
 	path = env['REQUEST_PATH'].sub(/^\//,'')
@@ -37,7 +41,7 @@ app = Proc.new do |env|
 			['200', {'Content-Type'=>'application/x-protobuf' }, []]
 		end
 	elsif ARGV.include?(path)
-		ct = path.match(/\.json$/) ? 'application/json' : 'text/html'
+		ct = path.match(/\.(\w+)$/) ? (content_types[$1.to_sym] || 'text/html') : 'text/html'
 		['200', {'Content-Type' => ct}, [File.read(path)]]
 	else
 		['404', {'Content-Type' => 'text/html'}, ["Resource at #{path} not found"]]
