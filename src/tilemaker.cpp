@@ -102,6 +102,7 @@ int main(int argc, char* argv[]) {
 	string outputFile;
 	string luaFile;
 	string jsonFile;
+	bool verbose = false;
 
 	po::options_description desc("tilemaker (c) 2015 Richard Fairhurst\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -109,7 +110,8 @@ int main(int argc, char* argv[]) {
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
-		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file");
+		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
+		("verbose",po::bool_switch(&verbose),                                    "verbose error output");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -561,12 +563,14 @@ int main(int argc, char* argv[]) {
 								jt->writeAttributes(&keyList, &valueList, featurePtr);
 								if (includeID) { featurePtr->set_id(jt->objectID); }
 							} catch (...) {
-								cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
-								for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
-									if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-								}
-								for (auto et = jt->innerWays.begin(); et != jt->innerWays.end(); ++et) { 
-									if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+								if (verbose) {
+									cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
+									for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
+										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+									}
+									for (auto et = jt->innerWays.begin(); et != jt->innerWays.end(); ++et) { 
+										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+									}
 								}
 							}
 						}
