@@ -181,6 +181,7 @@ int main(int argc, char* argv[]) {
 	bool includeID = false, compress = true, gzip = true;
 	string compressOpt;
 	rapidjson::Document jsonConfig;
+	double minLon, minLat, maxLon, maxLat;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
 		char readBuffer[65536];
@@ -204,10 +205,10 @@ int main(int argc, char* argv[]) {
 		projectDesc    = jsonConfig["settings"]["description"].GetString();
 		if (jsonConfig["settings"].HasMember("bounding_box")) {
 			hasClippingBox = true; clippingBoxFromJSON = true;
-			double minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
-			double minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
-			double maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
-			double maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
+			minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
+			minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
+			maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
+			maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
 			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
 				              geom::make<Point>(maxLon, lat2latp(maxLat)));
 		}
