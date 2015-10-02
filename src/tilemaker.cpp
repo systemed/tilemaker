@@ -38,12 +38,14 @@ extern "C" {
 }
 #include <luabind/luabind.hpp>
 #include <luabind/function.hpp> 
+#include <luabind/iterator_policy.hpp>
 
 // boost::geometry
 #include <boost/geometry.hpp>
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/geometries/geometries.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/index/rtree.hpp>
 typedef boost::geometry::model::d2::point_xy<double> Point; 
 typedef boost::geometry::model::linestring<Point> Linestring;
 typedef boost::geometry::model::polygon<Point> Polygon;
@@ -53,6 +55,8 @@ typedef boost::geometry::model::box<Point> Box;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
 typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
+typedef std::pair<Box, uint> IndexValue;
+typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadratic<16> > RTree;
 
 // Namespaces
 using namespace std;
@@ -94,6 +98,8 @@ int main(int argc, char* argv[]) {
 	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
 	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
 	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	map< uint, string > cachedGeometryNames;			//  | optional names for each one
+	map< string, RTree > indices;						// boost::geometry::index objects for shapefile indices
 
 	// ----	Read command-line options
 	
@@ -130,6 +136,7 @@ int main(int argc, char* argv[]) {
 
 	Box clippingBox;
 	bool hasClippingBox = false;
+	bool clippingBoxFromJSON = false;
 	fstream infile(inputFiles[0], ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFiles[0] << endl; return -1; }
 	HeaderBlock block;
@@ -162,8 +169,10 @@ int main(int argc, char* argv[]) {
 		.def("Attribute", &OSMObject::Attribute)
 		.def("AttributeNumeric", &OSMObject::AttributeNumeric)
 		.def("AttributeBoolean", &OSMObject::AttributeBoolean)
+		.def("Intersects", &OSMObject::Intersects)
+		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 	];
-	OSMObject osmObject(luaState);
+	OSMObject osmObject(luaState, &indices, &cachedGeometries, &cachedGeometryNames, &nodes);
 
 	// ----	Read JSON config
 
@@ -194,7 +203,7 @@ int main(int argc, char* argv[]) {
 		projectVersion = jsonConfig["settings"]["version"].GetString();
 		projectDesc    = jsonConfig["settings"]["description"].GetString();
 		if (jsonConfig["settings"].HasMember("bounding_box")) {
-			hasClippingBox = true;
+			hasClippingBox = true; clippingBoxFromJSON = true;
 			double minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
 			double minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
 			double maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
@@ -243,7 +252,13 @@ int main(int argc, char* argv[]) {
 						sourceColumns.push_back(it->value["source_columns"][i].GetString());
 					}
 				}
-				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex, cachedGeometries, baseZoom, layerNum);
+				bool indexed=false; if (it->value.HasMember("index")) {
+					indexed=it->value["index"].GetBool();
+					indices[layerName]=RTree();
+				}
+				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
+				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
+				              cachedGeometries, cachedGeometryNames, baseZoom, layerNum, layerName, indexed, indices, indexName);
 			}
 		}
 	} catch (...) {
@@ -366,6 +381,7 @@ int main(int argc, char* argv[]) {
 						// For tagged nodes, call Lua, then save the OutputObject
 						if (significant) {
 							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1);
+							osmObject.setLocation(lon, node.latp, lon, node.latp);
 							try { luabind::call_function<int>(luaState, "node_function", &osmObject);
 							} catch (const luabind::error &er) {
 		    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
@@ -420,6 +436,15 @@ int main(int argc, char* argv[]) {
 						osmObject.setWay(&pbfWay);
 						uint32_t wayId = static_cast<uint32_t>(pbfWay.id());
 
+						// Assemble nodelist
+						nodeId = 0;
+						vector <uint32_t> nodelist;
+						for (k=0; k<pbfWay.refs_size(); k++) {
+							nodeId += pbfWay.refs(k);
+							nodelist.push_back(uint32_t(nodeId));
+						}
+						osmObject.setLocation(nodes[nodelist[0]].lon, nodes[nodelist[0]].latp, nodes[nodeId].lon, nodes[nodeId].latp);
+
 						// Call Lua to find what layers and tags we want
 						try { luabind::call_function<int>(luaState, "way_function", &osmObject);
 						} catch (const luabind::error &er) {
@@ -431,29 +456,24 @@ int main(int argc, char* argv[]) {
 						if (!osmObject.empty() || inRelation) {
 							// create a list of tiles this way passes through (tilelist)
 							// and save the nodelist in the global way hash
-							nodeId = 0;
-							vector <uint32_t> nodelist;
 							unordered_set <uint32_t> tilelist;
-							uint lastX, lastY, lastId;
+							uint lastX, lastY;
 							for (k=0; k<pbfWay.refs_size(); k++) {
-								nodeId += pbfWay.refs(k);
-								nodelist.push_back(uint32_t(nodeId));
-								int tileX =  lon2tilex(nodes[nodeId].lon  / 10000000.0, baseZoom);
-								int tileY = latp2tiley(nodes[nodeId].latp / 10000000.0, baseZoom);
+								int tileX =  lon2tilex(nodes[nodelist[k]].lon  / 10000000.0, baseZoom);
+								int tileY = latp2tiley(nodes[nodelist[k]].latp / 10000000.0, baseZoom);
 								if (k>0) {
 									// Check we're not skipping any tiles, and insert intermediate nodes if so
 									// (we should have a simple fill algorithm for polygons, too)
 									int dx = abs((int)(tileX-lastX));
 									int dy = abs((int)(tileY-lastY));
 									if (dx>1 || dy>1 || (dx==1 && dy==1)) {
-										insertIntermediateTiles(&tilelist, max(dx,dy), nodes[lastId], nodes[nodeId], baseZoom);
+										insertIntermediateTiles(&tilelist, max(dx,dy), nodes[nodelist[k-1]], nodes[nodelist[k]], baseZoom);
 									}
 								}
 								uint32_t index = tileX * 65536 + tileY;
 								tilelist.insert( index );
 								lastX = tileX;
 								lastY = tileY;
-								lastId= nodeId;
 							}
 							ways[wayId].nodelist = nodelist;
 
@@ -532,6 +552,7 @@ int main(int argc, char* argv[]) {
 			uint index = it->first;
 			TileBbox bbox(index,zoom);
 			unordered_set<OutputObject> ooList = it->second;
+			if (clippingBoxFromJSON && (maxLon<=bbox.minLon || minLon>=bbox.maxLon || maxLat<=bbox.minLat || minLat>=bbox.maxLat)) { continue; }
 
 			// Loop through layers
 			for (auto lt = osmObject.layerOrder.begin(); lt != osmObject.layerOrder.end(); ++lt) {

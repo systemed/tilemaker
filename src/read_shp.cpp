@@ -69,14 +69,16 @@ void readShapefile(string filename,
                    vector<string> &columns,
                    Box &clippingBox, 
                    map< uint, unordered_set<OutputObject> > &tileIndex, 
-                   vector<Geometry> &cachedGeometries,
-                   uint baseZoom, uint layerNum) {
+                   vector<Geometry> &cachedGeometries, map< uint, string > &cachedGeometryNames,
+                   uint baseZoom, uint layerNum, string &layerName,
+                   bool isIndexed, map<string,RTree> &indices, string &indexName) {
 
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");
 	DBFHandle dbf = DBFOpen(filename.c_str(), "rb");
 	int numEntities, shpType;
 	vector<Point> points;
+	geom::model::box<Point> box;
 	double adfMinBound[4], adfMaxBound[4];
 	SHPGetInfo(shp, &numEntities, &shpType, adfMinBound, adfMaxBound);
 	
@@ -90,6 +92,8 @@ void readShapefile(string filename,
 			columnTypeMap[dbfLoc]=DBFGetFieldInfo(dbf,dbfLoc,NULL,NULL,NULL);
 		}
 	}
+	int indexField=-1;
+	if (indexName!="") { indexField = DBFGetFieldIndex(dbf,indexName.c_str()); }
 
 	for (int i=0; i<numEntities; i++) {
 		SHPObject* shape = SHPReadObject(shp, i);
@@ -105,6 +109,11 @@ void readShapefile(string filename,
 				OutputObject oo(CACHED_POINT, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap);
 				tileIndex[tilex*65536+tiley].insert(oo);
+				if (isIndexed) {
+					uint id = cachedGeometries.size()-1;
+					geom::envelope(p, box); indices[layerName].insert(std::make_pair(box, id));
+					if (indexField>-1) { cachedGeometryNames[id]=DBFReadStringAttribute(dbf, i, indexField); }
+				}
 			}
 
 		} else if (shapeType==3) {
@@ -122,6 +131,11 @@ void readShapefile(string filename,
 					OutputObject oo(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1);
 					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap);
 					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
+					if (isIndexed) {
+						uint id = cachedGeometries.size()-1;
+						geom::envelope(*it, box); indices[layerName].insert(std::make_pair(box, id));
+						if (indexField>-1) { cachedGeometryNames[id]=DBFReadStringAttribute(dbf, i, indexField); }
+					}
 				}
 			}
 
@@ -146,6 +160,11 @@ void readShapefile(string filename,
 				geom::model::box<Point> box;
 				geom::envelope(out, box);
 				addToTileIndexByBbox(oo, tileIndex, baseZoom, box.min_corner().get<0>(), box.min_corner().get<1>(), box.max_corner().get<0>(), box.max_corner().get<1>());
+				if (isIndexed) {
+					uint id = cachedGeometries.size()-1;
+					indices[layerName].insert(std::make_pair(box, id));
+					if (indexField>-1) { cachedGeometryNames[id]=DBFReadStringAttribute(dbf, i, indexField); }
+				}
 			}
 
 		} else {

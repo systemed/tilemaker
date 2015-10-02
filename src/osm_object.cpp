@@ -17,9 +17,14 @@ struct LayerDef {
 class OSMObject { public:
 
 	lua_State *luaState;					// Lua reference
-	bool isWay;								// Way or node?
+	map< string, RTree> *indices;			// Spatial indices
+	vector<Geometry> *cachedGeometries;		// Cached geometries
+	map<uint,string> *cachedGeometryNames;	// Cached geometry names
+	node_container_t *nodes;				// Node storage
+	bool isWay, isRelation;					// Way, node, relation?
 	uint32_t osmID;							// ID of OSM object
-	uint32_t newWayID = 4294967295;			// decrementing new ID for relations
+	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
+	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
@@ -41,8 +46,12 @@ class OSMObject { public:
 	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
 	int tagLength;
 
-	OSMObject(lua_State *luaPtr) {
+	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, node_container_t *nodePtr) {
 		luaState = luaPtr;
+		indices = idxPtr;
+		cachedGeometries = geomPtr;
+		cachedGeometryNames = namePtr;
+		nodes = nodePtr;
 	}
 
 	// Define a layer (as read from the .json file)
@@ -98,20 +107,22 @@ class OSMObject { public:
 	}
 	
 	// We are now processing a way
-	void setWay(Way *way) {
+	inline void setWay(Way *way) {
 		outputs.clear();
 		keysPtr = way->mutable_keys();
 		valsPtr = way->mutable_vals();
 		tagLength = way->keys_size();
 		osmID = way->id();
 		isWay = true;
+		isRelation = false;
 	}
 	
 	// We are now processing a node
-	void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd) {
+	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd) {
 		outputs.clear();
 		osmID = id;
 		isWay = false;
+		isRelation = false;
 		denseStart = kvStart;
 		denseEnd = kvEnd;
 		densePtr = dPtr;
@@ -120,13 +131,19 @@ class OSMObject { public:
 	// We are now processing a relation
 	// (note that we store relations as ways with artificial IDs, and that
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
-	void setRelation(Relation *relation) {
+	inline void setRelation(Relation *relation) {
 		outputs.clear();
 		keysPtr = relation->mutable_keys();
 		valsPtr = relation->mutable_vals();
 		tagLength = relation->keys_size();
 		osmID = --newWayID;
 		isWay = true;
+		isRelation = true;
+	}
+
+	// Set start/end co-ordinates
+	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
+		lon1=a; latp1=b; lon2=c; latp2=d;
 	}
 	
 	// Read relation members and store them in each OutputObject
@@ -186,6 +203,51 @@ class OSMObject { public:
 		outputs[outputs.size()-1].addAttribute(key, v);
 	}
 	
+	// Query spatial indexes
+	// Called from Lua
+	// Note - multipolygon relations not supported, will always return false (because we don't know the geometry yet)
+	vector<string> FindIntersecting(const string &layerName) {
+		vector<uint> ids = findIntersectingGeometries(layerName);
+		return namesOfGeometries(ids);
+	}
+	bool Intersects(const string &layerName) {
+		return !findIntersectingGeometries(layerName).empty();
+	}
+	vector<uint> findIntersectingGeometries(const string &layerName) {
+		vector<IndexValue> results;
+		vector<uint> ids;
+		if (!isWay) {
+			Point p(lon1/10000000.0,latp1/10000000.0);
+			indices->at(layerName).query(geom::index::intersects(p), back_inserter(results));
+			return verifyIntersectResults(results,p,p);
+		} else if (!isRelation) {
+			Point p1(lon1/10000000.0,latp1/10000000.0);
+			Point p2(lon1/10000000.0,latp1/10000000.0);
+			Box box = Box(p1,p2);
+			indices->at(layerName).query(geom::index::intersects(box), back_inserter(results));
+			return verifyIntersectResults(results,p1,p2);
+		}
+		return vector<uint>();	// empty, relations not supported
+	}
+	vector<uint> verifyIntersectResults(vector<IndexValue> &results, Point &p1, Point &p2) {
+		vector<uint> ids;
+		for (auto it : results) {
+			uint id=it.second;
+			if      (         geom::intersects(cachedGeometries->at(id),p1)) { ids.push_back(id); }
+			else if (isWay && geom::intersects(cachedGeometries->at(id),p2)) { ids.push_back(id); }
+		}
+		return ids;
+	}
+	vector<string> namesOfGeometries(vector<uint> &ids) {
+		vector<string> names;
+		for (uint i=0; i<ids.size(); i++) {
+			if (cachedGeometryNames->find(ids[i])!=cachedGeometryNames->end()) {
+				names.push_back(cachedGeometryNames->at(ids[i]));
+			}
+		}
+		return names;
+	}
+
 	// Get an OSM tag for a given key (or return empty string if none)
 	// Called from Lua
 	string Find(const string& key) const {
