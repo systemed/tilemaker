@@ -163,3 +163,30 @@ Shapefiles are imported directly in your layer config like this:
 You can import attribute columns from a shapefile using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. Lua transformations are not available for shapefiles: it's assumed that you have processed your shapefiles before running Tilemaker.
 
 Shapefiles **must** be in WGS84 projection, i.e. pure latitude/longitude. (Use ogr2ogr to reproject them if your source material is in a different projection.) They will be clipped to the bounds of the first .pbf that you import, unless you specify otherwise with a `bounding_box` setting in your JSON file.
+
+### Lua spatial queries
+
+When processing OSM objects with your Lua script, you can perform simple spatial queries against a shapefile layer. Let's say you have the following shapefile layer containing country polygons, each one named with the country name:
+
+    "countries": {
+      "minzoom": 2, "maxzoom": 10,
+      "source": "data/country_polygons.shp",
+      "index": true, "index_column": "NAME"
+    }
+
+You can then find out whether a node is within one of these polygons using the `Intersects` method:
+
+    if node:Intersects("dlua") then print("Looks like it's on land"); end
+
+Or you can find out what country(/ies) the node is within using `FindIntersecting`:
+
+    for name in node:FindIntersecting("dlua") do
+	  print(name)
+    end
+
+To enable these functions, set `index` to true in your shapefile layer definition. `index_column` is not needed for `Intersects` but required for `FindIntersecting`.
+
+Note these significant provisos:
+
+* Way queries are performed on the start and end points of ways, not the full way geometry. So if your way starts and ends outside a polygon, `Intersects` will return false, even if the midpoints are within the polygon. This may be changed in a future version.
+* Spatial queries do not work where the OSM object is a multipolygon, and will return false/empty.
