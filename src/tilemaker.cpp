@@ -66,6 +66,17 @@ typedef std::unordered_map< uint32_t, LatpLon > node_container_t;
 #include "osm_object.cpp"
 #include "mbtiles.cpp"
 
+int lua_error_handler(lua_State* luaState)
+{
+	luabind::object msg(luabind::from_stack(luaState, -1));
+	cerr << "lua runtime error: " << msg << endl;
+
+	std::string traceback = luabind::call_function<std::string>(luabind::globals(luaState)["debug"]["traceback"]);
+	cerr << "traceback: " << traceback << endl;
+
+	return 1;
+}
+
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
@@ -111,6 +122,7 @@ int main(int argc, char* argv[]) {
     luaL_openlibs(luaState);
     luaL_dofile(luaState, luaFile.c_str());
     luabind::open(luaState);
+	luabind::set_pcall_callback(&lua_error_handler);
 	luabind::module(luaState) [
 	luabind::class_<OSMObject>("OSM")
 		.def("Find", &OSMObject::Find)
