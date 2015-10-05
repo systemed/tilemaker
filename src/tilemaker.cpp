@@ -128,7 +128,8 @@ int main(int argc, char* argv[]) {
 
 	uint baseZoom, startZoom, endZoom;
 	string projectName, projectVersion, projectDesc;
-	bool includeID = false, compress = true;
+	bool includeID = false, compress = true, gzip = true;
+	string compressOpt;
 	rapidjson::Document jsonConfig;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
@@ -157,11 +158,27 @@ int main(int argc, char* argv[]) {
 		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
 		includeID      = jsonConfig["settings"]["include_ids"].GetBool();
-		compress       = jsonConfig["settings"]["compress"].GetBool();
+		if (! jsonConfig["settings"]["compress"].IsString()) {
+			cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
+			return -1;
+		}
+		compressOpt    = jsonConfig["settings"]["compress"].GetString();
 		projectName    = jsonConfig["settings"]["name"].GetString();
 		projectVersion = jsonConfig["settings"]["version"].GetString();
 		projectDesc    = jsonConfig["settings"]["description"].GetString();
 		if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; return -1; }
+		if (! compressOpt.empty()) {
+			if (compressOpt == "gzip") {
+				gzip = true;
+			} else if (compressOpt == "deflate") {
+				gzip = false;
+			} else if (compressOpt == "none") {
+				compress = false;
+			} else {
+				cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
+				return -1;
+			}
+		}
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
@@ -506,7 +523,7 @@ int main(int argc, char* argv[]) {
 			if (sqlite) {
 				// Write to sqlite
 				tile.SerializeToString(&data);
-				if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, true); }
+				if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, gzip); }
 				mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
 
 			} else {
@@ -518,7 +535,7 @@ int main(int argc, char* argv[]) {
 				fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 				if (compress) {
 					tile.SerializeToString(&data);
-					outfile << compress_string(data, Z_DEFAULT_COMPRESSION, true);
+					outfile << compress_string(data, Z_DEFAULT_COMPRESSION, gzip);
 				} else {
 					if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 				}

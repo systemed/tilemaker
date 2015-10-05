@@ -34,7 +34,7 @@
 		"name": "OSM Vector Tiles",
 		"version": "0.1",
 		"description": "Vector Tiles from OSM data, created with tilemaker",
-		"compress": true,
+		"compress": "gzip",
 		"metadata": {
 			"json": { "vector_layers": [
 						{ "id": "road",     "description": "road",     "fields": {"name":"String","type":"String"}},
