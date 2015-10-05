@@ -174,7 +174,7 @@ class OSMObject { public:
 		v.set_string_value(val);
 		outputs[outputs.size()-1].addAttribute(key, v);
 	}
-	void AttributeNumeric(const string &key, const float &val) {
+	void AttributeNumeric(const string &key, const float val) {
 		vector_tile::Tile_Value v;
 		v.set_float_value(val);
 		outputs[outputs.size()-1].addAttribute(key, v);
