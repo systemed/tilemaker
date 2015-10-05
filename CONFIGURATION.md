@@ -27,7 +27,7 @@ It also includes these global settings:
 * `maxzoom` - the maximum zoom level at which any tiles will be generated
 * `basezoom` - the zoom level for which Tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles
-* `compress` - whether to compress (deflate) vector tiles
+* `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 
 A typical config file would look like this:

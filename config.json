@@ -13,7 +13,7 @@
 		"name": "Tilemaker example",
 		"version": "0.1",
 		"description": "Sample vector tiles for Tilemaker",
-		"compress": true,
+		"compress": "gzip",
 		"metadata": {
 			"json": { "vector_layers": [
 						{ "id": "roads",     "description": "roads",     "fields": {"name":"String","type":"String"}},
