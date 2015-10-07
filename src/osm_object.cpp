@@ -216,15 +216,19 @@ class OSMObject { public:
 	vector<uint> findIntersectingGeometries(const string &layerName) {
 		vector<IndexValue> results;
 		vector<uint> ids;
-		if (!isWay) {
+
+		auto f = indices->find(layerName);
+		if (f==indices->end()) {
+			cerr << "Couldn't find indexed layer " << layerName << endl;
+		} else if (!isWay) {
 			Point p(lon1/10000000.0,latp1/10000000.0);
-			indices->at(layerName).query(geom::index::intersects(p), back_inserter(results));
+			f->second.query(geom::index::intersects(p), back_inserter(results));
 			return verifyIntersectResults(results,p,p);
 		} else if (!isRelation) {
 			Point p1(lon1/10000000.0,latp1/10000000.0);
 			Point p2(lon1/10000000.0,latp1/10000000.0);
 			Box box = Box(p1,p2);
-			indices->at(layerName).query(geom::index::intersects(box), back_inserter(results));
+			f->second.query(geom::index::intersects(box), back_inserter(results));
 			return verifyIntersectResults(results,p1,p2);
 		}
 		return vector<uint>();	// empty, relations not supported
