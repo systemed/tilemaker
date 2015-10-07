@@ -188,16 +188,19 @@ class OSMObject { public:
 	// Called from Lua
 	void Attribute(const string &key, const string &val) {
 		if (val.size()==0) { return; }		// don't set empty strings
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 		vector_tile::Tile_Value v;
 		v.set_string_value(val);
 		outputs[outputs.size()-1].addAttribute(key, v);
 	}
 	void AttributeNumeric(const string &key, const float val) {
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 		vector_tile::Tile_Value v;
 		v.set_float_value(val);
 		outputs[outputs.size()-1].addAttribute(key, v);
 	}
 	void AttributeBoolean(const string &key, const bool val) {
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 		vector_tile::Tile_Value v;
 		v.set_bool_value(val);
 		outputs[outputs.size()-1].addAttribute(key, v);
