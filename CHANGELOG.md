@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0] - 2015-10-08
+
+### Added
+- Load shapefiles into layers
+- Spatial queries (Intersects, FindIntersecting) on shapefiles
+- Choose deflate, gzip or no compression (@tinoue)
+- Show trace on Luabind errors (@tinoue)
+
+### Changed
+- Suppress "missing way" errors unless --verbose specified
+
+### Fixed
+- Die less horribly on Lua syntax errors
+- Don't add attributes if no Layer set
+- AttributeNumeric error (@tinoue)
+
 ## [1.1.0] - 2015-09-28
 
 ### Added
