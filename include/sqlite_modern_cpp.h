@@ -234,9 +234,9 @@ namespace sqlite {
 
 	class database {
 	private:
-		sqlite3 * _db;
-		bool _connected;
-		bool _ownes_db;
+		sqlite3 * _db = nullptr;
+		bool _connected = false;
+		bool _ownes_db = false;
 	public:
 
 		database() {};
