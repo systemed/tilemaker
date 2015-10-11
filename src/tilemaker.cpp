@@ -23,6 +23,9 @@
 #include "rapidjson/filereadstream.h"
 #include "sqlite_modern_cpp.h"
 
+#ifdef _MSC_VER
+typedef unsigned uint;
+#endif
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
