@@ -176,11 +176,11 @@ When processing OSM objects with your Lua script, you can perform simple spatial
 
 You can then find out whether a node is within one of these polygons using the `Intersects` method:
 
-    if node:Intersects("dlua") then print("Looks like it's on land"); end
+    if node:Intersects("countries") then print("Looks like it's on land"); end
 
 Or you can find out what country(/ies) the node is within using `FindIntersecting`:
 
-    for name in node:FindIntersecting("dlua") do
+    for name in node:FindIntersecting("countries") do
 	  print(name)
     end
 
