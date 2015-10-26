@@ -92,6 +92,15 @@ local icons = Set {
 	"warehouse", "waste-basket", "water", "wave", "wetland", "zoo"
 }
 
+-- Initialize Lua logic
+
+function init_function()
+end
+
+-- Finalize Lua logic()
+function exit_function()
+end
+
 function node_function(node)
 	-- labels
 	local place = node:Find("place")

@@ -278,6 +278,18 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	// ---- Call init_function of Lua logic
+	lua_getglobal(luaState, "init_function");
+	int exists_init_function = !lua_isnil(luaState, -1);
+	lua_pop(luaState, 1);
+	if (exists_init_function) {
+		try { luabind::call_function<int>(luaState, "init_function");
+		} catch (const luabind::error &er) {
+			cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
+			return -1;
+		}
+	}
+
 	// ----	Read significant node tags
 
 	unordered_set<string> nodeKeys;
@@ -756,5 +768,18 @@ int main(int argc, char* argv[]) {
 
 	cout << endl << "Filled the tileset with good things at " << outputFile << endl;
 	google::protobuf::ShutdownProtobufLibrary();
+
+	// ---- Call exit_function of Lua logic
+	lua_getglobal(luaState, "exit_function");
+	int exists_exit_function = !lua_isnil(luaState, -1);
+	lua_pop(luaState, 1);
+	if (exists_exit_function) {
+		try { luabind::call_function<int>(luaState, "exit_function");
+		} catch (const luabind::error &er) {
+			cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
+			return -1;
+		}
+	}
+
     lua_close(luaState);
 }
