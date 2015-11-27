@@ -72,8 +72,10 @@ namespace geom = boost::geometry;
 #include "pbf_blocks.cpp"
 #include "coordinates.cpp"
 
-typedef std::unordered_map< uint32_t, LatpLon > node_container_t;
+typedef vector<uint32_t> NodeVec;
+typedef vector<uint32_t> WayVec;
 
+#include "osm_store.cpp"
 #include "output_object.cpp"
 #include "osm_object.cpp"
 #include "mbtiles.cpp"
@@ -95,8 +97,11 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
 
-	node_container_t nodes;								// lat/lon for all nodes (node ids fit into uint32, at least for now)
-	map< uint32_t, WayStore > ways;						// node list for all ways
+	OSMStore osmStore;									// global OSM store
+	NodeStore &nodes = osmStore.nodes;
+	WayStore &ways = osmStore.ways;
+	RelationStore &relations = osmStore.relations;
+
 	map< uint, unordered_set<OutputObject> > tileIndex;	// objects to be output
 	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
 	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
@@ -175,7 +180,7 @@ int main(int argc, char* argv[]) {
 		.def("Intersects", &OSMObject::Intersects)
 		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 	];
-	OSMObject osmObject(luaState, &indices, &cachedGeometries, &cachedGeometryNames, &nodes);
+	OSMObject osmObject(luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
 
 	// ----	Read JSON config
 
@@ -370,7 +375,7 @@ int main(int argc, char* argv[]) {
 						lon    += dense.lon(j);
 						lat    += dense.lat(j);
 						LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
-						nodes[nodeId] = node;
+						nodes.insert_back(nodeId, node);
 						bool significant = false;
 						int kvStart = kvPos;
 						if (dense.keys_vals_size()>0) {
@@ -384,8 +389,7 @@ int main(int argc, char* argv[]) {
 						}
 						// For tagged nodes, call Lua, then save the OutputObject
 						if (significant) {
-							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1);
-							osmObject.setLocation(lon, node.latp, lon, node.latp);
+							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 							try { luabind::call_function<int>(luaState, "node_function", &osmObject);
 							} catch (const luabind::error &er) {
 		    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
@@ -437,18 +441,17 @@ int main(int argc, char* argv[]) {
 				if (pg.ways_size() > 0 && processedRelations) {
 					for (j=0; j<pg.ways_size(); j++) {
 						pbfWay = pg.ways(j);
-						osmObject.setWay(&pbfWay);
 						uint32_t wayId = static_cast<uint32_t>(pbfWay.id());
 
 						// Assemble nodelist
 						nodeId = 0;
-						vector <uint32_t> nodelist;
+						NodeVec nodeVec;
 						for (k=0; k<pbfWay.refs_size(); k++) {
 							nodeId += pbfWay.refs(k);
-							nodelist.push_back(uint32_t(nodeId));
+							nodeVec.push_back(uint32_t(nodeId));
 						}
-						osmObject.setLocation(nodes[nodelist[0]].lon, nodes[nodelist[0]].latp, nodes[nodeId].lon, nodes[nodeId].latp);
 
+						osmObject.setWay(&pbfWay, &nodeVec);
 						// Call Lua to find what layers and tags we want
 						try { luabind::call_function<int>(luaState, "way_function", &osmObject);
 						} catch (const luabind::error &er) {
@@ -459,19 +462,19 @@ int main(int argc, char* argv[]) {
 						bool inRelation = wayRelations.count(pbfWay.id()) > 0;
 						if (!osmObject.empty() || inRelation) {
 							// create a list of tiles this way passes through (tilelist)
-							// and save the nodelist in the global way hash
+							// and save the nodelist in the global way store
 							unordered_set <uint32_t> tilelist;
 							uint lastX, lastY;
 							for (k=0; k<pbfWay.refs_size(); k++) {
-								int tileX =  lon2tilex(nodes[nodelist[k]].lon  / 10000000.0, baseZoom);
-								int tileY = latp2tiley(nodes[nodelist[k]].latp / 10000000.0, baseZoom);
+								int tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
+								int tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
 								if (k>0) {
 									// Check we're not skipping any tiles, and insert intermediate nodes if so
 									// (we should have a simple fill algorithm for polygons, too)
 									int dx = abs((int)(tileX-lastX));
 									int dy = abs((int)(tileY-lastY));
 									if (dx>1 || dy>1 || (dx==1 && dy==1)) {
-										insertIntermediateTiles(&tilelist, max(dx,dy), nodes[nodelist[k-1]], nodes[nodelist[k]], baseZoom);
+										insertIntermediateTiles(&tilelist, max(dx,dy), nodes.at(nodeVec[k-1]), nodes.at(nodeVec[k]), baseZoom);
 									}
 								}
 								uint32_t index = tileX * 65536 + tileY;
@@ -479,7 +482,7 @@ int main(int argc, char* argv[]) {
 								lastX = tileX;
 								lastY = tileY;
 							}
-							ways[wayId].nodelist = nodelist;
+							ways.insert_back(wayId, nodeVec);
 
 							// then, for each tile, store the OutputObject for each layer
 							for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
@@ -575,12 +578,12 @@ int main(int argc, char* argv[]) {
 						if (jt->layer != layerNum) { continue; }
 						if (jt->geomType == POINT) {
 							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							jt->buildNodeGeometry(nodes[jt->objectID], &bbox, featurePtr);
+							jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
 							jt->writeAttributes(&keyList, &valueList, featurePtr);
 							if (includeID) { featurePtr->set_id(jt->objectID); }
 						} else {
 							try {
-								Geometry g = jt->buildWayGeometry(nodes, &ways, &bbox, cachedGeometries);
+								Geometry g = jt->buildWayGeometry(osmStore, &bbox, cachedGeometries);
 								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 								WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 								boost::apply_visitor(w, g);
@@ -588,13 +591,16 @@ int main(int argc, char* argv[]) {
 								jt->writeAttributes(&keyList, &valueList, featurePtr);
 								if (includeID) { featurePtr->set_id(jt->objectID); }
 							} catch (...) {
-								if (verbose) {
+								if (verbose)  {
 									cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
-									for (auto et = jt->outerWays.begin(); et != jt->outerWays.end(); ++et) { 
-										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-									}
-									for (auto et = jt->innerWays.begin(); et != jt->innerWays.end(); ++et) { 
-										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+									if (relations.count(jt->objectID)) {
+										const auto &wayList = relations.at(jt->objectID);
+										for (auto et = wayList.outerBegin; et != wayList.outerEnd; ++et) {
+											if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+										}
+										for (auto et = wayList.innerBegin; et != wayList.innerEnd; ++et) {
+											if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+										}
 									}
 								}
 							}

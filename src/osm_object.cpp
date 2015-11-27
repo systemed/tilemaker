@@ -20,11 +20,12 @@ class OSMObject { public:
 	map< string, RTree> *indices;			// Spatial indices
 	vector<Geometry> *cachedGeometries;		// Cached geometries
 	map<uint,string> *cachedGeometryNames;	// Cached geometry names
-	node_container_t *nodes;				// Node storage
+	OSMStore *osmStore;						// Global OSM store
 	bool isWay, isRelation;					// Way, node, relation?
 	uint32_t osmID;							// ID of OSM object
 	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
+	NodeVec *nodeVec;						// node vector
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
@@ -46,12 +47,12 @@ class OSMObject { public:
 	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
 	int tagLength;
 
-	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, node_container_t *nodePtr) {
+	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr) {
 		luaState = luaPtr;
 		indices = idxPtr;
 		cachedGeometries = geomPtr;
 		cachedGeometryNames = namePtr;
-		nodes = nodePtr;
+		osmStore = storePtr;
 	}
 
 	// Define a layer (as read from the .json file)
@@ -107,7 +108,7 @@ class OSMObject { public:
 	}
 	
 	// We are now processing a way
-	inline void setWay(Way *way) {
+	inline void setWay(Way *way, NodeVec *nodeVecPtr) {
 		outputs.clear();
 		keysPtr = way->mutable_keys();
 		valsPtr = way->mutable_vals();
@@ -115,10 +116,13 @@ class OSMObject { public:
 		osmID = way->id();
 		isWay = true;
 		isRelation = false;
+		nodeVec = nodeVecPtr;
+		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
+				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
 	}
 	
 	// We are now processing a node
-	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd) {
+	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
 		outputs.clear();
 		osmID = id;
 		isWay = false;
@@ -126,6 +130,7 @@ class OSMObject { public:
 		denseStart = kvStart;
 		denseEnd = kvEnd;
 		densePtr = dPtr;
+		setLocation(node.lon, node.latp, node.lon, node.latp);
 	}
 	
 	// We are now processing a relation
@@ -152,6 +157,7 @@ class OSMObject { public:
 	// not rendered in its own right
 	void storeRelationWays(Relation *relation, map<uint32_t, vector<uint32_t>> *wayRelations, int innerKey, int outerKey) {
 		int64_t lastID = 0;
+		WayVec outerWays, innerWays;
 		for (uint n=0; n < relation->memids_size(); n++) {
 			lastID += relation->memids(n);
 			if (relation->types(n) != Relation_MemberType_WAY) { continue; }
@@ -162,11 +168,11 @@ class OSMObject { public:
 			// Store this relation in the way->relations map
 			if (wayRelations->count(wayID)==0) { wayRelations->insert(make_pair(wayID,vector<uint32_t>())); }
 			wayRelations->at(wayID).push_back(osmID);
-			// Add the way ID into each of the relation's OutputObjects
-			for (auto jt = outputs.begin(); jt != outputs.end(); ++jt) {
-				jt->addRelationWay(wayID, role==innerKey);
-			}
+			// Add the way ID into the vector set to the global store
+			(role != innerKey ? outerWays : innerWays).push_back(wayID);
 		}
+		// Add the way vectors into the global store
+		osmStore->relations.insert_front(osmID, outerWays, innerWays);
 	}
 	
 	// Write this way/node to a vector tile's Layer
