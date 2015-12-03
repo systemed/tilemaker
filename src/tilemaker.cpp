@@ -102,12 +102,13 @@ int main(int argc, char* argv[]) {
 	WayStore &ways = osmStore.ways;
 	RelationStore &relations = osmStore.relations;
 
+	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
+	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	map<uint, string> cachedGeometryNames;			//  | optional names for each one
+
 	map< uint, unordered_set<OutputObject> > tileIndex;	// objects to be output
 	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
 	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
-	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
-	map< uint, string > cachedGeometryNames;			//  | optional names for each one
-	map< string, RTree > indices;						// boost::geometry::index objects for shapefile indices
 
 	// ----	Read command-line options
 	
@@ -169,16 +170,16 @@ int main(int argc, char* argv[]) {
 	luabind::set_pcall_callback(&lua_error_handler);
 	luabind::module(luaState) [
 	luabind::class_<OSMObject>("OSM")
-		.def("Find", &OSMObject::Find)
-		.def("Holds", &OSMObject::Holds)
 		.def("Id", &OSMObject::Id)
+		.def("Holds", &OSMObject::Holds)
+		.def("Find", &OSMObject::Find)
+		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
+		.def("Intersects", &OSMObject::Intersects)
 		.def("Layer", &OSMObject::Layer)
 		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
 		.def("Attribute", &OSMObject::Attribute)
 		.def("AttributeNumeric", &OSMObject::AttributeNumeric)
 		.def("AttributeBoolean", &OSMObject::AttributeBoolean)
-		.def("Intersects", &OSMObject::Intersects)
-		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 	];
 	OSMObject osmObject(luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
 
