@@ -26,6 +26,7 @@ class OSMObject { public:
 	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
 	NodeVec *nodeVec;						// node vector
+	WayVec *outerWayVec, *innerWayVec;		// way vectors
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
@@ -136,7 +137,7 @@ class OSMObject { public:
 	// We are now processing a relation
 	// (note that we store relations as ways with artificial IDs, and that
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
-	inline void setRelation(Relation *relation) {
+	inline void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr) {
 		outputs.clear();
 		keysPtr = relation->mutable_keys();
 		valsPtr = relation->mutable_vals();
@@ -144,35 +145,13 @@ class OSMObject { public:
 		osmID = --newWayID;
 		isWay = true;
 		isRelation = true;
+		outerWayVec = outerWayVecPtr;
+		innerWayVec = innerWayVecPtr;
 	}
 
 	// Set start/end co-ordinates
 	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
 		lon1=a; latp1=b; lon2=c; latp2=d;
-	}
-	
-	// Read relation members and store them in each OutputObject
-	// (required for multipolygons, but will be useful for other type of relations)
-	// Also make a note (in the way->relations map) to read each way, even if it's 
-	// not rendered in its own right
-	void storeRelationWays(Relation *relation, map<uint32_t, vector<uint32_t>> *wayRelations, int innerKey, int outerKey) {
-		int64_t lastID = 0;
-		WayVec outerWays, innerWays;
-		for (uint n=0; n < relation->memids_size(); n++) {
-			lastID += relation->memids(n);
-			if (relation->types(n) != Relation_MemberType_WAY) { continue; }
-			int32_t role = relation->roles_sid(n);
-			// if (role != innerKey && role != outerKey) { continue; }
-			// ^^^^ commented out so that we don't die horribly when a relation has no outer way
-			uint32_t wayID = static_cast<uint32_t>(lastID);
-			// Store this relation in the way->relations map
-			if (wayRelations->count(wayID)==0) { wayRelations->insert(make_pair(wayID,vector<uint32_t>())); }
-			wayRelations->at(wayID).push_back(osmID);
-			// Add the way ID into the vector set to the global store
-			(role != innerKey ? outerWays : innerWays).push_back(wayID);
-		}
-		// Add the way vectors into the global store
-		osmStore->relations.insert_front(osmID, outerWays, innerWays);
 	}
 	
 	// Write this way/node to a vector tile's Layer

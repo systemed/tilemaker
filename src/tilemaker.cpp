@@ -418,7 +418,21 @@ int main(int argc, char* argv[]) {
 							Relation pbfRelation = pg.relations(j);
 							if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
 							if (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) == pbfRelation.vals().end()) { continue; }
-							osmObject.setRelation(&pbfRelation);
+
+							// Read relation members
+							WayVec outerWayVec, innerWayVec;
+							int64_t lastID = 0;
+							for (uint n=0; n < pbfRelation.memids_size(); n++) {
+								lastID += pbfRelation.memids(n);
+								if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+								int32_t role = pbfRelation.roles_sid(n);
+								// if (role != innerKey && role != outerKey) { continue; }
+								// ^^^^ commented out so that we don't die horribly when a relation has no outer way
+								uint32_t wayId = static_cast<uint32_t>(lastID);
+								(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
+							}
+
+							osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
 							// Check with Lua if we want it
 							try { luabind::call_function<int>(luaState, "way_function", &osmObject);
 							} catch (const luabind::error &er) {
@@ -426,10 +440,20 @@ int main(int argc, char* argv[]) {
 								return -1;
 							}
 							if (!osmObject.empty()) {
-								// put all the ways into relationWays
-								osmObject.storeRelationWays(&pbfRelation, &wayRelations, innerKey, outerKey);
+								uint32_t relID = osmObject.osmID;
+								// Store the relation members in the global relation store
+								relations.insert_front(relID, outerWayVec, innerWayVec);
+								// Store this relation in the way->relations map to oblige each way in the relation
+                                // to output it, even if the way is not rendered in its own right.
+								for (auto it = outerWayVec.cbegin(); it != outerWayVec.cend(); ++it) {
+									wayRelations[*it].push_back(relID);
+ 								}
+								for (auto it = innerWayVec.cbegin(); it != innerWayVec.cend(); ++it) {
+									wayRelations[*it].push_back(relID);
+								}
+								// Keep output objects
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									relationOutputObjects[osmObject.osmID].insert(*jt);
+									relationOutputObjects[relID].insert(*jt);
 								}
 							}
 						}
@@ -461,8 +485,10 @@ int main(int argc, char* argv[]) {
 
 						bool inRelation = wayRelations.count(pbfWay.id()) > 0;
 						if (!osmObject.empty() || inRelation) {
+							// Store the way's nodes in the global way store
+							ways.insert_back(wayId, nodeVec);
+
 							// create a list of tiles this way passes through (tilelist)
-							// and save the nodelist in the global way store
 							unordered_set <uint32_t> tilelist;
 							uint lastX, lastY;
 							for (k=0; k<pbfWay.refs_size(); k++) {
@@ -482,7 +508,6 @@ int main(int argc, char* argv[]) {
 								lastX = tileX;
 								lastY = tileY;
 							}
-							ways.insert_back(wayId, nodeVec);
 
 							// then, for each tile, store the OutputObject for each layer
 							for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
