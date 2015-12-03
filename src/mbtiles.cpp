@@ -8,10 +8,16 @@ class MBTiles { public:
 	MBTiles() {
 	}
 
+	~MBTiles() {
+		if (db) db << "COMMIT;"; // commit all the changes if open
+	}
+
 	void open(string *filename) {
 		db.init(*filename);
+		db << "PRAGMA synchronous = OFF;";
 		db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 		db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
+		db << "BEGIN;"; // begin a transaction
 	}
 	
 	void writeMetadata(string key, string value) {
