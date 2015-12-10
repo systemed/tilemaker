@@ -148,6 +148,14 @@ void readShapefile(string filename,
 				if (j==0) { geom::append(poly, points); }
 				     else { geom::append(poly, points, j-1); }
 			}
+			if (!geom::is_valid(poly)) {
+				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid";
+				geom::correct(poly);
+				if (geom::is_valid(poly)) {
+					cerr << "... corrected";
+				}
+				cerr << endl;
+			}
 			// clip to bounding box
 			MultiPolygon out;
 			geom::intersection(poly, clippingBox, out);
