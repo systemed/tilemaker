@@ -286,7 +286,7 @@ class OSMObject { public:
 	}
 
 	// Returns area
-	double Area() const {
+	double Area() {
 		if (!IsClosed()) return 0;
 		if (isRelation) {
 			if (!multiPolygonInited) {
