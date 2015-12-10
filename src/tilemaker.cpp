@@ -175,6 +175,8 @@ int main(int argc, char* argv[]) {
 		.def("Find", &OSMObject::Find)
 		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 		.def("Intersects", &OSMObject::Intersects)
+		.def("IsClosed", &OSMObject::IsClosed)
+		.def("Area", &OSMObject::Area)
 		.def("Layer", &OSMObject::Layer)
 		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
 		.def("Attribute", &OSMObject::Attribute)

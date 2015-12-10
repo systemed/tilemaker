@@ -22,13 +22,20 @@ class OSMObject { public:
 	map<uint,string> *cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
 
-	bool isWay, isRelation;					// Way, node, relation?
 	uint32_t osmID;							// ID of OSM object
 	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
+	bool isWay, isRelation;					// Way, node, relation?
 
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
 	NodeVec *nodeVec;						// node vector
 	WayVec *outerWayVec, *innerWayVec;		// way vectors
+
+	Linestring linestring;
+	bool linestringInited;
+	Polygon polygon;
+	bool polygonInited;
+	MultiPolygon multiPolygon;
+	bool multiPolygonInited;
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
@@ -118,43 +125,58 @@ class OSMObject { public:
 
 	// We are now processing a node
 	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
-		outputs.clear();
+		reset();
 		osmID = id;
 		isWay = false;
 		isRelation = false;
+
+		setLocation(node.lon, node.latp, node.lon, node.latp);
+
 		denseStart = kvStart;
 		denseEnd = kvEnd;
 		densePtr = dPtr;
-		setLocation(node.lon, node.latp, node.lon, node.latp);
 	}
 
 	// We are now processing a way
 	inline void setWay(Way *way, NodeVec *nodeVecPtr) {
-		outputs.clear();
-		keysPtr = way->mutable_keys();
-		valsPtr = way->mutable_vals();
-		tagLength = way->keys_size();
+		reset();
 		osmID = way->id();
 		isWay = true;
 		isRelation = false;
+
 		nodeVec = nodeVecPtr;
 		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
 				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+
+		keysPtr = way->mutable_keys();
+		valsPtr = way->mutable_vals();
+		tagLength = way->keys_size();
 	}
 
 	// We are now processing a relation
 	// (note that we store relations as ways with artificial IDs, and that
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
 	inline void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr) {
-		outputs.clear();
-		keysPtr = relation->mutable_keys();
-		valsPtr = relation->mutable_vals();
-		tagLength = relation->keys_size();
+		reset();
 		osmID = --newWayID;
 		isWay = true;
 		isRelation = true;
+
 		outerWayVec = outerWayVecPtr;
 		innerWayVec = innerWayVecPtr;
+		//setLocation(...); TODO
+
+		keysPtr = relation->mutable_keys();
+		valsPtr = relation->mutable_vals();
+		tagLength = relation->keys_size();
+	}
+
+	// Internal: clear current cached state
+	inline void reset() {
+		outputs.clear();
+		linestringInited = false;
+		polygonInited = false;
+		multiPolygonInited = false;
 	}
 
 	// Internal: set start/end co-ordinates
@@ -251,6 +273,34 @@ class OSMObject { public:
 			}
 		}
 		return names;
+	}
+
+	// Returns whether it is closed polygon
+	bool IsClosed() const {
+		if (!isWay) return false; // nonsense: it isn't a way
+		if (isRelation) {
+			return true; // TODO: check it when non-multipolygon are supported
+		} else {
+			return nodeVec->front() == nodeVec->back();
+		}
+	}
+
+	// Returns area
+	double Area() {
+		if (!IsClosed()) return 0;
+		if (isRelation) {
+			if (!multiPolygonInited) {
+				multiPolygon = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
+			}
+			return geom::area(multiPolygon);
+		} else if (isWay) {
+			if (!polygonInited) {
+				polygon = osmStore->nodeListPolygon(*nodeVec);
+			}
+			return geom::area(polygon);
+		} else {
+			return 0;
+		}
 	}
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
