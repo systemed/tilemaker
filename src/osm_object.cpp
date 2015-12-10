@@ -286,15 +286,17 @@ class OSMObject { public:
 	}
 
 	// Returns area
-	double Area() {
+	double Area() const {
 		if (!IsClosed()) return 0;
 		if (isRelation) {
 			if (!multiPolygonInited) {
+				multiPolygonInited = true;
 				multiPolygon = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
 			}
 			return geom::area(multiPolygon);
 		} else if (isWay) {
 			if (!polygonInited) {
+				polygonInited = true;
 				polygon = osmStore->nodeListPolygon(*nodeVec);
 			}
 			return geom::area(polygon);
