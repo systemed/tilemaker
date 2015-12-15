@@ -17,18 +17,29 @@ struct LayerDef {
 class OSMObject { public:
 
 	lua_State *luaState;					// Lua reference
-	map< string, RTree> *indices;			// Spatial indices
+	map<string, RTree> *indices;			// Spatial indices
 	vector<Geometry> *cachedGeometries;		// Cached geometries
 	map<uint,string> *cachedGeometryNames;	// Cached geometry names
-	node_container_t *nodes;				// Node storage
-	bool isWay, isRelation;					// Way, node, relation?
+	OSMStore *osmStore;						// Global OSM store
+
 	uint32_t osmID;							// ID of OSM object
 	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
+	bool isWay, isRelation;					// Way, node, relation?
+
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
+	NodeVec *nodeVec;						// node vector
+	WayVec *outerWayVec, *innerWayVec;		// way vectors
+
+	Linestring linestring;
+	bool linestringInited;
+	Polygon polygon;
+	bool polygonInited;
+	MultiPolygon multiPolygon;
+	bool multiPolygonInited;
 
 	vector<LayerDef> layers;				// List of layers
 	map<string,uint> layerMap;				// Layer->position map
-	vector< vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
+	vector<vector<uint>> layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
 
 	vector<OutputObject> outputs;			// All output objects
 
@@ -46,12 +57,14 @@ class OSMObject { public:
 	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
 	int tagLength;
 
-	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, node_container_t *nodePtr) {
+	// ----	initialization routines
+
+	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr) {
 		luaState = luaPtr;
 		indices = idxPtr;
 		cachedGeometries = geomPtr;
 		cachedGeometryNames = namePtr;
-		nodes = nodePtr;
+		osmStore = storePtr;
 	}
 
 	// Define a layer (as read from the .json file)
@@ -74,7 +87,7 @@ class OSMObject { public:
 		}
 		return layerNum;
 	}
-	
+
 	// Read string dictionary from the .pbf
 	void readStringTable(PrimitiveBlock *pbPtr) {
 		uint i;
@@ -91,6 +104,8 @@ class OSMObject { public:
 		}
 	}
 
+	// ----	Helpers provided for main routine
+
 	// Has this object been assigned to any layers?
 	bool empty() {
 		return outputs.size()==0;
@@ -105,110 +120,115 @@ class OSMObject { public:
 			return distance(stringTable.begin(), p);
 		}
 	}
-	
-	// We are now processing a way
-	inline void setWay(Way *way) {
-		outputs.clear();
-		keysPtr = way->mutable_keys();
-		valsPtr = way->mutable_vals();
-		tagLength = way->keys_size();
-		osmID = way->id();
-		isWay = true;
-		isRelation = false;
-	}
-	
+
+	// ----	Set an osm element to make it accessible from Lua
+
 	// We are now processing a node
-	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd) {
-		outputs.clear();
+	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
+		reset();
 		osmID = id;
 		isWay = false;
 		isRelation = false;
+
+		setLocation(node.lon, node.latp, node.lon, node.latp);
+
 		denseStart = kvStart;
 		denseEnd = kvEnd;
 		densePtr = dPtr;
 	}
-	
+
+	// We are now processing a way
+	inline void setWay(Way *way, NodeVec *nodeVecPtr) {
+		reset();
+		osmID = way->id();
+		isWay = true;
+		isRelation = false;
+
+		nodeVec = nodeVecPtr;
+		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
+				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+
+		keysPtr = way->mutable_keys();
+		valsPtr = way->mutable_vals();
+		tagLength = way->keys_size();
+	}
+
 	// We are now processing a relation
 	// (note that we store relations as ways with artificial IDs, and that
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
-	inline void setRelation(Relation *relation) {
-		outputs.clear();
-		keysPtr = relation->mutable_keys();
-		valsPtr = relation->mutable_vals();
-		tagLength = relation->keys_size();
+	inline void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr) {
+		reset();
 		osmID = --newWayID;
 		isWay = true;
 		isRelation = true;
+
+		outerWayVec = outerWayVecPtr;
+		innerWayVec = innerWayVecPtr;
+		//setLocation(...); TODO
+
+		keysPtr = relation->mutable_keys();
+		valsPtr = relation->mutable_vals();
+		tagLength = relation->keys_size();
 	}
 
-	// Set start/end co-ordinates
+	// Internal: clear current cached state
+	inline void reset() {
+		outputs.clear();
+		linestringInited = false;
+		polygonInited = false;
+		multiPolygonInited = false;
+	}
+
+	// Internal: set start/end co-ordinates
 	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
 		lon1=a; latp1=b; lon2=c; latp2=d;
 	}
-	
-	// Read relation members and store them in each OutputObject
-	// (required for multipolygons, but will be useful for other type of relations)
-	// Also make a note (in the way->relations map) to read each way, even if it's 
-	// not rendered in its own right
-	void storeRelationWays(Relation *relation, map<uint32_t, vector<uint32_t>> *wayRelations, int innerKey, int outerKey) {
-		int64_t lastID = 0;
-		for (uint n=0; n < relation->memids_size(); n++) {
-			lastID += relation->memids(n);
-			if (relation->types(n) != Relation_MemberType_WAY) { continue; }
-			int32_t role = relation->roles_sid(n);
-			// if (role != innerKey && role != outerKey) { continue; }
-			// ^^^^ commented out so that we don't die horribly when a relation has no outer way
-			uint32_t wayID = static_cast<uint32_t>(lastID);
-			// Store this relation in the way->relations map
-			if (wayRelations->count(wayID)==0) { wayRelations->insert(make_pair(wayID,vector<uint32_t>())); }
-			wayRelations->at(wayID).push_back(osmID);
-			// Add the way ID into each of the relation's OutputObjects
-			for (auto jt = outputs.begin(); jt != outputs.end(); ++jt) {
-				jt->addRelationWay(wayID, role==innerKey);
+
+	// ----	Metadata queries called from Lua
+
+	// Get the ID of the current object
+	string Id() const {
+		return to_string(osmID);
+	}
+
+	// Check if there's a value for a given key
+	bool Holds(const string& key) const {
+		if (tagMap.find(key) == tagMap.end()) { return false; }
+		uint keyNum = tagMap.at(key);
+		if (isWay) {
+			for (uint n=0; n > tagLength; n++) {
+				if (keysPtr->Get(n)==keyNum) { return true; }
+			}
+		} else {
+			for (uint n=denseStart; n<denseEnd; n+=2) {
+				if (densePtr->keys_vals(n)==keyNum) { return true; }
 			}
 		}
+		return false;
 	}
-	
-	// Write this way/node to a vector tile's Layer
-	// Called from Lua
-	void Layer(const string &layerName, bool area) {
-		OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
-						layerMap[layerName],
-						osmID);
-		outputs.push_back(oo);
+
+	// Get an OSM tag for a given key (or return empty string if none)
+	string Find(const string& key) const {
+		// First, convert the string into a number
+		if (tagMap.find(key) == tagMap.end()) { return ""; }
+		uint keyNum = tagMap.at(key);
+		if (isWay) {
+			// Then see if this number is in the way tags, and return its value if so
+			for (uint n=0; n < tagLength; n++) {
+				if (keysPtr->Get(n)==keyNum) { return stringTable[valsPtr->Get(n)]; }
+			}
+		} else {
+			for (uint n=denseStart; n<denseEnd; n+=2) {
+				if (densePtr->keys_vals(n)==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
+			}
+		}
+		return "";
 	}
-	void LayerAsCentroid(const string &layerName) {
-		OutputObject oo(CENTROID,
-						layerMap[layerName],
-						osmID);
-		outputs.push_back(oo);
-	}
-	
-	// Set attributes in a vector tile's Attributes table
-	// Called from Lua
-	void Attribute(const string &key, const string &val) {
-		if (val.size()==0) { return; }		// don't set empty strings
-		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
-		vector_tile::Tile_Value v;
-		v.set_string_value(val);
-		outputs[outputs.size()-1].addAttribute(key, v);
-	}
-	void AttributeNumeric(const string &key, const float val) {
-		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
-		vector_tile::Tile_Value v;
-		v.set_float_value(val);
-		outputs[outputs.size()-1].addAttribute(key, v);
-	}
-	void AttributeBoolean(const string &key, const bool val) {
-		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
-		vector_tile::Tile_Value v;
-		v.set_bool_value(val);
-		outputs[outputs.size()-1].addAttribute(key, v);
-	}
-	
-	// Query spatial indexes
-	// Called from Lua
-	// Note - multipolygon relations not supported, will always return false (because we don't know the geometry yet)
+
+	// ----	Spatial queries called from Lua
+
+	// Find intersecting shapefile layer
+	// TODO: multipolygon relations not supported, will always return false
 	vector<string> FindIntersecting(const string &layerName) {
 		vector<uint> ids = findIntersectingGeometries(layerName);
 		return namesOfGeometries(ids);
@@ -255,46 +275,70 @@ class OSMObject { public:
 		return names;
 	}
 
-	// Get an OSM tag for a given key (or return empty string if none)
-	// Called from Lua
-	string Find(const string& key) const {
-		// First, convert the string into a number
-		if (tagMap.find(key) == tagMap.end()) { return ""; }
-		uint keyNum = tagMap.at(key);
-		if (isWay) {
-			// Then see if this number is in the way tags, and return its value if so
-			for (uint n=0; n < tagLength; n++) {
-				if (keysPtr->Get(n)==keyNum) { return stringTable[valsPtr->Get(n)]; }
-			}
+	// Returns whether it is closed polygon
+	bool IsClosed() const {
+		if (!isWay) return false; // nonsense: it isn't a way
+		if (isRelation) {
+			return true; // TODO: check it when non-multipolygon are supported
 		} else {
-			for (uint n=denseStart; n<denseEnd; n+=2) {
-				if (densePtr->keys_vals(n)==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
-			}
+			return nodeVec->front() == nodeVec->back();
 		}
-		return "";
 	}
 
-	// Check if there's a value for a given key
-	// Called from Lua
-	bool Holds(const string& key) const {
-		if (tagMap.find(key) == tagMap.end()) { return false; }
-		uint keyNum = tagMap.at(key);
-		if (isWay) {
-			for (uint n=0; n > tagLength; n++) {
-				if (keysPtr->Get(n)==keyNum) { return true; }
+	// Returns area
+	double Area() {
+		if (!IsClosed()) return 0;
+		if (isRelation) {
+			if (!multiPolygonInited) {
+				multiPolygonInited = true;
+				multiPolygon = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
 			}
+			return geom::area(multiPolygon);
+		} else if (isWay) {
+			if (!polygonInited) {
+				polygonInited = true;
+				polygon = osmStore->nodeListPolygon(*nodeVec);
+			}
+			return geom::area(polygon);
 		} else {
-			for (uint n=denseStart; n<denseEnd; n+=2) {
-				if (densePtr->keys_vals(n)==keyNum) { return true; }
-			}
+			return 0;
 		}
-		return false;
+	}
+
+	// ----	Requests from Lua to write this way/node to a vector tile's Layer
+
+	// Add layer
+	void Layer(const string &layerName, bool area) {
+		OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
+						layerMap[layerName],
+						osmID);
+		outputs.push_back(oo);
+	}
+	void LayerAsCentroid(const string &layerName) {
+		OutputObject oo(CENTROID,
+						layerMap[layerName],
+						osmID);
+		outputs.push_back(oo);
 	}
 	
-	// Get the ID of the current object
-	// Called from Lua	
-	string Id() const {
-		return to_string(osmID);
+	// Set attributes in a vector tile's Attributes table
+	void Attribute(const string &key, const string &val) {
+		if (val.size()==0) { return; }		// don't set empty strings
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+		vector_tile::Tile_Value v;
+		v.set_string_value(val);
+		outputs[outputs.size()-1].addAttribute(key, v);
 	}
-	
+	void AttributeNumeric(const string &key, const float val) {
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+		vector_tile::Tile_Value v;
+		v.set_float_value(val);
+		outputs[outputs.size()-1].addAttribute(key, v);
+	}
+	void AttributeBoolean(const string &key, const bool val) {
+		if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+		vector_tile::Tile_Value v;
+		v.set_bool_value(val);
+		outputs[outputs.size()-1].addAttribute(key, v);
+	}
 };
