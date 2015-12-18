@@ -177,6 +177,7 @@ int main(int argc, char* argv[]) {
 		.def("Intersects", &OSMObject::Intersects)
 		.def("IsClosed", &OSMObject::IsClosed)
 		.def("Area", &OSMObject::Area)
+		.def("Length", &OSMObject::Length)
 		.def("Layer", &OSMObject::Layer)
 		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
 		.def("Attribute", &OSMObject::Attribute)

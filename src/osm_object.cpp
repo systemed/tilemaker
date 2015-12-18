@@ -30,11 +30,11 @@ class OSMObject { public:
 	NodeVec *nodeVec;						// node vector
 	WayVec *outerWayVec, *innerWayVec;		// way vectors
 
-	Linestring linestring;
+	Linestring linestringCache;
 	bool linestringInited;
-	Polygon polygon;
+	Polygon polygonCache;
 	bool polygonInited;
-	MultiPolygon multiPolygon;
+	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
 
 	vector<LayerDef> layers;				// List of layers
@@ -289,20 +289,48 @@ class OSMObject { public:
 	double Area() {
 		if (!IsClosed()) return 0;
 		if (isRelation) {
-			if (!multiPolygonInited) {
-				multiPolygonInited = true;
-				multiPolygon = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
-			}
-			return geom::area(multiPolygon);
+			return geom::area(multiPolygon());
 		} else if (isWay) {
-			if (!polygonInited) {
-				polygonInited = true;
-				polygon = osmStore->nodeListPolygon(*nodeVec);
-			}
-			return geom::area(polygon);
+			return geom::area(polygon());
 		} else {
 			return 0;
 		}
+	}
+
+	// Returns length
+	double Length() {
+		if (isRelation) {
+			return geom::length(multiPolygon());
+		} else if (isWay) {
+			return geom::length(linestring());
+		} else {
+			return 0;
+		}
+	}
+
+	// Lazy geometries creation
+	const Linestring &linestring() {
+		if (!linestringInited) {
+			linestringInited = true;
+			linestringCache = osmStore->nodeListLinestring(*nodeVec);
+		}
+		return linestringCache;
+	}
+
+	const Polygon &polygon() {
+		if (!polygonInited) {
+			polygonInited = true;
+			polygonCache = osmStore->nodeListPolygon(*nodeVec);
+		}
+		return polygonCache;
+	}
+
+	const MultiPolygon &multiPolygon() {
+		if (!multiPolygonInited) {
+			multiPolygonInited = true;
+			multiPolygonCache = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
+		}
+		return multiPolygonCache;
 	}
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
