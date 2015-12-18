@@ -96,11 +96,13 @@ For example:
 Lua processing
 --------------
 
-Your Lua file needs to supply three things:
+Your Lua file needs to supply 5 things:
 
 1. `node_keys`, a list of those OSM keys which indicate that a node should be processed
+2. `init_function` (optional), a function to initialize Lua logic
 2. `node_function`, a function to process an OSM node and add it to layers
 3. `way_function`, a function to process an OSM way and add it to layers
+3. `exit_function` (optional), a function to finalize Lua logic (useful to show statistics)
 
 `node_keys` is a simple list (or in Lua parlance, a 'table') of OSM tag keys. If a node has one of those keys, it will be processed by `node_function`; if not, it'll be skipped. For example, if you wanted to show highway crossings and railway stations, it should be `{ "highway", "railway" }`. (This avoids the need to process the vast majority of nodes which contain no important tags at all.)
 
