@@ -145,7 +145,7 @@ void readShapefile(string filename,
 			if (shape->nParts > 1) { geom::interior_rings(poly).resize(shape->nParts-1); }
 			for (uint j=0; j<shape->nParts; j++) {
 				fillPointArrayFromShapefile(&points, shape, j);
-				if (j==0) { geom::assign_points(poly, points); }
+				if (j==0) { geom::append(poly, points); }
 				     else { geom::append(poly, points, j-1); }
 			}
 			// clip to bounding box
