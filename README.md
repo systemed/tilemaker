@@ -98,7 +98,7 @@ When running, you may see "couldn't find constituent way" messages. This happens
 Rendering
 ---------
 
-That bit's up to you! See https://github.com/mapbox/vector-tile-spec/wiki/Implementations for a list of renderers which support vector tiles.
+That bit's up to you! See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
 
 The [Leaflet.MapboxVectorTile plugin](https://github.com/SpatialServer/Leaflet.MapboxVectorTile) is perhaps the simplest way to test out your new vector tiles.
 
