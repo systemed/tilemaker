@@ -27,6 +27,19 @@ uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
 	       latp2tiley(ll.latp/10000000.0, baseZoom);
 }
 
+// Earth's (mean) radius
+// http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
+// http://mathworks.com/help/map/ref/earthradius.html
+constexpr double RadiusMeter = 6371000;
+
+// Convert to actual length
+double degp2meter(double degp, double latp) {
+	return RadiusMeter * deg2rad(degp) * cos(deg2rad(latp2lat(latp)));
+}
+double meter2degp(double meter, double latp) {
+	return rad2deg((1/RadiusMeter) * (meter / cos(deg2rad(latp2lat(latp)))));
+}
+
 // Add intermediate points so we don't skip tiles on long segments
 void insertIntermediateTiles(unordered_set <uint32_t> *tlPtr, int numPoints, LatpLon startLL, LatpLon endLL, uint baseZoom) {
 	numPoints *= 3;	// perhaps overkill, but why not

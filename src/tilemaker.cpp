@@ -176,6 +176,8 @@ int main(int argc, char* argv[]) {
 		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 		.def("Intersects", &OSMObject::Intersects)
 		.def("IsClosed", &OSMObject::IsClosed)
+		.def("ScaleToMeter", &OSMObject::ScaleToMeter)
+		.def("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
 		.def("Area", &OSMObject::Area)
 		.def("Length", &OSMObject::Length)
 		.def("Layer", &OSMObject::Layer)

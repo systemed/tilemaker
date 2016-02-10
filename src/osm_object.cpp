@@ -285,6 +285,15 @@ class OSMObject { public:
 		}
 	}
 
+	// Scale to (kilo)meter
+	double ScaleToMeter() {
+		return degp2meter(1.0, (latp1/2+latp2/2)/10000000.0);
+	}
+
+	double ScaleToKiloMeter() {
+		return (1/1000.0) * ScaleToMeter();
+	}
+
 	// Returns area
 	double Area() {
 		if (!IsClosed()) return 0;
