@@ -16,12 +16,12 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 // Add an OutputObject to all tiles between min/max lat/lon
 void addToTileIndexByBbox(OutputObject &oo, map< uint, unordered_set<OutputObject> > &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp) {
-	int minTileX =  lon2tilex(minLon, baseZoom);
-	int maxTileX =  lon2tilex(maxLon, baseZoom);
-	int minTileY = latp2tiley(minLatp, baseZoom);
-	int maxTileY = latp2tiley(maxLatp, baseZoom);
-	for (int x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-		for (int y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
+	uint minTileX =  lon2tilex(minLon, baseZoom);
+	uint maxTileX =  lon2tilex(maxLon, baseZoom);
+	uint minTileY = latp2tiley(minLatp, baseZoom);
+	uint maxTileY = latp2tiley(maxLatp, baseZoom);
+	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
+		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
 			uint32_t index = x*65536+y;
 			tileIndex[index].insert(oo);
 		}
@@ -30,12 +30,12 @@ void addToTileIndexByBbox(OutputObject &oo, map< uint, unordered_set<OutputObjec
 
 // Add an OutputObject to all tiles along a polyline
 void addToTileIndexPolyline(OutputObject &oo, map< uint, unordered_set<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls) {
-	int lastx = -1;
-	int lasty;
+	uint lastx = UINT_MAX;
+	uint lasty;
 	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
-		int tilex =  lon2tilex(jt->get<0>(), baseZoom);
-		int tiley = latp2tiley(jt->get<1>(), baseZoom);
-		if (lastx==-1) {
+		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
+		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
+		if (lastx==UINT_MAX) {
 			tileIndex[tilex*65536+tiley].insert(oo);
 		} else if (lastx!=tilex || lasty!=tiley) {
 			for (int x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
@@ -103,8 +103,8 @@ void readShapefile(string filename,
 			// Points
 			Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
 			if (geom::within(p, clippingBox)) {
-				int tilex =  lon2tilex(p.x(), baseZoom);
-				int tiley = latp2tiley(p.y(), baseZoom);
+				uint tilex =  lon2tilex(p.x(), baseZoom);
+				uint tiley = latp2tiley(p.y(), baseZoom);
 				cachedGeometries.push_back(p);
 				OutputObject oo(CACHED_POINT, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap);

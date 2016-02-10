@@ -582,13 +582,13 @@ int main(int argc, char* argv[]) {
 							unordered_set <uint32_t> tilelist;
 							uint lastX, lastY;
 							for (k=0; k<pbfWay.refs_size(); k++) {
-								int tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
-								int tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
+								uint tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
+								uint tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
 								if (k>0) {
 									// Check we're not skipping any tiles, and insert intermediate nodes if so
 									// (we should have a simple fill algorithm for polygons, too)
-									int dx = abs((int)(tileX-lastX));
-									int dy = abs((int)(tileY-lastY));
+									int dx = abs((int)tileX-(int)lastX);
+									int dy = abs((int)tileY-(int)lastY);
 									if (dx>1 || dy>1 || (dx==1 && dy==1)) {
 										insertIntermediateTiles(&tilelist, max(dx,dy), nodes.at(nodeVec[k-1]), nodes.at(nodeVec[k]), baseZoom);
 									}
