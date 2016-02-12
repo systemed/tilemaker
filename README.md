@@ -26,13 +26,13 @@ On OS X, you can install all dependencies with Homebrew:
 
 On Ubuntu, start with:
 
-	apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev
+	sudo apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev
 
 You'll then need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
 
-	add-apt-repository ppa:ostogvin/tjo-develop
-	apt-get update
-	apt-get install libboost1.58-all-dev
+	sudo add-apt-repository ppa:ostogvin/tjo-develop
+	sudo apt-get update
+	sudo apt-get install libboost1.58-all-dev
 
 Finally, we need to install luabind manually because the Ubuntu package (sigh) requires Boost 1.54, whereas we need 1.56 or later. So:
 
@@ -41,14 +41,14 @@ Finally, we need to install luabind manually because the Ubuntu package (sigh) r
 	# The following line might not be necessary for you,
 	# but I needed it to make sure that liblua was in /usr/lib:
 	ln -s /usr/lib/x86_64-linux-gnu/liblua5.1.so /usr/lib/
-	bjam install
-	ln -s /usr/local/lib/libluabindd.so /usr/local/lib/libluabind.so
+	sudo bjam install
+	sudo ln -s /usr/local/lib/libluabindd.so /usr/local/lib/libluabind.so
 	sudo ldconfig
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
     make
-    make install
+    sudo make install
 
 If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again.
 
