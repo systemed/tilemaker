@@ -13,7 +13,7 @@ set -e
 
 apt-get update
 apt-get -yy upgrade
-apt-get install -yy build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler git
+apt-get install -yy build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler git libshp-dev
 add-apt-repository ppa:ostogvin/tjo-develop
 apt-get update
 apt-get install -yy libboost1.58-all-dev
