@@ -250,8 +250,10 @@ int main(int argc, char* argv[]) {
 			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
 			int   simplifyBelow = it->value.HasMember("simplify_below") ? it->value["simplify_below"].GetInt()    : 0;
 			double simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
+			double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
 			double simplifyRatio = it->value.HasMember("simplify_ratio") ? it->value["simplify_ratio"].GetDouble() : 1.0;
-			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom, simplifyBelow, simplifyLevel, simplifyRatio, writeTo);
+			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom,
+					simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
 			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 			cout << endl;
@@ -690,7 +692,17 @@ int main(int argc, char* argv[]) {
 					uint layerNum = *mt;
 					LayerDef ld = osmObject.layers[layerNum];
 					if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-					double simplifyLevel = zoom < ld.simplifyBelow ? ld.simplifyLevel * pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom) : 0;
+					double simplifyLevel = 0;
+					if (zoom < ld.simplifyBelow) {
+						if (ld.simplifyLength > 0) {
+							uint tileY = index & 65535;
+							double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
+							simplifyLevel = meter2degp(ld.simplifyLength, latp);
+						} else {
+							simplifyLevel = ld.simplifyLevel;
+						}
+						simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
+					}
 
 					// Loop through output objects
 					for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {

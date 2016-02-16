@@ -4,6 +4,7 @@ struct LayerDef {
 	int maxzoom;
 	int simplifyBelow;
 	double simplifyLevel;
+	double simplifyLength;
 	double simplifyRatio;
 };
 
@@ -69,8 +70,9 @@ class OSMObject { public:
 	}
 
 	// Define a layer (as read from the .json file)
-	uint addLayer(string name, int minzoom, int maxzoom, int simplifyBelow, double simplifyLevel, double simplifyRatio, string writeTo) {
-		LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyRatio };
+	uint addLayer(string name, int minzoom, int maxzoom,
+			int simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
+		LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio };
 		layers.push_back(layer);
 		uint layerNum = layers.size()-1;
 		layerMap[name] = layerNum;
