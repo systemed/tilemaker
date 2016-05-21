@@ -5,22 +5,39 @@ struct LatpLon {
 	int32_t lon;
 };
 
+double deg2rad(double deg) { return (M_PI/180.0) * deg; }
+double rad2deg(double rad) { return (180.0/M_PI) * rad; }
+
 // Project latitude (spherical Mercator)
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)
-inline double lat2latp(double lat) { return 180.0/M_PI * log(tan(M_PI/4.0+lat*(M_PI/180.0)/2.0)); }
-inline double latp2lat(double latp) { return 180.0/M_PI * (2.0 * atan(exp(latp*M_PI/180.0)) - M_PI/2.0); }
+double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(lat+90.0)/2.0))); }
+double latp2lat(double latp) { return rad2deg(atan(exp(deg2rad(latp)))*2.0)-90.0; }
 
 // Tile conversions
-int lon2tilex(double lon, uint z) { return (int)(floor((lon + 180.0) / 360.0 * pow(2.0, z)));  }
-int lat2tiley(double lat, uint z) { return (int)(floor((1.0 - log( tan(lat * M_PI/180.0) + 1.0 / cos(lat * M_PI/180.0)) / M_PI) / 2.0 * pow(2.0, z))); }
-int latp2tiley(double latp, uint z) { return (int)(floor( (180.0 - latp) / 360.0 * pow(2.0,z) )); }
-double tilex2lon(int x, uint z) { return x / pow(2.0, z) * 360.0 - 180; }
-double tiley2lat(int y, uint z) { double n = M_PI - 2.0 * M_PI * y / pow(2.0, z); return 180.0 / M_PI * atan(0.5 * (exp(n) - exp(-n))); }
+uint lon2tilex(double lon, uint z) { return scalbn((lon+180.0) * (1/360.0), (int)z); }
+uint latp2tiley(double latp, uint z) { return scalbn((180.0-latp) * (1/360.0), (int)z); }
+uint lat2tiley(double lat, uint z) { return latp2tiley(lat2latp(lat), z); }
+double tilex2lon(uint x, uint z) { return scalbn(x, -(int)z) * 360.0 - 180.0; }
+double tiley2latp(uint y, uint z) { return 180.0 - scalbn(y, -(int)z) * 360.0; }
+double tiley2lat(uint y, uint z) { return latp2lat(tiley2latp(y, z)); }
 
 // Get a tile index
-inline uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
-	return lon2tilex(ll.lon /10000000.0, baseZoom) * 65536 + 
+uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
+	return lon2tilex(ll.lon /10000000.0, baseZoom) * 65536 +
 	       latp2tiley(ll.latp/10000000.0, baseZoom);
+}
+
+// Earth's (mean) radius
+// http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
+// http://mathworks.com/help/map/ref/earthradius.html
+constexpr double RadiusMeter = 6371000;
+
+// Convert to actual length
+double degp2meter(double degp, double latp) {
+	return RadiusMeter * deg2rad(degp) * cos(deg2rad(latp2lat(latp)));
+}
+double meter2degp(double meter, double latp) {
+	return rad2deg((1/RadiusMeter) * (meter / cos(deg2rad(latp2lat(latp)))));
 }
 
 // Add intermediate points so we don't skip tiles on long segments

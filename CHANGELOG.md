@@ -1,5 +1,23 @@
 # Changelog
 
+## [] - 2016-02-XX
+
+### Added
+- Add cmake scripts and support MSVC on Windows (@alex85k)
+- Support `way:IsClosed()`, `way:Area()`, `way:Length()`, and `way:ScaleToKm()` (@grafi-tt)
+- Optionally call lua functions `init_function()` and `exit_function()` (@tinoue)
+- Support `simplify_ratio`, and calculate the actual simplify level by
+  the formula `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)` (@tinoue)
+- Support `simplify_length`, that is simplify threshold in meters, instead of in degrees (its length changes corresponding to the latitude) (@grafi-tt)
+
+### Changed
+- Optimized SQLite output (@grafi-tt)
+- Refactored OSM object implementation (@grafi-tt)
+
+### Fixed
+- Add initialization to database class (avoid crash on shutdown) (@alex85k)
+- Documentation issues (@AndreMiras, @rory)
+
 ## [1.2.0] - 2015-10-08
 
 ### Added

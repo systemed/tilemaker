@@ -63,7 +63,9 @@ You can add optional parameters to layers:
 
 * `write_to` - write way/nodes to a previously named layer
 * `simplify_below` - simplify ways below this zoom level
-* `simplify_level` - how much to simplify ways (in degrees of longitude)
+* `simplify_level` - how much to simplify ways (in degrees of longitude) on the zoom level `simplify_below-1`
+* `simplify_length` - how much to simplify ways (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
+* `simplify_ratio` - (optional: the default value is 1.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
 
 Use these options to combine different layer specs within one outputted layer. For example:
 

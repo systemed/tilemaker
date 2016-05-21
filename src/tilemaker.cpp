@@ -176,7 +176,10 @@ int main(int argc, char* argv[]) {
 		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
 		.def("Intersects", &OSMObject::Intersects)
 		.def("IsClosed", &OSMObject::IsClosed)
+		.def("ScaleToMeter", &OSMObject::ScaleToMeter)
+		.def("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
 		.def("Area", &OSMObject::Area)
+		.def("Length", &OSMObject::Length)
 		.def("Layer", &OSMObject::Layer)
 		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
 		.def("Attribute", &OSMObject::Attribute)
@@ -246,8 +249,11 @@ int main(int argc, char* argv[]) {
 			int maxZoom = it->value["maxzoom"].GetInt();
 			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
 			int   simplifyBelow = it->value.HasMember("simplify_below") ? it->value["simplify_below"].GetInt()    : 0;
-			float simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
-			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom, simplifyBelow, simplifyLevel, writeTo);
+			double simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
+			double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
+			double simplifyRatio = it->value.HasMember("simplify_ratio") ? it->value["simplify_ratio"].GetDouble() : 1.0;
+			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom,
+					simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
 			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 			cout << endl;
@@ -581,13 +587,13 @@ int main(int argc, char* argv[]) {
 							unordered_set <uint32_t> tilelist;
 							uint lastX, lastY;
 							for (k=0; k<pbfWay.refs_size(); k++) {
-								int tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
-								int tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
+								uint tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
+								uint tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
 								if (k>0) {
 									// Check we're not skipping any tiles, and insert intermediate nodes if so
 									// (we should have a simple fill algorithm for polygons, too)
-									int dx = abs((int)(tileX-lastX));
-									int dy = abs((int)(tileY-lastY));
+									int dx = abs((int)tileX-(int)lastX);
+									int dy = abs((int)tileY-(int)lastY);
 									if (dx>1 || dy>1 || (dx==1 && dy==1)) {
 										insertIntermediateTiles(&tilelist, max(dx,dy), nodes.at(nodeVec[k-1]), nodes.at(nodeVec[k]), baseZoom);
 									}
@@ -686,7 +692,17 @@ int main(int argc, char* argv[]) {
 					uint layerNum = *mt;
 					LayerDef ld = osmObject.layers[layerNum];
 					if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-					double simplifyLevel = zoom < ld.simplifyBelow ? ld.simplifyLevel : 0;
+					double simplifyLevel = 0;
+					if (zoom < ld.simplifyBelow) {
+						if (ld.simplifyLength > 0) {
+							uint tileY = index & 65535;
+							double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
+							simplifyLevel = meter2degp(ld.simplifyLength, latp);
+						} else {
+							simplifyLevel = ld.simplifyLevel;
+						}
+						simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
+					}
 
 					// Loop through output objects
 					for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {
