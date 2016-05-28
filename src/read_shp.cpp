@@ -97,7 +97,7 @@ void readShapefile(string filename,
 
 	for (int i=0; i<numEntities; i++) {
 		SHPObject* shape = SHPReadObject(shp, i);
-		int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=polygon [8=multipoint, 11+=3D]
+		int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
 	
 		if (shapeType==1) {
 			// Points
@@ -141,24 +141,52 @@ void readShapefile(string filename,
 
 		} else if (shapeType==5) {
 			// (Multi)-polygons
+			MultiPolygon multi;
 			Polygon poly;
-			if (shape->nParts > 1) { geom::interior_rings(poly).resize(shape->nParts-1); }
+			Ring ring;
+			int nInteriorRings = 0;
+
+			// To avoid expensive computations, we assume the shapefile has been pre-processed
+			// such that each polygon's exterior ring is immediately followed by its interior rings.
 			for (uint j=0; j<shape->nParts; j++) {
 				fillPointArrayFromShapefile(&points, shape, j);
-				if (j==0) { geom::append(poly, points); }
-				     else { geom::append(poly, points, j-1); }
+				// Read points into a ring
+				ring.clear();
+				geom::append(ring, points);
+
+				if (j == 0) {
+					// We assume the first part is an exterior ring of the first polygon.
+					geom::append(poly, ring);
+				}
+				else if (geom::area(ring) > 0.0) {
+					// This part has clockwise orientation - an exterior ring.
+					// Start a new polygon.
+					multi.push_back(poly);
+					poly.clear();
+					nInteriorRings = 0;
+					geom::append(poly, ring);
+				} else {
+					// This part has anti-clockwise orientation.
+					// Add another interior ring to the current polygon.
+					nInteriorRings++;
+					geom::interior_rings(poly).resize(nInteriorRings);
+					geom::append(poly, ring, nInteriorRings - 1);
+				}
 			}
-			if (!geom::is_valid(poly)) {
+			// All parts read. Add the last polygon.
+			multi.push_back(poly);
+
+			if (!geom::is_valid(multi)) {
 				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid";
-				geom::correct(poly);
-				if (geom::is_valid(poly)) {
+				geom::correct(multi);
+				if (geom::is_valid(multi)) {
 					cerr << "... corrected";
 				}
 				cerr << endl;
 			}
 			// clip to bounding box
 			MultiPolygon out;
-			geom::intersection(poly, clippingBox, out);
+			geom::intersection(multi, clippingBox, out);
 			if (boost::size(out)>0) {
 				// create OutputObject
 				cachedGeometries.push_back(out);
