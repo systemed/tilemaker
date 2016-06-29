@@ -7,6 +7,45 @@
 
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
 
+class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
+
+	const Box &clippingBox;
+
+public:
+	ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) {};
+
+	Geometry operator()(const Point &p) const {
+		if (geom::within(p, clippingBox)) {
+			return p;
+		} else {
+			return MultiLinestring(); // return a blank geometry
+		}
+	}
+
+	Geometry operator()(const Linestring &ls) const {
+		MultiLinestring out;
+		geom::intersection(ls, clippingBox, out);
+		return out;
+	}
+
+	Geometry operator()(const MultiLinestring &mls) const {
+#if BOOST_VERSION <= 105800
+		// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58
+		return mls;
+#else
+		MultiLinestring out;
+		geom::intersection(mls, clippingBox, out);
+		return out;
+#endif
+	}
+
+	Geometry operator()(const MultiPolygon &mp) const {
+		MultiPolygon out;
+		geom::intersection(mp, clippingBox, out);
+		return out;
+	}
+};
+
 class OutputObject { public:
 
 	OutputGeometryType geomType;						// point, linestring, polygon...
@@ -30,7 +69,9 @@ class OutputObject { public:
 	Geometry buildWayGeometry(const OSMStore &osmStore,
 	                      TileBbox *bboxPtr, 
 	                      vector<Geometry> &cachedGeometries) const {
-		
+
+		ClipGeometryVisitor clip(bboxPtr->clippingBox);
+
 		if (geomType==POLYGON || geomType==CENTROID) {
 			// polygon
 			MultiPolygon mp;
@@ -45,13 +86,11 @@ class OutputObject { public:
 				// centroid only
 				Point p;
 				geom::centroid(mp, p);
-				if (geom::within(p, bboxPtr->clippingBox)) { return p; }
+				return clip(p);
 
 			} else {
 				// full polygon
-				MultiPolygon out;
-				geom::intersection(bboxPtr->clippingBox, mp, out); // clip
-				return out;
+				return clip(mp);
 			}
 
 		} else if (geomType==LINESTRING) {
@@ -60,16 +99,14 @@ class OutputObject { public:
 			if (osmStore.ways.count(objectID)) {
 				ls = osmStore.nodeListLinestring(objectID);
 			}
-			// clip
-			MultiLinestring out;
-			geom::intersection(ls, bboxPtr->clippingBox, out);
-			return out;
+			return clip(ls);
 
 		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			return cachedGeometries[objectID];
+			const Geometry &g = cachedGeometries[objectID];
+			return boost::apply_visitor(clip, g);
 		}
 
-		MultiLinestring out; return out; // return a blank geometry
+		return MultiLinestring(); // return a blank geometry
 	}
 	
 	// Add a node geometry
