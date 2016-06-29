@@ -716,9 +716,13 @@ int main(int argc, char* argv[]) {
 						simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 					}
 
+					// compare only by `layer`
+					auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
+					// We get the range within ooList, where the layer of each object is `layerNum`.
+					// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+					auto ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
 					// Loop through output objects
-					for (auto jt = ooList.begin(); jt != ooList.end(); ++jt) {
-						if (jt->layer != layerNum) { continue; }
+					for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
 						if (jt->geomType == POINT) {
 							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 							jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
