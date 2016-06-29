@@ -731,6 +731,36 @@ int main(int argc, char* argv[]) {
 						} else {
 							try {
 								Geometry g = jt->buildWayGeometry(osmStore, &bbox, cachedGeometries);
+
+								// If a object is a polygon or a linestring that is followed by
+								// other objects with the same geometry type and the same attributes,
+								// the following objects are merged into the first object, by taking union of geometries.
+								auto gTyp = jt->geomType;
+								if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+									MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
+									while (jt+1 != ooListSameLayer.second &&
+											(jt+1)->geomType == gTyp &&
+											(jt+1)->attributes == jt->attributes) {
+										jt++;
+										MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
+										MultiPolygon gTmp;
+										geom::union_(gAcc, gNew, gTmp);
+										gAcc = move(gTmp);
+									}
+								}
+								if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+									MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
+									while (jt+1 != ooListSameLayer.second &&
+											(jt+1)->geomType == gTyp &&
+											(jt+1)->attributes == jt->attributes) {
+										jt++;
+										MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
+										MultiLinestring gTmp;
+										geom::union_(gAcc, gNew, gTmp);
+										gAcc = move(gTmp);
+									}
+								}
+
 								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 								WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 								boost::apply_visitor(w, g);
