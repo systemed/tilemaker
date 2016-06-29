@@ -106,8 +106,8 @@ int main(int argc, char* argv[]) {
 	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
-	map< uint, unordered_set<OutputObject> > tileIndex;	// objects to be output
-	map< uint32_t, unordered_set<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
+	map< uint, vector<OutputObject> > tileIndex;	// objects to be output
+	map< uint32_t, vector<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
 	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
 
 	// ----	Read command-line options
@@ -431,7 +431,7 @@ int main(int argc, char* argv[]) {
 							if (!osmObject.empty()) {
 								uint32_t index = latpLon2index(node, baseZoom);
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									tileIndex[index].insert(*jt);
+									tileIndex[index].push_back(*jt);
 								}
 							}
 						}
@@ -542,7 +542,7 @@ int main(int argc, char* argv[]) {
 								}
 								// Keep output objects
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									relationOutputObjects[relID].insert(*jt);
+									relationOutputObjects[relID].push_back(*jt);
 								}
 							}
 						}
@@ -608,7 +608,7 @@ int main(int argc, char* argv[]) {
 							for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
 								uint32_t index = *it;
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									tileIndex[index].insert(*jt);
+									tileIndex[index].push_back(*jt);
 								}
 							}
 
@@ -622,7 +622,7 @@ int main(int argc, char* argv[]) {
 										uint32_t index = *it;
 										// add all the OutputObjects for this relation into this tile
 										for (auto jt = relationOutputObjects[relID].begin(); jt != relationOutputObjects[relID].end(); ++jt) {
-											tileIndex[index].insert(*jt);
+											tileIndex[index].push_back(*jt);
 										}
 									}
 								}
@@ -645,9 +645,15 @@ int main(int argc, char* argv[]) {
 	// Loop through zoom levels
 	for (uint zoom=startZoom; zoom<=endZoom; zoom++) {
 		// Create list of tiles, and the data in them
-		map< uint, unordered_set<OutputObject> > *tileIndexPtr;
-		map< uint, unordered_set<OutputObject> > generatedIndex;
+		map< uint, vector<OutputObject> > *tileIndexPtr;
+		map< uint, vector<OutputObject> > generatedIndex;
 		if (zoom==baseZoom) {
+			// ----	Sort each tile
+			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
+				auto &ooset = it->second;
+				sort(ooset.begin(), ooset.end());
+				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
+			}
 			// at z14, we can just use tileIndex
 			tileIndexPtr = &tileIndex;
 		} else {
@@ -658,10 +664,16 @@ int main(int argc, char* argv[]) {
 				uint tilex = (index >> 16  ) / pow(2, baseZoom-zoom);
 				uint tiley = (index & 65535) / pow(2, baseZoom-zoom);
 				uint newIndex = (tilex << 16) + tiley;
-				unordered_set<OutputObject> ooset = it->second;
+				const vector<OutputObject> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
-					generatedIndex[newIndex].insert(*jt);
+					generatedIndex[newIndex].push_back(*jt);
 				}
+			}
+			// sort each new tile
+			for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
+				auto &ooset = it->second;
+				sort(ooset.begin(), ooset.end());
+				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
 			tileIndexPtr = &generatedIndex;
 		}
@@ -679,7 +691,7 @@ int main(int argc, char* argv[]) {
 			vector_tile::Tile tile;
 			uint index = it->first;
 			TileBbox bbox(index,zoom);
-			unordered_set<OutputObject> ooList = it->second;
+			const vector<OutputObject> &ooList = it->second;
 			if (clippingBoxFromJSON && (maxLon<=bbox.minLon || minLon>=bbox.maxLon || maxLat<=bbox.minLat || minLat>=bbox.maxLat)) { continue; }
 
 			// Loop through layers
