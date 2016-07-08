@@ -8,6 +8,10 @@ struct LatpLon {
 double deg2rad(double deg) { return (M_PI/180.0) * deg; }
 double rad2deg(double rad) { return (180.0/M_PI) * rad; }
 
+// max/min latitudes
+constexpr double MaxLat = 85.0511;
+constexpr double MinLat = -MaxLat;
+
 // Project latitude (spherical Mercator)
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)
 double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(lat+90.0)/2.0))); }
