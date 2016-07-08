@@ -187,11 +187,15 @@ void readShapefile(string filename,
 			// All parts read. Add the last polygon.
 			multi.push_back(poly);
 
-			if (!geom::is_valid(multi)) {
-				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid";
+			string reason;
+			if (!geom::is_valid(multi, reason)) {
+				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts;
 				geom::correct(multi);
+				geom::remove_spikes(multi);	// water polygon shapefile has many spikes
 				if (geom::is_valid(multi)) {
 					cerr << "... corrected";
+				} else {
+					cerr << " Reason: " << reason;
 				}
 				cerr << endl;
 			}
