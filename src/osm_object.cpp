@@ -81,6 +81,9 @@ class OSMObject { public:
 			vector<uint> r = { layerNum };
 			layerOrder.push_back(r);
 		} else {
+			if (layerMap.count(writeTo) == 0) {
+				throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
+			}
 			uint lookingFor = layerMap[writeTo];
 			for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
 				if (it->at(0)==lookingFor) {
@@ -349,12 +352,18 @@ class OSMObject { public:
 
 	// Add layer
 	void Layer(const string &layerName, bool area) {
+		if (layerMap.count(layerName) == 0) {
+			throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
+		}
 		OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 						layerMap[layerName],
 						osmID);
 		outputs.push_back(oo);
 	}
 	void LayerAsCentroid(const string &layerName) {
+		if (layerMap.count(layerName) == 0) {
+			throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
+		}
 		OutputObject oo(CENTROID,
 						layerMap[layerName],
 						osmID);
