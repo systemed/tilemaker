@@ -66,6 +66,11 @@ or with luajit:
     make LUA_CFLAGS="$(pkg-config --cflags luajit)" LUA_LIBS="$(pkg-config --libs luajit)"
     make install
 
+To save memory (on any platform), you can choose 32-bit storage for node IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
+
+    make CONFIG="-DCOMPACT_NODES"
+    make install
+
 Configuring
 -----------
 
@@ -113,7 +118,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 Copyright and contact
 ---------------------
 
-Richard Fairhurst, 2015. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT.
+Richard Fairhurst and contributors, 2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT.
 
 If you'd like to sponsor development of Tilemaker, you can contact me at richard@systemeD.net.
 

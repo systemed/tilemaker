@@ -24,8 +24,8 @@ class OSMObject { public:
 	map<uint,string> *cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
 
-	uint32_t osmID;							// ID of OSM object
-	uint32_t newWayID = 4294967295;			// Decrementing new ID for relations
+	uint64_t osmID;							// ID of OSM object
+	uint32_t newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
 	bool isWay, isRelation;					// Way, node, relation?
 
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
@@ -130,7 +130,7 @@ class OSMObject { public:
 	// ----	Set an osm element to make it accessible from Lua
 
 	// We are now processing a node
-	inline void setNode(uint32_t id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
+	inline void setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
 		reset();
 		osmID = id;
 		isWay = false;

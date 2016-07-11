@@ -50,10 +50,10 @@ class OutputObject { public:
 
 	OutputGeometryType geomType;						// point, linestring, polygon...
 	uint_least8_t layer;								// what layer is it in?
-	uint32_t objectID;									// id of way (linestring/polygon) or node (point)
+	NodeID objectID;									// id of way (linestring/polygon) or node (point)
 	map <string, vector_tile::Tile_Value> attributes;	// attributes
 
-	OutputObject(OutputGeometryType type, uint_least8_t l, uint32_t id) {
+	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) {
 		geomType = type;
 		layer = l;
 		objectID = id;
@@ -204,7 +204,7 @@ namespace std {
 	template<>
 	struct hash<OutputObject> {
 		size_t operator()(const OutputObject &oo) const {
-			return std::hash<uint_least8_t>()(oo.layer) ^ std::hash<uint32_t>()(oo.objectID);
+			return std::hash<uint_least8_t>()(oo.layer) ^ std::hash<NodeID>()(oo.objectID);
 		}
 	};
 }

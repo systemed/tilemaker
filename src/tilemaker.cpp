@@ -73,8 +73,15 @@ namespace geom = boost::geometry;
 #include "pbf_blocks.cpp"
 #include "coordinates.cpp"
 
-typedef vector<uint32_t> NodeVec;
-typedef vector<uint32_t> WayVec;
+#ifdef COMPACT_NODES
+typedef uint32_t NodeID;
+#else
+typedef uint64_t NodeID;
+#endif
+typedef uint32_t WayID;
+#define MAX_WAY_ID 4294967295
+typedef vector<NodeID> NodeVec;
+typedef vector<WayID> WayVec;
 
 #include "osm_store.cpp"
 #include "output_object.cpp"
@@ -107,9 +114,9 @@ int main(int argc, char* argv[]) {
 	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
-	map< uint, vector<OutputObject> > tileIndex;	// objects to be output
-	map< uint32_t, vector<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
-	map< uint32_t, vector<uint32_t> > wayRelations;		// for each way, which relations it's in (therefore we need to keep them)
+	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
+	map< WayID, vector<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
+	map< WayID, vector<WayID> > wayRelations;					// for each way, which relations it's in (therefore we need to keep them)
 
 	// ----	Read command-line options
 	
@@ -120,7 +127,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	bool verbose = false;
 
-	po::options_description desc("tilemaker (c) 2015 Richard Fairhurst\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
@@ -141,6 +148,10 @@ int main(int argc, char* argv[]) {
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) {
 		sqlite=true;
 	}
+
+	#ifdef COMPACT_NODES
+	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
+	#endif
 
 	// ----	Read bounding box from first .pbf
 
@@ -364,7 +375,7 @@ int main(int argc, char* argv[]) {
 		bool checkedRelations = false;
 		bool processedRelations = false;
 		int wayPosition = -1;
-		unordered_set<uint32_t> waysInRelation;
+		unordered_set<WayID> waysInRelation;
 
 		while (true) {
 			int blockStart = infile.tellg();
@@ -458,7 +469,7 @@ int main(int argc, char* argv[]) {
 						for (uint n = 0; n < pbfRelation.memids_size(); n++) {
 							lastID += pbfRelation.memids(n);
 							if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-							uint32_t wayId = static_cast<uint32_t>(lastID);
+							WayID wayId = static_cast<WayID>(lastID);
 							waysInRelation.insert(wayId);
 						}
 					}
@@ -475,14 +486,14 @@ int main(int argc, char* argv[]) {
 				if (!processedRelations && pg.ways_size() > 0) {
 					for (j=0; j<pg.ways_size(); j++) {
 						pbfWay = pg.ways(j);
-						uint32_t wayId = pbfWay.id();
+						WayID wayId = pbfWay.id();
 						if (waysInRelation.count(wayId) > 0) {
 							// Assemble nodelist
 							nodeId = 0;
 							NodeVec nodeVec;
 							for (k = 0; k < pbfWay.refs_size(); k++) {
 								nodeId += pbfWay.refs(k);
-								nodeVec.push_back(static_cast<uint32_t>(nodeId));
+								nodeVec.push_back(static_cast<NodeID>(nodeId));
 							}
 							ways.insert_back(wayId, nodeVec);
 						}
@@ -518,7 +529,7 @@ int main(int argc, char* argv[]) {
 								int32_t role = pbfRelation.roles_sid(n);
 								// if (role != innerKey && role != outerKey) { continue; }
 								// ^^^^ commented out so that we don't die horribly when a relation has no outer way
-								uint32_t wayId = static_cast<uint32_t>(lastID);
+								WayID wayId = static_cast<WayID>(lastID);
 								(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 							}
 
@@ -530,7 +541,7 @@ int main(int argc, char* argv[]) {
 								return -1;
 							}
 							if (!osmObject.empty()) {
-								uint32_t relID = osmObject.osmID;
+								WayID relID = osmObject.osmID;
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
 								// Store this relation in the way->relations map to oblige each way in the relation
@@ -561,14 +572,14 @@ int main(int argc, char* argv[]) {
 				if (pg.ways_size() > 0) {
 					for (j=0; j<pg.ways_size(); j++) {
 						pbfWay = pg.ways(j);
-						uint32_t wayId = static_cast<uint32_t>(pbfWay.id());
+						WayID wayId = static_cast<WayID>(pbfWay.id());
 
 						// Assemble nodelist
 						nodeId = 0;
 						NodeVec nodeVec;
 						for (k=0; k<pbfWay.refs_size(); k++) {
 							nodeId += pbfWay.refs(k);
-							nodeVec.push_back(static_cast<uint32_t>(nodeId));
+							nodeVec.push_back(static_cast<NodeID>(nodeId));
 						}
 
 						osmObject.setWay(&pbfWay, &nodeVec);
@@ -616,7 +627,7 @@ int main(int argc, char* argv[]) {
 							// if it's in any relations to be output, do the same for each relation
 							if (inRelation) {
 								for (auto wt = wayRelations[wayId].begin(); wt != wayRelations[wayId].end(); ++wt) {
-									uint32_t relID = *wt;
+									WayID relID = *wt;
 									// relID is now the relation ID
 									for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
 										// index is now the tile index number

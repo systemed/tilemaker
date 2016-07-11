@@ -50,14 +50,14 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 
 // node store
 class NodeStore {
-	std::unordered_map<uint32_t, LatpLon> mLatpLons;
+	std::unordered_map<NodeID, LatpLon> mLatpLons;
 
 public:
 	// @brief Lookup a latp/lon pair
 	// @param i OSM ID of a node
 	// @return Latp/lon pair
 	// @exception NotFound
-	LatpLon at(uint32_t i) const {
+	LatpLon at(NodeID i) const {
 		return mLatpLons.at(i);
 	}
 
@@ -65,7 +65,7 @@ public:
 	// @param i Any possible OSM ID
 	// @return 1 if found, 0 otherwise
 	// @note This function is named as count for consistent naming with stl functions.
-	size_t count(uint32_t i) const {
+	size_t count(NodeID i) const {
 		return mLatpLons.count(i);
 	}
 
@@ -74,7 +74,7 @@ public:
 	// @param coord a latp/lon pair to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
 	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(uint32_t i, LatpLon coord) {
+	void insert_back(NodeID i, LatpLon coord) {
 		mLatpLons.emplace(i, coord);
 	}
 
@@ -85,17 +85,17 @@ public:
 };
 
 // way store
-typedef vector<uint32_t>::const_iterator WayStoreIterator;
+typedef vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	std::unordered_map<uint32_t, const vector<uint32_t>> mNodeLists;
+	std::unordered_map<WayID, const vector<NodeID>> mNodeLists;
 
 public:
 	// @brief Lookup a node list
 	// @param i OSM ID of a way
 	// @return A node list
 	// @exception NotFound
-	NodeList<WayStoreIterator> at(uint32_t i) const {
+	NodeList<WayStoreIterator> at(WayID i) const {
 		const auto &way = mNodeLists.at(i);
 		return { way.cbegin(), way.cend() };
 	}
@@ -104,7 +104,7 @@ public:
 	// @param i Any possible OSM ID
 	// @return 1 if found, 0 otherwise
 	// @note This function is named as count for consistent naming with stl functions.
-	size_t count(uint32_t i) const {
+	size_t count(WayID i) const {
 		return mNodeLists.count(i);
 	}
 
@@ -124,17 +124,17 @@ public:
 };
 
 // relation store
-typedef vector<uint32_t>::const_iterator RelationStoreIterator;
+typedef vector<WayID>::const_iterator RelationStoreIterator;
 
 class RelationStore {
-	std::unordered_map<uint32_t, const pair<const vector<uint32_t>, const vector<uint32_t>>> mOutInLists;
+	std::unordered_map<WayID, const pair<const vector<WayID>, const vector<WayID>>> mOutInLists;
 
 public:
 	// @brief Lookup a way list
 	// @param i Pseudo OSM ID of a relational way
 	// @return A way list
 	// @exception NotFound
-	WayList<RelationStoreIterator> at(uint32_t i) const {
+	WayList<RelationStoreIterator> at(WayID i) const {
 		const auto &outInList = mOutInLists.at(i);
 		return { outInList.first.cbegin(), outInList.first.cend(),
 			outInList.second.cbegin(), outInList.second.cend() };
@@ -144,7 +144,7 @@ public:
 	// @param i Any possible OSM ID
 	// @return 1 if found, 0 otherwise
 	// @note This function is named as count for consistent naming with stl functions.
-	size_t count(uint32_t i) const {
+	size_t count(WayID i) const {
 		return mOutInLists.count(i);
 	}
 
@@ -154,7 +154,7 @@ public:
 	// @param innerWayVec A inner way vector to be inserted
 	// @invariant The pseudo OSM ID i must be smaller than previously inserted pseudo OSM IDs of relations
 	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_front(uint32_t i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
+	void insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
 		mOutInLists.emplace(i, make_pair(outerWayVec, innerWayVec));
 	}
 
@@ -201,7 +201,7 @@ struct OSMStore {
 		return mp;
 	}
 
-	MultiPolygon wayListMultiPolygon(uint32_t relId) const {
+	MultiPolygon wayListMultiPolygon(WayID relId) const {
 		return wayListMultiPolygon(relations.at(relId));
 	}
 
@@ -218,7 +218,7 @@ struct OSMStore {
 		return poly;
 	}
 
-	Polygon nodeListPolygon(uint32_t wayId) const {
+	Polygon nodeListPolygon(WayID wayId) const {
 		return nodeListPolygon(ways.at(wayId));
 	}
 
@@ -234,7 +234,7 @@ struct OSMStore {
 		return ls;
 	}
 
-	Linestring nodeListLinestring(uint32_t wayId) const {
+	Linestring nodeListLinestring(WayID wayId) const {
 		return nodeListLinestring(ways.at(wayId));
 	}
 
