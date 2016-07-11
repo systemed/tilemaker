@@ -8,7 +8,18 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
     double* const x = shape->padfX;
     double* const y = shape->padfY;
 	points->clear(); if (points->capacity() < (end-start)+1) { points->reserve(end-start+1); }
+	double prevx = 1000;
+	double prevy = 1000;
 	for (uint i=start; i<end; i++) {
+		y[i] = fmin(fmax(y[i], MinLat), MaxLat);	// To avoid infinite latp
+		double latp = lat2latp(y[i]);
+		// skip duplicated point
+		if ((i == end - 1 && (x[i] != prevx || latp != prevy)) ||
+		    (fabs(x[i] - prevx) >= 0.00000001 || fabs(latp - prevy) >= 0.00000001)) {
+			points->emplace_back(geom::make<Point>(x[i], latp));
+			prevx = x[i];
+			prevy = latp;
+		}
 		points->emplace_back(geom::make<Point>(x[i], lat2latp(y[i])));
 	}
 }
@@ -176,11 +187,15 @@ void readShapefile(string filename,
 			// All parts read. Add the last polygon.
 			multi.push_back(poly);
 
-			if (!geom::is_valid(multi)) {
-				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid";
+			string reason;
+			if (!geom::is_valid(multi, reason)) {
+				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts;
 				geom::correct(multi);
+				geom::remove_spikes(multi);	// water polygon shapefile has many spikes
 				if (geom::is_valid(multi)) {
 					cerr << "... corrected";
+				} else {
+					cerr << " Reason: " << reason;
 				}
 				cerr << endl;
 			}
