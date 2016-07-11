@@ -513,7 +513,7 @@ int main(int argc, char* argv[]) {
 					int typeKey = osmObject.findStringPosition("type");
 					int mpKey   = osmObject.findStringPosition("multipolygon");
 					int innerKey= osmObject.findStringPosition("inner");
-					int outerKey= osmObject.findStringPosition("outer");
+					//int outerKey= osmObject.findStringPosition("outer");
 					if (typeKey >-1 && mpKey>-1) {
 						for (j=0; j<pg.relations_size(); j++) {
 							Relation pbfRelation = pg.relations(j);
