@@ -124,11 +124,44 @@ class OutputObject { public:
 	}
 };
 
-// Hashing function so we can use an unordered_set
+// Comparision functions
 
-bool operator==(const OutputObject& x, const OutputObject& y) {
-	return (x.layer == y.layer) && (x.objectID == y.objectID) && (x.geomType == y.geomType);
+bool operator==(const OutputObject &x, const OutputObject &y) {
+	return
+		x.layer == y.layer &&
+		x.geomType == y.geomType &&
+		x.attributes == y.attributes &&
+		x.objectID == y.objectID;
 }
+// Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
+// Note that attributes is preffered to objectID.
+// It is to arrange objects with the identical attributes continuously.
+// Such objects will be merged into one object, to reduce the size of output.
+bool operator<(const OutputObject &x, const OutputObject &y) {
+	if (x.layer < y.layer) return true;
+	if (x.layer > y.layer) return false;
+	if (x.geomType < y.geomType) return true;
+	if (x.geomType > y.geomType) return false;
+	if (x.attributes < y.attributes) return true;
+	if (x.attributes > y.attributes) return false;
+	if (x.objectID < y.objectID) return true;
+	return false;
+}
+
+namespace vector_tile {
+	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {
+		std::string strx = x.SerializeAsString();
+		std::string stry = y.SerializeAsString();
+		return strx == stry;
+	}
+	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {
+		std::string strx = x.SerializeAsString();
+		std::string stry = y.SerializeAsString();
+		return strx < stry;
+	}
+}
+
+// Hashing function so we can use an unordered_set
 
 namespace std {
 	template<>

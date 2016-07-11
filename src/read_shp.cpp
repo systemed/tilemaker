@@ -25,7 +25,7 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObject &oo, map< uint, unordered_set<OutputObject> > &tileIndex, uint baseZoom,
+void addToTileIndexByBbox(OutputObject &oo, map< uint, vector<OutputObject> > &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
@@ -34,24 +34,24 @@ void addToTileIndexByBbox(OutputObject &oo, map< uint, unordered_set<OutputObjec
 	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
 		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
 			uint32_t index = x*65536+y;
-			tileIndex[index].insert(oo);
+			tileIndex[index].push_back(oo);
 		}
 	}
 }
 
 // Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObject &oo, map< uint, unordered_set<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls) {
+void addToTileIndexPolyline(OutputObject &oo, map< uint, vector<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls) {
 	uint lastx = UINT_MAX;
 	uint lasty;
 	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
 		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
 		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
 		if (lastx==UINT_MAX) {
-			tileIndex[tilex*65536+tiley].insert(oo);
+			tileIndex[tilex*65536+tiley].push_back(oo);
 		} else if (lastx!=tilex || lasty!=tiley) {
 			for (int x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
 				for (int y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
-					tileIndex[x*65536+y].insert(oo);
+					tileIndex[x*65536+y].push_back(oo);
 				}
 			}
 		}
@@ -79,7 +79,7 @@ void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, uno
 void readShapefile(string filename, 
                    vector<string> &columns,
                    Box &clippingBox, 
-                   map< uint, unordered_set<OutputObject> > &tileIndex, 
+                   map< uint, vector<OutputObject> > &tileIndex, 
                    vector<Geometry> &cachedGeometries, map< uint, string > &cachedGeometryNames,
                    uint baseZoom, uint layerNum, string &layerName,
                    bool isIndexed, map<string,RTree> &indices, string &indexName) {
@@ -119,7 +119,7 @@ void readShapefile(string filename,
 				cachedGeometries.push_back(p);
 				OutputObject oo(CACHED_POINT, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap);
-				tileIndex[tilex*65536+tiley].insert(oo);
+				tileIndex[tilex*65536+tiley].push_back(oo);
 				if (isIndexed) {
 					uint id = cachedGeometries.size()-1;
 					geom::envelope(p, box); indices[layerName].insert(std::make_pair(box, id));
