@@ -1,6 +1,6 @@
 # Changelog
 
-## [] - 2016-02-XX
+## [1.3.0] - 2016-07-11
 
 ### Added
 - Add cmake scripts and support MSVC on Windows (@alex85k)
@@ -9,6 +9,10 @@
 - Support `simplify_ratio`, and calculate the actual simplify level by
   the formula `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)` (@tinoue)
 - Support `simplify_length`, that is simplify threshold in meters, instead of in degrees (its length changes corresponding to the latitude) (@grafi-tt)
+- Support 64-bit node IDs, with compile-time flag to use 32-bit (@systemed)
+- Merge polygons with identical attributes (@grafi-tt)
+- Error-handling for shapefile polygons and non-existent Lua layers (@grafi-tt)
+- Support shapefile polygons with multiple exterior rings (@fofanov)
 
 ### Changed
 - Optimized SQLite output (@grafi-tt)
@@ -17,6 +21,7 @@
 ### Fixed
 - Add initialization to database class (avoid crash on shutdown) (@alex85k)
 - Documentation issues (@AndreMiras, @rory)
+- Clip shapefile geometries to tile boundaries (@grafi-tt)
 
 ## [1.2.0] - 2015-10-08
 
