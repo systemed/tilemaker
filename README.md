@@ -118,7 +118,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 Copyright and contact
 ---------------------
 
-Richard Fairhurst and contributors, 2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT.
+Richard Fairhurst and contributors, 2015-2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT.
 
 If you'd like to sponsor development of Tilemaker, you can contact me at richard@systemeD.net.
 
