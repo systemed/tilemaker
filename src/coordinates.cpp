@@ -18,9 +18,12 @@ double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(lat+90.0)/2.0))); }
 double latp2lat(double latp) { return rad2deg(atan(exp(deg2rad(latp)))*2.0)-90.0; }
 
 // Tile conversions
-uint lon2tilex(double lon, uint z) { return scalbn((lon+180.0) * (1/360.0), (int)z); }
-uint latp2tiley(double latp, uint z) { return scalbn((180.0-latp) * (1/360.0), (int)z); }
-uint lat2tiley(double lat, uint z) { return latp2tiley(lat2latp(lat), z); }
+double lon2tilexf(double lon, uint z) { return scalbn((lon+180.0) * (1/360.0), (int)z); }
+double latp2tileyf(double latp, uint z) { return scalbn((180.0-latp) * (1/360.0), (int)z); }
+double lat2tileyf(double lat, uint z) { return latp2tileyf(lat2latp(lat), z); }
+uint lon2tilex(double lon, uint z) { return lon2tilexf(lon, z); }
+uint latp2tiley(double latp, uint z) { return latp2tileyf(latp, z); }
+uint lat2tiley(double lat, uint z) { return lat2tileyf(lat, z); }
 double tilex2lon(uint x, uint z) { return scalbn(x, -(int)z) * 360.0 - 180.0; }
 double tiley2latp(uint y, uint z) { return 180.0 - scalbn(y, -(int)z) * 360.0; }
 double tiley2lat(uint y, uint z) { return latp2lat(tiley2latp(y, z)); }
@@ -44,15 +47,46 @@ double meter2degp(double meter, double latp) {
 	return rad2deg((1/RadiusMeter) * (meter / cos(deg2rad(latp2lat(latp)))));
 }
 
-// Add intermediate points so we don't skip tiles on long segments
-void insertIntermediateTiles(unordered_set <uint32_t> *tlPtr, int numPoints, LatpLon startLL, LatpLon endLL, uint baseZoom) {
-	numPoints *= 3;	// perhaps overkill, but why not
-	int32_t dLon  = endLL.lon -startLL.lon ;
-	int32_t dLatp = endLL.latp-startLL.latp;
-	for (int i=1; i<numPoints-1; i++) {
-		LatpLon ll = LatpLon { startLL.latp + dLatp/numPoints*i, 
-		                       startLL.lon  + dLon /numPoints*i };
-		tlPtr->insert(latpLon2index(ll,baseZoom));
+template<typename T>
+void insertIntermediateTiles(const T &points, uint baseZoom, unordered_set<uint32_t> &tileSet) {
+	Point p2(0, 0);
+	for (auto it = points.begin(); it != points.end(); ++it) {
+		Point p1 = p2;
+		p2 = *it;
+
+		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
+		uint tileX2 = static_cast<uint>(tileXf2), tileY2 = static_cast<uint>(tileYf2);
+
+		// insert vertex
+		tileSet.insert((tileX2 << 16) + tileY2);
+		// p1 is not available at the first iteration
+		if (it == points.begin()) continue;
+
+		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
+		uint tileX1 = static_cast<uint>(tileXf1), tileY1 = static_cast<uint>(tileYf1);
+		double dx = tileXf2 - tileXf1, dy = tileYf2 - tileYf1;
+
+		// insert all X border
+		if (tileX1 != tileX2) {
+			double slope = dy / dx;
+			uint tileXmin = min(tileX1, tileX2);
+			uint tileXmax = max(tileX1, tileX2);
+			for (uint tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
+				uint tileYcur = static_cast<uint>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
+				tileSet.insert((tileXcur << 16) + tileYcur);
+			}
+		}
+
+		// insert all Y border
+		if (tileY1 != tileY2) {
+			double slope = dx / dy;
+			uint tileYmin = min(tileY1, tileY2);
+			uint tileYmax = max(tileY1, tileY2);
+			for (uint tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
+				uint tileXcur = static_cast<uint>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
+				tileSet.insert((tileXcur << 16) + tileYcur);
+			}
+		}
 	}
 }
 
