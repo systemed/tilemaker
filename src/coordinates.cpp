@@ -90,6 +90,24 @@ void insertIntermediateTiles(const T &points, uint baseZoom, unordered_set<uint3
 	}
 }
 
+// the range between smallest y and largest y is filled, for each x
+void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
+	vector<uint32_t> tileList(tileSet.begin(), tileSet.end());
+	sort(tileList.begin(), tileList.end());
+
+	uint prevX = 0, prevY = static_cast<uint>(-2);
+	for (uint32_t index: tileList) {
+		uint tileX = index >> 16, tileY = index & 65535;
+		if (tileX == prevX) {
+			// this loop has no effect at the first iteration
+			for (uint fillY = prevY+1; fillY < tileY; fillY++) {
+				tileSet.insert((tileX << 16) + fillY);
+			}
+		}
+		prevX = tileX, prevY = tileY;
+	}
+}
+
 
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
