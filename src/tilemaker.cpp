@@ -117,8 +117,6 @@ int main(int argc, char* argv[]) {
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
-	map< WayID, vector<OutputObject> > relationOutputObjects;	// outputObjects for multipolygons (saved for processing later as ways)
-	map< WayID, vector<WayID> > wayRelations;					// for each way, which relations it's in (therefore we need to keep them)
 
 	// ----	Read command-line options
 	
@@ -362,8 +360,7 @@ int main(int argc, char* argv[]) {
 		// ----	Read PBF
 		// note that the order of reading and processing is:
 		//  1) output nodes -> (remember current position for rewinding to ways) (skip ways) -> (just remember all ways in any relation),
-		//  2) (for the remembered ways, construct nodeId lists) -> output relations, though the actual output task is delayed until each way's processing
-		//  3) output ways, with every relation which contains the way
+		//  2) output ways, and also construct nodeId list for each way in relation -> output relations
 
 		cout << "Reading " << inputFile << endl;
 
@@ -380,7 +377,6 @@ int main(int argc, char* argv[]) {
 		uint i,j,k,ct=0;
 		int64_t nodeId;
 		bool checkedRelations = false;
-		bool processedRelations = false;
 		int wayPosition = -1;
 		unordered_set<WayID> waysInRelation;
 
@@ -390,10 +386,6 @@ int main(int argc, char* argv[]) {
 			if (infile.eof()) {
 				if (!checkedRelations) {
 					checkedRelations = true;
-				} else if (!processedRelations) {
-					processedRelations = true;
-					// NodeId lists for ways were constructed to process relations. Then reset it, because relations processing have ended.
-					ways.clear();
 				} else {
 					break;
 				}
@@ -488,35 +480,72 @@ int main(int argc, char* argv[]) {
 					break;
 				}
 
-				// ----	For the remembered ways, construct nodeId lists
+				// ----	Read ways
 
-				if (!processedRelations && pg.ways_size() > 0) {
+				if (pg.ways_size() > 0) {
 					for (j=0; j<pg.ways_size(); j++) {
 						pbfWay = pg.ways(j);
-						WayID wayId = pbfWay.id();
-						if (waysInRelation.count(wayId) > 0) {
-							// Assemble nodelist
-							nodeId = 0;
-							NodeVec nodeVec;
-							for (k = 0; k < pbfWay.refs_size(); k++) {
-								nodeId += pbfWay.refs(k);
-								nodeVec.push_back(static_cast<NodeID>(nodeId));
-							}
+						WayID wayId = static_cast<WayID>(pbfWay.id());
+
+						// Assemble nodelist
+						nodeId = 0;
+						NodeVec nodeVec;
+						for (k=0; k<pbfWay.refs_size(); k++) {
+							nodeId += pbfWay.refs(k);
+							nodeVec.push_back(static_cast<NodeID>(nodeId));
+						}
+
+						osmObject.setWay(&pbfWay, &nodeVec);
+						// Call Lua to find what layers and tags we want
+						try { luabind::call_function<int>(luaState, "way_function", &osmObject);
+						} catch (const luabind::error &er) {
+	    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
+							return -1;
+						}
+
+						if (!osmObject.empty() || waysInRelation.count(wayId)) {
+							// Store the way's nodes in the global way store
 							ways.insert_back(wayId, nodeVec);
+						}
+
+						if (!osmObject.empty()) {
+							// create a list of tiles this way passes through (tileSet)
+							unordered_set<uint32_t> tileSet;
+							insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
+
+							// then, for each tile, store the OutputObject for each layer
+							bool polygonExists = false;
+							for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+								uint32_t index = *it;
+								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
+									if (jt->geomType == POLYGON) {
+										polygonExists = true;
+										continue;
+									}
+									tileIndex[index].push_back(*jt);
+								}
+							}
+
+							// for polygon, fill inner tiles
+							if (polygonExists) {
+								fillCoveredTiles(tileSet);
+								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+									uint32_t index = *it;
+									for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
+										if (jt->geomType != POLYGON) continue;
+										tileIndex[index].push_back(*jt);
+									}
+								}
+							}
 						}
 					}
 					continue;
 				}
 
-				if (!processedRelations && !waysInRelation.empty()) {
-					// forget those ways here to save memory
-					waysInRelation.clear();
-				}
-
 				// ----	Read relations
 				//		(just multipolygons for now; we should do routes in time)
 
-				if (!processedRelations && pg.relations_size() > 0) {
+				if (pg.relations_size() > 0) {
 					int typeKey = osmObject.findStringPosition("type");
 					int mpKey   = osmObject.findStringPosition("multipolygon");
 					int innerKey= osmObject.findStringPosition("inner");
@@ -551,103 +580,32 @@ int main(int argc, char* argv[]) {
 								WayID relID = osmObject.osmID;
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
-								// Store this relation in the way->relations map to oblige each way in the relation
-                                // to output it, even if the way is not rendered in its own right.
-								for (auto it = outerWayVec.cbegin(); it != outerWayVec.cend(); ++it) {
-									wayRelations[*it].push_back(relID);
- 								}
-								for (auto it = innerWayVec.cbegin(); it != innerWayVec.cend(); ++it) {
-									wayRelations[*it].push_back(relID);
+
+								// for each tile the relation may cover, put the output objects.
+								unordered_set<uint32_t> tileSet;
+								MultiPolygon mp = osmStore.wayListMultiPolygon(outerWayVec, innerWayVec);
+								if (mp.size() == 1) {
+									insertIntermediateTiles(mp[0].outer(), baseZoom, tileSet);
+									fillCoveredTiles(tileSet);
+								} else {
+									for (Polygon poly: mp) {
+										unordered_set<uint32_t> tileSetTmp;
+										insertIntermediateTiles(poly.outer(), baseZoom, tileSetTmp);
+										fillCoveredTiles(tileSetTmp);
+										tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
+									}
 								}
-								// Keep output objects
-								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									relationOutputObjects[relID].push_back(*jt);
+
+								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+									uint32_t index = *it;
+									for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
+										tileIndex[index].push_back(*jt);
+									}
 								}
 							}
 						}
 					}
 					continue;
-				}
-
-				if (!processedRelations) {
-					// Nothing to do
-					break;
-				}
-
-				// ----	Read ways
-
-				if (pg.ways_size() > 0) {
-					for (j=0; j<pg.ways_size(); j++) {
-						pbfWay = pg.ways(j);
-						WayID wayId = static_cast<WayID>(pbfWay.id());
-
-						// Assemble nodelist
-						nodeId = 0;
-						NodeVec nodeVec;
-						for (k=0; k<pbfWay.refs_size(); k++) {
-							nodeId += pbfWay.refs(k);
-							nodeVec.push_back(static_cast<NodeID>(nodeId));
-						}
-
-						osmObject.setWay(&pbfWay, &nodeVec);
-						// Call Lua to find what layers and tags we want
-						try { luabind::call_function<int>(luaState, "way_function", &osmObject);
-						} catch (const luabind::error &er) {
-	    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-							return -1;
-						}
-
-						bool inRelation = wayRelations.count(pbfWay.id()) > 0;
-						if (!osmObject.empty() || inRelation) {
-							// Store the way's nodes in the global way store
-							ways.insert_back(wayId, nodeVec);
-
-							// create a list of tiles this way passes through (tilelist)
-							unordered_set <uint32_t> tilelist;
-							uint lastX, lastY;
-							for (k=0; k<pbfWay.refs_size(); k++) {
-								uint tileX =  lon2tilex(nodes.at(nodeVec[k]).lon  / 10000000.0, baseZoom);
-								uint tileY = latp2tiley(nodes.at(nodeVec[k]).latp / 10000000.0, baseZoom);
-								if (k>0) {
-									// Check we're not skipping any tiles, and insert intermediate nodes if so
-									// (we should have a simple fill algorithm for polygons, too)
-									int dx = abs((int)tileX-(int)lastX);
-									int dy = abs((int)tileY-(int)lastY);
-									if (dx>1 || dy>1 || (dx==1 && dy==1)) {
-										insertIntermediateTiles(&tilelist, max(dx,dy), nodes.at(nodeVec[k-1]), nodes.at(nodeVec[k]), baseZoom);
-									}
-								}
-								uint32_t index = tileX * 65536 + tileY;
-								tilelist.insert( index );
-								lastX = tileX;
-								lastY = tileY;
-							}
-
-							// then, for each tile, store the OutputObject for each layer
-							for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
-								uint32_t index = *it;
-								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									tileIndex[index].push_back(*jt);
-								}
-							}
-
-							// if it's in any relations to be output, do the same for each relation
-							if (inRelation) {
-								for (auto wt = wayRelations[wayId].begin(); wt != wayRelations[wayId].end(); ++wt) {
-									WayID relID = *wt;
-									// relID is now the relation ID
-									for (auto it = tilelist.begin(); it != tilelist.end(); ++it) {
-										// index is now the tile index number
-										uint32_t index = *it;
-										// add all the OutputObjects for this relation into this tile
-										for (auto jt = relationOutputObjects[relID].begin(); jt != relationOutputObjects[relID].end(); ++jt) {
-											tileIndex[index].push_back(*jt);
-										}
-									}
-								}
-							}
-						}
-					}
 				}
 
 				// Everything should be ended
