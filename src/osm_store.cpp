@@ -180,10 +180,10 @@ struct OSMStore {
 		if (wayList.outerBegin != wayList.outerEnd) {
 			// main outer way and inners
 			Polygon poly;
-			fillPoints(poly.outer(), ways.at(*wayList.outerBegin++));
+			if (ways.count(*wayList.outerBegin)==1) { fillPoints(poly.outer(), ways.at(*wayList.outerBegin++)); }
 			for (auto it = wayList.innerBegin; it != wayList.innerEnd; ++it) {
 				Ring inner;
-				fillPoints(inner, ways.at(*it));
+				if (ways.count(*it)==1) { fillPoints(inner, ways.at(*it)); }
 				poly.inners().emplace_back(move(inner));
 			}
 			mp.emplace_back(move(poly));
@@ -191,7 +191,7 @@ struct OSMStore {
 			// additional outer ways - we don't match them up with inners, that shit is insane
 			for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
 				Polygon outerPoly;
-				fillPoints(outerPoly.outer(), ways.at(*it));
+				if (ways.count(*it)==1) { fillPoints(outerPoly.outer(), ways.at(*it)); }
 				mp.emplace_back(move(outerPoly));
 			}
 
