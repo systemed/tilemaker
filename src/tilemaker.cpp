@@ -13,6 +13,8 @@
 #include <string>
 #include <cmath>
 #include <stdexcept>
+#include <thread>
+#include <mutex>
 
 // Other utilities
 #include <boost/filesystem.hpp>
@@ -126,6 +128,7 @@ int main(int argc, char* argv[]) {
 	string luaFile;
 	string jsonFile;
 	bool verbose = false;
+	uint threadNum;
 
 	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -134,7 +137,8 @@ int main(int argc, char* argv[]) {
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("verbose",po::bool_switch(&verbose),                                    "verbose error output");
+		("verbose",po::bool_switch(&verbose),                                    "verbose error output")
+		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -147,6 +151,9 @@ int main(int argc, char* argv[]) {
 
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) {
 		sqlite=true;
+	}
+	if (threadNum == 0) {
+		threadNum = max(thread::hardware_concurrency(), 1u);
 	}
 
 	#ifdef COMPACT_NODES
@@ -690,154 +697,164 @@ int main(int argc, char* argv[]) {
 			tileIndexPtr = &generatedIndex;
 		}
 
-		// Loop through tiles
-		uint tc = 0;
-		for (auto it = tileIndexPtr->begin(); it != tileIndexPtr->end(); ++it) {
-			if ((tc % 100) == 0) { 
-				cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << tileIndexPtr->size() << "               \r";
-				cout.flush();
-			}
-			tc++;
+		// Output procedure
+		auto outputProc = [&](uint threadId) {
+			// Loop through tiles
+			uint tc = 0;
+			for (auto it = tileIndexPtr->begin(); it != tileIndexPtr->end(); ++it) {
+				if (threadId == 0 && (tc % 100) == 0) {
+					cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << tileIndexPtr->size() << "               \r";
+					cout.flush();
+				}
+				if (tc++ % threadNum != threadId) continue;
 
-			// Create tile
-			vector_tile::Tile tile;
-			uint index = it->first;
-			TileBbox bbox(index,zoom);
-			const vector<OutputObject> &ooList = it->second;
-			if (clippingBoxFromJSON && (maxLon<=bbox.minLon || minLon>=bbox.maxLon || maxLat<=bbox.minLat || minLat>=bbox.maxLat)) { continue; }
+				// Create tile
+				vector_tile::Tile tile;
+				uint index = it->first;
+				TileBbox bbox(index,zoom);
+				const vector<OutputObject> &ooList = it->second;
+				if (clippingBoxFromJSON && (maxLon<=bbox.minLon || minLon>=bbox.maxLon || maxLat<=bbox.minLat || minLat>=bbox.maxLat)) { continue; }
 
-			// Loop through layers
-			for (auto lt = osmObject.layerOrder.begin(); lt != osmObject.layerOrder.end(); ++lt) {
-				vector<string> keyList;
-				vector<vector_tile::Tile_Value> valueList;
-				vector_tile::Tile_Layer *vtLayer = tile.add_layers();
+				// Loop through layers
+				for (auto lt = osmObject.layerOrder.begin(); lt != osmObject.layerOrder.end(); ++lt) {
+					vector<string> keyList;
+					vector<vector_tile::Tile_Value> valueList;
+					vector_tile::Tile_Layer *vtLayer = tile.add_layers();
 
-				for (auto mt = lt->begin(); mt != lt->end(); ++mt) {
-					uint layerNum = *mt;
-					LayerDef ld = osmObject.layers[layerNum];
-					if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-					double simplifyLevel = 0;
-					if (zoom < ld.simplifyBelow) {
-						if (ld.simplifyLength > 0) {
-							uint tileY = index & 65535;
-							double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
-							simplifyLevel = meter2degp(ld.simplifyLength, latp);
-						} else {
-							simplifyLevel = ld.simplifyLevel;
+					for (auto mt = lt->begin(); mt != lt->end(); ++mt) {
+						uint layerNum = *mt;
+						LayerDef ld = osmObject.layers[layerNum];
+						if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
+						double simplifyLevel = 0;
+						if (zoom < ld.simplifyBelow) {
+							if (ld.simplifyLength > 0) {
+								uint tileY = index & 65535;
+								double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
+								simplifyLevel = meter2degp(ld.simplifyLength, latp);
+							} else {
+								simplifyLevel = ld.simplifyLevel;
+							}
+							simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 						}
-						simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
-					}
 
-					// compare only by `layer`
-					auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
-					// We get the range within ooList, where the layer of each object is `layerNum`.
-					// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-					auto ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
-					// Loop through output objects
-					for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
-						if (jt->geomType == POINT) {
-							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
-							jt->writeAttributes(&keyList, &valueList, featurePtr);
-							if (includeID) { featurePtr->set_id(jt->objectID); }
-						} else {
-							try {
-								Geometry g = jt->buildWayGeometry(osmStore, &bbox, cachedGeometries);
-
-								// If a object is a polygon or a linestring that is followed by
-								// other objects with the same geometry type and the same attributes,
-								// the following objects are merged into the first object, by taking union of geometries.
-								auto gTyp = jt->geomType;
-								if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
-									MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
-									while (jt+1 != ooListSameLayer.second &&
-											(jt+1)->geomType == gTyp &&
-											(jt+1)->attributes == jt->attributes) {
-										jt++;
-										MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
-										MultiPolygon gTmp;
-										geom::union_(gAcc, gNew, gTmp);
-										gAcc = move(gTmp);
-									}
-								}
-								if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
-									MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
-									while (jt+1 != ooListSameLayer.second &&
-											(jt+1)->geomType == gTyp &&
-											(jt+1)->attributes == jt->attributes) {
-										jt++;
-										MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
-										MultiLinestring gTmp;
-										geom::union_(gAcc, gNew, gTmp);
-										gAcc = move(gTmp);
-									}
-								}
-
+						// compare only by `layer`
+						auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
+						// We get the range within ooList, where the layer of each object is `layerNum`.
+						// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+						auto ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
+						// Loop through output objects
+						for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
+							if (jt->geomType == POINT) {
 								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-								WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
-								boost::apply_visitor(w, g);
-								if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+								jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
 								jt->writeAttributes(&keyList, &valueList, featurePtr);
 								if (includeID) { featurePtr->set_id(jt->objectID); }
-							} catch (...) {
-								if (verbose)  {
-									cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
-									if (relations.count(jt->objectID)) {
-										const auto &wayList = relations.at(jt->objectID);
-										for (auto et = wayList.outerBegin; et != wayList.outerEnd; ++et) {
-											if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+							} else {
+								try {
+									Geometry g = jt->buildWayGeometry(osmStore, &bbox, cachedGeometries);
+
+									// If a object is a polygon or a linestring that is followed by
+									// other objects with the same geometry type and the same attributes,
+									// the following objects are merged into the first object, by taking union of geometries.
+									auto gTyp = jt->geomType;
+									if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+										MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
+										while (jt+1 != ooListSameLayer.second &&
+												(jt+1)->geomType == gTyp &&
+												(jt+1)->attributes == jt->attributes) {
+											jt++;
+											MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
+											MultiPolygon gTmp;
+											geom::union_(gAcc, gNew, gTmp);
+											gAcc = move(gTmp);
 										}
-										for (auto et = wayList.innerBegin; et != wayList.innerEnd; ++et) {
-											if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+									}
+									if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+										MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
+										while (jt+1 != ooListSameLayer.second &&
+												(jt+1)->geomType == gTyp &&
+												(jt+1)->attributes == jt->attributes) {
+											jt++;
+											MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
+											MultiLinestring gTmp;
+											geom::union_(gAcc, gNew, gTmp);
+											gAcc = move(gTmp);
+										}
+									}
+
+									vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+									WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
+									boost::apply_visitor(w, g);
+									if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+									jt->writeAttributes(&keyList, &valueList, featurePtr);
+									if (includeID) { featurePtr->set_id(jt->objectID); }
+								} catch (...) {
+									if (verbose)  {
+										cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
+										if (relations.count(jt->objectID)) {
+											const auto &wayList = relations.at(jt->objectID);
+											for (auto et = wayList.outerBegin; et != wayList.outerEnd; ++et) {
+												if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+											}
+											for (auto et = wayList.innerBegin; et != wayList.innerEnd; ++et) {
+												if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
+											}
 										}
 									}
 								}
 							}
 						}
 					}
+
+					// If there are any objects, then add tags
+					if (vtLayer->features_size()>0) {
+						vtLayer->set_name(osmObject.layers[lt->at(0)].name);
+						vtLayer->set_version(1);
+						for (uint j=0; j<keyList.size()  ; j++) {
+							vtLayer->add_keys(keyList[j]);
+						}
+						for (uint j=0; j<valueList.size(); j++) { 
+							vector_tile::Tile_Value *v = vtLayer->add_values();
+							*v = valueList[j];
+						}
+					} else {
+						tile.mutable_layers()->RemoveLast();
+					}
 				}
 
-				// If there are any objects, then add tags
-				if (vtLayer->features_size()>0) {
-					vtLayer->set_name(osmObject.layers[lt->at(0)].name);
-					vtLayer->set_version(1);
-					for (uint j=0; j<keyList.size()  ; j++) {
-						vtLayer->add_keys(keyList[j]);
-					}
-					for (uint j=0; j<valueList.size(); j++) { 
-						vector_tile::Tile_Value *v = vtLayer->add_values();
-						*v = valueList[j];
-					}
-				} else {
-					tile.mutable_layers()->RemoveLast();
-				}
-			}
+				// Write to file or sqlite
 
-			// Write to file or sqlite
-
-			string data, compressed;
-			if (sqlite) {
-				// Write to sqlite
-				tile.SerializeToString(&data);
-				if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, gzip); }
-				mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
-
-			} else {
-				// Write to file
-				stringstream dirname, filename;
-				dirname  << outputFile << "/" << zoom << "/" << bbox.tilex;
-				filename << outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
-				boost::filesystem::create_directories(dirname.str());
-				fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
-				if (compress) {
+				string data, compressed;
+				if (sqlite) {
+					// Write to sqlite
 					tile.SerializeToString(&data);
-					outfile << compress_string(data, Z_DEFAULT_COMPRESSION, gzip);
+					if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, gzip); }
+					mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
+
 				} else {
-					if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
+					// Write to file
+					stringstream dirname, filename;
+					dirname  << outputFile << "/" << zoom << "/" << bbox.tilex;
+					filename << outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
+					boost::filesystem::create_directories(dirname.str());
+					fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
+					if (compress) {
+						tile.SerializeToString(&data);
+						outfile << compress_string(data, Z_DEFAULT_COMPRESSION, gzip);
+					} else {
+						if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
+					}
+					outfile.close();
 				}
-				outfile.close();
 			}
-		}
+			return 0;
+		};
+
+		// Multi thread processing loop
+		vector<thread> worker;
+		for (uint threadId = 0; threadId < threadNum; threadId++)
+			worker.emplace_back(outputProc, threadId);
+		for (auto &t: worker) t.join();
 	}
 
 	cout << endl << "Filled the tileset with good things at " << outputFile << endl;
