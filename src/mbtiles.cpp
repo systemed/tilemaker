@@ -4,6 +4,7 @@
 class MBTiles { public:
 
 	database db;
+	mutex m;
 
 	MBTiles() {
 	}
@@ -21,11 +22,15 @@ class MBTiles { public:
 	}
 	
 	void writeMetadata(string key, string value) {
+		m.lock();
 		db << "REPLACE INTO metadata (name,value) VALUES (?,?);" << key << value;
+		m.unlock();
 	}
 	
 	void saveTile(int zoom, int x, int y, string *data) {
 		int tmsY = pow(2,zoom) - 1 - y;
+		m.lock();
 		db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);" << zoom << x << tmsY && *data;
+		m.unlock();
 	}
 };
