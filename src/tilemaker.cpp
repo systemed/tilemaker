@@ -42,9 +42,7 @@ extern "C" {
     #include "lualib.h"
     #include "lauxlib.h"
 }
-#include <luabind/luabind.hpp>
-#include <luabind/function.hpp> 
-#include <luabind/iterator_policy.hpp>
+#include "kaguya.hpp"
 
 // boost::geometry
 #include <boost/geometry.hpp>
@@ -92,15 +90,14 @@ typedef vector<WayID> WayVec;
 #include "read_shp.cpp"
 #include "write_geometry.cpp"
 
-int lua_error_handler(lua_State* luaState)
+kaguya::State luaState;
+
+int lua_error_handler(int errCode, const char *errMessage)
 {
-	luabind::object msg(luabind::from_stack(luaState, -1));
-	cerr << "lua runtime error: " << msg << endl;
-
-	std::string traceback = luabind::call_function<std::string>(luabind::globals(luaState)["debug"]["traceback"]);
+	std::string traceback = luaState["debug"]["traceback"];
+	cerr << "lua runtime error: " << errMessage << endl;
 	cerr << "traceback: " << traceback << endl;
-
-	return 1;
+	exit(0);
 }
 
 int main(int argc, char* argv[]) {
@@ -180,30 +177,26 @@ int main(int argc, char* argv[]) {
 	
 	// ----	Initialise Lua
 
-    lua_State *luaState = luaL_newstate();
-    luaL_openlibs(luaState);
-    luaL_dofile(luaState, luaFile.c_str());
-    luabind::open(luaState);
-	luabind::set_pcall_callback(&lua_error_handler);
-	luabind::module(luaState) [
-	luabind::class_<OSMObject>("OSM")
-		.def("Id", &OSMObject::Id)
-		.def("Holds", &OSMObject::Holds)
-		.def("Find", &OSMObject::Find)
-		.def("FindIntersecting", &OSMObject::FindIntersecting, luabind::return_stl_iterator)
-		.def("Intersects", &OSMObject::Intersects)
-		.def("IsClosed", &OSMObject::IsClosed)
-		.def("ScaleToMeter", &OSMObject::ScaleToMeter)
-		.def("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
-		.def("Area", &OSMObject::Area)
-		.def("Length", &OSMObject::Length)
-		.def("Layer", &OSMObject::Layer)
-		.def("LayerAsCentroid", &OSMObject::LayerAsCentroid)
-		.def("Attribute", &OSMObject::Attribute)
-		.def("AttributeNumeric", &OSMObject::AttributeNumeric)
-		.def("AttributeBoolean", &OSMObject::AttributeBoolean)
-	];
-	OSMObject osmObject(luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
+	luaState.setErrorHandler(lua_error_handler);
+	luaState.dofile(luaFile.c_str());
+	luaState["OSM"].setClass(kaguya::UserdataMetatable<OSMObject>()
+		.addFunction("Id", &OSMObject::Id)
+		.addFunction("Holds", &OSMObject::Holds)
+		.addFunction("Find", &OSMObject::Find)
+		.addFunction("FindIntersecting", &OSMObject::FindIntersecting)
+		.addFunction("Intersects", &OSMObject::Intersects)
+		.addFunction("IsClosed", &OSMObject::IsClosed)
+		.addFunction("ScaleToMeter", &OSMObject::ScaleToMeter)
+		.addFunction("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
+		.addFunction("Area", &OSMObject::Area)
+		.addFunction("Length", &OSMObject::Length)
+		.addFunction("Layer", &OSMObject::Layer)
+		.addFunction("LayerAsCentroid", &OSMObject::LayerAsCentroid)
+		.addFunction("Attribute", &OSMObject::Attribute)
+		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
+		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
+	);
+	OSMObject osmObject(&luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
 
 	// ----	Read JSON config
 
@@ -302,31 +295,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	// ---- Call init_function of Lua logic
-	lua_getglobal(luaState, "init_function");
-	int exists_init_function = !lua_isnil(luaState, -1);
-	lua_pop(luaState, 1);
-	if (exists_init_function) {
-		try { luabind::call_function<int>(luaState, "init_function");
-		} catch (const luabind::error &er) {
-			cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-			return -1;
-		}
-	}
+
+	luaState("if init_function~=nil then init_function() end");
 
 	// ----	Read significant node tags
 
-	unordered_set<string> nodeKeys;
-	lua_getglobal( luaState, "node_keys");
-	if (lua_isnil(luaState,-1)) {
-		cerr << "Error found in Lua script when reading node_keys - check your script for syntax errors." << endl;
-		return -1;
-	}
-	lua_pushnil( luaState );
-	while(lua_next( luaState, -2) != 0) {
-		string key = lua_tostring( luaState, -1 );
-		lua_pop( luaState, 1);
-		nodeKeys.insert(key);
-	}
+	vector<string> nodeKeyVec = luaState["node_keys"];
+	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
 
 	// ----	Initialise mbtiles if required
 	
@@ -434,11 +409,7 @@ int main(int argc, char* argv[]) {
 						// For tagged nodes, call Lua, then save the OutputObject
 						if (significant) {
 							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
-							try { luabind::call_function<int>(luaState, "node_function", &osmObject);
-							} catch (const luabind::error &er) {
-		    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-								return -1;
-							}
+							luaState["node_function"](&osmObject);
 							if (!osmObject.empty()) {
 								uint32_t index = latpLon2index(node, baseZoom);
 								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
@@ -496,12 +467,7 @@ int main(int argc, char* argv[]) {
 						}
 
 						osmObject.setWay(&pbfWay, &nodeVec);
-						// Call Lua to find what layers and tags we want
-						try { luabind::call_function<int>(luaState, "way_function", &osmObject);
-						} catch (const luabind::error &er) {
-	    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-							return -1;
-						}
+						luaState["way_function"](&osmObject);
 
 						if (!osmObject.empty() || waysInRelation.count(wayId)) {
 							// Store the way's nodes in the global way store
@@ -570,12 +536,7 @@ int main(int argc, char* argv[]) {
 							}
 
 							osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
-							// Check with Lua if we want it
-							try { luabind::call_function<int>(luaState, "way_function", &osmObject);
-							} catch (const luabind::error &er) {
-		    					cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-								return -1;
-							}
+							luaState["way_function"](&osmObject);
 							if (!osmObject.empty()) {
 								WayID relID = osmObject.osmID;
 								// Store the relation members in the global relation store
@@ -819,16 +780,5 @@ int main(int argc, char* argv[]) {
 	google::protobuf::ShutdownProtobufLibrary();
 
 	// ---- Call exit_function of Lua logic
-	lua_getglobal(luaState, "exit_function");
-	int exists_exit_function = !lua_isnil(luaState, -1);
-	lua_pop(luaState, 1);
-	if (exists_exit_function) {
-		try { luabind::call_function<int>(luaState, "exit_function");
-		} catch (const luabind::error &er) {
-			cerr << er.what() << endl << "-- " << lua_tostring(er.state(), -1) << endl;
-			return -1;
-		}
-	}
-
-    lua_close(luaState);
+	luaState("if exit_function~=nil then exit_function() end");
 }

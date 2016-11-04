@@ -182,11 +182,10 @@ You can then find out whether a node is within one of these polygons using the `
 
     if node:Intersects("countries") then print("Looks like it's on land"); end
 
-Or you can find out what country(/ies) the node is within using `FindIntersecting`:
+Or you can find out what country(/ies) the node is within using `FindIntersecting`, which returns a table:
 
-    for name in node:FindIntersecting("countries") do
-	  print(name)
-    end
+    names = node:FindIntersecting("countries")
+    print(table.concat(name,","))
 
 To enable these functions, set `index` to true in your shapefile layer definition. `index_column` is not needed for `Intersects` but required for `FindIntersecting`.
 

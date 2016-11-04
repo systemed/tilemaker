@@ -14,36 +14,29 @@ Tilemaker is written in C++11. The chief dependencies are:
 
 * Google Protocol Buffers
 * Boost 1.56 or later (for boost::geometry, boost::program_options, boost::filesystem, boost::variant)
-* Lua 5.1 and Luabind
+* Lua 5.1
 * sqlite3
 * shapelib
 
-rapidjson (MIT) and sqlite_modern_cpp (MIT) are bundled in the include/ directory.
+rapidjson, sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
 
-On OS X, you can install all dependencies with Homebrew:
+### OS X
 
-	brew install protobuf boost lua51 luabind shapelib
+Install all dependencies with Homebrew:
 
-On Ubuntu, start with:
+	brew install protobuf boost lua51 shapelib
+
+### Ubuntu
+
+Start with:
 
 	sudo apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev
 
-You'll then need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
+If you're using Ubuntu 16.04, you can install Boost with `sudo apt-get install libboost-all-dev`. For 12.04 or 14.04, you'll need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
 
 	sudo add-apt-repository ppa:ostogvin/tjo-develop
 	sudo apt-get update
 	sudo apt-get install libboost1.58-all-dev
-
-Finally, we need to install luabind manually because the Ubuntu package (sigh) requires Boost 1.54, whereas we need 1.56 or later. So:
-
-	git clone https://github.com/rpavlik/luabind.git
-	cd luabind
-	# The following line might not be necessary for you,
-	# but I needed it to make sure that liblua was in /usr/lib:
-	ln -s /usr/lib/x86_64-linux-gnu/liblua5.1.so /usr/lib/
-	sudo bjam install
-	sudo ln -s /usr/local/lib/libluabindd.so /usr/local/lib/libluabind.so
-	sudo ldconfig
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
@@ -52,9 +45,11 @@ Once you've installed those, then `cd` back to your Tilemaker directory and simp
 
 If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again.
 
-On Fedora start with:
+### Fedora
 
-    dnf install lua-devel luajit-devel luabind-devel sqlite-devel protobuf-devel protobuf-compiler shapelib-devel
+Start with:
+
+    dnf install lua-devel luajit-devel sqlite-devel protobuf-devel protobuf-compiler shapelib-devel
 
 then build either with lua:
 
@@ -65,6 +60,8 @@ or with luajit:
 
     make LUA_CFLAGS="$(pkg-config --cflags luajit)" LUA_LIBS="$(pkg-config --libs luajit)"
     make install
+
+### Saving memory
 
 To save memory (on any platform), you can choose 32-bit storage for node IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
 
@@ -118,7 +115,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 Copyright and contact
 ---------------------
 
-Richard Fairhurst and contributors, 2015-2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT.
+Richard Fairhurst and contributors, 2015-2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
 
 If you'd like to sponsor development of Tilemaker, you can contact me at richard@systemeD.net.
 

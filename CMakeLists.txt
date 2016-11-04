@@ -26,9 +26,6 @@ include_directories(${LIBSHP_INCLUDE_DIR})
 find_package(Lua REQUIRED)
 include_directories(${LUA_INCLUDE_DIR})
 
-find_package(Luabind REQUIRED)
-include_directories(${LUABIND_INCLUDE_DIR})
-
 find_package(ZLIB REQUIRED)
 include_directories(${ZLIB_INCLUDE_DIR})
 
@@ -49,6 +46,6 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
 		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/osmformat.proto)
 
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc src/tilemaker.cpp)
-target_link_libraries(tilemaker ${Boost_LIBRARIES} ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUABIND_LIBRARIES} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB})
+target_link_libraries(tilemaker ${Boost_LIBRARIES} ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB})
 
 install(TARGETS tilemaker RUNTIME DESTINATION bin)

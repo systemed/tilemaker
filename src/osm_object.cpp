@@ -12,13 +12,13 @@ struct LayerDef {
 	OSMObject - represents the object (from the .osm.pbf) currently being processed
 	
 	Only one instance of this class is ever used. Its main purpose is to provide a 
-	consistent object for Luabind to access.
+	consistent object for Lua to access.
 	
 */
 
 class OSMObject { public:
 
-	lua_State *luaState;					// Lua reference
+	kaguya::State *luaState;				// Lua reference
 	map<string, RTree> *indices;			// Spatial indices
 	vector<Geometry> *cachedGeometries;		// Cached geometries
 	map<uint,string> *cachedGeometryNames;	// Cached geometry names
@@ -61,7 +61,7 @@ class OSMObject { public:
 
 	// ----	initialization routines
 
-	OSMObject(lua_State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr) {
+	OSMObject(kaguya::State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr) {
 		luaState = luaPtr;
 		indices = idxPtr;
 		cachedGeometries = geomPtr;
