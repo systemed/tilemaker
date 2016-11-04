@@ -82,6 +82,8 @@ public:
 	void clear() {
 		mLatpLons.clear();
 	}
+
+	size_t size() { return mLatpLons.size(); }
 };
 
 // way store
@@ -121,6 +123,8 @@ public:
 	void clear() {
 		mNodeLists.clear();
 	}
+
+	size_t size() { return mNodeLists.size(); }
 };
 
 // relation store
@@ -162,6 +166,8 @@ public:
 	void clear() {
 		mOutInLists.clear();
 	}
+
+	size_t size() { return mOutInLists.size(); }
 };
 
 //
@@ -171,6 +177,10 @@ struct OSMStore {
 	NodeStore nodes;
 	WayStore ways;
 	RelationStore relations;
+
+	void reportSize() {
+		cout << "Stored " << nodes.size() << " nodes, " << ways.size() << " ways, " << relations.size() << " relations" << endl;
+	}
 
 	// Relation -> MultiPolygon
 	template<class WayIt>

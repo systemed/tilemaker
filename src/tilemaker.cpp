@@ -577,6 +577,7 @@ int main(int argc, char* argv[]) {
 		cout << endl;
 		infile.close();
 	}
+	osmStore.reportSize();
 
 	// ----	Write out each tile
 
