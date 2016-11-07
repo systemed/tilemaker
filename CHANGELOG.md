@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.0] - 2016-11-07
+
+### Added
+- Use threads when creating output tiles for massive speedup (@grafi-tt)
+- Bundle kaguya - no need for Luabind any more
+- Report how many output objects were stored
+- Add glug support to mbtileserver
+
+### Changed
+- `way:FindContaining()` now returns a Lua table rather than an iterator
+
+### Fixed
+- Polygon filling algorithm rewritten to work consistently (@grafi-tt)
+
+### Removed
+- Mapbox Studio-compatible file layout removed (licensing debatable)
+- Vagrantfile removed (dependency problems)
+
 ## [1.3.0] - 2016-07-11
 
 ### Added
