@@ -23,6 +23,6 @@ install:
 	install -m 0755 tilemaker /usr/local/bin
 
 clean:
-	rm tilemaker src/tilemaker.o
+	rm -f tilemaker src/tilemaker.o
 
 .PHONY: install
