@@ -13,7 +13,7 @@ Installing
 Tilemaker is written in C++11. The chief dependencies are:
 
 * Google Protocol Buffers
-* Boost 1.56 or later (for boost::geometry, boost::program_options, boost::filesystem, boost::variant)
+* Boost (latest version advised, 1.56 minimum: for boost::geometry, boost::program_options, boost::filesystem, boost::variant)
 * Lua 5.1
 * sqlite3
 * shapelib
