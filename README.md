@@ -89,7 +89,7 @@ Output can be as individual files to a directory, or to an MBTiles file aka a SQ
 
 You may load multiple .pbf files in one run (for example, adjoining counties). Tilemaker does not clear the existing contents of MBTiles files, which makes it easy to load two cities into one file. This does mean you should delete any existing file if you want a fresh run.
 
-The JSON configuration and Lua processing files are specified with --config and --process respectively. Defaults are config.json and process.lua.
+The JSON configuration and Lua processing files are specified with --config and --process respectively. Defaults are config.json and process.lua in the current directory. If there is no config.json and process.lua in the current directory, and you do not specify --config and --process, an error will result.
 
 You can get a run-down of available options with
 
