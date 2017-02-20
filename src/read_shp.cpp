@@ -3,15 +3,15 @@
 */
 
 void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint part) {
-	int start = shape->panPartStart[part];
-	int end   = (part==shape->nParts-1) ? shape->nVertices : shape->panPartStart[part+1];
+	uint start = shape->panPartStart[part];
+	uint end   = (int(part)==shape->nParts-1) ? shape->nVertices : shape->panPartStart[part+1];
     double* const x = shape->padfX;
     double* const y = shape->padfY;
 	points->clear(); if (points->capacity() < (end-start)+1) { points->reserve(end-start+1); }
 	double prevx = 1000;
 	double prevy = 1000;
 	for (uint i=start; i<end; i++) {
-		y[i] = fmin(fmax(y[i], MinLat), MaxLat);	// To avoid infinite latp
+		y[i] = fmin(fmax(y[i], MinLat),MaxLat);	// To avoid infinite latp
 		double latp = lat2latp(y[i]);
 		// skip duplicated point
 		if ((i == end - 1 && (x[i] != prevx || latp != prevy)) ||
@@ -49,8 +49,8 @@ void addToTileIndexPolyline(OutputObject &oo, map< uint, vector<OutputObject> > 
 		if (lastx==UINT_MAX) {
 			tileIndex[tilex*65536+tiley].push_back(oo);
 		} else if (lastx!=tilex || lasty!=tiley) {
-			for (int x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
-				for (int y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
+			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
+				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
 					tileIndex[x*65536+y].push_back(oo);
 				}
 			}
@@ -96,7 +96,7 @@ void readShapefile(string filename,
 	// prepare columns
 	unordered_map<int,string> columnMap;
 	unordered_map<int,int> columnTypeMap;
-	for (int i=0; i<columns.size(); i++) {
+	for (size_t i=0; i<columns.size(); i++) {
 		int dbfLoc = DBFGetFieldIndex(dbf,columns[i].c_str());
 		if (dbfLoc>-1) { 
 			columnMap[dbfLoc]=columns[i];
@@ -131,7 +131,7 @@ void readShapefile(string filename,
 			// (Multi)-polylines
 			// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58, 
 			// so we need to create everything as polylines and clip individually :(
-			for (uint j=0; j<shape->nParts; j++) {
+			for (int j=0; j<shape->nParts; j++) {
 				Linestring ls;
 				fillPointArrayFromShapefile(&points, shape, j);
 				geom::assign_points(ls, points);
@@ -159,7 +159,7 @@ void readShapefile(string filename,
 
 			// To avoid expensive computations, we assume the shapefile has been pre-processed
 			// such that each polygon's exterior ring is immediately followed by its interior rings.
-			for (uint j=0; j<shape->nParts; j++) {
+			for (int j=0; j<shape->nParts; j++) {
 				fillPointArrayFromShapefile(&points, shape, j);
 				// Read points into a ring
 				ring.clear();

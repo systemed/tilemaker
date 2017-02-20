@@ -349,7 +349,7 @@ int main(int argc, char* argv[]) {
 		DenseNodes dense;
 		Way pbfWay;
 		vector<string> strings(0);
-		uint i,j,k,ct=0;
+		uint ct=0;
 		int64_t nodeId;
 		bool checkedRelations = false;
 		int wayPosition = -1;
@@ -376,7 +376,7 @@ int main(int argc, char* argv[]) {
 				nodeKeyPositions.insert(osmObject.findStringPosition(it));
 			}
 
-			for (i=0; i<pb.primitivegroup_size(); i++) {
+			for (int i=0; i<pb.primitivegroup_size(); i++) {
 				pg = pb.primitivegroup(i);
 				cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 				cout.flush();
@@ -389,7 +389,7 @@ int main(int argc, char* argv[]) {
 					int lat = 0;
 					int kvPos = 0;
 					dense = pg.dense();
-					for (j=0; j<dense.id_size(); j++) {
+					for (int j=0; j<dense.id_size(); j++) {
 						nodeId += dense.id(j);
 						lon    += dense.lon(j);
 						lat    += dense.lat(j);
@@ -433,10 +433,10 @@ int main(int argc, char* argv[]) {
 				// ----	Remember all ways in any relation
 
 				if (!checkedRelations && pg.relations_size() > 0) {
-					for (j=0; j<pg.relations_size(); j++) {
+					for (int j=0; j<pg.relations_size(); j++) {
 						Relation pbfRelation = pg.relations(j);
 						int64_t lastID = 0;
-						for (uint n = 0; n < pbfRelation.memids_size(); n++) {
+						for (int n = 0; n < pbfRelation.memids_size(); n++) {
 							lastID += pbfRelation.memids(n);
 							if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 							WayID wayId = static_cast<WayID>(lastID);
@@ -454,14 +454,14 @@ int main(int argc, char* argv[]) {
 				// ----	Read ways
 
 				if (pg.ways_size() > 0) {
-					for (j=0; j<pg.ways_size(); j++) {
+					for (int j=0; j<pg.ways_size(); j++) {
 						pbfWay = pg.ways(j);
 						WayID wayId = static_cast<WayID>(pbfWay.id());
 
 						// Assemble nodelist
 						nodeId = 0;
 						NodeVec nodeVec;
-						for (k=0; k<pbfWay.refs_size(); k++) {
+						for (int k=0; k<pbfWay.refs_size(); k++) {
 							nodeId += pbfWay.refs(k);
 							nodeVec.push_back(static_cast<NodeID>(nodeId));
 						}
@@ -517,7 +517,7 @@ int main(int argc, char* argv[]) {
 					int innerKey= osmObject.findStringPosition("inner");
 					//int outerKey= osmObject.findStringPosition("outer");
 					if (typeKey >-1 && mpKey>-1) {
-						for (j=0; j<pg.relations_size(); j++) {
+						for (int j=0; j<pg.relations_size(); j++) {
 							Relation pbfRelation = pg.relations(j);
 							if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
 							if (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) == pbfRelation.vals().end()) { continue; }
@@ -525,7 +525,7 @@ int main(int argc, char* argv[]) {
 							// Read relation members
 							WayVec outerWayVec, innerWayVec;
 							int64_t lastID = 0;
-							for (uint n=0; n < pbfRelation.memids_size(); n++) {
+							for (int n=0; n < pbfRelation.memids_size(); n++) {
 								lastID += pbfRelation.memids(n);
 								if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 								int32_t role = pbfRelation.roles_sid(n);

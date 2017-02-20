@@ -151,7 +151,7 @@ class OutputObject { public:
 	// (we can't easily use find() because of the different value-type encoding - 
 	//  should be possible to improve this though)
 	int findValue(vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const {
-		for (int i=0; i<valueList->size(); i++) {
+		for (size_t i=0; i<valueList->size(); i++) {
 			vector_tile::Tile_Value v = valueList->at(i);
 			if (v.has_string_value() && value->has_string_value() && v.string_value()==value->string_value()) { return i; }
 			if (v.has_float_value()  && value->has_float_value()  && v.float_value() ==value->float_value() ) { return i; }
