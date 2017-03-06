@@ -155,6 +155,11 @@ int main(int argc, char* argv[]) {
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
 
+	// ---- Check config
+	
+	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
+	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
+
 	// ----	Read bounding box from first .pbf
 
 	Box clippingBox;
