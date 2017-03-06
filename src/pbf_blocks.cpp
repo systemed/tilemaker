@@ -66,14 +66,14 @@ void writeBlock(google::protobuf::Message *messagePtr, fstream *outputPtr, strin
 // Populate an array with the contents of a StringTable
 void readStringTable(vector<string> *strPtr, PrimitiveBlock *pbPtr) {
 	strPtr->resize(pbPtr->stringtable().s_size());
-	for (uint i=0; i<pbPtr->stringtable().s_size(); i++) {
+	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
 		(*strPtr)[i] = pbPtr->stringtable().s(i);			// dereference strPtr to get strings
 	}
 }
 
 // Populate a map with the reverse contents of a StringTable (i.e. string->num)
 void readStringMap(map<string, int> *mapPtr, PrimitiveBlock *pbPtr) {
-	for (uint i=0; i<pbPtr->stringtable().s_size(); i++) {
+	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
 		mapPtr->insert(pair<string, int> (pbPtr->stringtable().s(i), i));
 	}
 }
@@ -82,7 +82,7 @@ void readStringMap(map<string, int> *mapPtr, PrimitiveBlock *pbPtr) {
 // requires strings array to have been populated by readStringTable
 map<string, string> getTags(vector<string> *strPtr, Way *wayPtr) {
 	map<string, string> tags;
-	for (uint n=0; n<wayPtr->keys_size(); n++) {
+	for (int n=0; n<wayPtr->keys_size(); n++) {
 		tags[(*strPtr)[wayPtr->keys(n)]] = (*strPtr)[wayPtr->vals(n)];
 	}
 	return tags;
@@ -100,7 +100,7 @@ uint findStringInTable(string *strPtr, map<string, int> *mapPtr, PrimitiveBlock 
 
 // Set a tag for a way to a new value
 void setTag(Way *wayPtr, uint keyIndex, uint valueIndex) {
-	for (uint i=0; i<wayPtr->keys_size(); i++) {
+	for (int i=0; i<wayPtr->keys_size(); i++) {
 		if (wayPtr->keys(i)==keyIndex) {
 			wayPtr->mutable_vals()->Set(i,valueIndex);
 			return;

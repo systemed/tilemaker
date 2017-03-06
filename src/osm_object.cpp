@@ -1,8 +1,8 @@
 struct LayerDef {
 	string name;
-	int minzoom;
-	int maxzoom;
-	int simplifyBelow;
+	uint minzoom;
+	uint maxzoom;
+	uint simplifyBelow;
 	double simplifyLevel;
 	double simplifyLength;
 	double simplifyRatio;
@@ -47,17 +47,17 @@ class OSMObject { public:
 
 	// Common tag storage
 	vector<string> stringTable;				// Tag table from the current PrimitiveGroup
-	map<string, int> tagMap;				// String->position map
+	map<string, uint> tagMap;				// String->position map
 
 	// Tag storage for denseNodes
-	int denseStart;							// Start of key/value table section (DenseNodes)
-	int denseEnd;							// End of key/value table section (DenseNodes)
+	uint denseStart;							// Start of key/value table section (DenseNodes)
+	uint denseEnd;							// End of key/value table section (DenseNodes)
 	DenseNodes *densePtr;					// DenseNodes object
 
 	// Tag storage for ways/relations
 	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *keysPtr;
 	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
-	int tagLength;
+	uint tagLength;
 
 	// ----	initialization routines
 
@@ -70,8 +70,8 @@ class OSMObject { public:
 	}
 
 	// Define a layer (as read from the .json file)
-	uint addLayer(string name, int minzoom, int maxzoom,
-			int simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
+	uint addLayer(string name, uint minzoom, uint maxzoom,
+			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
 		LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio };
 		layers.push_back(layer);
 		uint layerNum = layers.size()-1;
@@ -96,16 +96,15 @@ class OSMObject { public:
 
 	// Read string dictionary from the .pbf
 	void readStringTable(PrimitiveBlock *pbPtr) {
-		uint i;
 		// Populate the string table
 		stringTable.clear();
 		stringTable.resize(pbPtr->stringtable().s_size());
-		for (i=0; i<pbPtr->stringtable().s_size(); i++) {
+		for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
 			stringTable[i] = pbPtr->stringtable().s(i);
 		}
 		// Create a string->position map
 		tagMap.clear();
-		for (i=0; i<pbPtr->stringtable().s_size(); i++) {
+		for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
 			tagMap.insert(pair<string, int> (pbPtr->stringtable().s(i), i));
 		}
 	}
@@ -207,7 +206,7 @@ class OSMObject { public:
 			}
 		} else {
 			for (uint n=denseStart; n<denseEnd; n+=2) {
-				if (densePtr->keys_vals(n)==keyNum) { return true; }
+				if (uint(densePtr->keys_vals(n))==keyNum) { return true; }
 			}
 		}
 		return false;
@@ -225,7 +224,7 @@ class OSMObject { public:
 			}
 		} else {
 			for (uint n=denseStart; n<denseEnd; n+=2) {
-				if (densePtr->keys_vals(n)==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
+				if (uint(densePtr->keys_vals(n))==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
 			}
 		}
 		return "";
