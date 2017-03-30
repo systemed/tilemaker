@@ -1,0 +1,15 @@
+language: generic
+sudo: required
+dist: precise
+
+-before_install:
+  - sudo apt-get -qq -y update
+
+install:
+  - sudo add-apt-repository -y ppa:boost-latest/ppa
+  - sudo apt-get update
+  - sudo apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost1.55-all-dev
+
+script:
+  - make
+  - make install
