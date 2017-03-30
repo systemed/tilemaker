@@ -1,6 +1,6 @@
 language: generic
 sudo: required
-dist: trusty
+dist: precise
 
 -before_install:
   - sudo apt-get -qq -y update
