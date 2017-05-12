@@ -30,6 +30,7 @@
 typedef unsigned uint;
 #endif
 // Protobuf
+// https://github.com/substack/osm-pbf-parser/blob/master/lib/osmformat.proto
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
@@ -80,8 +81,12 @@ typedef uint64_t NodeID;
 #endif
 typedef uint32_t WayID;
 #define MAX_WAY_ID 4294967295
+typedef uint32_t RelationID;
 typedef vector<NodeID> NodeVec;
 typedef vector<WayID> WayVec;
+
+typedef vector<RelationID> RelationVec;
+typedef map<WayID,RelationVec> WayRelationStore;
 
 #include "osm_store.cpp"
 #include "output_object.cpp"
@@ -108,6 +113,9 @@ int main(int argc, char* argv[]) {
 	NodeStore &nodes = osmStore.nodes;
 	WayStore &ways = osmStore.ways;
 	RelationStore &relations = osmStore.relations;
+
+	// This will be moved to the osmStore in time
+	WayRelationStore wayRelationStore;
 
 	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
 	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
@@ -308,6 +316,11 @@ int main(int argc, char* argv[]) {
 	vector<string> nodeKeyVec = luaState["node_keys"];
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
 
+	// ----	Read significant relation tags
+
+	vector<string> relationKeyVec = luaState["relation_keys"];
+	unordered_set<string> relationKeys(relationKeyVec.begin(), relationKeyVec.end());
+
 	// ----	Initialise mbtiles if required
 	
 	MBTiles mbtiles;
@@ -374,11 +387,19 @@ int main(int argc, char* argv[]) {
 				continue;
 			}
 
-			// Read the string table, and pre-calculate the positions of valid node keys
+			// Read the string table
 			osmObject.readStringTable(&pb);
+
+			// Pre-calculate the positions of valid node keys
 			unordered_set<int> nodeKeyPositions;
 			for (auto it : nodeKeys) {
 				nodeKeyPositions.insert(osmObject.findStringPosition(it));
+			}
+
+			// Pre-calculate the positions of valid relation keys
+			unordered_set<int> relationKeyPositions;
+			for (auto it : relationKeys) {
+				relationKeyPositions.insert(osmObject.findStringPosition(it));
 			}
 
 			for (int i=0; i<pb.primitivegroup_size(); i++) {
@@ -387,7 +408,6 @@ int main(int argc, char* argv[]) {
 				cout.flush();
 
 				// ----	Read nodes
-
 				if (pg.has_dense()) {
 					nodeId  = 0;
 					int lon = 0;
@@ -436,16 +456,38 @@ int main(int argc, char* argv[]) {
 				}
 
 				// ----	Remember all ways in any relation
-
+				// Store signification relations
 				if (!checkedRelations && pg.relations_size() > 0) {
 					for (int j=0; j<pg.relations_size(); j++) {
-						Relation pbfRelation = pg.relations(j);
 						int64_t lastID = 0;
+						WayVec wayVec;
+						Relation pbfRelation = pg.relations(j);
+						RelationID relationId = static_cast<RelationID>(pbfRelation.id());
 						for (int n = 0; n < pbfRelation.memids_size(); n++) {
 							lastID += pbfRelation.memids(n);
 							if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 							WayID wayId = static_cast<WayID>(lastID);
 							waysInRelation.insert(wayId);
+							wayVec.push_back(wayId);
+						}
+						bool significant = false;
+						for (int n = 0; n < pbfRelation.keys_size(); n++){
+							if (relationKeyPositions.find(pbfRelation.keys(n)) != relationKeyPositions.end()) {
+								significant = true;
+							}
+						}
+						if (significant){
+							// I think these relations should be stored in a map<WayID,vector<RelationID>>
+							// This will mean when calling the way_function the relations for that way can be found
+							// relations.insert_front(relationId,outerWayVec,innerWayVec);
+							for (WayVec::iterator wayIt = wayVec.begin() ; wayIt != wayVec.end(); ++wayIt){
+								if (wayRelationStore.count(*wayIt) == 0){
+									RelationVec relationVec;
+									wayRelationStore[*wayIt] = relationVec;
+								}
+								wayRelationStore[*wayIt].push_back(relationId);
+							}
+
 						}
 					}
 					continue;
@@ -472,7 +514,13 @@ int main(int argc, char* argv[]) {
 						}
 
 						osmObject.setWay(&pbfWay, &nodeVec);
-						luaState["way_function"](&osmObject);
+
+						// Lets pull up all the relations in the way
+						RelationVec relations = wayRelationStore[wayId];
+						cout << "wayId: " << wayId << " relations: " << relations.size() << endl;
+
+						// Now we can pass the relations to the way_function (only ids at the moment)
+						luaState["way_function"](&osmObject,relations);
 
 						if (!osmObject.empty() || waysInRelation.count(wayId)) {
 							// Store the way's nodes in the global way store
