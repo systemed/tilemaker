@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <thread>
 #include <mutex>
+#include <limits>
 
 // Other utilities
 #include <boost/filesystem.hpp>
@@ -78,8 +79,12 @@ typedef uint32_t NodeID;
 #else
 typedef uint64_t NodeID;
 #endif
+#ifdef COMPACT_WAYS
 typedef uint32_t WayID;
-#define MAX_WAY_ID 4294967295
+#else
+typedef uint64_t WayID;
+#endif
+#define MAX_WAY_ID numeric_limits<WayID>::max()
 typedef vector<NodeID> NodeVec;
 typedef vector<WayID> WayVec;
 
@@ -471,8 +476,16 @@ int main(int argc, char* argv[]) {
 							nodeVec.push_back(static_cast<NodeID>(nodeId));
 						}
 
-						osmObject.setWay(&pbfWay, &nodeVec);
-						luaState["way_function"](&osmObject);
+						try
+						{
+							osmObject.setWay(&pbfWay, &nodeVec);
+							luaState["way_function"](&osmObject);
+						}
+						catch (std::out_of_range &err)
+						{
+							// Way is missing a node?
+							cout << endl << err.what() << endl;
+						}
 
 						if (!osmObject.empty() || waysInRelation.count(wayId)) {
 							// Store the way's nodes in the global way store
@@ -540,8 +553,17 @@ int main(int argc, char* argv[]) {
 								(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 							}
 
-							osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
-							luaState["way_function"](&osmObject);
+							try
+							{
+								osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
+								luaState["way_function"](&osmObject);
+							}
+							catch (std::out_of_range &err)
+							{
+								// Relation is missing a member?
+								cout << endl << err.what() << endl;
+							}
+
 							if (!osmObject.empty()) {
 								WayID relID = osmObject.osmID;
 								// Store the relation members in the global relation store

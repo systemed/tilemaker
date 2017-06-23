@@ -25,7 +25,7 @@ class OSMObject { public:
 	OSMStore *osmStore;						// Global OSM store
 
 	uint64_t osmID;							// ID of OSM object
-	uint32_t newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
+	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
 	bool isWay, isRelation;					// Way, node, relation?
 
 	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
@@ -150,8 +150,17 @@ class OSMObject { public:
 		isRelation = false;
 
 		nodeVec = nodeVecPtr;
-		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
-				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+		try
+		{
+			setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
+					osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+		}
+		catch (std::out_of_range &err)
+		{
+			stringstream ss;
+			ss << "Way " << osmID << " is missing a node";
+			throw std::out_of_range(ss.str());
+		}
 
 		keysPtr = way->mutable_keys();
 		valsPtr = way->mutable_vals();
