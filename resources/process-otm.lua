@@ -35,6 +35,8 @@ function way_function(way)
 	local highway = way:Find("highway")
 	local waterway = way:Find("waterway")
 	local building = way:Find("building")
+	local objid = way:Find("id")
+--[[
 	if highway~="" then
 		way:Layer("transportation", false)
 		way:Attribute("class", highway)
@@ -45,7 +47,10 @@ function way_function(way)
 		way:Layer("waterway", false)
 		way:Attribute("class", waterway)
 	end
+--]]
 	if building~="" then
 		way:Layer("building", true)
+		way:Attribute("building", building)
+		way:Attribute("info", objid)
 	end
 end

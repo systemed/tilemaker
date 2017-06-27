@@ -63,12 +63,17 @@ class OutputObject { public:
 		attributes[key]=value;
 	}
 
+	bool hasAttribute(const string &key) const {
+		auto it = attributes.find(key);
+		return it != attributes.end();
+	}
+
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// Returns a boost::variant -
 	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 	Geometry buildWayGeometry(const OSMStore &osmStore,
 	                      TileBbox *bboxPtr, 
-	                      vector<Geometry> &cachedGeometries) const {
+	                      const vector<Geometry> &cachedGeometries) const {
 
 		ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
