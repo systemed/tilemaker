@@ -208,7 +208,13 @@ int outputProc(uint threadId, class SharedData *sharedData)
 						// the following objects are merged into the first object, by taking union of geometries.
 						auto gTyp = jt->geomType;
 						if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
-							MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
+							MultiPolygon *gAcc = nullptr;
+							try{
+								gAcc = &boost::get<MultiPolygon>(g);
+							} catch (boost::bad_get &err) {
+								cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
+								continue;
+							}
 							while (jt+1 != ooListSameLayer.second &&
 									(jt+1)->geomType == gTyp &&
 									(jt+1)->attributes == jt->attributes) {
@@ -217,18 +223,32 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								{
 									MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
 									MultiPolygon gTmp;
-									geom::union_(gAcc, gNew, gTmp);
-									gAcc = move(gTmp);
+									geom::union_(*gAcc, gNew, gTmp);
+									*gAcc = move(gTmp);
 								}
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
 										cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 								}
+								catch (geom::overlay_invalid_input_exception &err)
+								{
+									cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+								}
+								catch (boost::bad_get &err) {
+									cerr << "Error while processing POLYGON " << jt->objectID << " has unexpected type" << endl;
+									continue;
+								}
 							}
 						}
 						if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
-							MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
+							MultiLinestring *gAcc = nullptr;
+							try {
+							gAcc = &boost::get<MultiLinestring>(g);
+							} catch (boost::bad_get &err) {
+								cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
+								continue;
+							}
 							while (jt+1 != ooListSameLayer.second &&
 									(jt+1)->geomType == gTyp &&
 									(jt+1)->attributes == jt->attributes) {
@@ -237,13 +257,17 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								{
 									MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
 									MultiLinestring gTmp;
-									geom::union_(gAcc, gNew, gTmp);
-									gAcc = move(gTmp);
+									geom::union_(*gAcc, gNew, gTmp);
+									*gAcc = move(gTmp);
 								}
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
 										cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+								}
+								catch (boost::bad_get &err) {
+									cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
+									continue;
 								}
 							}
 						}
