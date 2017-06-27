@@ -129,7 +129,7 @@ public:
 	// @param nodeVec a node vector to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
 	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(int i, const NodeVec &nodeVec) {
+	void insert_back(WayID i, const NodeVec &nodeVec) {
 		mNodeLists.emplace(i, nodeVec);
 	}
 

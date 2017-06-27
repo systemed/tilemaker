@@ -18,7 +18,7 @@
 			"json": { "vector_layers": [
 						{ "id": "transportation",     "description": "transportation",     "fields": {"class":"String"}},
 						{ "id": "waterway",     "description": "waterway",     "fields": {"class":"String"}},
-						{ "id": "building", "description": "building", "fields": {"info":"String"}}
+						{ "id": "building", "description": "building", "fields": {}}
 					] }
 		}
 	}
