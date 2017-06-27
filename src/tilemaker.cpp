@@ -136,8 +136,6 @@ public:
 int outputProc(uint threadId, class SharedData *sharedData)
 {
 	NodeStore &nodes = sharedData->osmStore->nodes;
-	WayStore &ways = sharedData->osmStore->ways;
-	RelationStore &relations = sharedData->osmStore->relations;
 
 	// Loop through tiles
 	uint tc = 0;
@@ -193,58 +191,69 @@ int outputProc(uint threadId, class SharedData *sharedData)
 						jt->writeAttributes(&keyList, &valueList, featurePtr);
 						if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
 					} else {
+						Geometry g;
 						try {
-							Geometry g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries);
+							g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries);
+						}
+						catch (std::out_of_range &err)
+						{
+							if (sharedData->verbose)
+								cerr << err.what() << endl;
+							continue;
+						}
 
-							// If a object is a polygon or a linestring that is followed by
-							// other objects with the same geometry type and the same attributes,
-							// the following objects are merged into the first object, by taking union of geometries.
-							auto gTyp = jt->geomType;
-							if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
-								MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
-								while (jt+1 != ooListSameLayer.second &&
-										(jt+1)->geomType == gTyp &&
-										(jt+1)->attributes == jt->attributes) {
-									jt++;
+						// If a object is a polygon or a linestring that is followed by
+						// other objects with the same geometry type and the same attributes,
+						// the following objects are merged into the first object, by taking union of geometries.
+						auto gTyp = jt->geomType;
+						if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+							MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
+							while (jt+1 != ooListSameLayer.second &&
+									(jt+1)->geomType == gTyp &&
+									(jt+1)->attributes == jt->attributes) {
+								jt++;
+								try
+								{
 									MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
 									MultiPolygon gTmp;
 									geom::union_(gAcc, gNew, gTmp);
 									gAcc = move(gTmp);
 								}
+								catch (std::out_of_range &err)
+								{
+									if (sharedData->verbose)
+										cerr << err.what() << endl;
+								}
 							}
-							if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
-								MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
-								while (jt+1 != ooListSameLayer.second &&
-										(jt+1)->geomType == gTyp &&
-										(jt+1)->attributes == jt->attributes) {
-									jt++;
+						}
+						if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+							MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
+							while (jt+1 != ooListSameLayer.second &&
+									(jt+1)->geomType == gTyp &&
+									(jt+1)->attributes == jt->attributes) {
+								jt++;
+								try
+								{
 									MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
 									MultiLinestring gTmp;
 									geom::union_(gAcc, gNew, gTmp);
 									gAcc = move(gTmp);
 								}
-							}
-
-							vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-							WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
-							boost::apply_visitor(w, g);
-							if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-							jt->writeAttributes(&keyList, &valueList, featurePtr);
-							if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
-						} catch (...) {
-							if (sharedData->verbose)  {
-								cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
-								if (relations.count(jt->objectID)) {
-									const auto &wayList = relations.at(jt->objectID);
-									for (auto et = wayList.outerBegin; et != wayList.outerEnd; ++et) {
-										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-									}
-									for (auto et = wayList.innerBegin; et != wayList.innerEnd; ++et) {
-										if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-									}
+								catch (std::out_of_range &err)
+								{
+									if (sharedData->verbose)
+										cerr << err.what() << endl;
 								}
 							}
 						}
+
+						vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+						WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
+						boost::apply_visitor(w, g);
+						if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+						jt->writeAttributes(&keyList, &valueList, featurePtr);
+						if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
+
 					}
 				}
 			}
@@ -345,6 +354,9 @@ int main(int argc, char* argv[]) {
 
 	#ifdef COMPACT_NODES
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
+	#endif
+	#ifdef COMPACT_WAYS
+	cout << "tilemaker compiled without 64-bit way support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
 
 	// ---- Check config
