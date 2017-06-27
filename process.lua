@@ -17,9 +17,9 @@ function node_function(node)
 	local amenity = node:Find("amenity")
 	local shop = node:Find("shop")
 	if amenity~="" or shop~="" then
-		node:Layer("pois", false)
-		if amenity~="" then node:Attribute("type",amenity)
-		else node:Attribute("type",shop) end
+		node:Layer("poi", false)
+		if amenity~="" then node:Attribute("class",amenity)
+		else node:Attribute("class",shop) end
 		node:Attribute("name", node:Find("name"))
 	end
 end
@@ -31,16 +31,16 @@ function way_function(way)
 	local waterway = way:Find("waterway")
 	local building = way:Find("building")
 	if highway~="" then
-		way:Layer("roads", false)
-		way:Attribute("name", way:Find("name"))
-		way:Attribute("type",highway)
+		way:Layer("transportation", false)
+		way:Attribute("class", highway)
 --		way:Attribute("id",way:Id())
 --		way:AttributeNumeric("area",37)
 	end
 	if waterway~="" then
-		way:Layer("water", false)
+		way:Layer("waterway", false)
+		way:Attribute("class", waterway)
 	end
 	if building~="" then
-		way:Layer("buildings", true)
+		way:Layer("building", true)
 	end
 end
