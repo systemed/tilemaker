@@ -58,7 +58,14 @@ public:
 	// @return Latp/lon pair
 	// @exception NotFound
 	LatpLon at(NodeID i) const {
-		return mLatpLons.at(i);
+		try {
+			return mLatpLons.at(i);
+		}
+		catch (std::out_of_range &err){
+			stringstream ss;
+			ss << "Could not find node " << i;
+			throw std::out_of_range(ss.str());
+		}
 	}
 
 	// @brief Return whether a latp/lon pair is on the store.
@@ -98,8 +105,15 @@ public:
 	// @return A node list
 	// @exception NotFound
 	NodeList<WayStoreIterator> at(WayID i) const {
-		const auto &way = mNodeLists.at(i);
-		return { way.cbegin(), way.cend() };
+		try {
+			const auto &way = mNodeLists.at(i);
+			return { way.cbegin(), way.cend() };
+		}
+		catch (std::out_of_range &err){
+			stringstream ss;
+			ss << "Could not find way " << i;
+			throw std::out_of_range(ss.str());
+		}
 	}
 
 	// @brief Return whether a node list is on the store.
@@ -139,9 +153,17 @@ public:
 	// @return A way list
 	// @exception NotFound
 	WayList<RelationStoreIterator> at(WayID i) const {
-		const auto &outInList = mOutInLists.at(i);
-		return { outInList.first.cbegin(), outInList.first.cend(),
-			outInList.second.cbegin(), outInList.second.cend() };
+		try
+		{
+			const auto &outInList = mOutInLists.at(i);
+			return { outInList.first.cbegin(), outInList.first.cend(),
+				outInList.second.cbegin(), outInList.second.cend() };
+		}
+		catch (std::out_of_range &err){
+			stringstream ss;
+			ss << "Could not find pseudo OSM ID of polygon " << i;
+			throw std::out_of_range(ss.str());
+		}
 	}
 
 	// @brief Return whether a way list is on the store.

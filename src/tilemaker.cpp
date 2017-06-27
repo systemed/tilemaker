@@ -108,7 +108,6 @@ int lua_error_handler(int errCode, const char *errMessage)
 class SharedData
 {
 public:
-	map< uint, map< uint, vector<OutputObject> > > tileIndexForZoom;
 	uint zoom;
 	int threadNum;
 	bool clippingBoxFromJSON;
@@ -122,6 +121,7 @@ public:
 	bool sqlite;
 	MBTiles mbtiles;
 	string outputFile;
+	map< uint, vector<OutputObject> > *tileIndexForZoom;
 
 	SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
 		osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
@@ -130,6 +130,7 @@ public:
 		includeID = false, compress = true, gzip = true;
 		verbose = false;
 		sqlite=false;
+		this->tileIndexForZoom = nullptr;
 	}
 };
 
@@ -140,9 +141,9 @@ int outputProc(uint threadId, class SharedData *sharedData)
 	// Loop through tiles
 	uint tc = 0;
 	uint zoom = sharedData->zoom;
-	for (auto it = sharedData->tileIndexForZoom[zoom].begin(); it != sharedData->tileIndexForZoom[zoom].end(); ++it) {
+	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
 		if (threadId == 0 && (tc % 100) == 0) {
-			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom[zoom].size() << "               \r";
+			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom->size() << "               \r";
 			cout.flush();
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
@@ -198,7 +199,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 						catch (std::out_of_range &err)
 						{
 							if (sharedData->verbose)
-								cerr << err.what() << endl;
+								cerr << "Error while processing geometry " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 							continue;
 						}
 
@@ -222,7 +223,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
-										cerr << err.what() << endl;
+										cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 								}
 							}
 						}
@@ -242,7 +243,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
-										cerr << err.what() << endl;
+										cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 								}
 							}
 						}
@@ -820,7 +821,7 @@ int main(int argc, char* argv[]) {
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
 			// at z14, we can just use tileIndex
-			sharedData.tileIndexForZoom[zoom] = tileIndex;
+			sharedData.tileIndexForZoom = &tileIndex;
 		} else {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
@@ -840,7 +841,7 @@ int main(int argc, char* argv[]) {
 				sort(ooset.begin(), ooset.end());
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
-			sharedData.tileIndexForZoom[zoom] = generatedIndex;
+			sharedData.tileIndexForZoom = &generatedIndex;
 
 		}
 
@@ -850,6 +851,8 @@ int main(int argc, char* argv[]) {
 		for (uint threadId = 0; threadId < threadNum; threadId++)
 			worker.emplace_back(outputProc, threadId, &sharedData);
 		for (auto &t: worker) t.join();
+
+		sharedData.tileIndexForZoom = nullptr;
 
 	}
 
