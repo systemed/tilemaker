@@ -677,15 +677,24 @@ int main(int argc, char* argv[]) {
 							nodeVec.push_back(static_cast<NodeID>(nodeId));
 						}
 
+						bool ok = true;
 						try
 						{
 							sharedData.osmObject.setWay(&pbfWay, &nodeVec);
-							luaState["way_function"](&sharedData.osmObject);
 						}
 						catch (std::out_of_range &err)
 						{
 							// Way is missing a node?
-							cout << endl << err.what() << endl;
+							ok = false;
+							cerr << endl << err.what() << endl;
+						}
+
+						if (ok)
+						{
+							luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+							kaguya::LuaFunction way_function = luaState["way_function"];
+							kaguya::LuaRef ret = way_function(&sharedData.osmObject);
+							assert(!ret);
 						}
 
 						if (!sharedData.osmObject.empty() || waysInRelation.count(wayId)) {
@@ -696,31 +705,36 @@ int main(int argc, char* argv[]) {
 						if (!sharedData.osmObject.empty()) {
 							// create a list of tiles this way passes through (tileSet)
 							unordered_set<uint32_t> tileSet;
-							insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
+							try {
+								insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
 
-							// then, for each tile, store the OutputObject for each layer
-							bool polygonExists = false;
-							for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-								uint32_t index = *it;
-								for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
-									if (jt->geomType == POLYGON) {
-										polygonExists = true;
-										continue;
-									}
-									tileIndex[index].push_back(*jt);
-								}
-							}
-
-							// for polygon, fill inner tiles
-							if (polygonExists) {
-								fillCoveredTiles(tileSet);
+								// then, for each tile, store the OutputObject for each layer
+								bool polygonExists = false;
 								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 									uint32_t index = *it;
 									for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
-										if (jt->geomType != POLYGON) continue;
+										if (jt->geomType == POLYGON) {
+											polygonExists = true;
+											continue;
+										}
 										tileIndex[index].push_back(*jt);
 									}
 								}
+
+								// for polygon, fill inner tiles
+								if (polygonExists) {
+									fillCoveredTiles(tileSet);
+									for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+										uint32_t index = *it;
+										for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+											if (jt->geomType != POLYGON) continue;
+											tileIndex[index].push_back(*jt);
+										}
+									}
+								}
+							} catch(std::out_of_range &err)
+							{
+								cerr << "Error calculating intermediate tiles: " << err.what() << endl;
 							}
 						}
 					}
@@ -754,18 +768,23 @@ int main(int argc, char* argv[]) {
 								(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 							}
 
+							bool ok = true;
 							try
 							{
 								sharedData.osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
-								luaState["way_function"](&sharedData.osmObject);
 							}
 							catch (std::out_of_range &err)
 							{
 								// Relation is missing a member?
-								cout << endl << err.what() << endl;
+								ok = false;
+								cerr << endl << err.what() << endl;
 							}
 
-							if (!sharedData.osmObject.empty()) {
+							if (ok)
+								luaState["way_function"](&sharedData.osmObject);
+
+							if (!sharedData.osmObject.empty()) {								
+
 								WayID relID = sharedData.osmObject.osmID;
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
@@ -845,15 +864,21 @@ int main(int argc, char* argv[]) {
 
 		}
 
-		// Multi thread processing loop
-		vector<thread> worker;
 		sharedData.zoom = zoom;
-		for (uint threadId = 0; threadId < threadNum; threadId++)
-			worker.emplace_back(outputProc, threadId, &sharedData);
-		for (auto &t: worker) t.join();
+		if(threadNum == 1) {
+			// Single thread (is easier to debug)
+			outputProc(0, &sharedData);
+		}
+		else {
 
+			// Multi thread processing loop
+			vector<thread> worker;
+			for (uint threadId = 0; threadId < threadNum; threadId++)
+				worker.emplace_back(outputProc, threadId, &sharedData);
+			for (auto &t: worker) t.join();
+
+		}
 		sharedData.tileIndexForZoom = nullptr;
-
 	}
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;

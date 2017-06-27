@@ -47,7 +47,6 @@ function way_function(way)
 	end
 	if building~="" then
 		way:Layer("building", true)
-		way:Attribute("building", building)
 	end
 end
 

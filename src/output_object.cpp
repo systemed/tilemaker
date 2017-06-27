@@ -41,7 +41,18 @@ public:
 
 	Geometry operator()(const MultiPolygon &mp) const {
 		MultiPolygon out;
-		geom::intersection(mp, clippingBox, out);
+
+		try {
+			geom::intersection(mp, clippingBox, out);
+		} catch (boost::geometry::overlay_invalid_input_exception &err)
+		{
+			//Check for errors
+			string reason;
+			bool valid = geom::is_valid(mp, reason);
+			if (!valid)
+				throw std::invalid_argument(reason);
+			throw std::invalid_argument("boost::geometry::overlay_invalid_input_exception");
+		}
 		return out;
 	}
 };
@@ -77,6 +88,7 @@ class OutputObject { public:
 
 		ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
+		try {
 		if (geomType==POLYGON || geomType==CENTROID) {
 			// polygon
 			MultiPolygon mp;
@@ -109,6 +121,9 @@ class OutputObject { public:
 		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
 			const Geometry &g = cachedGeometries[objectID];
 			return boost::apply_visitor(clip, g);
+		}
+		} catch (std::invalid_argument &err) {
+			cerr << "Error in buildWayGeometry: " << err.what() << endl;
 		}
 
 		return MultiLinestring(); // return a blank geometry
