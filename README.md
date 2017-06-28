@@ -18,7 +18,7 @@ Tilemaker is written in C++11. The chief dependencies are:
 * sqlite3
 * shapelib
 
-rapidjson, sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
+rapidjson, sqlite_modern_cpp, clipper and kaguya are bundled in the include/ directory.
 
 ### OS X
 

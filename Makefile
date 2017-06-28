@@ -6,7 +6,7 @@ INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 all: tilemaker
 
-tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/tilemaker.o
+tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/tilemaker.o clipper/clipper.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB)
 
 %.o: %.cpp

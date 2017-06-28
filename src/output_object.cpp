@@ -42,13 +42,48 @@ public:
 	Geometry operator()(const MultiPolygon &mp) const {
 		MultiPolygon out;
 
+		string reason;
+		bool valid = geom::is_valid(mp, reason);
+		MultiPolygon currentMp;
+
+		if(!valid)
+		{
+			// Try to repair polygon shape
+			for(size_t i=0; i<mp.size(); i++)
+			{
+				const Polygon &p = mp[0];
+				Path outer;
+				Paths inners;
+				ConvertToClipper(p, outer, inners);
+
+				Paths simplifiedOuter;
+				SimplifyPolygon(outer, simplifiedOuter);
+
+				Paths simplifiedInners;
+				for(size_t j=0; j<inners.size(); j++)
+				{
+					Paths si;
+					SimplifyPolygon(inners[j], si);
+					simplifiedInners.insert(simplifiedInners.end(), si.begin(), si.end());
+				}
+
+				for(size_t j=0; j<simplifiedOuter.size(); j++)
+				{
+					Polygon currentPolygon;
+					ConvertFromClipper(simplifiedOuter[j], simplifiedInners, currentPolygon);
+					currentMp.push_back(currentPolygon);
+				}
+			}
+			valid = geom::is_valid(currentMp, reason);
+		}
+		else
+			currentMp = mp;
+
 		try {
-			geom::intersection(mp, clippingBox, out);
+			geom::intersection(currentMp, clippingBox, out);
 		} catch (boost::geometry::overlay_invalid_input_exception &err)
 		{
 			//Check for errors
-			string reason;
-			bool valid = geom::is_valid(mp, reason);
 			if (!valid)
 				throw std::invalid_argument(reason);
 			throw std::invalid_argument("boost::geometry::overlay_invalid_input_exception");
