@@ -35,8 +35,14 @@ function way_function(way)
 	local highway = way:Find("highway")
 	local waterway = way:Find("waterway")
 	local building = way:Find("building")
+	local natural = way:Find("natural")
+	local landuse = way:Find("landuse")
+
 	if highway~="" then
 		way:Layer("transportation", false)
+		if highway == "unclassified" then highway = "minor" end
+		if highway == "residential" then highway = "minor" end
+
 		way:Attribute("class", highway)
 --		way:Attribute("id",way:Id())
 --		way:AttributeNumeric("area",37)
@@ -47,6 +53,12 @@ function way_function(way)
 	end
 	if building~="" then
 		way:Layer("building", true)
+	end
+	if natural=="water" then
+		way:Layer("water", true)
+	end
+	if landuse~="" then
+		way:Layer("landuse", true)
 	end
 end
 
