@@ -9,10 +9,19 @@ enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CA
 
 class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
 
-	const Box &clippingBox;
+	const Box &clippingBox; //for boost ggl
+	Path clippingPath; //for clipper library
 
 public:
-	ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) {};
+	ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) 
+	{
+		const Point &minc = clippingBox.min_corner();
+		const Point &maxc = clippingBox.max_corner();
+		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
+	}
 
 	Geometry operator()(const Point &p) const {
 		if (geom::within(p, clippingBox)) {
@@ -41,60 +50,48 @@ public:
 
 	Geometry operator()(const MultiPolygon &mp) const {
 		MultiPolygon out;
-
 		string reason;
-		bool valid = geom::is_valid(mp, reason);
-		MultiPolygon currentMp;
+		Clipper c;
+		c.StrictlySimple(true);
 
-		if(!valid)
+		// Convert boost geometries to clipper paths 
+		Paths simplified;
+		for(size_t i=0; i<mp.size(); i++)
 		{
-			// Try to repair polygon shape
-			for(size_t i=0; i<mp.size(); i++)
+			const Polygon &p = mp[0];
+			Path outer;
+			Paths inners;
+			ConvertToClipper(p, outer, inners);
+
+			// For polygons with holes,
+			if(inners.size()>0)
 			{
-				const Polygon &p = mp[0];
-				Path outer;
-				Paths inners;
-				ConvertToClipper(p, outer, inners);
+				// Find polygon shapes without needing holes
+				Paths simp;
+				c.AddPath(outer, ptSubject, true);
+				c.AddPaths(inners, ptClip, true);
+				c.Execute(ctDifference, simp, pftEvenOdd, pftEvenOdd);
+				c.Clear();
 
-				Paths simplifiedOuter;
-				SimplifyPolygon(outer, simplifiedOuter);
-
-				Paths simplifiedInners;
-				for(size_t j=0; j<inners.size(); j++)
-				{
-					Paths si;
-					SimplifyPolygon(inners[j], si);
-					simplifiedInners.insert(simplifiedInners.end(), si.begin(), si.end());
-				}
-
-				for(size_t j=0; j<simplifiedOuter.size(); j++)
-				{
-					Polygon currentPolygon;
-					ConvertFromClipper(simplifiedOuter[j], simplifiedInners, currentPolygon);
-					currentMp.push_back(currentPolygon);
-				}
+				simplified.insert(simplified.end(), simp.begin(), simp.end());
 			}
-			valid = geom::is_valid(currentMp, reason);
-			if(valid)
-				cerr << "Warning: fixed self intersecting polygon" << endl;
 			else
-				cerr << "Error: failed to fix self intersecting polygon: " << reason << endl;
+			{
+				simplified.push_back(outer);				
+			}
 		}
-		else
-			currentMp = mp;
 
-		try {
-			geom::intersection(currentMp, clippingBox, out);
-		} catch (boost::geometry::overlay_invalid_input_exception &err)
-		{
-			stringstream ss;
-			valid = geom::is_valid(currentMp, reason);
-			if (!valid)
-				ss << "Error: clipping polygon: " << reason;
-			else
-				ss << "Error: clipping polygon: boost::geometry::overlay_invalid_input_exception";
-			throw std::invalid_argument(ss.str());
-		}
+		// Clip to box
+		Paths clipped;
+		Clipper c2;
+		c2.StrictlySimple(true);
+		c2.AddPaths(simplified, ptSubject, true);
+		c2.AddPath(this->clippingPath, ptClip, true);
+		c2.Execute(ctIntersection, clipped, pftEvenOdd, pftEvenOdd);
+
+		// Convert back to boost geometries
+		ConvertFromClipper(clipped, out);
+
 		return out;
 	}
 };
