@@ -75,6 +75,10 @@ public:
 				}
 			}
 			valid = geom::is_valid(currentMp, reason);
+			if(valid)
+				cerr << "Warning: fixed self intersecting polygon" << endl;
+			else
+				cerr << "Error: failed to fix self intersecting polygon: " << reason << endl;
 		}
 		else
 			currentMp = mp;
@@ -83,10 +87,13 @@ public:
 			geom::intersection(currentMp, clippingBox, out);
 		} catch (boost::geometry::overlay_invalid_input_exception &err)
 		{
-			//Check for errors
+			stringstream ss;
+			valid = geom::is_valid(currentMp, reason);
 			if (!valid)
-				throw std::invalid_argument(reason);
-			throw std::invalid_argument("boost::geometry::overlay_invalid_input_exception");
+				ss << "Error: clipping polygon: " << reason;
+			else
+				ss << "Error: clipping polygon: boost::geometry::overlay_invalid_input_exception";
+			throw std::invalid_argument(ss.str());
 		}
 		return out;
 	}

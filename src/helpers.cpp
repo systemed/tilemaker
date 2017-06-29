@@ -155,7 +155,13 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 	for(size_t i=0; i<outer.size(); i++)
 	{
 		const IntPoint &pt = outer[i];
-		out.push_back(Point(pt.X, pt.Y));
+		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+	}
+	if(outer.size()>0)
+	{
+		//Start point in ring is repeated
+		const IntPoint &pt = outer[0];
+		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
 	}
 
 	for(size_t i=0; i<inners.size(); i++)
@@ -167,7 +173,15 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 			const IntPoint &pt = inn[j];
 			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
 		}
+		if(inn.size()>0)
+		{
+			//Start point in ring is repeated
+			const IntPoint &pt = inn[0];
+			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		}
 		inns.push_back(inn2);
 	}
+	//Fix orientation of rings
+	geom::correct(p);
 }
 
