@@ -99,8 +99,8 @@ kaguya::State luaState;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
-	std::string traceback = luaState["debug"]["traceback"];
 	cerr << "lua runtime error: " << errMessage << endl;
+	std::string traceback = luaState["debug"]["traceback"];
 	cerr << "traceback: " << traceback << endl;
 	exit(0);
 }

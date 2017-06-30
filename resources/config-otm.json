@@ -5,7 +5,10 @@
 		"building": { "minzoom": 13, "maxzoom": 14 },
 		"poi": { "minzoom": 13, "maxzoom": 14 },
 		"landuse": { "minzoom": 11, "maxzoom": 14 },
-		"water": { "minzoom": 11, "maxzoom": 14 }
+		"landcover": { "minzoom": 11, "maxzoom": 14 },
+		"water": { "minzoom": 11, "maxzoom": 14 },
+		"aeroway": { "minzoom": 11, "maxzoom": 14 },
+		"park": { "minzoom": 11, "maxzoom": 14 }
 	},
 	"settings": {
 		"minzoom": 12,

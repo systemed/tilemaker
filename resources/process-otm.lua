@@ -31,34 +31,105 @@ end
 
 -- Similarly for ways
 
+function Set (list)
+	local set = {}
+	for _, l in ipairs(list) do set[l] = true end
+	return set
+end
+
 function way_function(way)
 	local highway = way:Find("highway")
 	local waterway = way:Find("waterway")
 	local building = way:Find("building")
 	local natural = way:Find("natural")
 	local landuse = way:Find("landuse")
+	local leisure = way:Find("leisure")
+	local amenity = way:Find("amenity")
+	local aeroway = way:Find("aeroway")
+	local railway = way:Find("railway")
+	local isClosed = way:IsClosed()
 
 	if highway~="" then
 		way:Layer("transportation", false)
 		if highway == "unclassified" then highway = "minor" end
 		if highway == "residential" then highway = "minor" end
 
+		local trackValues = Set { "cycleway", "byway", "bridleway" }
+		if trackValues[highway] then highway = "track" end
+
+		local pathValues = Set { "footway" }
+		if pathValues[highway] then highway = "path" end
+
+		local service = way:Find("service")
+		if highway == "service" and service ~="" then
+			way:Attribute("service", service)
+		end
+
 		way:Attribute("class", highway)
 --		way:Attribute("id",way:Id())
 --		way:AttributeNumeric("area",37)
 	end
+	if railway~="" then
+		way:Layer("transportation", false)
+		way:Attribute("class", railway)
+	end
 	if waterway~="" then
-		way:Layer("waterway", false)
-		way:Attribute("class", waterway)
+		if waterway == "riverbank" then
+			way:Layer("water", isClosed)
+			way:Attribute("class", "river")
+		else
+			way:Layer("waterway", false)
+			way:Attribute("class", waterway)
+		end
 	end
 	if building~="" then
 		way:Layer("building", true)
 	end
-	if natural=="water" then
-		way:Layer("water", true)
+	if natural~="" then
+		local landcoverkeys = Set { "wood", "landcover" }
+		local landusekeys = Set { "farmland", "stuff" }
+
+		if natural=="water" then
+			local covered = way:Find("covered")
+			local river = way:Find("river")
+			if covered ~= "yes" then
+				way:Layer("water", true)
+				if river == "yes" then
+					way:Attribute("class", "river")
+				else
+					way:Attribute("class", "lake")
+				end
+			end
+		end
+		if landcoverkeys[natural] then
+			way:Layer("landcover", true)
+			way:Attribute("class", natural)
+		end
+		if natural=="glacier" then
+			way:Layer("landcover", true)
+			way:Attribute("class", "ice")
+		end
 	end
 	if landuse~="" then
+		if landuse == "field" then landuse = "farmland" end
 		way:Layer("landuse", true)
+		way:Attribute("class", landuse)
+	end
+	if amenity~="" then
+		local landusekeys = Set { "school", "university", "kindergarten", "college", "library", "hospital", "stadium"}
+		if landusekeys[amenity] then
+			way:Layer("landuse", true)
+			way:Attribute("class", amenity)
+		end
+	end
+	if leisure~="" then
+		if leisure=="nature_reserve" then
+			way:Layer("park", true)
+			way:Attribute("class", leisure)			
+		end
+	end
+	if aeroway~="" then
+		way:Layer("aeroway", isClosed)
 	end
 end
 
