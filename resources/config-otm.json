@@ -1,21 +1,28 @@
 {
 	"layers": {
-		"waterway": { "minzoom": 11, "maxzoom": 14 },
-		"transportation": { "minzoom": 12, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2.0 },
+		"waterway": { "minzoom": 8, "maxzoom": 14 },
+		"transportation": { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2.0 },
 		"building": { "minzoom": 13, "maxzoom": 14 },
 		"poi": { "minzoom": 13, "maxzoom": 14 },
 		"landuse": { "minzoom": 11, "maxzoom": 14 },
 		"landcover": { "minzoom": 11, "maxzoom": 14 },
-		"water": { "minzoom": 11, "maxzoom": 14 },
+		"water": { "minzoom": 8, "maxzoom": 14 },
 		"aeroway": { "minzoom": 11, "maxzoom": 14 },
-		"park": { "minzoom": 11, "maxzoom": 14 }
+		"park": { "minzoom": 11, "maxzoom": 14 },
+		"place": { "minzoom": 8, "maxzoom": 14 },
+		"sea": {
+			"minzoom": 8, "maxzoom": 14,
+			"source": "water-polygons-split-4326/fixed_water_polygons.shp",
+			"simplify_below": 13, "simplify_level": 0.0003,
+			"write_to": "water"
+		}
 	},
 	"settings": {
-		"minzoom": 12,
+		"minzoom": 8,
 		"maxzoom": 14,
 		"basezoom": 14,
 		"include_ids": false,
-		"name": "Tilemaker example",
+		"name": "Tilemaker to OpenTileMaps schema",
 		"version": "0.1",
 		"description": "Tile config based on opentilemap schema",
 		"compress": "gzip",
