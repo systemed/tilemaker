@@ -51,14 +51,14 @@ function node_function(node)
 		if place == "continent" then rank = 1 end
 		if place == "country" then rank = 1 end
 		if place == "state" then rank = 1 end
-		if place == "city" then rank = 1 end
-		if place == "town" then rank = 1 end
-		if place == "village" then rank = 1 end
-		if place == "suburb" then rank = 1 end
-		if place == "neighbourhood" then rank = 1 end
-		if place == "locality" then rank = 1 end		
-		if place == "hamlet" then rank = 1 end
-		node:Layer("poi", false)
+		if place == "city" then rank = 2 end
+		if place == "town" then rank = 3 end
+		if place == "village" then rank = 4 end
+		if place == "suburb" then rank = 3 end
+		if place == "neighbourhood" then rank = 3 end
+		if place == "locality" then rank = 4 end		
+		if place == "hamlet" then rank = 4 end
+		node:Layer("place", false)
 		local name = node:Find("name")
 		node:Attribute("name", name)
 		name_en = name
