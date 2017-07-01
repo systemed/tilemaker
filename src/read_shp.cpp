@@ -87,7 +87,9 @@ void readShapefile(string filename,
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");
 	DBFHandle dbf = DBFOpen(filename.c_str(), "rb");
-	int numEntities, shpType;
+	if(shp == nullptr || dbf == nullptr)
+		return;
+	int numEntities=0, shpType=0;
 	vector<Point> points;
 	geom::model::box<Point> box;
 	double adfMinBound[4], adfMaxBound[4];
@@ -223,6 +225,7 @@ void readShapefile(string filename,
 			cerr << "Shapefile entity #" << i << " type " << shapeType << " not supported" << endl;
 		}
 	}
+
 	SHPClose(shp);
 	DBFClose(dbf);
 }
