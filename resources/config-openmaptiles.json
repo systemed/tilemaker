@@ -3,7 +3,7 @@
 		"place": { "minzoom": 8, "maxzoom": 14 },
 		"poi": { "minzoom": 13, "maxzoom": 14 },
 		"waterway": { "minzoom": 8, "maxzoom": 14 },
-		"transportation": { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2.0 },
+		"transportation": { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_ratio": 2.0 },
 		"building": { "minzoom": 13, "maxzoom": 14 },
 		"water": { "minzoom": 8, "maxzoom": 14 },
 		"aeroway": { "minzoom": 11, "maxzoom": 14 },
