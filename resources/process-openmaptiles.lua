@@ -5,7 +5,7 @@
 
 -- Nodes will only be processed if one of these keys is present
 
-node_keys = { "amenity", "shop", "sport", "tourism", "place", "office" }
+node_keys = { "amenity", "shop", "sport", "tourism", "place", "office", "natural", "addr:housenumber" }
 
 -- Initialize Lua logic
 
@@ -24,27 +24,35 @@ function node_function(node)
 	local sport = node:Find("sport")
 	local tourism = node:Find("tourism")
 	local office = node:Find("office")
+	local housenumber = node:Find("addr:housenumber")
 
-	if amenity~="" or shop~="" or sport~="" or office ~= "" then
-		node:Layer("poi", false)
+	if amenity~="" or shop~="" or sport~="" or tourism ~= "" or office ~= "" then
+		
 		local rank = 10
+		local class = ""
 		if amenity~="" then 
 			rank = 4
-			node:Attribute("class",amenity)
+			class = amenity
 		elseif shop~="" then 
-			node:Attribute("class",shop)
 			rank = 5 
+			class = shop
 		elseif sport~="" then 
-			node:Attribute("class",sport)
 			rank = 6
+			class = sport
 		elseif tourism~="" then 
-			node:Attribute("class",tourism)
 			rank = 3
+			class = tourism
 		elseif office~="" then 
-			node:Attribute("class",office)
 			rank = 7
+			class = office
 		end
-		node:Attribute("name", node:Find("name"))
+		if rank >= 4 then
+			node:Layer("poi", false)
+		else
+			node:Layer("poi_detail", false)
+		end
+
+		node:Attribute("class", class)
 		node:AttributeNumeric("rank", rank)
 	end
 
@@ -62,17 +70,46 @@ function node_function(node)
 		if place == "neighbourhood" then rank = 3 end
 		if place == "locality" then rank = 4 end		
 		if place == "hamlet" then rank = 4 end
-		node:Layer("place", false)
-		local name = node:Find("name")
-		node:Attribute("name", name)
-		name_en = name
-		if node:Find("name:en") ~= "" then
-			name_en = node:Find("name:en")
+
+		if rank >= 3 then
+			node:Layer("place", false)
+		else
+			node:Layer("place_detail", false)
 		end
-		node:Attribute("name_en", name_en)
 		node:AttributeNumeric("rank", rank)
 		node:Attribute("class", place)
 	end
+
+	if natural ~= "" then
+		if natural == "peak" then
+			node:Layer("mountain_peak", false)
+			local ele = node:Find("ele")
+			if ele ~= "" then
+				node:AttributeNumeric("ele", ele)
+			end
+			node:AttributeNumeric("rank", 5)
+		end
+	end
+
+	if housenumber~="" then
+		node:Layer("housenumber", false)
+		node:Attribute("housenumber", housenumber)
+		return
+	end
+
+	local name = node:Find("name")
+	node:Attribute("name", name)
+	local name_en = name
+	local name_de = name
+	if node:Find("name:en") ~= "" then
+		name_en = node:Find("name:en")
+	end
+	if node:Find("name:de") ~= "" then
+		name_de = node:Find("name:de")
+	end
+	node:Attribute("name_en", name_en)
+	node:Attribute("name_de", name_de)
+
 end
 
 function Set (list)
@@ -106,10 +143,11 @@ function way_function(way)
 	local amenity = way:Find("amenity")
 	local aeroway = way:Find("aeroway")
 	local railway = way:Find("railway")
+	local man_made = way:Find("man_made")
 	local disused = way:Find("disused")
 	local isClosed = way:IsClosed()
 
-	if disused == "yes" or disused == "1" then
+	if disused == "yes" or disused == "1" or disused == "true" then
 		return
 	end
 
@@ -168,6 +206,17 @@ function way_function(way)
 		if waterway == "riverbank" then
 			way:Layer("water", isClosed)
 			way:Attribute("class", "river")
+		elseif waterway == "dock" then
+			way:Layer("water", isClosed)
+			way:Attribute("class", "lake")	
+		elseif waterway == "boatyard" then
+			way:Layer("landuse", isClosed)
+			way:Attribute("class", "industrial")
+		elseif waterway == "dam" then
+			way:Layer("building", isClosed)
+		elseif waterway == "fuel" then
+			way:Layer("landuse", isClosed)
+			way:Attribute("class", "industrial")
 		else
 			way:Layer("waterway", false)
 			way:Attribute("class", waterway)
@@ -199,23 +248,33 @@ function way_function(way)
 			way:Layer("landcover", true)
 			way:Attribute("class", "ice")
 		end
+		if natural=="grassland" then
+			way:Layer("landcover", true)
+			way:Attribute("class", "grass")
+			way:Attribute("subclass", natural)
+		end
 	end
 	if landuse~="" then
 		local subclass = ""
 		local landcover = ""
-		if landuse == "field" then landcover = "farmland" end
-		if landuse == "farmyard" then landcover = "farmland" end
-		if landuse == "allotments" then 
+		local water = ""
+
+		local farmValues = Set { "field", "farmyard", "allotments", "orchard", "vineyard", "plant_nursery", "farmland"}
+
+		if farmValues[landuse] then 
 			landcover = "farmland" 
-			subclass = "allotments"
+			if landuse == "field" then landuse = "farmland" end
+			if landuse == "farmyard" then landuse = "farm" end
+			subclass = landuse
 		end
-		if landuse == "orchard" then 
-			landcover = "farmland" 
-			subclass = "orchard"
-		end
-		if landuse == "vineyard" then 
-			landcover = "farmland" 
-			subclass = "vineyard"
+		if landuse == "meadow" then 
+			local meadow = way:Find("meadow")
+			if meadow == "agricultural" then
+				landcover = "farmland" 
+				subclass = landuse
+			else
+				landcover = "grass"
+			end
 		end
 		if landuse == "recreation_ground" then 
 			landcover = "grass" 
@@ -227,16 +286,30 @@ function way_function(way)
 		end
 		if landuse == "wetland" then 
 			landcover = "wetland" 
+			subclass = way:Find("wetland")
 		end
 		if landuse == "grass" then 
 			landcover = "grass" 
 		end
+		if landuse == "reservoir" then 
+			water = "lake" 
+		end
+		if landuse=="park" then --Incorrect tag but process it anyway
+			way:Layer("landcover", true)
+			way:Attribute("class", "grass")
+			way:Attribute("subclass", "park")
+		end
+
 		if landcover ~= "" then
 			way:Layer("landcover", true)
+			way:Attribute("class", landcover)
+		elseif water ~= "" then
+			way:Layer("water", true)
+			way:Attribute("class", water)
 		else
 			way:Layer("landuse", true)
+			way:Attribute("class", landuse)
 		end
-		way:Attribute("class", landuse)
 		if subclass ~= "" then way:Attribute("subclass", subclass) end
 	end
 	if amenity~="" then
@@ -269,9 +342,23 @@ function way_function(way)
 			way:Layer("landcover", true)
 			way:Attribute("class", "grass")
 		end
+		if leisure=="pitch" then
+			way:Layer("landcover", true)
+			way:Attribute("class", "grass")
+		end
+		if leisure == "recreation_ground" then -- Wrong tag but process anyway
+			way:Layer("landcover", true)
+			way:Attribute("class", "grass")
+			way:Attribute("subclass", "recreation_ground")
+		end
+
 	end
 	if aeroway~="" then
 		way:Layer("aeroway", isClosed)
 	end
+	if man_made~="" then
+
+	end
+
 end
 
