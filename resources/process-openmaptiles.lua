@@ -71,7 +71,7 @@ function node_function(node)
 		if place == "locality" then rank = 4 end		
 		if place == "hamlet" then rank = 4 end
 
-		if rank >= 3 then
+		if rank <= 3 then
 			node:Layer("place", false)
 		else
 			node:Layer("place_detail", false)
