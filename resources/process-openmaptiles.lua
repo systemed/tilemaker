@@ -46,7 +46,7 @@ function node_function(node)
 			rank = 7
 			class = office
 		end
-		if rank >= 4 then
+		if rank <= 4 then
 			node:Layer("poi", false)
 		else
 			node:Layer("poi_detail", false)
@@ -89,6 +89,9 @@ function node_function(node)
 			end
 			node:AttributeNumeric("rank", 5)
 		end
+		if natural == "bay" then
+			node:Layer("water_name", false)
+		end
 	end
 
 	if housenumber~="" then
@@ -97,19 +100,28 @@ function node_function(node)
 		return
 	end
 
-	local name = node:Find("name")
-	node:Attribute("name", name)
+	SetNameAttributes (node)
+end
+
+function SetNameAttributes (obj)
+	local name = obj:Find("name")
+	if name ~= "" then
+		obj:Attribute("name", name)
+	end
 	local name_en = name
 	local name_de = name
-	if node:Find("name:en") ~= "" then
+	if obj:Find("name:en") ~= "" then
 		name_en = node:Find("name:en")
 	end
-	if node:Find("name:de") ~= "" then
+	if obj:Find("name:de") ~= "" then
 		name_de = node:Find("name:de")
 	end
-	node:Attribute("name_en", name_en)
-	node:Attribute("name_de", name_de)
-
+	if name_en ~= "" then
+		obj:Attribute("name_en", name_en)
+	end
+	if name_de ~= "" then
+		obj:Attribute("name_de", name_de)
+	end
 end
 
 function Set (list)
@@ -208,7 +220,9 @@ function way_function(way)
 			way:Attribute("class", "river")
 		elseif waterway == "dock" then
 			way:Layer("water", isClosed)
-			way:Attribute("class", "lake")	
+			way:Attribute("class", "lake")
+			way:LayerAsCentroid("water_name_detail")
+			SetNameAttributes(way)
 		elseif waterway == "boatyard" then
 			way:Layer("landuse", isClosed)
 			way:Attribute("class", "industrial")
@@ -236,6 +250,11 @@ function way_function(way)
 				if river == "yes" then
 					way:Attribute("class", "river")
 				else
+					way:Attribute("class", "lake")
+				end
+				way:LayerAsCentroid("water_name_detail")
+				SetNameAttributes(way)
+				if river ~= "yes" then
 					way:Attribute("class", "lake")
 				end
 			end

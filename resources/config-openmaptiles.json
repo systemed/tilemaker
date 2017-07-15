@@ -9,6 +9,8 @@
 		"transportation": { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_ratio": 2.0 },
 		"building": { "minzoom": 13, "maxzoom": 14 },
 		"water": { "minzoom": 8, "maxzoom": 14 },
+		"water_name": { "minzoom": 8, "maxzoom": 14 },
+		"water_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "water_name" },
 		"aeroway": { "minzoom": 11, "maxzoom": 14 },
 		"park": { "minzoom": 11, "maxzoom": 14 },
 		"landuse": { "minzoom": 11, "maxzoom": 14 },
