@@ -24,9 +24,10 @@ function node_function(node)
 	local sport = node:Find("sport")
 	local tourism = node:Find("tourism")
 	local office = node:Find("office")
+	local historic = node:Find("historic")
 	local housenumber = node:Find("addr:housenumber")
 
-	if amenity~="" or shop~="" or sport~="" or tourism ~= "" or office ~= "" then
+	if amenity~="" or shop~="" or sport~="" or tourism ~= "" or office ~= "" or historic ~= "" then
 		
 		local rank = 10
 		local class = ""
@@ -42,6 +43,9 @@ function node_function(node)
 		elseif tourism~="" then 
 			rank = 3
 			class = tourism
+		elseif historic~="" then 
+			rank = 5
+			class = historic
 		elseif office~="" then 
 			rank = 7
 			class = office
@@ -92,6 +96,12 @@ function node_function(node)
 		if natural == "bay" then
 			node:Layer("water_name", false)
 		end
+	end
+
+	if historic~="" then
+		node:Layer("poi_detail", false)
+		node:AttributeNumeric("rank", 5)
+		return
 	end
 
 	if housenumber~="" then
@@ -150,11 +160,14 @@ function way_function(way)
 	local waterway = way:Find("waterway")
 	local building = way:Find("building")
 	local natural = way:Find("natural")
+	local historic = way:Find("historic")
 	local landuse = way:Find("landuse")
 	local leisure = way:Find("leisure")
 	local amenity = way:Find("amenity")
 	local aeroway = way:Find("aeroway")
 	local railway = way:Find("railway")
+	local sport = way:Find("sport")
+	local tourism = way:Find("tourism")
 	local man_made = way:Find("man_made")
 	local disused = way:Find("disused")
 	local isClosed = way:IsClosed()
@@ -337,6 +350,10 @@ function way_function(way)
 			way:Layer("landuse", true)
 			way:Attribute("class", amenity)
 		end
+		way:LayerAsCentroid("poi")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 6)
+		way:Attribute("class", "amenity")
 	end
 	if leisure~="" then
 		if leisure=="nature_reserve" then
@@ -371,13 +388,37 @@ function way_function(way)
 			way:Attribute("subclass", "recreation_ground")
 		end
 
+		way:LayerAsCentroid("poi_detail")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 6)
+		way:Attribute("class", "leisure")
 	end
 	if aeroway~="" then
 		way:Layer("aeroway", isClosed)
 	end
 	if man_made~="" then
-
+		way:LayerAsCentroid("poi_detail")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 11)
+		way:Attribute("class", "man_made")
 	end
-
+	if sport~="" then
+		way:LayerAsCentroid("poi_detail")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 10)
+		way:Attribute("class", "sport")
+	end
+	if tourism~="" then
+		way:LayerAsCentroid("poi")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 5)
+		way:Attribute("class", "tourism")
+	end
+	if historic~="" then
+		way:LayerAsCentroid("poi_detail")
+		SetNameAttributes(way)
+		way:AttributeNumeric("rank", 5)
+		way:Attribute("class", "historic")
+	end
 end
 
