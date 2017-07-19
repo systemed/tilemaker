@@ -34,6 +34,9 @@ function node_function(node)
 		if amenity~="" then 
 			rank = 4
 			class = amenity
+			if amenity == "parking" then
+				rank = 10
+			end
 		elseif shop~="" then 
 			rank = 5 
 			class = shop
@@ -167,6 +170,7 @@ function way_function(way)
 	local aeroway = way:Find("aeroway")
 	local railway = way:Find("railway")
 	local sport = way:Find("sport")
+	local shop = way:Find("shop")
 	local tourism = way:Find("tourism")
 	local man_made = way:Find("man_made")
 	local disused = way:Find("disused")
@@ -251,6 +255,20 @@ function way_function(way)
 	end
 	if building~="" then
 		way:Layer("building", true)
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 10)
+		end
+	end
+	if shop~="" then
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 6)
+			way:Attribute("class", "shop")
+			way:Attribute("landuse", shop)
+		end
 	end
 	if natural~="" then
 		local landcoverkeys = Set { "wood" }
@@ -284,6 +302,14 @@ function way_function(way)
 			way:Layer("landcover", true)
 			way:Attribute("class", "grass")
 			way:Attribute("subclass", natural)
+		end
+
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 8)
+			way:Attribute("class", "landuse")
+			way:Attribute("landuse", natural)
 		end
 	end
 	if landuse~="" then
@@ -343,6 +369,17 @@ function way_function(way)
 			way:Attribute("class", landuse)
 		end
 		if subclass ~= "" then way:Attribute("subclass", subclass) end
+
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 6)
+			way:Attribute("class", "landuse")
+			if subclass ~= "" then
+				way:Attribute("subclass", subclass)
+			end
+		end
+
 	end
 	if amenity~="" then
 		local landusekeys = Set { "school", "university", "kindergarten", "college", "library", "hospital"}
@@ -354,6 +391,7 @@ function way_function(way)
 		SetNameAttributes(way)
 		way:AttributeNumeric("rank", 6)
 		way:Attribute("class", "amenity")
+		way:Attribute("subclass", amenity)
 	end
 	if leisure~="" then
 		if leisure=="nature_reserve" then
@@ -388,37 +426,59 @@ function way_function(way)
 			way:Attribute("subclass", "recreation_ground")
 		end
 
-		way:LayerAsCentroid("poi_detail")
-		SetNameAttributes(way)
-		way:AttributeNumeric("rank", 6)
-		way:Attribute("class", "leisure")
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 6)
+			way:Attribute("class", "leisure")
+			way:Attribute("subclass", leisure)
+		end
 	end
 	if aeroway~="" then
 		way:Layer("aeroway", isClosed)
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 11)
+			way:Attribute("class", "aeroway")
+			way:Attribute("subclass", aeroway)
+		end
 	end
 	if man_made~="" then
-		way:LayerAsCentroid("poi_detail")
-		SetNameAttributes(way)
-		way:AttributeNumeric("rank", 11)
-		way:Attribute("class", "man_made")
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 11)
+			way:Attribute("class", "man_made")
+			way:Attribute("subclass", man_made)
+		end
 	end
 	if sport~="" then
-		way:LayerAsCentroid("poi_detail")
-		SetNameAttributes(way)
-		way:AttributeNumeric("rank", 10)
-		way:Attribute("class", "sport")
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 10)
+			way:Attribute("class", "sport")
+			way:Attribute("subclass", sport)
+		end
 	end
 	if tourism~="" then
-		way:LayerAsCentroid("poi")
-		SetNameAttributes(way)
-		way:AttributeNumeric("rank", 5)
-		way:Attribute("class", "tourism")
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 5)
+			way:Attribute("class", "tourism")
+			way:Attribute("subclass", tourism)
+		end
 	end
 	if historic~="" then
-		way:LayerAsCentroid("poi_detail")
-		SetNameAttributes(way)
-		way:AttributeNumeric("rank", 5)
-		way:Attribute("class", "historic")
+		if way:Holds("name") then
+			way:LayerAsCentroid("poi_detail")
+			SetNameAttributes(way)
+			way:AttributeNumeric("rank", 5)
+			way:Attribute("class", "historic")
+			way:Attribute("subclass", historic)
+		end
 	end
 end
 
