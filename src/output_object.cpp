@@ -9,10 +9,19 @@ enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CA
 
 class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
 
-	const Box &clippingBox;
+	const Box &clippingBox; //for boost ggl
+	Path clippingPath; //for clipper library
 
 public:
-	ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) {};
+	ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) 
+	{
+		const Point &minc = clippingBox.min_corner();
+		const Point &maxc = clippingBox.max_corner();
+		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
+	}
 
 	Geometry operator()(const Point &p) const {
 		if (geom::within(p, clippingBox)) {
@@ -41,7 +50,48 @@ public:
 
 	Geometry operator()(const MultiPolygon &mp) const {
 		MultiPolygon out;
-		geom::intersection(mp, clippingBox, out);
+		string reason;
+		Clipper c;
+		c.StrictlySimple(true);
+
+		// Convert boost geometries to clipper paths 
+		Paths simplified;
+		for(size_t i=0; i<mp.size(); i++)
+		{
+			const Polygon &p = mp[0];
+			Path outer;
+			Paths inners;
+			ConvertToClipper(p, outer, inners);
+
+			// For polygons with holes,
+			if(inners.size()>0)
+			{
+				// Find polygon shapes without needing holes
+				Paths simp;
+				c.AddPath(outer, ptSubject, true);
+				c.AddPaths(inners, ptClip, true);
+				c.Execute(ctDifference, simp, pftEvenOdd, pftEvenOdd);
+				c.Clear();
+
+				simplified.insert(simplified.end(), simp.begin(), simp.end());
+			}
+			else
+			{
+				simplified.push_back(outer);				
+			}
+		}
+
+		// Clip to box
+		Paths clipped;
+		Clipper c2;
+		c2.StrictlySimple(true);
+		c2.AddPaths(simplified, ptSubject, true);
+		c2.AddPath(this->clippingPath, ptClip, true);
+		c2.Execute(ctIntersection, clipped, pftEvenOdd, pftEvenOdd);
+
+		// Convert back to boost geometries
+		ConvertFromClipper(clipped, out);
+
 		return out;
 	}
 };
@@ -63,15 +113,21 @@ class OutputObject { public:
 		attributes[key]=value;
 	}
 
+	bool hasAttribute(const string &key) const {
+		auto it = attributes.find(key);
+		return it != attributes.end();
+	}
+
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// Returns a boost::variant -
 	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 	Geometry buildWayGeometry(const OSMStore &osmStore,
 	                      TileBbox *bboxPtr, 
-	                      vector<Geometry> &cachedGeometries) const {
+	                      const vector<Geometry> &cachedGeometries) const {
 
 		ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
+		try {
 		if (geomType==POLYGON || geomType==CENTROID) {
 			// polygon
 			MultiPolygon mp;
@@ -104,6 +160,9 @@ class OutputObject { public:
 		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
 			const Geometry &g = cachedGeometries[objectID];
 			return boost::apply_visitor(clip, g);
+		}
+		} catch (std::invalid_argument &err) {
+			cerr << "Error in buildWayGeometry: " << err.what() << endl;
 		}
 
 		return MultiLinestring(); // return a blank geometry

@@ -105,6 +105,229 @@ int lua_error_handler(int errCode, const char *errMessage)
 	exit(0);
 }
 
+class SharedData
+{
+public:
+	uint zoom;
+	int threadNum;
+	bool clippingBoxFromJSON;
+	double minLon, minLat, maxLon, maxLat;
+	OSMObject osmObject;
+	OSMStore *osmStore;
+	bool includeID, compress, gzip;
+	string compressOpt;
+	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	bool verbose;
+	bool sqlite;
+	MBTiles mbtiles;
+	string outputFile;
+	map< uint, vector<OutputObject> > *tileIndexForZoom;
+
+	SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
+		osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
+	{
+		this->osmStore = osmStore;
+		includeID = false, compress = true, gzip = true;
+		verbose = false;
+		sqlite=false;
+		this->tileIndexForZoom = nullptr;
+	}
+};
+
+int outputProc(uint threadId, class SharedData *sharedData)
+{
+	NodeStore &nodes = sharedData->osmStore->nodes;
+
+	// Loop through tiles
+	uint tc = 0;
+	uint zoom = sharedData->zoom;
+	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
+		if (threadId == 0 && (tc % 100) == 0) {
+			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom->size() << "               \r";
+			cout.flush();
+		}
+		if (tc++ % sharedData->threadNum != threadId) continue;
+
+		// Create tile
+		vector_tile::Tile tile;
+		uint index = it->first;
+		TileBbox bbox(index,zoom);
+		const vector<OutputObject> &ooList = it->second;
+		if (sharedData->clippingBoxFromJSON && (sharedData->maxLon<=bbox.minLon || sharedData->minLon>=bbox.maxLon || sharedData->maxLat<=bbox.minLat || sharedData->minLat>=bbox.maxLat)) { continue; }
+
+		// Loop through layers
+		for (auto lt = sharedData->osmObject.layerOrder.begin(); lt != sharedData->osmObject.layerOrder.end(); ++lt) {
+			vector<string> keyList;
+			vector<vector_tile::Tile_Value> valueList;
+			vector_tile::Tile_Layer *vtLayer = tile.add_layers();
+
+			// Loop through sub-layers
+			for (auto mt = lt->begin(); mt != lt->end(); ++mt) {
+				uint layerNum = *mt;
+				LayerDef ld = sharedData->osmObject.layers[layerNum];
+				if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
+				double simplifyLevel = 0;
+				if (zoom < ld.simplifyBelow) {
+					if (ld.simplifyLength > 0) {
+						uint tileY = index & 65535;
+						double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
+						simplifyLevel = meter2degp(ld.simplifyLength, latp);
+					} else {
+						simplifyLevel = ld.simplifyLevel;
+					}
+					simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
+				}
+
+				// compare only by `layer`
+				auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
+				// We get the range within ooList, where the layer of each object is `layerNum`.
+				// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+				auto ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
+				// Loop through output objects
+				for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
+
+					if (jt->geomType == POINT) {
+						vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+						jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
+						jt->writeAttributes(&keyList, &valueList, featurePtr);
+						if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
+					} else {
+						Geometry g;
+						try {
+							g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries);
+						}
+						catch (std::out_of_range &err)
+						{
+							if (sharedData->verbose)
+								cerr << "Error while processing geometry " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+							continue;
+						}
+
+						// If a object is a polygon or a linestring that is followed by
+						// other objects with the same geometry type and the same attributes,
+						// the following objects are merged into the first object, by taking union of geometries.
+						auto gTyp = jt->geomType;
+						if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+							MultiPolygon *gAcc = nullptr;
+							try{
+								gAcc = &boost::get<MultiPolygon>(g);
+							} catch (boost::bad_get &err) {
+								cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
+								continue;
+							}
+							while (jt+1 != ooListSameLayer.second &&
+									(jt+1)->geomType == gTyp &&
+									(jt+1)->attributes == jt->attributes) {
+								jt++;
+								try
+								{
+									MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+									MultiPolygon gTmp;
+									geom::union_(*gAcc, gNew, gTmp);
+									*gAcc = move(gTmp);
+								}
+								catch (std::out_of_range &err)
+								{
+									if (sharedData->verbose)
+										cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+								}
+								catch (geom::overlay_invalid_input_exception &err)
+								{
+									cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+								}
+								catch (boost::bad_get &err) {
+									cerr << "Error while processing POLYGON " << jt->objectID << " has unexpected type" << endl;
+									continue;
+								}
+							}
+						}
+						if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+							MultiLinestring *gAcc = nullptr;
+							try {
+							gAcc = &boost::get<MultiLinestring>(g);
+							} catch (boost::bad_get &err) {
+								cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
+								continue;
+							}
+							while (jt+1 != ooListSameLayer.second &&
+									(jt+1)->geomType == gTyp &&
+									(jt+1)->attributes == jt->attributes) {
+								jt++;
+								try
+								{
+									MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+									MultiLinestring gTmp;
+									geom::union_(*gAcc, gNew, gTmp);
+									*gAcc = move(gTmp);
+								}
+								catch (std::out_of_range &err)
+								{
+									if (sharedData->verbose)
+										cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+								}
+								catch (boost::bad_get &err) {
+									cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
+									continue;
+								}
+							}
+						}
+
+						vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+						WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
+						boost::apply_visitor(w, g);
+						if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
+						jt->writeAttributes(&keyList, &valueList, featurePtr);
+						if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
+
+					}
+				}
+			}
+
+			// If there are any objects, then add tags
+			if (vtLayer->features_size()>0) {
+				vtLayer->set_name(sharedData->osmObject.layers[lt->at(0)].name);
+				vtLayer->set_version(1);
+				for (uint j=0; j<keyList.size()  ; j++) {
+					vtLayer->add_keys(keyList[j]);
+				}
+				for (uint j=0; j<valueList.size(); j++) { 
+					vector_tile::Tile_Value *v = vtLayer->add_values();
+					*v = valueList[j];
+				}
+			} else {
+				tile.mutable_layers()->RemoveLast();
+			}
+		}
+
+		// Write to file or sqlite
+
+		string data, compressed;
+		if (sharedData->sqlite) {
+			// Write to sqlite
+			tile.SerializeToString(&data);
+			if (sharedData->compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->gzip); }
+			sharedData->mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, sharedData->compress ? &compressed : &data);
+
+		} else {
+			// Write to file
+			stringstream dirname, filename;
+			dirname  << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex;
+			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
+			boost::filesystem::create_directories(dirname.str());
+			fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
+			if (sharedData->compress) {
+				tile.SerializeToString(&data);
+				outfile << compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->gzip);
+			} else {
+				if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
+			}
+			outfile.close();
+		}
+	}
+	return 0;
+
+}
+
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
@@ -115,20 +338,18 @@ int main(int argc, char* argv[]) {
 	RelationStore &relations = osmStore.relations;
 
 	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
-	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
 
 	// ----	Read command-line options
 	
-	bool sqlite=false;
 	vector<string> inputFiles;
-	string outputFile;
 	string luaFile;
 	string jsonFile;
-	bool verbose = false;
 	uint threadNum;
+	string outputFile;
+	bool verbose = false, sqlite= false;
 
 	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -159,6 +380,9 @@ int main(int argc, char* argv[]) {
 	#ifdef COMPACT_NODES
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
+	#ifdef COMPACT_WAYS
+	cout << "tilemaker compiled without 64-bit way support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
+	#endif
 
 	// ---- Check config
 	
@@ -169,7 +393,6 @@ int main(int argc, char* argv[]) {
 
 	Box clippingBox;
 	bool hasClippingBox = false;
-	bool clippingBoxFromJSON = false;
 	fstream infile(inputFiles[0], ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFiles[0] << endl; return -1; }
 	HeaderBlock block;
@@ -206,16 +429,19 @@ int main(int argc, char* argv[]) {
 		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
 		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
 	);
-	OSMObject osmObject(&luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
+
+	class SharedData sharedData(&luaState, &indices, &cachedGeometryNames, &osmStore);
+	sharedData.clippingBoxFromJSON = false;
+	sharedData.threadNum = threadNum;
+	sharedData.outputFile = outputFile;
+	sharedData.verbose = verbose;
+	sharedData.sqlite = sqlite;
 
 	// ----	Read JSON config
 
 	uint baseZoom, startZoom, endZoom;
 	string projectName, projectVersion, projectDesc;
-	bool includeID = false, compress = true, gzip = true;
-	string compressOpt;
 	rapidjson::Document jsonConfig;
-	double minLon, minLat, maxLon, maxLat;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
 		char readBuffer[65536];
@@ -228,31 +454,31 @@ int main(int argc, char* argv[]) {
 		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
-		includeID      = jsonConfig["settings"]["include_ids"].GetBool();
+		sharedData.includeID      = jsonConfig["settings"]["include_ids"].GetBool();
 		if (! jsonConfig["settings"]["compress"].IsString()) {
 			cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 			return -1;
 		}
-		compressOpt    = jsonConfig["settings"]["compress"].GetString();
+		sharedData.compressOpt    = jsonConfig["settings"]["compress"].GetString();
 		projectName    = jsonConfig["settings"]["name"].GetString();
 		projectVersion = jsonConfig["settings"]["version"].GetString();
 		projectDesc    = jsonConfig["settings"]["description"].GetString();
 		if (jsonConfig["settings"].HasMember("bounding_box")) {
-			hasClippingBox = true; clippingBoxFromJSON = true;
-			minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
-			minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
-			maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
-			maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
-			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-				              geom::make<Point>(maxLon, lat2latp(maxLat)));
+			hasClippingBox = true; sharedData.clippingBoxFromJSON = true;
+			sharedData.minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
+			sharedData.minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
+			sharedData.maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
+			sharedData.maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
+			clippingBox = Box(geom::make<Point>(sharedData.minLon, lat2latp(sharedData.minLat)),
+				              geom::make<Point>(sharedData.maxLon, lat2latp(sharedData.maxLat)));
 		}
 
 		// Check config is valid
 		if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; return -1; }
-		if (! compressOpt.empty()) {
-			if      (compressOpt == "gzip"   ) { gzip = true;  }
-			else if (compressOpt == "deflate") { gzip = false; }
-			else if (compressOpt == "none"   ) { compress = false; }
+		if (! sharedData.compressOpt.empty()) {
+			if      (sharedData.compressOpt == "gzip"   ) { sharedData.gzip = true;  }
+			else if (sharedData.compressOpt == "deflate") { sharedData.gzip = false; }
+			else if (sharedData.compressOpt == "none"   ) { sharedData.compress = false; }
 			else {
 				cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 				return -1;
@@ -272,7 +498,7 @@ int main(int argc, char* argv[]) {
 			double simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
 			double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
 			double simplifyRatio = it->value.HasMember("simplify_ratio") ? it->value["simplify_ratio"].GetDouble() : 1.0;
-			uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom,
+			uint layerNum = sharedData.osmObject.addLayer(layerName, minZoom, maxZoom,
 					simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
 			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
@@ -296,7 +522,7 @@ int main(int argc, char* argv[]) {
 				}
 				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-				              cachedGeometries, cachedGeometryNames, baseZoom, layerNum, layerName, indexed, indices, indexName);
+				              sharedData.cachedGeometries, cachedGeometryNames, baseZoom, layerNum, layerName, indexed, indices, indexName);
 			}
 		}
 	} catch (...) {
@@ -315,24 +541,23 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise mbtiles if required
 	
-	MBTiles mbtiles;
-	if (sqlite) {
-		mbtiles.open(&outputFile);
-		mbtiles.writeMetadata("name",projectName);
-		mbtiles.writeMetadata("type","baselayer");
-		mbtiles.writeMetadata("version",projectVersion);
-		mbtiles.writeMetadata("description",projectDesc);
-		mbtiles.writeMetadata("format","pbf");
+	if (sharedData.sqlite) {
+		sharedData.mbtiles.open(&sharedData.outputFile);
+		sharedData.mbtiles.writeMetadata("name",projectName);
+		sharedData.mbtiles.writeMetadata("type","baselayer");
+		sharedData.mbtiles.writeMetadata("version",projectVersion);
+		sharedData.mbtiles.writeMetadata("description",projectDesc);
+		sharedData.mbtiles.writeMetadata("format","pbf");
 		if (jsonConfig["settings"].HasMember("metadata")) {
 			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
 			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
 				if (it->value.IsString()) {
-					mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
+					sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
 				} else {
 					rapidjson::StringBuffer strbuf;
 					rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
 					it->value.Accept(writer);
-					mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
+					sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
 				}
 			}
 		}
@@ -380,10 +605,10 @@ int main(int argc, char* argv[]) {
 			}
 
 			// Read the string table, and pre-calculate the positions of valid node keys
-			osmObject.readStringTable(&pb);
+			sharedData.osmObject.readStringTable(&pb);
 			unordered_set<int> nodeKeyPositions;
 			for (auto it : nodeKeys) {
-				nodeKeyPositions.insert(osmObject.findStringPosition(it));
+				nodeKeyPositions.insert(sharedData.osmObject.findStringPosition(it));
 			}
 
 			for (int i=0; i<pb.primitivegroup_size(); i++) {
@@ -418,11 +643,11 @@ int main(int argc, char* argv[]) {
 						}
 						// For tagged nodes, call Lua, then save the OutputObject
 						if (significant) {
-							osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
-							luaState["node_function"](&osmObject);
-							if (!osmObject.empty()) {
+							sharedData.osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
+							luaState["node_function"](&sharedData.osmObject);
+							if (!sharedData.osmObject.empty()) {
 								uint32_t index = latpLon2index(node, baseZoom);
-								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
+								for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 									tileIndex[index].push_back(*jt);
 								}
 							}
@@ -476,50 +701,64 @@ int main(int argc, char* argv[]) {
 							nodeVec.push_back(static_cast<NodeID>(nodeId));
 						}
 
+						bool ok = true;
 						try
 						{
-							osmObject.setWay(&pbfWay, &nodeVec);
-							luaState["way_function"](&osmObject);
+							sharedData.osmObject.setWay(&pbfWay, &nodeVec);
 						}
 						catch (std::out_of_range &err)
 						{
 							// Way is missing a node?
-							cout << endl << err.what() << endl;
+							ok = false;
+							cerr << endl << err.what() << endl;
 						}
 
-						if (!osmObject.empty() || waysInRelation.count(wayId)) {
+						if (ok)
+						{
+							luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+							kaguya::LuaFunction way_function = luaState["way_function"];
+							kaguya::LuaRef ret = way_function(&sharedData.osmObject);
+							assert(!ret);
+						}
+
+						if (!sharedData.osmObject.empty() || waysInRelation.count(wayId)) {
 							// Store the way's nodes in the global way store
 							ways.insert_back(wayId, nodeVec);
 						}
 
-						if (!osmObject.empty()) {
+						if (!sharedData.osmObject.empty()) {
 							// create a list of tiles this way passes through (tileSet)
 							unordered_set<uint32_t> tileSet;
-							insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
+							try {
+								insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
 
-							// then, for each tile, store the OutputObject for each layer
-							bool polygonExists = false;
-							for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-								uint32_t index = *it;
-								for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-									if (jt->geomType == POLYGON) {
-										polygonExists = true;
-										continue;
-									}
-									tileIndex[index].push_back(*jt);
-								}
-							}
-
-							// for polygon, fill inner tiles
-							if (polygonExists) {
-								fillCoveredTiles(tileSet);
+								// then, for each tile, store the OutputObject for each layer
+								bool polygonExists = false;
 								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 									uint32_t index = *it;
-									for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-										if (jt->geomType != POLYGON) continue;
+									for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+										if (jt->geomType == POLYGON) {
+											polygonExists = true;
+											continue;
+										}
 										tileIndex[index].push_back(*jt);
 									}
 								}
+
+								// for polygon, fill inner tiles
+								if (polygonExists) {
+									fillCoveredTiles(tileSet);
+									for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+										uint32_t index = *it;
+										for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+											if (jt->geomType != POLYGON) continue;
+											tileIndex[index].push_back(*jt);
+										}
+									}
+								}
+							} catch(std::out_of_range &err)
+							{
+								cerr << "Error calculating intermediate tiles: " << err.what() << endl;
 							}
 						}
 					}
@@ -530,10 +769,10 @@ int main(int argc, char* argv[]) {
 				//		(just multipolygons for now; we should do routes in time)
 
 				if (pg.relations_size() > 0) {
-					int typeKey = osmObject.findStringPosition("type");
-					int mpKey   = osmObject.findStringPosition("multipolygon");
-					int innerKey= osmObject.findStringPosition("inner");
-					//int outerKey= osmObject.findStringPosition("outer");
+					int typeKey = sharedData.osmObject.findStringPosition("type");
+					int mpKey   = sharedData.osmObject.findStringPosition("multipolygon");
+					int innerKey= sharedData.osmObject.findStringPosition("inner");
+					//int outerKey= sharedData.osmObject.findStringPosition("outer");
 					if (typeKey >-1 && mpKey>-1) {
 						for (int j=0; j<pg.relations_size(); j++) {
 							Relation pbfRelation = pg.relations(j);
@@ -553,19 +792,24 @@ int main(int argc, char* argv[]) {
 								(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 							}
 
+							bool ok = true;
 							try
 							{
-								osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
-								luaState["way_function"](&osmObject);
+								sharedData.osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
 							}
 							catch (std::out_of_range &err)
 							{
 								// Relation is missing a member?
-								cout << endl << err.what() << endl;
+								ok = false;
+								cerr << endl << err.what() << endl;
 							}
 
-							if (!osmObject.empty()) {
-								WayID relID = osmObject.osmID;
+							if (ok)
+								luaState["way_function"](&sharedData.osmObject);
+
+							if (!sharedData.osmObject.empty()) {								
+
+								WayID relID = sharedData.osmObject.osmID;
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
 
@@ -586,7 +830,7 @@ int main(int argc, char* argv[]) {
 
 								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 									uint32_t index = *it;
-									for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
+									for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 										tileIndex[index].push_back(*jt);
 									}
 								}
@@ -611,7 +855,6 @@ int main(int argc, char* argv[]) {
 	// Loop through zoom levels
 	for (uint zoom=startZoom; zoom<=endZoom; zoom++) {
 		// Create list of tiles, and the data in them
-		map< uint, vector<OutputObject> > *tileIndexPtr;
 		map< uint, vector<OutputObject> > generatedIndex;
 		if (zoom==baseZoom) {
 			// ----	Sort each tile
@@ -621,7 +864,7 @@ int main(int argc, char* argv[]) {
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
 			// at z14, we can just use tileIndex
-			tileIndexPtr = &tileIndex;
+			sharedData.tileIndexForZoom = &tileIndex;
 		} else {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
@@ -641,170 +884,28 @@ int main(int argc, char* argv[]) {
 				sort(ooset.begin(), ooset.end());
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
-			tileIndexPtr = &generatedIndex;
+			sharedData.tileIndexForZoom = &generatedIndex;
+
 		}
 
-		// Output procedure
-		auto outputProc = [&](uint threadId) {
-			// Loop through tiles
-			uint tc = 0;
-			for (auto it = tileIndexPtr->begin(); it != tileIndexPtr->end(); ++it) {
-				if (threadId == 0 && (tc % 100) == 0) {
-					cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << tileIndexPtr->size() << "               \r";
-					cout.flush();
-				}
-				if (tc++ % threadNum != threadId) continue;
+		sharedData.zoom = zoom;
+		if(threadNum == 1) {
+			// Single thread (is easier to debug)
+			outputProc(0, &sharedData);
+		}
+		else {
 
-				// Create tile
-				vector_tile::Tile tile;
-				uint index = it->first;
-				TileBbox bbox(index,zoom);
-				const vector<OutputObject> &ooList = it->second;
-				if (clippingBoxFromJSON && (maxLon<=bbox.minLon || minLon>=bbox.maxLon || maxLat<=bbox.minLat || minLat>=bbox.maxLat)) { continue; }
+			// Multi thread processing loop
+			vector<thread> worker;
+			for (uint threadId = 0; threadId < threadNum; threadId++)
+				worker.emplace_back(outputProc, threadId, &sharedData);
+			for (auto &t: worker) t.join();
 
-				// Loop through layers
-				for (auto lt = osmObject.layerOrder.begin(); lt != osmObject.layerOrder.end(); ++lt) {
-					vector<string> keyList;
-					vector<vector_tile::Tile_Value> valueList;
-					vector_tile::Tile_Layer *vtLayer = tile.add_layers();
-
-					for (auto mt = lt->begin(); mt != lt->end(); ++mt) {
-						uint layerNum = *mt;
-						LayerDef ld = osmObject.layers[layerNum];
-						if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-						double simplifyLevel = 0;
-						if (zoom < ld.simplifyBelow) {
-							if (ld.simplifyLength > 0) {
-								uint tileY = index & 65535;
-								double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
-								simplifyLevel = meter2degp(ld.simplifyLength, latp);
-							} else {
-								simplifyLevel = ld.simplifyLevel;
-							}
-							simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
-						}
-
-						// compare only by `layer`
-						auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
-						// We get the range within ooList, where the layer of each object is `layerNum`.
-						// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-						auto ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
-						// Loop through output objects
-						for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
-							if (jt->geomType == POINT) {
-								vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-								jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
-								jt->writeAttributes(&keyList, &valueList, featurePtr);
-								if (includeID) { featurePtr->set_id(jt->objectID); }
-							} else {
-								try {
-									Geometry g = jt->buildWayGeometry(osmStore, &bbox, cachedGeometries);
-
-									// If a object is a polygon or a linestring that is followed by
-									// other objects with the same geometry type and the same attributes,
-									// the following objects are merged into the first object, by taking union of geometries.
-									auto gTyp = jt->geomType;
-									if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
-										MultiPolygon &gAcc = boost::get<MultiPolygon>(g);
-										while (jt+1 != ooListSameLayer.second &&
-												(jt+1)->geomType == gTyp &&
-												(jt+1)->attributes == jt->attributes) {
-											jt++;
-											MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
-											MultiPolygon gTmp;
-											geom::union_(gAcc, gNew, gTmp);
-											gAcc = move(gTmp);
-										}
-									}
-									if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
-										MultiLinestring &gAcc = boost::get<MultiLinestring>(g);
-										while (jt+1 != ooListSameLayer.second &&
-												(jt+1)->geomType == gTyp &&
-												(jt+1)->attributes == jt->attributes) {
-											jt++;
-											MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(osmStore, &bbox, cachedGeometries));
-											MultiLinestring gTmp;
-											geom::union_(gAcc, gNew, gTmp);
-											gAcc = move(gTmp);
-										}
-									}
-
-									vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-									WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
-									boost::apply_visitor(w, g);
-									if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-									jt->writeAttributes(&keyList, &valueList, featurePtr);
-									if (includeID) { featurePtr->set_id(jt->objectID); }
-								} catch (...) {
-									if (verbose)  {
-										cerr << "Exception when writing output object " << jt->objectID << " of type " << jt->geomType << endl;
-										if (relations.count(jt->objectID)) {
-											const auto &wayList = relations.at(jt->objectID);
-											for (auto et = wayList.outerBegin; et != wayList.outerEnd; ++et) {
-												if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-											}
-											for (auto et = wayList.innerBegin; et != wayList.innerEnd; ++et) {
-												if (ways.count(*et)==0) { cerr << " - couldn't find constituent way " << *et << endl; }
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-
-					// If there are any objects, then add tags
-					if (vtLayer->features_size()>0) {
-						vtLayer->set_name(osmObject.layers[lt->at(0)].name);
-						vtLayer->set_version(1);
-						for (uint j=0; j<keyList.size()  ; j++) {
-							vtLayer->add_keys(keyList[j]);
-						}
-						for (uint j=0; j<valueList.size(); j++) { 
-							vector_tile::Tile_Value *v = vtLayer->add_values();
-							*v = valueList[j];
-						}
-					} else {
-						tile.mutable_layers()->RemoveLast();
-					}
-				}
-
-				// Write to file or sqlite
-
-				string data, compressed;
-				if (sqlite) {
-					// Write to sqlite
-					tile.SerializeToString(&data);
-					if (compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, gzip); }
-					mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, compress ? &compressed : &data);
-
-				} else {
-					// Write to file
-					stringstream dirname, filename;
-					dirname  << outputFile << "/" << zoom << "/" << bbox.tilex;
-					filename << outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
-					boost::filesystem::create_directories(dirname.str());
-					fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
-					if (compress) {
-						tile.SerializeToString(&data);
-						outfile << compress_string(data, Z_DEFAULT_COMPRESSION, gzip);
-					} else {
-						if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
-					}
-					outfile.close();
-				}
-			}
-			return 0;
-		};
-
-		// Multi thread processing loop
-		vector<thread> worker;
-		for (uint threadId = 0; threadId < threadNum; threadId++)
-			worker.emplace_back(outputProc, threadId);
-		for (auto &t: worker) t.join();
+		}
+		sharedData.tileIndexForZoom = nullptr;
 	}
 
-	cout << endl << "Filled the tileset with good things at " << outputFile << endl;
+	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 	google::protobuf::ShutdownProtobufLibrary();
 
 	// ---- Call exit_function of Lua logic

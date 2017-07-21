@@ -10,6 +10,9 @@
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
+#include "clipper.hpp"
+using namespace ClipperLib;
+
 // General helper routines
 
 inline void endian_swap(unsigned int& x) {
@@ -114,3 +117,99 @@ std::string decompress_string(const std::string& str) {
 
     return outstring;
 }
+
+const double clipperScale = 1e6;
+
+void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
+{
+	outer.clear();
+	inners.clear();
+	const Polygon::ring_type &out = p.outer();
+	const Polygon::inner_container_type &inns = p.inners();
+
+	for(size_t i=0; i<out.size(); i++)
+	{
+		const Point &pt = out[i];
+		outer.push_back(IntPoint(std::round(pt.x() * clipperScale), std::round(pt.y() * clipperScale)));
+	}
+
+	for(size_t i=0; i<inns.size(); i++)
+	{
+		Path in;
+		const Polygon::ring_type &inner = inns[i];
+		for(size_t j=0; j<inner.size(); j++)
+		{
+			const Point &pt = inner[j];
+			in.push_back(IntPoint(std::round(pt.x() * clipperScale), std::round(pt.y() * clipperScale)));
+		}
+		inners.push_back(in);
+	}
+}
+
+void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
+{
+	p.clear();
+	Polygon::ring_type &out = p.outer();
+	Polygon::inner_container_type &inns = p.inners();
+	
+	for(size_t i=0; i<outer.size(); i++)
+	{
+		const IntPoint &pt = outer[i];
+		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+	}
+	if(outer.size()>0)
+	{
+		//Start point in ring is repeated
+		const IntPoint &pt = outer[0];
+		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+	}
+
+	for(size_t i=0; i<inners.size(); i++)
+	{
+		const Path &inn = inners[i];
+		Polygon::ring_type inn2;
+		for(size_t j=0; j<inn.size(); j++)
+		{
+			const IntPoint &pt = inn[j];
+			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		}
+		if(inn.size()>0)
+		{
+			//Start point in ring is repeated
+			const IntPoint &pt = inn[0];
+			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		}
+		inns.push_back(inn2);
+	}
+	//Fix orientation of rings
+	geom::correct(p);
+}
+
+void ConvertFromClipper(const Paths &polys, MultiPolygon &mp)
+{
+	mp.clear();
+
+	for(size_t pn=0; pn < polys.size(); pn++)
+	{
+		const Path &pth = polys[pn];
+		Polygon p;
+		Polygon::ring_type &otr = p.outer();
+
+		for(size_t i=0; i<pth.size(); i++)
+		{
+			const IntPoint &pt = pth[i];
+			otr.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		}
+		if(pth.size()>0)
+		{
+			//Start point in ring is repeated
+			const IntPoint &pt = pth[0];
+			otr.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		}
+		//Fix orientation of rings
+		geom::correct(p);
+		mp.push_back(p);
+	}
+	assert(polys.size() == mp.size());
+}
+
