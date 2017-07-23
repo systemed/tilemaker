@@ -191,13 +191,13 @@ void readShapefile(string filename,
 
 			string reason;
 			if (!geom::is_valid(multi, reason)) {
-				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts;
+				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 				geom::correct(multi);
 				geom::remove_spikes(multi);	// water polygon shapefile has many spikes
-				if (geom::is_valid(multi)) {
+				if (geom::is_valid(multi, reason)) {
 					cerr << "... corrected";
 				} else {
-					cerr << " Reason: " << reason;
+					cerr << "... failed to correct. Reason: " << reason;
 				}
 				cerr << endl;
 			}
