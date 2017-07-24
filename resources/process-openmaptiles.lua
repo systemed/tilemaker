@@ -124,10 +124,10 @@ function SetNameAttributes (obj)
 	local name_en = name
 	local name_de = name
 	if obj:Find("name:en") ~= "" then
-		name_en = node:Find("name:en")
+		name_en = obj:Find("name:en")
 	end
 	if obj:Find("name:de") ~= "" then
-		name_de = node:Find("name:de")
+		name_de = obj:Find("name:de")
 	end
 	if name_en ~= "" then
 		obj:Attribute("name_en", name_en)
