@@ -819,9 +819,19 @@ int main(int argc, char* argv[]) {
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
 
-								// for each tile the relation may cover, put the output objects.
+								MultiPolygon mp;
+								try
+								{
+									// for each tile the relation may cover, put the output objects.
+									mp = osmStore.wayListMultiPolygon(outerWayVec, innerWayVec);
+								}
+								catch(std::out_of_range &err)
+								{
+									cout << "In relation " << relID << ": " << err.what() << endl;
+									continue;
+								}		
+
 								unordered_set<uint32_t> tileSet;
-								MultiPolygon mp = osmStore.wayListMultiPolygon(outerWayVec, innerWayVec);
 								if (mp.size() == 1) {
 									insertIntermediateTiles(mp[0].outer(), baseZoom, tileSet);
 									fillCoveredTiles(tileSet);
