@@ -140,6 +140,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
+	uint index = 0;
 	uint zoom = sharedData->zoom;
 	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
 		if (threadId == 0 && (tc % 100) == 0) {
@@ -148,9 +149,12 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
 
+		try
+		{
+
 		// Create tile
 		vector_tile::Tile tile;
-		uint index = it->first;
+		index = it->first;
 		TileBbox bbox(index,zoom);
 		const vector<OutputObject> &ooList = it->second;
 		if (sharedData->clippingBoxFromJSON && (sharedData->maxLon<=bbox.minLon || sharedData->minLon>=bbox.maxLon || sharedData->maxLat<=bbox.minLat || sharedData->minLat>=bbox.maxLat)) { continue; }
@@ -322,6 +326,11 @@ int outputProc(uint threadId, class SharedData *sharedData)
 				if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 			}
 			outfile.close();
+		}
+		}
+		catch(std::bad_alloc &err)
+		{
+			cout << "Error: bad_alloc when processing tile " << index << ": " << err.what() << endl;
 		}
 	}
 	return 0;
