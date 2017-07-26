@@ -74,9 +74,11 @@ Build from project root directory with:
 
 	docker build . -t tilemaker
 
-The docker container can be run e.g.:
+The docker container can be run like this:
 
- 	docker run -i -t --rm tilemaker --help
+ 	docker run -v /Users/Local/Downloads/:/srv -i -t --rm tilemaker /srv/germany-latest.osm.pbf --output=/srv/germany.mbtiles
+
+Keep in mind to map the volume your .osm.pbf files are in to a path within your docker container, as seen in the example above. 
 
 Configuring
 -----------
