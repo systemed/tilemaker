@@ -68,6 +68,18 @@ To save memory (on any platform), you can choose 32-bit storage for node and way
     make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS"
     make install
 
+### Docker
+
+Build from project root directory with:
+
+	docker build . -t tilemaker
+
+The docker container can be run like this:
+
+ 	docker run -v /Users/Local/Downloads/:/srv -i -t --rm tilemaker /srv/germany-latest.osm.pbf --output=/srv/germany.mbtiles
+
+Keep in mind to map the volume your .osm.pbf files are in to a path within your docker container, as seen in the example above. 
+
 Configuring
 -----------
 
@@ -83,7 +95,7 @@ Running
 
 At its simplest, you can create a set of vector tiles from a .pbf with this command:
 
-    tilemaker liechtenstein-latest.osm.pbf --output=tiles/ 
+    tilemaker liechtenstein-latest.osm.pbf --output=tiles/
 
 Output can be as individual files to a directory, or to an MBTiles file aka a SQLite database (with extension .mbtiles or .sqlite).
 
