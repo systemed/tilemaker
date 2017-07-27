@@ -149,9 +149,6 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
 
-		try
-		{
-
 		// Create tile
 		vector_tile::Tile tile;
 		index = it->first;
@@ -219,31 +216,37 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
 								continue;
 							}
+							
+							Paths current;
+							ConvertToClipper(*gAcc, current);
+
 							while (jt+1 != ooListSameLayer.second &&
 									(jt+1)->geomType == gTyp &&
 									(jt+1)->attributes == jt->attributes) {
 								jt++;
-								try
-								{
+
+								try {
+						
 									MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
-									MultiPolygon gTmp;
-									geom::union_(*gAcc, gNew, gTmp);
-									*gAcc = move(gTmp);
+									Paths newPaths;
+									ConvertToClipper(gNew, newPaths);
+
+									Clipper cl;
+									cl.StrictlySimple(true);
+									cl.AddPaths(current, ptSubject, true);
+									cl.AddPaths(newPaths, ptClip, true);
+									Paths tmpUnion;
+									cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
+									swap(current, tmpUnion);
 								}
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
 										cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 								}
-								catch (geom::overlay_invalid_input_exception &err)
-								{
-									cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
-								}
-								catch (boost::bad_get &err) {
-									cerr << "Error while processing POLYGON " << jt->objectID << " has unexpected type" << endl;
-									continue;
-								}
 							}
+
+							ConvertFromClipper(current, *gAcc);
 						}
 						if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
 							MultiLinestring *gAcc = nullptr;
@@ -326,11 +329,6 @@ int outputProc(uint threadId, class SharedData *sharedData)
 				if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 			}
 			outfile.close();
-		}
-		}
-		catch(std::bad_alloc &err)
-		{
-			cout << "Error: bad_alloc when processing tile " << index << ": " << err.what() << endl;
 		}
 	}
 	return 0;

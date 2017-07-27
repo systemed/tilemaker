@@ -17,10 +17,10 @@ public:
 	{
 		const Point &minc = clippingBox.min_corner();
 		const Point &maxc = clippingBox.max_corner();
-		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
-		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(minc.y() * clipperScale)));	
-		clippingPath.push_back(IntPoint(std::round(maxc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
-		clippingPath.push_back(IntPoint(std::round(minc.x() * clipperScale), std::round(maxc.y() * clipperScale)));	
+		clippingPath.push_back(IntPoint(std::round(minc.x() * CLIPPER_SCALE), std::round(minc.y() * CLIPPER_SCALE)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * CLIPPER_SCALE), std::round(minc.y() * CLIPPER_SCALE)));	
+		clippingPath.push_back(IntPoint(std::round(maxc.x() * CLIPPER_SCALE), std::round(maxc.y() * CLIPPER_SCALE)));	
+		clippingPath.push_back(IntPoint(std::round(minc.x() * CLIPPER_SCALE), std::round(maxc.y() * CLIPPER_SCALE)));	
 	}
 
 	Geometry operator()(const Point &p) const {
@@ -51,35 +51,10 @@ public:
 	Geometry operator()(const MultiPolygon &mp) const {
 		MultiPolygon out;
 		string reason;
-		Clipper c;
-		c.StrictlySimple(true);
 
 		// Convert boost geometries to clipper paths 
 		Paths simplified;
-		for(size_t i=0; i<mp.size(); i++)
-		{
-			const Polygon &p = mp[0];
-			Path outer;
-			Paths inners;
-			ConvertToClipper(p, outer, inners);
-
-			// For polygons with holes,
-			if(inners.size()>0)
-			{
-				// Find polygon shapes without needing holes
-				Paths simp;
-				c.AddPath(outer, ptSubject, true);
-				c.AddPaths(inners, ptClip, true);
-				c.Execute(ctDifference, simp, pftEvenOdd, pftEvenOdd);
-				c.Clear();
-
-				simplified.insert(simplified.end(), simp.begin(), simp.end());
-			}
-			else
-			{
-				simplified.push_back(outer);				
-			}
-		}
+		ConvertToClipper(mp, simplified);
 
 		// Clip to box
 		Paths clipped;
