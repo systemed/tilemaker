@@ -7,6 +7,8 @@
 		"housenumber": { "minzoom": 14, "maxzoom": 14 },
 		"waterway": { "minzoom": 8, "maxzoom": 14 },
 		"transportation": { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_ratio": 2.0 },
+		"transportation_name": { "minzoom": 8, "maxzoom": 14 },
+		"transportation_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "transportation_name" },
 		"building": { "minzoom": 13, "maxzoom": 14 },
 		"water": { "minzoom": 8, "maxzoom": 14 },
 		"water_name": { "minzoom": 8, "maxzoom": 14 },
@@ -24,7 +26,7 @@
 		}
 	},
 	"settings": {
-		"minzoom": 4,
+		"minzoom": 8,
 		"maxzoom": 14,
 		"basezoom": 14,
 		"include_ids": false,

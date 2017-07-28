@@ -224,12 +224,25 @@ function way_function(way)
 			-- TODO
 		end
 
+		if highway ~= "minor" and highway ~= "track" and highway ~= "path" and highway ~= "service" then
+			way:Layer("transportation_name", false)
+		else
+			way:Layer("transportation_name_detail", false)
+		end
+		SetNameAttributes(way)
+		way:Attribute("class", highway)
+
 --		way:Attribute("id",way:Id())
 --		way:AttributeNumeric("area",37)
 	end
 	if railway~="" then
 		way:Layer("transportation", false)
 		way:Attribute("class", railway)
+
+		way:Layer("transportation_name", false)
+		SetNameAttributes(way)
+		way:Attribute("class", "rail")
+
 	end
 	if waterway~="" then
 		if waterway == "riverbank" then
