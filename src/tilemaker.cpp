@@ -15,7 +15,6 @@
 #include <stdexcept>
 #include <thread>
 #include <mutex>
-#include <limits>
 
 // Other utilities
 #include <boost/filesystem.hpp>
@@ -47,10 +46,10 @@ extern "C" {
 
 #include "osm_store.h"
 #include "output_object.h"
-#include "osm_object.cpp"
+#include "osm_object.h"
 #include "mbtiles.h"
 #include "read_shp.h"
-#include "write_geometry.cpp"
+#include "write_geometry.h"
 
 // Namespaces
 using namespace std;

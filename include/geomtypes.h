@@ -2,6 +2,7 @@
 #define _GEOM_TYPES_H
 
 #include <vector>
+#include <limits>
 
 // boost::geometry
 #include <boost/geometry.hpp>
@@ -31,7 +32,7 @@ typedef uint32_t WayID;
 #else
 typedef uint64_t WayID;
 #endif
-#define MAX_WAY_ID numeric_limits<WayID>::max()
+#define MAX_WAY_ID std::numeric_limits<WayID>::max()
 typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
 
