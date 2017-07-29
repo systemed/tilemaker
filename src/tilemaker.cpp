@@ -25,17 +25,10 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
-#include "sqlite_modern_cpp.h"
 
 #ifdef _MSC_VER
 typedef unsigned uint;
 #endif
-// Protobuf
-#include "osmformat.pb.h"
-#include "vector_tile.pb.h"
-
-// Shapelib
-#include "shapefil.h"
 
 // Lua
 extern "C" {
@@ -45,55 +38,25 @@ extern "C" {
 }
 #include "kaguya.hpp"
 
-// boost::geometry
-#include <boost/geometry.hpp>
-#include <boost/geometry/algorithms/intersection.hpp>
-#include <boost/geometry/geometries/geometries.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/index/rtree.hpp>
-typedef boost::geometry::model::d2::point_xy<double> Point; 
-typedef boost::geometry::model::linestring<Point> Linestring;
-typedef boost::geometry::model::polygon<Point> Polygon;
-typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
-typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
-typedef boost::geometry::model::box<Point> Box;
-typedef boost::geometry::ring_type<Polygon>::type Ring;
-typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
-typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
-typedef std::pair<Box, uint> IndexValue;
-typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadratic<16> > RTree;
+#include "geomtypes.h"
+
+// Tilemaker code
+#include "helpers.h"
+#include "pbf_blocks.h"
+#include "coordinates.h"
+
+#include "osm_store.h"
+#include "output_object.h"
+#include "osm_object.cpp"
+#include "mbtiles.h"
+#include "read_shp.h"
+#include "write_geometry.cpp"
 
 // Namespaces
 using namespace std;
-using namespace sqlite;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
-
-// Tilemaker code
-#include "helpers.cpp"
-#include "pbf_blocks.cpp"
-#include "coordinates.cpp"
-
-#ifdef COMPACT_NODES
-typedef uint32_t NodeID;
-#else
-typedef uint64_t NodeID;
-#endif
-#ifdef COMPACT_WAYS
-typedef uint32_t WayID;
-#else
-typedef uint64_t WayID;
-#endif
-#define MAX_WAY_ID numeric_limits<WayID>::max()
-typedef vector<NodeID> NodeVec;
-typedef vector<WayID> WayVec;
-
-#include "osm_store.cpp"
-#include "output_object.cpp"
-#include "osm_object.cpp"
-#include "mbtiles.cpp"
-#include "read_shp.cpp"
-#include "write_geometry.cpp"
+using namespace ClipperLib;
 
 kaguya::State luaState;
 

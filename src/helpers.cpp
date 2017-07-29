@@ -1,38 +1,24 @@
+#include "helpers.h"
 #include <string>
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <cstring>
-#include <zlib.h>
 
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
-#include "clipper.hpp"
 using namespace ClipperLib;
-
-// General helper routines
-
-inline void endian_swap(unsigned int& x) {
-	x = (x>>24) | 
-        ((x<<8) & 0x00FF0000) |
-        ((x>>8) & 0x0000FF00) |
-        (x<<24);
-}
-
-inline bool ends_with(std::string const & value, std::string const & ending) {
-	if (ending.size() > value.size()) return false;
-	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-}
+namespace geom = boost::geometry;
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
 
 // Compress a STL string using zlib with given compression level, and return the binary data
 std::string compress_string(const std::string& str,
-                            int compressionlevel = Z_DEFAULT_COMPRESSION,
-                            bool asGzip = false) {
+                            int compressionlevel,
+                            bool asGzip) {
     z_stream zs;                        // z_stream is zlib's control structure
     memset(&zs, 0, sizeof(zs));
 

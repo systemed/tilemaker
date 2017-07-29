@@ -1,16 +1,10 @@
+#include "coordinates.h"
 #include <math.h>
-
-struct LatpLon {
-	int32_t latp;
-	int32_t lon;
-};
+using namespace std;
+namespace geom = boost::geometry;
 
 double deg2rad(double deg) { return (M_PI/180.0) * deg; }
 double rad2deg(double rad) { return (180.0/M_PI) * rad; }
-
-// max/min latitudes
-constexpr double MaxLat = 85.0511;
-constexpr double MinLat = -MaxLat;
 
 // Project latitude (spherical Mercator)
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)
@@ -34,60 +28,12 @@ uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
 	       latp2tiley(ll.latp/10000000.0, baseZoom);
 }
 
-// Earth's (mean) radius
-// http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
-// http://mathworks.com/help/map/ref/earthradius.html
-constexpr double RadiusMeter = 6371000;
-
 // Convert to actual length
 double degp2meter(double degp, double latp) {
 	return RadiusMeter * deg2rad(degp) * cos(deg2rad(latp2lat(latp)));
 }
 double meter2degp(double meter, double latp) {
 	return rad2deg((1/RadiusMeter) * (meter / cos(deg2rad(latp2lat(latp)))));
-}
-
-template<typename T>
-void insertIntermediateTiles(const T &points, uint baseZoom, unordered_set<uint32_t> &tileSet) {
-	Point p2(0, 0);
-	for (auto it = points.begin(); it != points.end(); ++it) {
-		Point p1 = p2;
-		p2 = *it;
-
-		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
-		uint tileX2 = static_cast<uint>(tileXf2), tileY2 = static_cast<uint>(tileYf2);
-
-		// insert vertex
-		tileSet.insert((tileX2 << 16) + tileY2);
-		// p1 is not available at the first iteration
-		if (it == points.begin()) continue;
-
-		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
-		uint tileX1 = static_cast<uint>(tileXf1), tileY1 = static_cast<uint>(tileYf1);
-		double dx = tileXf2 - tileXf1, dy = tileYf2 - tileYf1;
-
-		// insert all X border
-		if (tileX1 != tileX2) {
-			double slope = dy / dx;
-			uint tileXmin = min(tileX1, tileX2);
-			uint tileXmax = max(tileX1, tileX2);
-			for (uint tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
-				uint tileYcur = static_cast<uint>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
-				tileSet.insert((tileXcur << 16) + tileYcur);
-			}
-		}
-
-		// insert all Y border
-		if (tileY1 != tileY2) {
-			double slope = dx / dy;
-			uint tileYmin = min(tileY1, tileY2);
-			uint tileYmax = max(tileY1, tileY2);
-			for (uint tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
-				uint tileXcur = static_cast<uint>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
-				tileSet.insert((tileXcur << 16) + tileYcur);
-			}
-		}
-	}
 }
 
 // the range between smallest y and largest y is filled, for each x
@@ -112,33 +58,27 @@ void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-class TileBbox { public:
-	double minLon, maxLon, minLat, maxLat, minLatp, maxLatp;
-	double xmargin, ymargin, xscale, yscale;
-	uint index, zoom, tiley, tilex;
-	Box clippingBox;
+TileBbox::TileBbox(uint i, uint z) {
+	index = i; zoom = z;
+	tiley = index & 65535;
+	tilex = index >> 16;
+	minLon = tilex2lon(tilex  ,zoom);
+	minLat = tiley2lat(tiley+1,zoom);
+	maxLon = tilex2lon(tilex+1,zoom);
+	maxLat = tiley2lat(tiley  ,zoom);
+	minLatp = lat2latp(minLat);
+	maxLatp = lat2latp(maxLat);
+	xmargin = (maxLon -minLon )/200.0;
+	ymargin = (maxLatp-minLatp)/200.0;
+	xscale  = (maxLon -minLon )/4096.0;
+	yscale  = (maxLatp-minLatp)/4096.0;
+	clippingBox = Box(geom::make<Point>(minLon-xmargin, minLatp-ymargin),
+		              geom::make<Point>(maxLon+xmargin, maxLatp+ymargin));
+}
 
-	TileBbox(uint i, uint z) {
-		index = i; zoom = z;
-		tiley = index & 65535;
-		tilex = index >> 16;
-		minLon = tilex2lon(tilex  ,zoom);
-		minLat = tiley2lat(tiley+1,zoom);
-		maxLon = tilex2lon(tilex+1,zoom);
-		maxLat = tiley2lat(tiley  ,zoom);
-		minLatp = lat2latp(minLat);
-		maxLatp = lat2latp(maxLat);
-		xmargin = (maxLon -minLon )/200.0;
-		ymargin = (maxLatp-minLatp)/200.0;
-		xscale  = (maxLon -minLon )/4096.0;
-		yscale  = (maxLatp-minLatp)/4096.0;
-		clippingBox = Box(geom::make<Point>(minLon-xmargin, minLatp-ymargin),
-			              geom::make<Point>(maxLon+xmargin, maxLatp+ymargin));
-	}
+pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) {
+	int x = (lon -   minLon) / xscale;
+	int y = (maxLatp - latp) / yscale;
+	return pair<int,int>(x,y);
+}
 
-	pair<int,int> scaleLatpLon(double latp, double lon) {
-		int x = (lon -   minLon) / xscale;
-		int y = (maxLatp - latp) / yscale;
-		return pair<int,int>(x,y);
-	}
-};

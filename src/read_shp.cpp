@@ -1,3 +1,7 @@
+#include "read_shp.h"
+using namespace std;
+namespace geom = boost::geometry;
+
 /*
 	Read shapefiles into Boost geometries
 */

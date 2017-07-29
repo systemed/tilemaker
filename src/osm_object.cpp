@@ -1,3 +1,5 @@
+using namespace std;
+
 struct LayerDef {
 	string name;
 	uint minzoom;
