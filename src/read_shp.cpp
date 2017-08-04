@@ -1,3 +1,7 @@
+#include "read_shp.h"
+using namespace std;
+namespace geom = boost::geometry;
+
 /*
 	Read shapefiles into Boost geometries
 */
@@ -87,7 +91,9 @@ void readShapefile(string filename,
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");
 	DBFHandle dbf = DBFOpen(filename.c_str(), "rb");
-	int numEntities, shpType;
+	if(shp == nullptr || dbf == nullptr)
+		return;
+	int numEntities=0, shpType=0;
 	vector<Point> points;
 	geom::model::box<Point> box;
 	double adfMinBound[4], adfMaxBound[4];
@@ -189,13 +195,13 @@ void readShapefile(string filename,
 
 			string reason;
 			if (!geom::is_valid(multi, reason)) {
-				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts;
+				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 				geom::correct(multi);
 				geom::remove_spikes(multi);	// water polygon shapefile has many spikes
-				if (geom::is_valid(multi)) {
+				if (geom::is_valid(multi, reason)) {
 					cerr << "... corrected";
 				} else {
-					cerr << " Reason: " << reason;
+					cerr << "... failed to correct. Reason: " << reason;
 				}
 				cerr << endl;
 			}
@@ -223,6 +229,7 @@ void readShapefile(string filename,
 			cerr << "Shapefile entity #" << i << " type " << shapeType << " not supported" << endl;
 		}
 	}
+
 	SHPClose(shp);
 	DBFClose(dbf);
 }

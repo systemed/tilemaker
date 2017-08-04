@@ -1,3 +1,8 @@
+#include "pbf_blocks.h"
+#include "helpers.h"
+#include <fstream>
+using namespace std;
+
 /* -------------------
    Protobuf handling
    ------------------- */

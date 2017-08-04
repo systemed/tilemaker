@@ -15,7 +15,6 @@
 #include <stdexcept>
 #include <thread>
 #include <mutex>
-#include <limits>
 
 // Other utilities
 #include <boost/filesystem.hpp>
@@ -25,17 +24,10 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
-#include "sqlite_modern_cpp.h"
 
 #ifdef _MSC_VER
 typedef unsigned uint;
 #endif
-// Protobuf
-#include "osmformat.pb.h"
-#include "vector_tile.pb.h"
-
-// Shapelib
-#include "shapefil.h"
 
 // Lua
 extern "C" {
@@ -45,62 +37,32 @@ extern "C" {
 }
 #include "kaguya.hpp"
 
-// boost::geometry
-#include <boost/geometry.hpp>
-#include <boost/geometry/algorithms/intersection.hpp>
-#include <boost/geometry/geometries/geometries.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/index/rtree.hpp>
-typedef boost::geometry::model::d2::point_xy<double> Point; 
-typedef boost::geometry::model::linestring<Point> Linestring;
-typedef boost::geometry::model::polygon<Point> Polygon;
-typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
-typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
-typedef boost::geometry::model::box<Point> Box;
-typedef boost::geometry::ring_type<Polygon>::type Ring;
-typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
-typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
-typedef std::pair<Box, uint> IndexValue;
-typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadratic<16> > RTree;
+#include "geomtypes.h"
+
+// Tilemaker code
+#include "helpers.h"
+#include "pbf_blocks.h"
+#include "coordinates.h"
+
+#include "osm_store.h"
+#include "output_object.h"
+#include "osm_object.h"
+#include "mbtiles.h"
+#include "read_shp.h"
+#include "write_geometry.h"
 
 // Namespaces
 using namespace std;
-using namespace sqlite;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
-
-// Tilemaker code
-#include "helpers.cpp"
-#include "pbf_blocks.cpp"
-#include "coordinates.cpp"
-
-#ifdef COMPACT_NODES
-typedef uint32_t NodeID;
-#else
-typedef uint64_t NodeID;
-#endif
-#ifdef COMPACT_WAYS
-typedef uint32_t WayID;
-#else
-typedef uint64_t WayID;
-#endif
-#define MAX_WAY_ID numeric_limits<WayID>::max()
-typedef vector<NodeID> NodeVec;
-typedef vector<WayID> WayVec;
-
-#include "osm_store.cpp"
-#include "output_object.cpp"
-#include "osm_object.cpp"
-#include "mbtiles.cpp"
-#include "read_shp.cpp"
-#include "write_geometry.cpp"
+using namespace ClipperLib;
 
 kaguya::State luaState;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
-	std::string traceback = luaState["debug"]["traceback"];
 	cerr << "lua runtime error: " << errMessage << endl;
+	std::string traceback = luaState["debug"]["traceback"];
 	cerr << "traceback: " << traceback << endl;
 	exit(0);
 }
@@ -140,6 +102,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
+	uint index = 0;
 	uint zoom = sharedData->zoom;
 	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
 		if (threadId == 0 && (tc % 100) == 0) {
@@ -150,7 +113,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 		// Create tile
 		vector_tile::Tile tile;
-		uint index = it->first;
+		index = it->first;
 		TileBbox bbox(index,zoom);
 		const vector<OutputObject> &ooList = it->second;
 		if (sharedData->clippingBoxFromJSON && (sharedData->maxLon<=bbox.minLon || sharedData->minLon>=bbox.maxLon || sharedData->maxLat<=bbox.minLat || sharedData->minLat>=bbox.maxLat)) { continue; }
@@ -215,31 +178,37 @@ int outputProc(uint threadId, class SharedData *sharedData)
 								cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
 								continue;
 							}
+							
+							Paths current;
+							ConvertToClipper(*gAcc, current);
+
 							while (jt+1 != ooListSameLayer.second &&
 									(jt+1)->geomType == gTyp &&
 									(jt+1)->attributes == jt->attributes) {
 								jt++;
-								try
-								{
+
+								try {
+						
 									MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
-									MultiPolygon gTmp;
-									geom::union_(*gAcc, gNew, gTmp);
-									*gAcc = move(gTmp);
+									Paths newPaths;
+									ConvertToClipper(gNew, newPaths);
+
+									Clipper cl;
+									cl.StrictlySimple(true);
+									cl.AddPaths(current, ptSubject, true);
+									cl.AddPaths(newPaths, ptClip, true);
+									Paths tmpUnion;
+									cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
+									swap(current, tmpUnion);
 								}
 								catch (std::out_of_range &err)
 								{
 									if (sharedData->verbose)
 										cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
 								}
-								catch (geom::overlay_invalid_input_exception &err)
-								{
-									cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
-								}
-								catch (boost::bad_get &err) {
-									cerr << "Error while processing POLYGON " << jt->objectID << " has unexpected type" << endl;
-									continue;
-								}
 							}
+
+							ConvertFromClipper(current, *gAcc);
 						}
 						if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
 							MultiLinestring *gAcc = nullptr;
@@ -363,7 +332,13 @@ int main(int argc, char* argv[]) {
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
-	po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+    try {
+        po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+    }
+    catch (const po::unknown_option& ex) {
+        cerr << "Unknown option: " << ex.get_option_name() << endl;
+        return -1;
+    }
 	po::notify(vm);
 	
 	if (vm.count("help")) { cout << desc << endl; return 1; }
@@ -813,9 +788,19 @@ int main(int argc, char* argv[]) {
 								// Store the relation members in the global relation store
 								relations.insert_front(relID, outerWayVec, innerWayVec);
 
-								// for each tile the relation may cover, put the output objects.
+								MultiPolygon mp;
+								try
+								{
+									// for each tile the relation may cover, put the output objects.
+									mp = osmStore.wayListMultiPolygon(outerWayVec, innerWayVec);
+								}
+								catch(std::out_of_range &err)
+								{
+									cout << "In relation " << relID << ": " << err.what() << endl;
+									continue;
+								}		
+
 								unordered_set<uint32_t> tileSet;
-								MultiPolygon mp = osmStore.wayListMultiPolygon(outerWayVec, innerWayVec);
 								if (mp.size() == 1) {
 									insertIntermediateTiles(mp[0].outer(), baseZoom, tileSet);
 									fillCoveredTiles(tileSet);

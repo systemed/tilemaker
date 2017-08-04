@@ -1,38 +1,24 @@
+#include "helpers.h"
 #include <string>
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <cstring>
-#include <zlib.h>
 
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
-#include "clipper.hpp"
 using namespace ClipperLib;
-
-// General helper routines
-
-inline void endian_swap(unsigned int& x) {
-	x = (x>>24) | 
-        ((x<<8) & 0x00FF0000) |
-        ((x>>8) & 0x0000FF00) |
-        (x<<24);
-}
-
-inline bool ends_with(std::string const & value, std::string const & ending) {
-	if (ending.size() > value.size()) return false;
-	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-}
+namespace geom = boost::geometry;
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
 
 // Compress a STL string using zlib with given compression level, and return the binary data
 std::string compress_string(const std::string& str,
-                            int compressionlevel = Z_DEFAULT_COMPRESSION,
-                            bool asGzip = false) {
+                            int compressionlevel,
+                            bool asGzip) {
     z_stream zs;                        // z_stream is zlib's control structure
     memset(&zs, 0, sizeof(zs));
 
@@ -118,7 +104,7 @@ std::string decompress_string(const std::string& str) {
     return outstring;
 }
 
-const double clipperScale = 1e6;
+const double CLIPPER_SCALE = 1e6;
 
 void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 {
@@ -130,7 +116,7 @@ void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 	for(size_t i=0; i<out.size(); i++)
 	{
 		const Point &pt = out[i];
-		outer.push_back(IntPoint(std::round(pt.x() * clipperScale), std::round(pt.y() * clipperScale)));
+		outer.push_back(IntPoint(std::round(pt.x() * CLIPPER_SCALE), std::round(pt.y() * CLIPPER_SCALE)));
 	}
 
 	for(size_t i=0; i<inns.size(); i++)
@@ -140,9 +126,41 @@ void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 		for(size_t j=0; j<inner.size(); j++)
 		{
 			const Point &pt = inner[j];
-			in.push_back(IntPoint(std::round(pt.x() * clipperScale), std::round(pt.y() * clipperScale)));
+			in.push_back(IntPoint(std::round(pt.x() * CLIPPER_SCALE), std::round(pt.y() * CLIPPER_SCALE)));
 		}
 		inners.push_back(in);
+	}
+}
+
+void ConvertToClipper(const MultiPolygon &mp, Paths &out)
+{
+	// Convert boost geometries to clipper paths 
+	out.clear();
+	Clipper c;
+	c.StrictlySimple(true);
+	for(size_t i=0; i<mp.size(); i++)
+	{
+		const Polygon &p = mp[i];
+		Path outer;
+		Paths inners;
+		ConvertToClipper(p, outer, inners);
+
+		// For polygons with holes,
+		if(inners.size()>0)
+		{
+			// Find polygon shapes without needing holes
+			Paths simp;
+			c.AddPath(outer, ptSubject, true);
+			c.AddPaths(inners, ptClip, true);
+			c.Execute(ctDifference, simp, pftEvenOdd, pftEvenOdd);
+			c.Clear();
+
+			out.insert(out.end(), simp.begin(), simp.end());
+		}
+		else
+		{
+			out.push_back(outer);				
+		}
 	}
 }
 
@@ -155,13 +173,13 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 	for(size_t i=0; i<outer.size(); i++)
 	{
 		const IntPoint &pt = outer[i];
-		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		out.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 	}
 	if(outer.size()>0)
 	{
 		//Start point in ring is repeated
 		const IntPoint &pt = outer[0];
-		out.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+		out.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 	}
 
 	for(size_t i=0; i<inners.size(); i++)
@@ -171,13 +189,13 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 		for(size_t j=0; j<inn.size(); j++)
 		{
 			const IntPoint &pt = inn[j];
-			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+			inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
 		if(inn.size()>0)
 		{
 			//Start point in ring is repeated
 			const IntPoint &pt = inn[0];
-			inn2.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+			inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
 		inns.push_back(inn2);
 	}
@@ -198,13 +216,13 @@ void ConvertFromClipper(const Paths &polys, MultiPolygon &mp)
 		for(size_t i=0; i<pth.size(); i++)
 		{
 			const IntPoint &pt = pth[i];
-			otr.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
 		if(pth.size()>0)
 		{
 			//Start point in ring is repeated
 			const IntPoint &pt = pth[0];
-			otr.push_back(Point(pt.X / clipperScale, pt.Y / clipperScale));
+			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
 		//Fix orientation of rings
 		geom::correct(p);
