@@ -71,6 +71,7 @@ class SharedData
 {
 public:
 	uint zoom;
+	uint mvtVersion;
 	int threadNum;
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;
@@ -255,7 +256,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			// If there are any objects, then add tags
 			if (vtLayer->features_size()>0) {
 				vtLayer->set_name(sharedData->osmObject.layers[lt->at(0)].name);
-				vtLayer->set_version(1);
+				vtLayer->set_version(sharedData->mvtVersion);
 				for (uint j=0; j<keyList.size()  ; j++) {
 					vtLayer->add_keys(keyList[j]);
 				}
@@ -434,7 +435,8 @@ int main(int argc, char* argv[]) {
 			cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 			return -1;
 		}
-		sharedData.compressOpt    = jsonConfig["settings"]["compress"].GetString();
+		sharedData.compressOpt = jsonConfig["settings"]["compress"].GetString();
+		sharedData.mvtVersion  = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
 		projectName    = jsonConfig["settings"]["name"].GetString();
 		projectVersion = jsonConfig["settings"]["version"].GetString();
 		projectDesc    = jsonConfig["settings"]["description"].GetString();

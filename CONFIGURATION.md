@@ -30,6 +30,7 @@ It also includes these global settings:
 * `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
+* `mvt_version` (optional) - the version of the [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) spec to use; defaults to 2
 
 A typical config file would look like this:
 
