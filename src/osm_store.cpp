@@ -1,5 +1,6 @@
 
 #include "osm_store.h"
+#include <iostream>
 using namespace std;
 
 // Views of data structures.
