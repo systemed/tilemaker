@@ -257,6 +257,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			if (vtLayer->features_size()>0) {
 				vtLayer->set_name(sharedData->osmObject.layers[lt->at(0)].name);
 				vtLayer->set_version(sharedData->mvtVersion);
+				vtLayer->set_extent(4096);
 				for (uint j=0; j<keyList.size()  ; j++) {
 					vtLayer->add_keys(keyList[j]);
 				}
