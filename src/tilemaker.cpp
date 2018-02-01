@@ -567,11 +567,11 @@ int main(int argc, char* argv[]) {
 		uint ct=0;
 		int64_t nodeId;
 		bool checkedRelations = false;
-		int wayPosition = -1;
+		long long wayPosition = -1;
 		unordered_set<WayID> waysInRelation;
 
 		while (true) {
-			int blockStart = infile.tellg();
+			long long blockStart = infile.tellg();
 			readBlock(&pb, &infile);
 			if (infile.eof()) {
 				if (!checkedRelations) {
