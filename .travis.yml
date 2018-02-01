@@ -14,8 +14,11 @@ addons:
     - shapelib
     - libshp-dev
 install:
-  - sudo add-apt-repository -y ppa:ostogvin/tjo-develop &&
-    sudo apt-get update &&
-    sudo apt-get install libboost1.58-dev libboost-program-options1.58 libboost-filesystem1.58-dev libboost-system1.58
+  - sudo add-apt-repository -y ppa:ostogvin/tjo-develop
+  - sudo apt-get update
+  - sudo apt-get install libboost1.58-dev
+  - sudo apt-get install libboost-program-options1.58
+  - sudo apt-get install libboost-filesystem1.58-dev
+  - sudo apt-get install libboost-system1.58
 script:
   - make -j2
