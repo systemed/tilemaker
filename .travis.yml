@@ -16,6 +16,6 @@ addons:
 install:
   - sudo add-apt-repository -y ppa:ostogvin/tjo-develop &&
     sudo apt-get update &&
-    sudo apt-get install libboost1.58-dev libboost-program-options1.58 libboost-filesystem1.58-dev libboost-system1.58
+    sudo apt-get install libboost1.65.1 libboost-program-options1.65.1 libboost-filesystem1.65.1 libboost-system1.65.1
 script:
   - make -j2
