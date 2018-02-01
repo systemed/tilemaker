@@ -106,7 +106,9 @@ int outputProc(uint threadId, class SharedData *sharedData)
 	uint index = 0;
 	uint zoom = sharedData->zoom;
 	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
-		if (threadId == 0 && (tc % 100) == 0) {
+		uint interval = 100;
+		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
+		if (threadId == 0 && (tc % interval) == 0) {
 			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom->size() << "               \r";
 			cout.flush();
 		}
@@ -575,6 +577,10 @@ int main(int argc, char* argv[]) {
 				if (!checkedRelations) {
 					checkedRelations = true;
 				} else {
+					break;
+				}
+			    if (wayPosition==-1) {
+					cout << ".pbf does not contain any ways" << endl;
 					break;
 				}
 				infile.clear();
