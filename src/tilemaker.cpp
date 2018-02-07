@@ -368,6 +368,10 @@ int main(int argc, char* argv[]) {
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
+	// ----	Initialise SharedData
+
+	class SharedData sharedData(&luaState, &indices, &cachedGeometryNames, &osmStore);
+
 	// ----	Read bounding box from first .pbf
 
 	Box clippingBox;
@@ -378,12 +382,12 @@ int main(int argc, char* argv[]) {
 	readBlock(&block, &infile);
 	if (block.has_bbox()) {
 		hasClippingBox = true;
-		double minLon = block.bbox().left()  /1000000000.0;
-		double maxLon = block.bbox().right() /1000000000.0;
-		double minLat = block.bbox().bottom()/1000000000.0;
-		double maxLat = block.bbox().top()   /1000000000.0;
-		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-			              geom::make<Point>(maxLon, lat2latp(maxLat)));
+		sharedData.minLon = block.bbox().left()  /1000000000.0;
+		sharedData.maxLon = block.bbox().right() /1000000000.0;
+		sharedData.minLat = block.bbox().bottom()/1000000000.0;
+		sharedData.maxLat = block.bbox().top()   /1000000000.0;
+		clippingBox = Box(geom::make<Point>(sharedData.minLon, lat2latp(sharedData.minLat)),
+		                  geom::make<Point>(sharedData.maxLon, lat2latp(sharedData.maxLat)));
 	}
 	infile.close();
 	
@@ -409,7 +413,6 @@ int main(int argc, char* argv[]) {
 		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
 	);
 
-	class SharedData sharedData(&luaState, &indices, &cachedGeometryNames, &osmStore);
 	sharedData.clippingBoxFromJSON = false;
 	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
@@ -523,7 +526,7 @@ int main(int argc, char* argv[]) {
 	
 	if (sharedData.sqlite) {
 		ostringstream bounds;
-		bounds << sharedData.minLon << "," << sharedData.minLat << "," << sharedData.maxLon << "," << sharedData.maxLat;
+		bounds << fixed << sharedData.minLon << "," << sharedData.minLat << "," << sharedData.maxLon << "," << sharedData.maxLat;
 		sharedData.mbtiles.open(&sharedData.outputFile);
 		sharedData.mbtiles.writeMetadata("name",projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
@@ -905,6 +908,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
+	if (sqlite) { sharedData.mbtiles.close(); }
 	google::protobuf::ShutdownProtobufLibrary();
 
 	// ---- Call exit_function of Lua logic

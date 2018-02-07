@@ -21,6 +21,7 @@ public:
 	void open(std::string *filename);
 	void writeMetadata(std::string key, std::string value);
 	void saveTile(int zoom, int x, int y, std::string *data);
+	void close();
 };
 
 #endif //_MBTILES_H
