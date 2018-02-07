@@ -13,6 +13,7 @@ MBTiles::~MBTiles() {
 void MBTiles::open(string *filename) {
 	db.init(*filename);
 	db << "PRAGMA synchronous = OFF;";
+	db << "PRAGMA application_id = 0x4d504258;";
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
 	db << "BEGIN;"; // begin a transaction
