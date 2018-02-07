@@ -51,6 +51,8 @@ extern "C" {
 #include "read_shp.h"
 #include "write_geometry.h"
 
+#include "shared_data.cpp"
+
 // Namespaces
 using namespace std;
 namespace po = boost::program_options;
@@ -67,35 +69,6 @@ int lua_error_handler(int errCode, const char *errMessage)
 	exit(0);
 }
 
-class SharedData
-{
-public:
-	uint zoom;
-	uint mvtVersion;
-	int threadNum;
-	bool clippingBoxFromJSON;
-	double minLon, minLat, maxLon, maxLat;
-	OSMObject osmObject;
-	OSMStore *osmStore;
-	bool includeID, compress, gzip;
-	string compressOpt;
-	vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
-	bool verbose;
-	bool sqlite;
-	MBTiles mbtiles;
-	string outputFile;
-	map< uint, vector<OutputObject> > *tileIndexForZoom;
-
-	SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
-		osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
-	{
-		this->osmStore = osmStore;
-		includeID = false, compress = true, gzip = true;
-		verbose = false;
-		sqlite=false;
-		this->tileIndexForZoom = nullptr;
-	}
-};
 
 int outputProc(uint threadId, class SharedData *sharedData)
 {
@@ -421,8 +394,6 @@ int main(int argc, char* argv[]) {
 
 	// ----	Read JSON config
 
-	uint baseZoom, startZoom, endZoom;
-	string projectName, projectVersion, projectDesc;
 	rapidjson::Document jsonConfig;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
@@ -432,40 +403,11 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		// Global config
-		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
-		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
-		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
-		sharedData.includeID      = jsonConfig["settings"]["include_ids"].GetBool();
-		if (! jsonConfig["settings"]["compress"].IsString()) {
-			cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
-			return -1;
-		}
-		sharedData.compressOpt = jsonConfig["settings"]["compress"].GetString();
-		sharedData.mvtVersion  = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
-		projectName    = jsonConfig["settings"]["name"].GetString();
-		projectVersion = jsonConfig["settings"]["version"].GetString();
-		projectDesc    = jsonConfig["settings"]["description"].GetString();
-		if (jsonConfig["settings"].HasMember("bounding_box")) {
-			hasClippingBox = true; sharedData.clippingBoxFromJSON = true;
-			sharedData.minLon = jsonConfig["settings"]["bounding_box"][0].GetDouble();
-			sharedData.minLat = jsonConfig["settings"]["bounding_box"][1].GetDouble();
-			sharedData.maxLon = jsonConfig["settings"]["bounding_box"][2].GetDouble();
-			sharedData.maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
+		sharedData.readConfig(jsonConfig);
+		if (sharedData.clippingBoxFromJSON) {
+			hasClippingBox = true; 
 			clippingBox = Box(geom::make<Point>(sharedData.minLon, lat2latp(sharedData.minLat)),
 				              geom::make<Point>(sharedData.maxLon, lat2latp(sharedData.maxLat)));
-		}
-
-		// Check config is valid
-		if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; return -1; }
-		if (! sharedData.compressOpt.empty()) {
-			if      (sharedData.compressOpt == "gzip"   ) { sharedData.gzip = true;  }
-			else if (sharedData.compressOpt == "deflate") { sharedData.gzip = false; }
-			else if (sharedData.compressOpt == "none"   ) { sharedData.compress = false; }
-			else {
-				cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
-				return -1;
-			}
 		}
 
 		// Layers
@@ -477,10 +419,10 @@ int main(int argc, char* argv[]) {
 			int minZoom = it->value["minzoom"].GetInt();
 			int maxZoom = it->value["maxzoom"].GetInt();
 			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
-			int   simplifyBelow = it->value.HasMember("simplify_below") ? it->value["simplify_below"].GetInt()    : 0;
-			double simplifyLevel = it->value.HasMember("simplify_level") ? it->value["simplify_level"].GetDouble() : 0.01;
+			int    simplifyBelow  = it->value.HasMember("simplify_below" ) ? it->value["simplify_below" ].GetInt()    : 0;
+			double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
 			double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
-			double simplifyRatio = it->value.HasMember("simplify_ratio") ? it->value["simplify_ratio"].GetDouble() : 1.0;
+			double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
 			uint layerNum = sharedData.osmObject.addLayer(layerName, minZoom, maxZoom,
 					simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
 			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
@@ -505,7 +447,7 @@ int main(int argc, char* argv[]) {
 				}
 				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-				              sharedData.cachedGeometries, cachedGeometryNames, baseZoom, layerNum, layerName, indexed, indices, indexName);
+				              sharedData.cachedGeometries, cachedGeometryNames, sharedData.baseZoom, layerNum, layerName, indexed, indices, indexName);
 			}
 		}
 	} catch (...) {
@@ -528,14 +470,14 @@ int main(int argc, char* argv[]) {
 		ostringstream bounds;
 		bounds << fixed << sharedData.minLon << "," << sharedData.minLat << "," << sharedData.maxLon << "," << sharedData.maxLat;
 		sharedData.mbtiles.open(&sharedData.outputFile);
-		sharedData.mbtiles.writeMetadata("name",projectName);
+		sharedData.mbtiles.writeMetadata("name",sharedData.projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
-		sharedData.mbtiles.writeMetadata("version",projectVersion);
-		sharedData.mbtiles.writeMetadata("description",projectDesc);
+		sharedData.mbtiles.writeMetadata("version",sharedData.projectVersion);
+		sharedData.mbtiles.writeMetadata("description",sharedData.projectDesc);
 		sharedData.mbtiles.writeMetadata("format","pbf");
 		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
-		sharedData.mbtiles.writeMetadata("minzoom",to_string(startZoom));
-		sharedData.mbtiles.writeMetadata("maxzoom",to_string(endZoom));
+		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.startZoom));
+		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.endZoom));
 		if (jsonConfig["settings"].HasMember("metadata")) {
 			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
 			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
@@ -638,7 +580,7 @@ int main(int argc, char* argv[]) {
 							sharedData.osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 							luaState["node_function"](&sharedData.osmObject);
 							if (!sharedData.osmObject.empty()) {
-								uint32_t index = latpLon2index(node, baseZoom);
+								uint32_t index = latpLon2index(node, sharedData.baseZoom);
 								for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 									tileIndex[index].push_back(*jt);
 								}
@@ -722,7 +664,7 @@ int main(int argc, char* argv[]) {
 							// create a list of tiles this way passes through (tileSet)
 							unordered_set<uint32_t> tileSet;
 							try {
-								insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), baseZoom, tileSet);
+								insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), sharedData.baseZoom, tileSet);
 
 								// then, for each tile, store the OutputObject for each layer
 								bool polygonExists = false;
@@ -819,12 +761,12 @@ int main(int argc, char* argv[]) {
 
 								unordered_set<uint32_t> tileSet;
 								if (mp.size() == 1) {
-									insertIntermediateTiles(mp[0].outer(), baseZoom, tileSet);
+									insertIntermediateTiles(mp[0].outer(), sharedData.baseZoom, tileSet);
 									fillCoveredTiles(tileSet);
 								} else {
 									for (Polygon poly: mp) {
 										unordered_set<uint32_t> tileSetTmp;
-										insertIntermediateTiles(poly.outer(), baseZoom, tileSetTmp);
+										insertIntermediateTiles(poly.outer(), sharedData.baseZoom, tileSetTmp);
 										fillCoveredTiles(tileSetTmp);
 										tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 									}
@@ -855,10 +797,10 @@ int main(int argc, char* argv[]) {
 	// ----	Write out each tile
 
 	// Loop through zoom levels
-	for (uint zoom=startZoom; zoom<=endZoom; zoom++) {
+	for (uint zoom=sharedData.startZoom; zoom<=sharedData.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
 		map< uint, vector<OutputObject> > generatedIndex;
-		if (zoom==baseZoom) {
+		if (zoom==sharedData.baseZoom) {
 			// ----	Sort each tile
 			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
 				auto &ooset = it->second;
@@ -872,8 +814,8 @@ int main(int argc, char* argv[]) {
 			// to a tile at our zoom level
 			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
 				uint index = it->first;
-				uint tilex = (index >> 16  ) / pow(2, baseZoom-zoom);
-				uint tiley = (index & 65535) / pow(2, baseZoom-zoom);
+				uint tilex = (index >> 16  ) / pow(2, sharedData.baseZoom-zoom);
+				uint tiley = (index & 65535) / pow(2, sharedData.baseZoom-zoom);
 				uint newIndex = (tilex << 16) + tiley;
 				const vector<OutputObject> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
