@@ -522,12 +522,17 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise mbtiles if required
 	
 	if (sharedData.sqlite) {
+		ostringstream bounds;
+		bounds << sharedData.minLon << "," << sharedData.minLat << "," << sharedData.maxLon << "," << sharedData.maxLat;
 		sharedData.mbtiles.open(&sharedData.outputFile);
 		sharedData.mbtiles.writeMetadata("name",projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
 		sharedData.mbtiles.writeMetadata("version",projectVersion);
 		sharedData.mbtiles.writeMetadata("description",projectDesc);
 		sharedData.mbtiles.writeMetadata("format","pbf");
+		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
+		sharedData.mbtiles.writeMetadata("minzoom",to_string(startZoom));
+		sharedData.mbtiles.writeMetadata("maxzoom",to_string(endZoom));
 		if (jsonConfig["settings"].HasMember("metadata")) {
 			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
 			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
