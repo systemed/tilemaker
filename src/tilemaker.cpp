@@ -403,53 +403,8 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.readConfig(jsonConfig);
-		if (sharedData.clippingBoxFromJSON) {
-			hasClippingBox = true; 
-			clippingBox = Box(geom::make<Point>(sharedData.minLon, lat2latp(sharedData.minLat)),
-				              geom::make<Point>(sharedData.maxLon, lat2latp(sharedData.maxLat)));
-		}
+		sharedData.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, cachedGeometryNames, indices);
 
-		// Layers
-		rapidjson::Value& layerHash = jsonConfig["layers"];
-		for (rapidjson::Value::MemberIterator it = layerHash.MemberBegin(); it != layerHash.MemberEnd(); ++it) {
-
-			// Basic layer settings
-			string layerName = it->name.GetString();
-			int minZoom = it->value["minzoom"].GetInt();
-			int maxZoom = it->value["maxzoom"].GetInt();
-			string writeTo = it->value.HasMember("write_to") ? it->value["write_to"].GetString() : "";
-			int    simplifyBelow  = it->value.HasMember("simplify_below" ) ? it->value["simplify_below" ].GetInt()    : 0;
-			double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
-			double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
-			double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
-			uint layerNum = sharedData.osmObject.addLayer(layerName, minZoom, maxZoom,
-					simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
-			cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
-			if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
-			cout << endl;
-
-			// External layer sources
-			if (it->value.HasMember("source")) {
-				if (!hasClippingBox) {
-					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-					return EXIT_FAILURE;
-				}
-				vector<string> sourceColumns;
-				if (it->value.HasMember("source_columns")) {
-					for (uint i=0; i<it->value["source_columns"].Size(); i++) {
-						sourceColumns.push_back(it->value["source_columns"][i].GetString());
-					}
-				}
-				bool indexed=false; if (it->value.HasMember("index")) {
-					indexed=it->value["index"].GetBool();
-					indices[layerName]=RTree();
-				}
-				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
-				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-				              sharedData.cachedGeometries, cachedGeometryNames, sharedData.baseZoom, layerNum, layerName, indexed, indices, indexName);
-			}
-		}
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
