@@ -32,13 +32,9 @@ public:
 	}
 
 	// ----	Read all config details from JSON file
-	//     	TODO: should be able to get cachedGeometryNames and indices from osmObject,
-	//     	      rather than needing them to be passed as parameters
 
 	void readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-	                map< uint, vector<OutputObject> > &tileIndex,
-	                map< uint, string > &cachedGeometryNames,
-	                map< string, RTree > &indices) {
+	                map< uint, vector<OutputObject> > &tileIndex) {
 		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
@@ -108,11 +104,11 @@ public:
 				}
 				bool indexed=false; if (it->value.HasMember("index")) {
 					indexed=it->value["index"].GetBool();
-					indices[layerName]=RTree();
+					osmObject.indices->operator[](layerName)=RTree();
 				}
 				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-				              cachedGeometries, cachedGeometryNames, baseZoom, layerNum, layerName, indexed, indices, indexName);
+				              cachedGeometries, *osmObject.cachedGeometryNames, baseZoom, layerNum, layerName, indexed, *osmObject.indices, indexName);
 			}
 		}
 	}
