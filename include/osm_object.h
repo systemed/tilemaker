@@ -9,6 +9,9 @@
 #include "geomtypes.h"
 #include "osm_store.h"
 #include "output_object.h"
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 
 // Protobuf
 #include "osmformat.pb.h"
@@ -22,6 +25,7 @@ struct LayerDef {
 	double simplifyLevel;
 	double simplifyLength;
 	double simplifyRatio;
+	std::map<std::string, uint> attributeMap;
 };
 
 /*
@@ -220,6 +224,11 @@ public:
 	void Attribute(const std::string &key, const std::string &val);
 	void AttributeNumeric(const std::string &key, const float val);
 	void AttributeBoolean(const std::string &key, const bool val);
+
+	// ----	vector_layers metadata entry
+
+	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
+	std::string serialiseLayerJSON();
 };
 
 #endif //_OSM_OBJECT_H

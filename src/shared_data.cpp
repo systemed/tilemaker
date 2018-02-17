@@ -108,7 +108,10 @@ public:
 				}
 				string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 				readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-				              cachedGeometries, *osmObject.cachedGeometryNames, baseZoom, layerNum, layerName, indexed, *osmObject.indices, indexName);
+				              cachedGeometries,
+				              osmObject,
+				              baseZoom, layerNum, layerName, indexed,
+				              indexName);
 			}
 		}
 	}

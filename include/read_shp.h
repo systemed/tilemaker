@@ -7,6 +7,7 @@
 #include <map>
 #include "geomtypes.h"
 #include "output_object.h"
+#include "osm_object.h"
 
 // Shapelib
 #include "shapefil.h"
@@ -24,13 +25,15 @@ void addToTileIndexPolyline(OutputObject &oo, std::map< uint, std::vector<Output
 void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std::unordered_map<int,std::string> &columnMap, std::unordered_map<int,int> &columnTypeMap);
 
 /// Read shapefile, and create OutputObjects for all objects within the specified bounding box
-void readShapefile(std::string filename, 
+void readShapefile(std::string filename,
                    std::vector<std::string> &columns,
-                   Box &clippingBox, 
-                   std::map< uint, std::vector<OutputObject> > &tileIndex, 
-                   std::vector<Geometry> &cachedGeometries, std::map< uint, std::string > &cachedGeometryNames,
+                   Box &clippingBox,
+                   std::map< uint, std::vector<OutputObject> > &tileIndex,
+                   std::vector<Geometry> &cachedGeometries,
+                   OSMObject &osmObject,
                    uint baseZoom, uint layerNum, std::string &layerName,
-                   bool isIndexed, std::map<std::string,RTree> &indices, std::string &indexName);
+                   bool isIndexed,
+                   std::string &indexName);
 
 #endif //_READ_SHP_H
 

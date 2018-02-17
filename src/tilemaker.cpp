@@ -433,19 +433,6 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
 		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.startZoom));
 		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.endZoom));
-		if (jsonConfig["settings"].HasMember("metadata")) {
-			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
-			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
-				if (it->value.IsString()) {
-					sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
-				} else {
-					rapidjson::StringBuffer strbuf;
-					rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-					it->value.Accept(writer);
-					sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
-				}
-			}
-		}
 	}
 
 	// ----	Read all PBFs
@@ -804,10 +791,32 @@ int main(int argc, char* argv[]) {
 		sharedData.tileIndexForZoom = nullptr;
 	}
 
-	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
-	if (sqlite) { sharedData.mbtiles.close(); }
+	// ----	Close tileset
+
+	if (sqlite) {
+		// Write mbtiles 1.3+ json object
+		sharedData.mbtiles.writeMetadata("json", sharedData.osmObject.serialiseLayerJSON());
+
+		// Write user-defined metadata
+		if (jsonConfig["settings"].HasMember("metadata")) {
+			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
+			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
+				if (it->value.IsString()) {
+					sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
+				} else {
+					rapidjson::StringBuffer strbuf;
+					rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+					it->value.Accept(writer);
+					sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
+				}
+			}
+		}
+		sharedData.mbtiles.close();
+	}
 	google::protobuf::ShutdownProtobufLibrary();
 
-	// ---- Call exit_function of Lua logic
+	// Call exit_function of Lua logic
 	luaState("if exit_function~=nil then exit_function() end");
+
+	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }

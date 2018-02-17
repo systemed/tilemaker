@@ -1,5 +1,6 @@
 #include "osm_object.h"
 using namespace std;
+using namespace rapidjson;
 
 // ----	initialization routines
 
@@ -15,7 +16,7 @@ OSMObject::OSMObject(kaguya::State *luaPtr, map< string, RTree> *idxPtr, vector<
 // Define a layer (as read from the .json file)
 uint OSMObject::addLayer(string name, uint minzoom, uint maxzoom,
 		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
-	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio };
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, std::map<std::string,uint>() };
 	layers.push_back(layer);
 	uint layerNum = layers.size()-1;
 	layerMap[name] = layerNum;
@@ -256,6 +257,7 @@ void OSMObject::Attribute(const string &key, const string &val) {
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
 	outputs[outputs.size()-1].addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 0);
 }
 
 void OSMObject::AttributeNumeric(const string &key, const float val) {
@@ -263,6 +265,7 @@ void OSMObject::AttributeNumeric(const string &key, const float val) {
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
 	outputs[outputs.size()-1].addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 1);
 }
 
 void OSMObject::AttributeBoolean(const string &key, const bool val) {
@@ -270,5 +273,43 @@ void OSMObject::AttributeBoolean(const string &key, const bool val) {
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
 	outputs[outputs.size()-1].addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 2);
 }
 
+// Record attribute name/type for vector_layers table
+void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
+	layers[layer].attributeMap[key] = type;
+}
+std::string OSMObject::serialiseLayerJSON() {
+	Document document;
+	document.SetObject();
+	Document::AllocatorType& allocator = document.GetAllocator();
+
+	Value layerArray(kArrayType);
+	for (auto it = layers.begin(); it != layers.end(); ++it) {
+		Value fieldObj(kObjectType);
+		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
+			Value k(jt->first.c_str(), allocator);
+			switch (jt->second) {
+				case 0: fieldObj.AddMember(k, "String" , allocator); break;
+				case 1:	fieldObj.AddMember(k, "Number" , allocator); break;
+				case 2:	fieldObj.AddMember(k, "Boolean", allocator); break;
+			}
+		}
+		Value layerObj(kObjectType);
+		Value name(it->name.c_str(), allocator);
+		layerObj.AddMember("id",      name,        allocator);
+		layerObj.AddMember("fields",  fieldObj,    allocator);
+		layerObj.AddMember("minzoom", it->minzoom, allocator);
+		layerObj.AddMember("maxzoom", it->maxzoom, allocator);
+		layerArray.PushBack(layerObj, allocator);
+	}
+
+	document.AddMember("vector_layers", layerArray, allocator);
+
+	StringBuffer buffer;
+	Writer<StringBuffer> writer(buffer);
+	document.Accept(writer);
+	string json(buffer.GetString(), buffer.GetSize());
+	return json;
+}
