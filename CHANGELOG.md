@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.5.0] - 2018-02-18
+
+### Added
+- Support mbtiles 1.3 specification
+- Write `extent` field to tiles
+- Ability to specify MVT version (defaults to 2)
+- OpenMapTiles-like Lua/JSON files (@TimSC)
+- Dockerfile (@thomasbrueggemann)
+- Better error messages (@TimSC)
+- Support 64-bit way IDs (@TimSC)
+
+### Changed
+- Significant refactoring (@TimSC)
+
+### Fixed
+- Robustness fixes and error checking for invalid geometries, using clipper inter alia (@TimSC)
+- Don't break if config files not found
+- Don't break on massive .pbfs (e.g. France extract)
+- Don't break if .pbf only contains nodes, not ways
+- Fix build issues on some versions of OS X
+- Makefile fixes (@pnorman, @thomersch)
+
 ## [1.4.0] - 2016-11-07
 
 ### Added
