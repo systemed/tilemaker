@@ -433,6 +433,7 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
 		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.startZoom));
 		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.endZoom));
+		if (!sharedData.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.defaultView); }
 	}
 
 	// ----	Read all PBFs

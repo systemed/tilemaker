@@ -8,6 +8,7 @@ public:
 	int threadNum;
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;
+	string defaultView;
 	OSMObject osmObject;
 	OSMStore *osmStore;
 	bool includeID, compress, gzip;
@@ -57,6 +58,11 @@ public:
 			maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
 			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
 			                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+		}
+		if (jsonConfig["settings"].HasMember("default_view")) {
+			defaultView = to_string(jsonConfig["settings"]["default_view"][0].GetDouble()) + "," +
+			              to_string(jsonConfig["settings"]["default_view"][1].GetDouble()) + "," +
+			              to_string(jsonConfig["settings"]["default_view"][2].GetInt());
 		}
 
 		// Check config is valid

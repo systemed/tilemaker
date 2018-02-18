@@ -30,6 +30,7 @@ It also includes these global settings:
 * `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
+* `default_view` (optional) - the default location for the client to view, in [lon, lat, zoom] order (MBTiles only)
 * `mvt_version` (optional) - the version of the [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) spec to use; defaults to 2
 
 A typical config file would look like this:
@@ -80,6 +81,8 @@ This would combine the `roads` (z12-14) and `low_roads` (z9-11) layers into a si
 (See also 'Shapefiles' below.)
 
 ### Additional metadata
+
+Tilemaker writes a `json` metadata field containing a `vector_layers` key, whose value is an array of JSON objects describing each layer and its attributes. This is part of the MBTiles 1.3 spec and required by certain clients.
 
 If you need to add additional metadata fields to your .mbtiles output, include the keys/values as an (optional) "metadata" entry under "settings". These will usually be string key/value pairs. (The value can also be another JSON entity - hash, array etc. - in which case it'll be encoded as JSON when written into the .mbtiles metadata table.)
 
