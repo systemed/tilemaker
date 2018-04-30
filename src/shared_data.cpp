@@ -20,7 +20,7 @@ public:
 	bool sqlite;
 	MBTiles mbtiles;
 	string outputFile;
-	map< uint, vector<OutputObject> > *tileIndexForZoom;
+	map< uint64_t, vector<OutputObject> > *tileIndexForZoom;
 
 	SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
 		osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
@@ -35,7 +35,7 @@ public:
 	// ----	Read all config details from JSON file
 
 	void readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-	                map< uint, vector<OutputObject> > &tileIndex) {
+	                map< uint64_t, vector<OutputObject> > &tileIndex) {
 		baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 		startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 		endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
