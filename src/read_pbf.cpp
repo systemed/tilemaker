@@ -3,7 +3,7 @@
 #include "pbf_blocks.h"
 using namespace std;
 
-bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, std::map< uint64_t, std::vector<OutputObject> > &tileIndex, 
 	class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read nodes
@@ -49,7 +49,7 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, s
 	return false;
 }
 
-bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map< uint, 
+bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map< uint64_t, 
 	std::vector<OutputObject> > &tileIndex, class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read ways
@@ -96,14 +96,14 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 
 			if (!osmObject.empty()) {
 				// create a list of tiles this way passes through (tileSet)
-				unordered_set<uint32_t> tileSet;
+				unordered_set<uint64_t> tileSet;
 				try {
 					insertIntermediateTiles(osmStore->nodeListLinestring(nodeVec), osmObject.config.baseZoom, tileSet);
 
 					// then, for each tile, store the OutputObject for each layer
 					bool polygonExists = false;
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-						uint32_t index = *it;
+						uint64_t index = *it;
 						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 							if (jt->geomType == POLYGON) {
 								polygonExists = true;
@@ -117,7 +117,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 					if (polygonExists) {
 						fillCoveredTiles(tileSet);
 						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-							uint32_t index = *it;
+							uint64_t index = *it;
 							for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 								if (jt->geomType != POLYGON) continue;
 								tileIndex[index].push_back(*jt);
@@ -135,7 +135,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 	return false;
 }
 
-bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+bool ReadRelations(PrimitiveGroup &pg, std::map< uint64_t, std::vector<OutputObject> > &tileIndex, 
 	class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read relations
@@ -199,13 +199,13 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 						continue;
 					}		
 
-					unordered_set<uint32_t> tileSet;
+					unordered_set<uint64_t> tileSet;
 					if (mp.size() == 1) {
 						insertIntermediateTiles(mp[0].outer(), osmObject.config.baseZoom, tileSet);
 						fillCoveredTiles(tileSet);
 					} else {
 						for (Polygon poly: mp) {
-							unordered_set<uint32_t> tileSetTmp;
+							unordered_set<uint64_t> tileSetTmp;
 							insertIntermediateTiles(poly.outer(), osmObject.config.baseZoom, tileSetTmp);
 							fillCoveredTiles(tileSetTmp);
 							tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
@@ -226,7 +226,7 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 	return false;
 }
 
-int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::map< uint64_t, std::vector<OutputObject> > &tileIndex, 
 	OSMObject &osmObject)
 {
 	// ----	Read PBF

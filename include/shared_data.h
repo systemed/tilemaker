@@ -69,7 +69,7 @@ public:
 	bool sqlite;
 	MBTiles mbtiles;
 	std::string outputFile;
-	const std::map< uint, std::vector<OutputObject> > *tileIndexForZoom;
+	const std::map< uint64_t, std::vector<OutputObject> > *tileIndexForZoom;
 	const std::vector<Geometry> *cachedGeometries;
 
 	const class Config &config;
