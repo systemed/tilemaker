@@ -104,7 +104,7 @@ std::string decompress_string(const std::string& str) {
     return outstring;
 }
 
-const double CLIPPER_SCALE = 1e6;
+const double CLIPPER_SCALE = 1e8;
 
 void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 {
