@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 #include <unordered_map>
+#include <iostream>
 #include "geomtypes.h"
 #include "coordinates.h"
 namespace geom = boost::geometry;
@@ -98,6 +99,11 @@ public:
 	// @exception NotFound
 	NodeList<WayStoreIterator> at(WayID i) const;
 
+	bool isClosed(WayID i) const;
+	NodeVec nodesFor(WayID i) const;
+	NodeID firstNode(WayID i) const;
+	NodeID lastNode(WayID i) const;
+
 	// @brief Return whether a node list is on the store.
 	// @param i Any possible OSM ID
 	// @return 1 if found, 0 otherwise
@@ -165,29 +171,93 @@ public:
 	// Relation -> MultiPolygon
 	template<class WayIt>
 	MultiPolygon wayListMultiPolygon(WayList<WayIt> wayList) const {
-		// polygon
 		MultiPolygon mp;
-		if (wayList.outerBegin != wayList.outerEnd) {
-			// main outer way and inners
+		if (wayList.outerBegin == wayList.outerEnd) { return mp; } // no outers so quit
+
+		// Assemble outers
+		// - Any closed polygons are added as-is
+		// - Linestrings are joined to existing linestrings with which they share a start/end
+		// - If no matches can be found, then one linestring is added (to 'attract' others)
+		// - The process is rerun until no ways are left
+		// This process could potentially be reused for inners, too
+		// There's quite a lot of copying going on here - could potentially be addressed
+		std::vector<NodeVec> outers;
+		std::map<WayID,bool> done; // true=this way has already been added to 'outers', don't reconsider
+		int added;
+		do {
+			added = 0;
+			for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
+				if (done[*it]) { continue; }
+				if (ways.isClosed(*it)) {
+					// if start==end, simply add it to the set
+					outers.emplace_back(ways.nodesFor(*it));
+					added++;
+					done[*it] = true;
+				} else {
+					// otherwise, can we find a matching outer to append it to?
+					bool joined = false;
+					NodeVec nodes = ways.nodesFor(*it);
+					NodeID jFirst = nodes.front();
+					NodeID jLast  = nodes.back();
+					for (auto ot = outers.begin(); ot != outers.end(); ot++) {
+						NodeID oFirst = ot->front();
+						NodeID oLast  = ot->back();
+						if (jFirst==jLast) continue; // don't join to already-closed ways
+						else if (oLast==jFirst) {
+							// append to the original
+							ot->insert(ot->end(), nodes.begin(), nodes.end());
+							joined=true; break;
+						} else if (oLast==jLast) {
+							// append reversed to the original
+							ot->insert(ot->end(), nodes.rbegin(), nodes.rend());
+							joined=true; break;
+						} else if (jLast==oFirst) {
+							// prepend to the original
+							ot->insert(ot->begin(), nodes.begin(), nodes.end());
+							joined=true; break;
+						} else if (jFirst==oFirst) {
+							// prepend reversed to the original
+							ot->insert(ot->begin(), nodes.rbegin(), nodes.rend());
+							joined=true; break;
+						}
+					}
+					if (!joined) {
+						// if we didn't join it to anything, then add it as a new line
+						outers.emplace_back(ways.nodesFor(*it));
+						added++;
+						done[*it] = true;
+					} else if (joined) {
+						added++;
+						done[*it] = true;
+					}
+				}
+			}
+			// If nothing was added, then 'seed' it with a remaining unallocated way
+			if (added==0) {
+				for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
+					if (done[*it]) { continue; }
+					outers.emplace_back(ways.nodesFor(*it));
+					added++;
+					done[*it] = true;
+					break;
+				}
+			}
+		} while (added>0);
+
+		// main outer way and inners
+		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 			Polygon poly;
-			if (ways.count(*wayList.outerBegin)==1) { fillPoints(poly.outer(), ways.at(*wayList.outerBegin++)); }
+			fillPoints(poly.outer(), *ot);
 			for (auto it = wayList.innerBegin; it != wayList.innerEnd; ++it) {
 				Ring inner;
 				if (ways.count(*it)==1) { fillPoints(inner, ways.at(*it)); }
-				poly.inners().emplace_back(move(inner));
+				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
 			}
 			mp.emplace_back(move(poly));
-
-			// additional outer ways - we don't match them up with inners, that shit is insane
-			for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
-				Polygon outerPoly;
-				if (ways.count(*it)==1) { fillPoints(outerPoly.outer(), ways.at(*it)); }
-				mp.emplace_back(move(outerPoly));
-			}
-
-			// fix winding
-			geom::correct(mp);
 		}
+
+		// fix winding
+		geom::correct(mp);
 		return mp;
 	}
 
@@ -225,6 +295,15 @@ private:
 	template<class PointRange, class NodeIt>
 	void fillPoints(PointRange &points, NodeList<NodeIt> nodeList) const {
 		for (auto it = nodeList.begin; it != nodeList.end; ++it) {
+			LatpLon ll = nodes.at(*it);
+			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
+		}
+	}
+
+	// fixme - this is duplicate code from above
+	template<class PointRange>
+	void fillPoints(PointRange &points, NodeVec nodeList) const {
+		for (auto it = nodeList.begin(); it != nodeList.end(); ++it) {
 			LatpLon ll = nodes.at(*it);
 			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
 		}

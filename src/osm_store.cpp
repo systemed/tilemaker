@@ -72,6 +72,21 @@ NodeList<WayStoreIterator> WayStore::at(WayID i) const {
 	}
 }
 
+bool WayStore::isClosed(WayID i) const {
+	const auto &way = mNodeLists.at(i);
+	return way.front() == way.back();
+}
+
+NodeVec WayStore::nodesFor(WayID i) const {
+	return mNodeLists.at(i);
+}
+NodeID WayStore::firstNode(WayID i) const {
+	return mNodeLists.at(i).front();
+}
+NodeID WayStore::lastNode(WayID i) const {
+	return mNodeLists.at(i).back();
+}
+
 // @brief Return whether a node list is on the store.
 // @param i Any possible OSM ID
 // @return 1 if found, 0 otherwise
