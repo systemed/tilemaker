@@ -99,39 +99,39 @@ Geometry OutputObject::buildWayGeometry(const OSMStore &osmStore,
 	ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
 	try {
-	if (geomType==POLYGON || geomType==CENTROID) {
-		// polygon
-		MultiPolygon mp;
-		if (osmStore.ways.count(objectID)) {
-			mp.emplace_back(osmStore.nodeListPolygon(objectID));
-		} else {
-			mp = osmStore.wayListMultiPolygon(objectID);
+		if (geomType==POLYGON || geomType==CENTROID) {
+			// polygon
+			MultiPolygon mp;
+			if (osmStore.ways.count(objectID)) {
+				mp.emplace_back(osmStore.nodeListPolygon(objectID));
+			} else {
+				mp = osmStore.wayListMultiPolygon(objectID);
+			}
+
+			// write out
+			if (geomType==CENTROID) {
+				// centroid only
+				Point p;
+				geom::centroid(mp, p);
+				return clip(p);
+
+			} else {
+				// full polygon
+				return clip(mp);
+			}
+
+		} else if (geomType==LINESTRING) {
+			// linestring
+			Linestring ls;
+			if (osmStore.ways.count(objectID)) {
+				ls = osmStore.nodeListLinestring(objectID);
+			}
+			return clip(ls);
+
+		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
+			const Geometry &g = cachedGeometries[objectID];
+			return boost::apply_visitor(clip, g);
 		}
-
-		// write out
-		if (geomType==CENTROID) {
-			// centroid only
-			Point p;
-			geom::centroid(mp, p);
-			return clip(p);
-
-		} else {
-			// full polygon
-			return clip(mp);
-		}
-
-	} else if (geomType==LINESTRING) {
-		// linestring
-		Linestring ls;
-		if (osmStore.ways.count(objectID)) {
-			ls = osmStore.nodeListLinestring(objectID);
-		}
-		return clip(ls);
-
-	} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-		const Geometry &g = cachedGeometries[objectID];
-		return boost::apply_visitor(clip, g);
-	}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in buildWayGeometry: " << err.what() << endl;
 	}

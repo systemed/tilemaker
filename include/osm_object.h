@@ -124,13 +124,11 @@ public:
 		isRelation = false;
 
 		nodeVec = nodeVecPtr;
-		try
-		{
+		try {
 			setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
 					osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
-		}
-		catch (std::out_of_range &err)
-		{
+
+		} catch (std::out_of_range &err) {
 			std::stringstream ss;
 			ss << "Way " << osmID << " is missing a node";
 			throw std::out_of_range(ss.str());
