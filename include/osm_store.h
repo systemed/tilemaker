@@ -221,12 +221,7 @@ public:
 							joined=true; break;
 						}
 					}
-					if (!joined) {
-						// if we didn't join it to anything, then add it as a new line
-						outers.emplace_back(ways.nodesFor(*it));
-						added++;
-						done[*it] = true;
-					} else if (joined) {
+					if (joined) {
 						added++;
 						done[*it] = true;
 					}
