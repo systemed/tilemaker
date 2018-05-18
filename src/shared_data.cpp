@@ -2,6 +2,8 @@
 #include "read_shp.h"
 using namespace std;
 
+kaguya::State luaState;
+
 SharedData::SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
 	osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
 {
