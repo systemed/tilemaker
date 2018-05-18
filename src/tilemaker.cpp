@@ -76,7 +76,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
-	uint index = 0;
+	uint64_t index = 0;
 	uint zoom = sharedData->zoom;
 	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
 		uint interval = 100;
@@ -286,7 +286,7 @@ int main(int argc, char* argv[]) {
 	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
-	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
+	map< uint64_t, vector<OutputObject> > tileIndex;				// objects to be output
 
 	// ----	Read command-line options
 	
@@ -523,7 +523,7 @@ int main(int argc, char* argv[]) {
 							sharedData.osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 							luaState["node_function"](&sharedData.osmObject);
 							if (!sharedData.osmObject.empty()) {
-								uint32_t index = latpLon2index(node, sharedData.baseZoom);
+								uint64_t index = latpLon2index(node, sharedData.baseZoom);
 								for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 									tileIndex[index].push_back(*jt);
 								}
@@ -605,14 +605,14 @@ int main(int argc, char* argv[]) {
 
 						if (!sharedData.osmObject.empty()) {
 							// create a list of tiles this way passes through (tileSet)
-							unordered_set<uint32_t> tileSet;
+							unordered_set<uint64_t> tileSet;
 							try {
 								insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), sharedData.baseZoom, tileSet);
 
 								// then, for each tile, store the OutputObject for each layer
 								bool polygonExists = false;
 								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-									uint32_t index = *it;
+									uint64_t index = *it;
 									for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 										if (jt->geomType == POLYGON) {
 											polygonExists = true;
@@ -626,7 +626,7 @@ int main(int argc, char* argv[]) {
 								if (polygonExists) {
 									fillCoveredTiles(tileSet);
 									for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-										uint32_t index = *it;
+										uint64_t index = *it;
 										for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 											if (jt->geomType != POLYGON) continue;
 											tileIndex[index].push_back(*jt);
@@ -702,13 +702,13 @@ int main(int argc, char* argv[]) {
 									continue;
 								}		
 
-								unordered_set<uint32_t> tileSet;
+								unordered_set<uint64_t> tileSet;
 								if (mp.size() == 1) {
 									insertIntermediateTiles(mp[0].outer(), sharedData.baseZoom, tileSet);
 									fillCoveredTiles(tileSet);
 								} else {
 									for (Polygon poly: mp) {
-										unordered_set<uint32_t> tileSetTmp;
+										unordered_set<uint64_t> tileSetTmp;
 										insertIntermediateTiles(poly.outer(), sharedData.baseZoom, tileSetTmp);
 										fillCoveredTiles(tileSetTmp);
 										tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
@@ -716,7 +716,7 @@ int main(int argc, char* argv[]) {
 								}
 
 								for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-									uint32_t index = *it;
+									uint64_t index = *it;
 									for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
 										tileIndex[index].push_back(*jt);
 									}
@@ -742,7 +742,7 @@ int main(int argc, char* argv[]) {
 	// Loop through zoom levels
 	for (uint zoom=sharedData.startZoom; zoom<=sharedData.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
-		map< uint, vector<OutputObject> > generatedIndex;
+		map< uint64_t, vector<OutputObject> > generatedIndex;
 		if (zoom==sharedData.baseZoom) {
 			// ----	Sort each tile
 			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
@@ -756,10 +756,10 @@ int main(int argc, char* argv[]) {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
 			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
-				uint index = it->first;
-				uint tilex = (index >> 16  ) / pow(2, sharedData.baseZoom-zoom);
-				uint tiley = (index & 65535) / pow(2, sharedData.baseZoom-zoom);
-				uint newIndex = (tilex << 16) + tiley;
+				uint64_t index = it->first;
+				uint64_t tilex = (index >> 32  ) / pow(2, sharedData.baseZoom-zoom);
+				uint64_t tiley = (index & 4294967295) / pow(2, sharedData.baseZoom-zoom);
+				uint64_t newIndex = (tilex << 32) + tiley;
 				const vector<OutputObject> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
 					generatedIndex[newIndex].push_back(*jt);

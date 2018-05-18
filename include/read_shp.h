@@ -15,11 +15,11 @@
 void fillPointArrayFromShapefile(std::vector<Point> *points, SHPObject *shape, uint part);
 
 /// Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObject &oo, std::map< uint, std::vector<OutputObject> > &tileIndex, uint baseZoom,
+void addToTileIndexByBbox(OutputObject &oo, std::map< uint64_t, std::vector<OutputObject> > &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp);
 
 /// Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObject &oo, std::map< uint, std::vector<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls);
+void addToTileIndexPolyline(OutputObject &oo, std::map< uint64_t, std::vector<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls);
 
 /// Read requested attributes from a shapefile, and encode into an OutputObject
 void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std::unordered_map<int,std::string> &columnMap, std::unordered_map<int,int> &columnTypeMap);
@@ -28,7 +28,7 @@ void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std
 void readShapefile(std::string filename,
                    std::vector<std::string> &columns,
                    Box &clippingBox,
-                   std::map< uint, std::vector<OutputObject> > &tileIndex,
+                   std::map< uint64_t, std::vector<OutputObject> > &tileIndex,
                    std::vector<Geometry> &cachedGeometries,
                    OSMObject &osmObject,
                    uint baseZoom, uint layerNum, std::string &layerName,

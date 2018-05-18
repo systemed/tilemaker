@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <iostream>
 #include "geomtypes.h"
 #include "coordinates.h"
 #include "osm_store.h"
