@@ -86,7 +86,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
 		double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
-		uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom,
+		uint layerNum = addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
@@ -116,5 +116,30 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 			              indexName);
 		}
 	}
+}
+
+// Define a layer (as read from the .json file)
+uint Config::addLayer(string name, uint minzoom, uint maxzoom,
+		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, std::map<std::string,uint>() };
+	layers.push_back(layer);
+	uint layerNum = layers.size()-1;
+	layerMap[name] = layerNum;
+
+	if (writeTo.empty()) {
+		vector<uint> r = { layerNum };
+		layerOrder.push_back(r);
+	} else {
+		if (layerMap.count(writeTo) == 0) {
+			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
+		}
+		uint lookingFor = layerMap[writeTo];
+		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
+			if (it->at(0)==lookingFor) {
+				it->push_back(layerNum);
+			}
+		}
+	}
+	return layerNum;
 }
 

@@ -221,6 +221,10 @@ int main(int argc, char* argv[]) {
 	}
 
 	// ----	Read all PBFs
+
+	osmObject.layers = sharedData.config.layers;
+	osmObject.layerMap = sharedData.config.layerMap;
+	osmObject.layerOrder = sharedData.config.layerOrder;
 	
 	for (auto inputFile : inputFiles) {
 	
@@ -231,10 +235,6 @@ int main(int argc, char* argv[]) {
 			return ret;
 	}
 	osmStore.reportSize();
-
-	sharedData.config.layers = osmObject.layers;
-	sharedData.config.layerMap = osmObject.layerMap;
-	sharedData.config.layerOrder = osmObject.layerOrder;
 
 	// ----	Write out each tile
 

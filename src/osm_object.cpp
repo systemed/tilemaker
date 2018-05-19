@@ -16,31 +16,6 @@ OSMObject::OSMObject(kaguya::State &luaObj, map< string, RTree> *idxPtr,
 	osmStore = storePtr;
 }
 
-// Define a layer (as read from the .json file)
-uint OSMObject::addLayer(string name, uint minzoom, uint maxzoom,
-		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
-	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, std::map<std::string,uint>() };
-	layers.push_back(layer);
-	uint layerNum = layers.size()-1;
-	layerMap[name] = layerNum;
-
-	if (writeTo.empty()) {
-		vector<uint> r = { layerNum };
-		layerOrder.push_back(r);
-	} else {
-		if (layerMap.count(writeTo) == 0) {
-			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
-		}
-		uint lookingFor = layerMap[writeTo];
-		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
-			if (it->at(0)==lookingFor) {
-				it->push_back(layerNum);
-			}
-		}
-	}
-	return layerNum;
-}
-
 // Read string dictionary from the .pbf
 void OSMObject::readStringTable(PrimitiveBlock *pbPtr) {
 	// Populate the string table

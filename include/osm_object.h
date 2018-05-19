@@ -87,10 +87,6 @@ public:
 	OSMObject(kaguya::State &luaObj, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, 
 		std::map<uint,std::string> *namePtr, OSMStore *storePtr);
 
-	// Define a layer (as read from the .json file)
-	uint addLayer(std::string name, uint minzoom, uint maxzoom,
-			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, std::string writeTo);
-
 	// Read string dictionary from the .pbf
 	void readStringTable(PrimitiveBlock *pbPtr);
 
