@@ -29,10 +29,9 @@ Config::~Config()
 
 // ----	Read all config details from JSON file
 
-void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-                map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject) {
+void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox) 
+{
 	baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
-	osmObject.baseZoom = baseZoom;
 	startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 	endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
 	includeID      = jsonConfig["settings"]["include_ids"].GetBool();
@@ -95,11 +94,10 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		}
 		bool indexed=false; if (it->value.HasMember("index")) {
 			indexed=it->value["index"].GetBool();
-			osmObject.indices->operator[](layerName)=RTree();
 		}
 		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 
-		uint layerNum = addLayer(layerName, minZoom, maxZoom,
+		addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 				source, sourceColumns, indexed, indexName,
 				writeTo);
@@ -107,18 +105,29 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
+	}
+}
 
+void Config::loadExternal(bool hasClippingBox, Box &clippingBox,
+                map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject)
+{
+	for(size_t layerNum=0; layerNum<layers.size(); layerNum++)	
+	{
 		// External layer sources
-		if (source.size()>0) {
+		LayerDef &layer = layers[layerNum];
+		if(layer.indexed)
+			osmObject.indices->operator[](layer.name)=RTree();
+
+		if (layer.source.size()>0) {
 			if (!hasClippingBox) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			readShapefile(source, sourceColumns, clippingBox, tileIndex,
+			readShapefile(layer.source, layer.sourceColumns, clippingBox, tileIndex,
 			              cachedGeometries,
 			              osmObject,
-			              baseZoom, layerNum, layerName, indexed,
-			              indexName);
+			              baseZoom, layerNum, layer.name, layer.indexed,
+			              layer.indexName);
 		}
 	}
 }

@@ -187,12 +187,15 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.config.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, osmObject);
+		sharedData.config.readConfig(jsonConfig, hasClippingBox, clippingBox);
+		sharedData.config.loadExternal(hasClippingBox, clippingBox, tileIndex, osmObject);
 
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
 	}
+
+	osmObject.baseZoom = sharedData.config.baseZoom;
 
 	// ---- Call init_function of Lua logic
 

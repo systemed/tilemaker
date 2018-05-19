@@ -30,8 +30,10 @@ public:
 	Config();
 	virtual ~Config();
 
-	void readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-		            std::map< uint, std::vector<OutputObject> > &tileIndex, OSMObject &osmObject);
+	void readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox);
+
+	void loadExternal(bool hasClippingBox, Box &clippingBox,
+	                std::map< uint, std::vector<OutputObject> > &tileIndex, OSMObject &osmObject);
 
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
