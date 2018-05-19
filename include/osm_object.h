@@ -8,6 +8,7 @@
 #include "kaguya.hpp"
 #include "geomtypes.h"
 #include "osm_store.h"
+#include "shared_data.h"
 #include "output_object.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -16,21 +17,6 @@
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
-
-struct LayerDef {
-	std::string name;
-	uint minzoom;
-	uint maxzoom;
-	uint simplifyBelow;
-	double simplifyLevel;
-	double simplifyLength;
-	double simplifyRatio;
-	std::string source;
-	std::vector<std::string> sourceColumns;
-	bool indexed;
-	std::string indexName;
-	std::map<std::string, uint> attributeMap;
-};
 
 /*
 	OSMObject - represents the object (from the .osm.pbf) currently being processed
@@ -65,11 +51,7 @@ public:
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
 
-	std::vector<LayerDef> layers;				// List of layers
-	std::map<std::string,uint> layerMap;				// Layer->position map
-	std::vector<std::vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
-	uint baseZoom;
-
+	class Config &config;
 	std::vector<OutputObject> outputs;			// All output objects
 
 	// Common tag storage
@@ -88,7 +70,7 @@ public:
 
 	// ----	initialization routines
 
-	OSMObject(kaguya::State &luaObj, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, 
+	OSMObject(class Config &configIn, kaguya::State &luaObj, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, 
 		std::map<uint,std::string> *namePtr, OSMStore *storePtr);
 
 	// Read string dictionary from the .pbf

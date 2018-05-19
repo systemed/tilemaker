@@ -11,6 +11,21 @@
 #include "osm_object.h"
 #include "mbtiles.h"
 
+struct LayerDef {
+	std::string name;
+	uint minzoom;
+	uint maxzoom;
+	uint simplifyBelow;
+	double simplifyLevel;
+	double simplifyLength;
+	double simplifyRatio;
+	std::string source;
+	std::vector<std::string> sourceColumns;
+	bool indexed;
+	std::string indexName;
+	std::map<std::string, uint> attributeMap;
+};
+
 class Config
 {
 public:
@@ -25,15 +40,11 @@ public:
 	double minLon, minLat, maxLon, maxLat;
 	std::string projectName, projectVersion, projectDesc;
 	std::string defaultView;
-	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 
 	Config();
 	virtual ~Config();
 
 	void readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox);
-
-	void loadExternal(bool hasClippingBox, Box &clippingBox,
-	                std::map< uint, std::vector<OutputObject> > &tileIndex, OSMObject &osmObject);
 
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
@@ -57,10 +68,11 @@ public:
 	MBTiles mbtiles;
 	std::string outputFile;
 	std::map< uint, std::vector<OutputObject> > *tileIndexForZoom;
+	std::vector<Geometry> *cachedGeometries;
 
-	class Config config;
+	class Config &config;
 
-	SharedData(OSMStore *osmStore);
+	SharedData(class Config &configIn, OSMStore *osmStore);
 	virtual ~SharedData();
 };
 

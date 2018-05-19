@@ -35,7 +35,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
+				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, *sharedData->cachedGeometries));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -70,7 +70,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 			jt++;
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
+				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, *sharedData->cachedGeometries));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -104,7 +104,7 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 		} else {
 			Geometry g;
 			try {
-				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries);
+				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, *sharedData->cachedGeometries);
 			}
 			catch (std::out_of_range &err)
 			{

@@ -4,11 +4,11 @@ using namespace rapidjson;
 
 // ----	initialization routines
 
-OSMObject::OSMObject(kaguya::State &luaObj, map< string, RTree> *idxPtr, 
+OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, map< string, RTree> *idxPtr, 
 	vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr):
-	luaState(luaObj)
+	luaState(luaObj),
+	config(configIn)
 {
-	baseZoom = 0;
 	newWayID = MAX_WAY_ID;
 	indices = idxPtr;
 	cachedGeometries = geomPtr;
@@ -210,20 +210,20 @@ const MultiPolygon &OSMObject::multiPolygon() {
 
 // Add layer
 void OSMObject::Layer(const string &layerName, bool area) {
-	if (layerMap.count(layerName) == 0) {
+	if (config.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 	OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
-					layerMap[layerName],
+					config.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
 }
 void OSMObject::LayerAsCentroid(const string &layerName) {
-	if (layerMap.count(layerName) == 0) {
+	if (config.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 	OutputObject oo(CENTROID,
-					layerMap[layerName],
+					config.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
 }
@@ -256,15 +256,16 @@ void OSMObject::AttributeBoolean(const string &key, const bool val) {
 
 // Record attribute name/type for vector_layers table
 void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
-	layers[layer].attributeMap[key] = type;
+	config.layers[layer].attributeMap[key] = type;
 }
+
 std::string OSMObject::serialiseLayerJSON() {
 	Document document;
 	document.SetObject();
 	Document::AllocatorType& allocator = document.GetAllocator();
 
 	Value layerArray(kArrayType);
-	for (auto it = layers.begin(); it != layers.end(); ++it) {
+	for (auto it = config.layers.begin(); it != config.layers.end(); ++it) {
 		Value fieldObj(kObjectType);
 		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
 			Value k(jt->first.c_str(), allocator);

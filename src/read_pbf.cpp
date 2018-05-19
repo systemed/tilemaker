@@ -37,7 +37,7 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, s
 				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 				osmObject.luaState["node_function"](&osmObject);
 				if (!osmObject.empty()) {
-					uint32_t index = latpLon2index(node, osmObject.baseZoom);
+					uint32_t index = latpLon2index(node, osmObject.config.baseZoom);
 					for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 						tileIndex[index].push_back(*jt);
 					}
@@ -98,7 +98,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 				// create a list of tiles this way passes through (tileSet)
 				unordered_set<uint32_t> tileSet;
 				try {
-					insertIntermediateTiles(osmStore->nodeListLinestring(nodeVec), osmObject.baseZoom, tileSet);
+					insertIntermediateTiles(osmStore->nodeListLinestring(nodeVec), osmObject.config.baseZoom, tileSet);
 
 					// then, for each tile, store the OutputObject for each layer
 					bool polygonExists = false;
@@ -201,12 +201,12 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 
 					unordered_set<uint32_t> tileSet;
 					if (mp.size() == 1) {
-						insertIntermediateTiles(mp[0].outer(), osmObject.baseZoom, tileSet);
+						insertIntermediateTiles(mp[0].outer(), osmObject.config.baseZoom, tileSet);
 						fillCoveredTiles(tileSet);
 					} else {
 						for (Polygon poly: mp) {
 							unordered_set<uint32_t> tileSetTmp;
-							insertIntermediateTiles(poly.outer(), osmObject.baseZoom, tileSetTmp);
+							insertIntermediateTiles(poly.outer(), osmObject.config.baseZoom, tileSetTmp);
 							fillCoveredTiles(tileSetTmp);
 							tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 						}

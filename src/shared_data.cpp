@@ -1,13 +1,14 @@
 #include "shared_data.h"
-#include "read_shp.h"
 using namespace std;
 
-SharedData::SharedData(OSMStore *osmStore)
+SharedData::SharedData(class Config &configIn, OSMStore *osmStore):
+	config(configIn)
 {
 	this->osmStore = osmStore;
 	sqlite=false;
 	this->tileIndexForZoom = nullptr;
 	verbose = false;
+	cachedGeometries = nullptr;
 }
 
 SharedData::~SharedData()
@@ -20,6 +21,8 @@ SharedData::~SharedData()
 Config::Config()
 {
 	includeID = false, compress = true, gzip = true;
+	clippingBoxFromJSON = false;
+	baseZoom = 0;
 }
 
 Config::~Config()
@@ -105,30 +108,6 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
-	}
-}
-
-void Config::loadExternal(bool hasClippingBox, Box &clippingBox,
-                map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject)
-{
-	for(size_t layerNum=0; layerNum<layers.size(); layerNum++)	
-	{
-		// External layer sources
-		LayerDef &layer = layers[layerNum];
-		if(layer.indexed)
-			osmObject.indices->operator[](layer.name)=RTree();
-
-		if (layer.source.size()>0) {
-			if (!hasClippingBox) {
-				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-				exit(EXIT_FAILURE);
-			}
-			readShapefile(layer.source, layer.sourceColumns, clippingBox, tileIndex,
-			              cachedGeometries,
-			              osmObject,
-			              baseZoom, layerNum, layer.name, layer.indexed,
-			              layer.indexName);
-		}
 	}
 }
 

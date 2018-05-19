@@ -51,6 +51,7 @@ extern "C" {
 
 #include "shared_data.h"
 #include "read_pbf.h"
+#include "read_shp.h"
 #include "tile_worker.h"
 
 // Namespaces
@@ -68,6 +69,32 @@ int lua_error_handler(int errCode, const char *errMessage)
 	exit(0);
 }
 
+void loadExternalShpFiles(class Config &config, bool hasClippingBox, Box &clippingBox,
+                map< uint, vector<OutputObject> > &tileIndex, 
+				std::vector<Geometry> &cachedGeometries,
+				OSMObject &osmObject)
+{
+	for(size_t layerNum=0; layerNum<config.layers.size(); layerNum++)	
+	{
+		// External layer sources
+		LayerDef &layer = config.layers[layerNum];
+		if(layer.indexed)
+			osmObject.indices->operator[](layer.name)=RTree();
+
+		if (layer.source.size()>0) {
+			if (!hasClippingBox) {
+				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+				exit(EXIT_FAILURE);
+			}
+			readShapefile(layer.source, layer.sourceColumns, clippingBox, tileIndex,
+			              cachedGeometries,
+			              osmObject,
+			              config.baseZoom, layerNum, layer.name, layer.indexed,
+			              layer.indexName);
+		}
+	}
+}
+
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
@@ -75,6 +102,7 @@ int main(int argc, char* argv[]) {
 	OSMStore osmStore;									// global OSM store
 
 	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
+	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
@@ -132,22 +160,19 @@ int main(int argc, char* argv[]) {
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
-	// ----	Initialise SharedData
-
-	class SharedData sharedData(&osmStore);
-	OSMObject osmObject(luaState, &indices, &sharedData.config.cachedGeometries, &cachedGeometryNames, &osmStore);
-
 	// ----	Read bounding box from first .pbf
 
 	bool hasClippingBox = false;
-	int ret = ReadPbfBoundingBox(inputFiles[0], sharedData.config.minLon, sharedData.config.maxLon, 
-		sharedData.config.minLat, sharedData.config.maxLat, hasClippingBox);
+	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
+		minLat, maxLat, hasClippingBox);
 	if(ret != 0) return ret;
 	Box clippingBox;
 	if(hasClippingBox)
-		clippingBox = Box(geom::make<Point>(sharedData.config.minLon, lat2latp(sharedData.config.minLat)),
-		                  geom::make<Point>(sharedData.config.maxLon, lat2latp(sharedData.config.maxLat)));
-
+	{
+		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+	}
 	// ----	Initialise Lua
 
 	luaState.setErrorHandler(lua_error_handler);
@@ -170,15 +195,10 @@ int main(int argc, char* argv[]) {
 		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
 	);
 
-	sharedData.config.clippingBoxFromJSON = false;
-	sharedData.threadNum = threadNum;
-	sharedData.outputFile = outputFile;
-	sharedData.verbose = verbose;
-	sharedData.sqlite = sqlite;
-
 	// ----	Read JSON config
 
 	rapidjson::Document jsonConfig;
+	class Config config;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
 		char readBuffer[65536];
@@ -187,15 +207,34 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.config.readConfig(jsonConfig, hasClippingBox, clippingBox);
-		sharedData.config.loadExternal(hasClippingBox, clippingBox, tileIndex, osmObject);
+		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
 
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
 	}
 
-	osmObject.baseZoom = sharedData.config.baseZoom;
+	// ----	Initialise SharedData
+
+	class SharedData sharedData(config, &osmStore);
+	sharedData.threadNum = threadNum;
+	sharedData.outputFile = outputFile;
+	sharedData.verbose = verbose;
+	sharedData.sqlite = sqlite;
+	sharedData.cachedGeometries = &cachedGeometries;
+	if(hasClippingBox)
+	{
+		sharedData.config.minLon = minLon;
+		sharedData.config.maxLon = maxLon;
+		sharedData.config.minLat = minLat;
+		sharedData.config.maxLat = maxLat;
+	}
+
+	OSMObject osmObject(config, luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
+
+	// ---- Load external shp files
+
+	loadExternalShpFiles(config, hasClippingBox, clippingBox, tileIndex, cachedGeometries, osmObject);
 
 	// ---- Call init_function of Lua logic
 
@@ -224,10 +263,6 @@ int main(int argc, char* argv[]) {
 	}
 
 	// ----	Read all PBFs
-
-	osmObject.layers = sharedData.config.layers;
-	osmObject.layerMap = sharedData.config.layerMap;
-	osmObject.layerOrder = sharedData.config.layerOrder;
 	
 	for (auto inputFile : inputFiles) {
 	
