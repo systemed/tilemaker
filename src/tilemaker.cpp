@@ -135,18 +135,18 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise SharedData
 
 	class SharedData sharedData(&osmStore);
-	OSMObject osmObject(luaState, &indices, &sharedData.cachedGeometries, &cachedGeometryNames, &osmStore);
+	OSMObject osmObject(luaState, &indices, &sharedData.config.cachedGeometries, &cachedGeometryNames, &osmStore);
 
 	// ----	Read bounding box from first .pbf
 
 	bool hasClippingBox = false;
-	int ret = ReadPbfBoundingBox(inputFiles[0], sharedData.minLon, sharedData.maxLon, 
-		sharedData.minLat, sharedData.maxLat, hasClippingBox);
+	int ret = ReadPbfBoundingBox(inputFiles[0], sharedData.config.minLon, sharedData.config.maxLon, 
+		sharedData.config.minLat, sharedData.config.maxLat, hasClippingBox);
 	if(ret != 0) return ret;
 	Box clippingBox;
 	if(hasClippingBox)
-		clippingBox = Box(geom::make<Point>(sharedData.minLon, lat2latp(sharedData.minLat)),
-		                  geom::make<Point>(sharedData.maxLon, lat2latp(sharedData.maxLat)));
+		clippingBox = Box(geom::make<Point>(sharedData.config.minLon, lat2latp(sharedData.config.minLat)),
+		                  geom::make<Point>(sharedData.config.maxLon, lat2latp(sharedData.config.maxLat)));
 
 	// ----	Initialise Lua
 
@@ -170,7 +170,7 @@ int main(int argc, char* argv[]) {
 		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
 	);
 
-	sharedData.clippingBoxFromJSON = false;
+	sharedData.config.clippingBoxFromJSON = false;
 	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
 	sharedData.verbose = verbose;
@@ -187,7 +187,7 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, osmObject);
+		sharedData.config.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, osmObject);
 
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
@@ -207,17 +207,17 @@ int main(int argc, char* argv[]) {
 	
 	if (sharedData.sqlite) {
 		ostringstream bounds;
-		bounds << fixed << sharedData.minLon << "," << sharedData.minLat << "," << sharedData.maxLon << "," << sharedData.maxLat;
+		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
 		sharedData.mbtiles.open(&sharedData.outputFile);
-		sharedData.mbtiles.writeMetadata("name",sharedData.projectName);
+		sharedData.mbtiles.writeMetadata("name",sharedData.config.projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
-		sharedData.mbtiles.writeMetadata("version",sharedData.projectVersion);
-		sharedData.mbtiles.writeMetadata("description",sharedData.projectDesc);
+		sharedData.mbtiles.writeMetadata("version",sharedData.config.projectVersion);
+		sharedData.mbtiles.writeMetadata("description",sharedData.config.projectDesc);
 		sharedData.mbtiles.writeMetadata("format","pbf");
 		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
-		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.startZoom));
-		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.endZoom));
-		if (!sharedData.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.defaultView); }
+		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.config.startZoom));
+		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.config.endZoom));
+		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
 	}
 
 	// ----	Read all PBFs
@@ -232,17 +232,17 @@ int main(int argc, char* argv[]) {
 	}
 	osmStore.reportSize();
 
-	sharedData.layers = osmObject.layers;
-	sharedData.layerMap = osmObject.layerMap;
-	sharedData.layerOrder = osmObject.layerOrder;
+	sharedData.config.layers = osmObject.layers;
+	sharedData.config.layerMap = osmObject.layerMap;
+	sharedData.config.layerOrder = osmObject.layerOrder;
 
 	// ----	Write out each tile
 
 	// Loop through zoom levels
-	for (uint zoom=sharedData.startZoom; zoom<=sharedData.endZoom; zoom++) {
+	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
 		map< uint, vector<OutputObject> > generatedIndex;
-		if (zoom==sharedData.baseZoom) {
+		if (zoom==sharedData.config.baseZoom) {
 			// ----	Sort each tile
 			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
 				auto &ooset = it->second;
@@ -256,8 +256,8 @@ int main(int argc, char* argv[]) {
 			// to a tile at our zoom level
 			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
 				uint index = it->first;
-				uint tilex = (index >> 16  ) / pow(2, sharedData.baseZoom-zoom);
-				uint tiley = (index & 65535) / pow(2, sharedData.baseZoom-zoom);
+				uint tilex = (index >> 16  ) / pow(2, sharedData.config.baseZoom-zoom);
+				uint tiley = (index & 65535) / pow(2, sharedData.config.baseZoom-zoom);
 				uint newIndex = (tilex << 16) + tiley;
 				const vector<OutputObject> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {

@@ -35,7 +35,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -70,7 +70,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 			jt++;
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -100,11 +100,11 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
 			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
+			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
 		} else {
 			Geometry g;
 			try {
-				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries);
+				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -121,7 +121,7 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->includeID) { featurePtr->set_id(jt->objectID); }
+			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
 
 		}
 	}
@@ -140,7 +140,7 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
-		LayerDef ld = sharedData->layers[layerNum];
+		LayerDef ld = sharedData->config.layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {
@@ -164,8 +164,8 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(sharedData->layers[ltx.at(0)].name);
-		vtLayer->set_version(sharedData->mvtVersion);
+		vtLayer->set_name(sharedData->config.layers[ltx.at(0)].name);
+		vtLayer->set_version(sharedData->config.mvtVersion);
 		vtLayer->set_extent(4096);
 		for (uint j=0; j<keyList.size()  ; j++) {
 			vtLayer->add_keys(keyList[j]);
@@ -200,12 +200,12 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		index = it->first;
 		TileBbox bbox(index,zoom);
 		const vector<OutputObject> &ooList = it->second;
-		if (sharedData->clippingBoxFromJSON && (sharedData->maxLon<=bbox.minLon 
-			|| sharedData->minLon>=bbox.maxLon || sharedData->maxLat<=bbox.minLat 
-			|| sharedData->minLat>=bbox.maxLat)) { continue; }
+		if (sharedData->config.clippingBoxFromJSON && (sharedData->config.maxLon<=bbox.minLon 
+			|| sharedData->config.minLon>=bbox.maxLon || sharedData->config.maxLat<=bbox.minLat 
+			|| sharedData->config.minLat>=bbox.maxLat)) { continue; }
 
 		// Loop through layers
-		for (auto lt = sharedData->layerOrder.begin(); lt != sharedData->layerOrder.end(); ++lt) {
+		for (auto lt = sharedData->config.layerOrder.begin(); lt != sharedData->config.layerOrder.end(); ++lt) {
 			ProcessLayer(zoom, index, ooList, tile, bbox, *lt, sharedData);
 		}
 
@@ -215,8 +215,8 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		if (sharedData->sqlite) {
 			// Write to sqlite
 			tile.SerializeToString(&data);
-			if (sharedData->compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->gzip); }
-			sharedData->mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, sharedData->compress ? &compressed : &data);
+			if (sharedData->config.compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->config.gzip); }
+			sharedData->mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, sharedData->config.compress ? &compressed : &data);
 
 		} else {
 			// Write to file
@@ -225,9 +225,9 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
 			boost::filesystem::create_directories(dirname.str());
 			fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
-			if (sharedData->compress) {
+			if (sharedData->config.compress) {
 				tile.SerializeToString(&data);
-				outfile << compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->gzip);
+				outfile << compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->config.gzip);
 			} else {
 				if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return -1; }
 			}

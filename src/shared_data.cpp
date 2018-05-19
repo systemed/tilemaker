@@ -5,10 +5,9 @@ using namespace std;
 SharedData::SharedData(OSMStore *osmStore)
 {
 	this->osmStore = osmStore;
-	includeID = false, compress = true, gzip = true;
-	verbose = false;
 	sqlite=false;
 	this->tileIndexForZoom = nullptr;
+	verbose = false;
 }
 
 SharedData::~SharedData()
@@ -16,9 +15,21 @@ SharedData::~SharedData()
 
 }
 
+// *****************************************************************
+
+Config::Config()
+{
+	includeID = false, compress = true, gzip = true;
+}
+
+Config::~Config()
+{
+
+}
+
 // ----	Read all config details from JSON file
 
-void SharedData::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
+void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
                 map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject) {
 	baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 	osmObject.baseZoom = baseZoom;
