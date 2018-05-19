@@ -33,7 +33,7 @@
 		"name": "Tilemaker to OpenTileMaps schema",
 		"version": "0.1",
 		"description": "Tile config based on opentilemap schema",
-		"compress": "gzip",
+		"compress": "none",
 		"metadata": {
 			"json": { "vector_layers": [
 						{ "id": "transportation",     "description": "transportation",     "fields": {"class":"String"}},

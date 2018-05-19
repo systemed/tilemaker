@@ -35,7 +35,12 @@ public:
 
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
-			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, std::string writeTo);
+			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+			const std::string &source,
+			const std::vector<std::string> &sourceColumns,
+			bool indexed,
+			const std::string &indexName,	
+			const std::string &writeTo);
 
 };
 

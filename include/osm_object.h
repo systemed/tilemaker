@@ -25,6 +25,10 @@ struct LayerDef {
 	double simplifyLevel;
 	double simplifyLength;
 	double simplifyRatio;
+	std::string source;
+	std::vector<std::string> sourceColumns;
+	bool indexed;
+	std::string indexName;
 	std::map<std::string, uint> attributeMap;
 };
 

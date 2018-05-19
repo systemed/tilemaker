@@ -86,30 +86,35 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
 		double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
+		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
+		vector<string> sourceColumns;
+		if (it->value.HasMember("source_columns")) {
+			for (uint i=0; i<it->value["source_columns"].Size(); i++) {
+				sourceColumns.push_back(it->value["source_columns"][i].GetString());
+			}
+		}
+		bool indexed=false; if (it->value.HasMember("index")) {
+			indexed=it->value["index"].GetBool();
+			osmObject.indices->operator[](layerName)=RTree();
+		}
+		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
+
 		uint layerNum = addLayer(layerName, minZoom, maxZoom,
-				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
+				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+				source, sourceColumns, indexed, indexName,
+				writeTo);
+
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
 
 		// External layer sources
-		if (it->value.HasMember("source")) {
+		if (source.size()>0) {
 			if (!hasClippingBox) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			vector<string> sourceColumns;
-			if (it->value.HasMember("source_columns")) {
-				for (uint i=0; i<it->value["source_columns"].Size(); i++) {
-					sourceColumns.push_back(it->value["source_columns"][i].GetString());
-				}
-			}
-			bool indexed=false; if (it->value.HasMember("index")) {
-				indexed=it->value["index"].GetBool();
-				osmObject.indices->operator[](layerName)=RTree();
-			}
-			string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
-			readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
+			readShapefile(source, sourceColumns, clippingBox, tileIndex,
 			              cachedGeometries,
 			              osmObject,
 			              baseZoom, layerNum, layerName, indexed,
@@ -120,8 +125,16 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 
 // Define a layer (as read from the .json file)
 uint Config::addLayer(string name, uint minzoom, uint maxzoom,
-		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, string writeTo) {
-	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, std::map<std::string,uint>() };
+		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+		const std::string &source,
+		const std::vector<std::string> &sourceColumns,
+		bool indexed,
+		const std::string &indexName,		
+		const std::string &writeTo) 
+{
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+		source, sourceColumns, indexed, indexName,
+		std::map<std::string,uint>() };
 	layers.push_back(layer);
 	uint layerNum = layers.size()-1;
 	layerMap[name] = layerNum;
