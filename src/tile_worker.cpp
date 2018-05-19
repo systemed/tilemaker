@@ -140,7 +140,7 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
-		LayerDef ld = sharedData->osmObject.layers[layerNum];
+		LayerDef ld = sharedData->layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {
@@ -164,7 +164,7 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(sharedData->osmObject.layers[ltx.at(0)].name);
+		vtLayer->set_name(sharedData->layers[ltx.at(0)].name);
 		vtLayer->set_version(sharedData->mvtVersion);
 		vtLayer->set_extent(4096);
 		for (uint j=0; j<keyList.size()  ; j++) {
@@ -205,7 +205,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			|| sharedData->minLat>=bbox.maxLat)) { continue; }
 
 		// Loop through layers
-		for (auto lt = sharedData->osmObject.layerOrder.begin(); lt != sharedData->osmObject.layerOrder.end(); ++lt) {
+		for (auto lt = sharedData->layerOrder.begin(); lt != sharedData->layerOrder.end(); ++lt) {
 			ProcessLayer(zoom, index, ooList, tile, bbox, *lt, sharedData);
 		}
 

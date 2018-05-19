@@ -3,10 +3,11 @@
 #include "pbf_blocks.h"
 using namespace std;
 
-bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, std::map< uint, std::vector<OutputObject> > &tileIndex, class SharedData &sharedData)
+bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+	class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read nodes
-	NodeStore &nodes = sharedData.osmStore->nodes;
+	NodeStore &nodes = osmStore->nodes;
 
 	if (pg.has_dense()) {
 		int64_t nodeId  = 0;
@@ -33,11 +34,11 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, s
 			}
 			// For tagged nodes, call Lua, then save the OutputObject
 			if (significant) {
-				sharedData.osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
-				luaState["node_function"](&sharedData.osmObject);
-				if (!sharedData.osmObject.empty()) {
-					uint32_t index = latpLon2index(node, sharedData.baseZoom);
-					for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
+				osmObject.luaState["node_function"](&osmObject);
+				if (!osmObject.empty()) {
+					uint32_t index = latpLon2index(node, osmObject.baseZoom);
+					for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 						tileIndex[index].push_back(*jt);
 					}
 				}
@@ -48,10 +49,11 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, s
 	return false;
 }
 
-bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map< uint, std::vector<OutputObject> > &tileIndex, class SharedData &sharedData)
+bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map< uint, 
+	std::vector<OutputObject> > &tileIndex, class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read ways
-	WayStore &ways = sharedData.osmStore->ways;
+	WayStore &ways = osmStore->ways;
 
 	if (pg.ways_size() > 0) {
 		Way pbfWay;
@@ -70,7 +72,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 			bool ok = true;
 			try
 			{
-				sharedData.osmObject.setWay(&pbfWay, &nodeVec);
+				osmObject.setWay(&pbfWay, &nodeVec);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -81,28 +83,28 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 
 			if (ok)
 			{
-				luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
-				kaguya::LuaFunction way_function = luaState["way_function"];
-				kaguya::LuaRef ret = way_function(&sharedData.osmObject);
+				osmObject.luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+				kaguya::LuaFunction way_function = osmObject.luaState["way_function"];
+				kaguya::LuaRef ret = way_function(&osmObject);
 				assert(!ret);
 			}
 
-			if (!sharedData.osmObject.empty() || waysInRelation.count(wayId)) {
+			if (!osmObject.empty() || waysInRelation.count(wayId)) {
 				// Store the way's nodes in the global way store
 				ways.insert_back(wayId, nodeVec);
 			}
 
-			if (!sharedData.osmObject.empty()) {
+			if (!osmObject.empty()) {
 				// create a list of tiles this way passes through (tileSet)
 				unordered_set<uint32_t> tileSet;
 				try {
-					insertIntermediateTiles(sharedData.osmStore->nodeListLinestring(nodeVec), sharedData.baseZoom, tileSet);
+					insertIntermediateTiles(osmStore->nodeListLinestring(nodeVec), osmObject.baseZoom, tileSet);
 
 					// then, for each tile, store the OutputObject for each layer
 					bool polygonExists = false;
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						uint32_t index = *it;
-						for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 							if (jt->geomType == POLYGON) {
 								polygonExists = true;
 								continue;
@@ -116,7 +118,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 						fillCoveredTiles(tileSet);
 						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 							uint32_t index = *it;
-							for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+							for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 								if (jt->geomType != POLYGON) continue;
 								tileIndex[index].push_back(*jt);
 							}
@@ -133,17 +135,18 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, std::map
 	return false;
 }
 
-bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject> > &tileIndex, class SharedData &sharedData)
+bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+	class OSMStore *osmStore, OSMObject &osmObject)
 {
 	// ----	Read relations
 	//		(just multipolygons for now; we should do routes in time)
-	RelationStore &relations = sharedData.osmStore->relations;
+	RelationStore &relations = osmStore->relations;
 
 	if (pg.relations_size() > 0) {
-		int typeKey = sharedData.osmObject.findStringPosition("type");
-		int mpKey   = sharedData.osmObject.findStringPosition("multipolygon");
-		int innerKey= sharedData.osmObject.findStringPosition("inner");
-		//int outerKey= sharedData.osmObject.findStringPosition("outer");
+		int typeKey = osmObject.findStringPosition("type");
+		int mpKey   = osmObject.findStringPosition("multipolygon");
+		int innerKey= osmObject.findStringPosition("inner");
+		//int outerKey= osmObject.findStringPosition("outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
@@ -166,7 +169,7 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 				bool ok = true;
 				try
 				{
-					sharedData.osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
+					osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
 				}
 				catch (std::out_of_range &err)
 				{
@@ -176,11 +179,11 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 				}
 
 				if (ok)
-					luaState["way_function"](&sharedData.osmObject);
+					osmObject.luaState["way_function"](&osmObject);
 
-				if (!sharedData.osmObject.empty()) {								
+				if (!osmObject.empty()) {								
 
-					WayID relID = sharedData.osmObject.osmID;
+					WayID relID = osmObject.osmID;
 					// Store the relation members in the global relation store
 					relations.insert_front(relID, outerWayVec, innerWayVec);
 
@@ -188,7 +191,7 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 					try
 					{
 						// for each tile the relation may cover, put the output objects.
-						mp = sharedData.osmStore->wayListMultiPolygon(outerWayVec, innerWayVec);
+						mp = osmStore->wayListMultiPolygon(outerWayVec, innerWayVec);
 					}
 					catch(std::out_of_range &err)
 					{
@@ -198,12 +201,12 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 
 					unordered_set<uint32_t> tileSet;
 					if (mp.size() == 1) {
-						insertIntermediateTiles(mp[0].outer(), sharedData.baseZoom, tileSet);
+						insertIntermediateTiles(mp[0].outer(), osmObject.baseZoom, tileSet);
 						fillCoveredTiles(tileSet);
 					} else {
 						for (Polygon poly: mp) {
 							unordered_set<uint32_t> tileSetTmp;
-							insertIntermediateTiles(poly.outer(), sharedData.baseZoom, tileSetTmp);
+							insertIntermediateTiles(poly.outer(), osmObject.baseZoom, tileSetTmp);
 							fillCoveredTiles(tileSetTmp);
 							tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 						}
@@ -211,7 +214,7 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						uint32_t index = *it;
-						for (auto jt = sharedData.osmObject.outputs.begin(); jt != sharedData.osmObject.outputs.end(); ++jt) {
+						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 							tileIndex[index].push_back(*jt);
 						}
 					}
@@ -223,7 +226,8 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint, std::vector<OutputObject>
 	return false;
 }
 
-int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::map< uint, std::vector<OutputObject> > &tileIndex, class SharedData &sharedData)
+int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::map< uint, std::vector<OutputObject> > &tileIndex, 
+	OSMObject &osmObject)
 {
 	// ----	Read PBF
 	// note that the order of reading and processing is:
@@ -262,10 +266,10 @@ int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::m
 		}
 
 		// Read the string table, and pre-calculate the positions of valid node keys
-		sharedData.osmObject.readStringTable(&pb);
+		osmObject.readStringTable(&pb);
 		unordered_set<int> nodeKeyPositions;
 		for (auto it : nodeKeys) {
-			nodeKeyPositions.insert(sharedData.osmObject.findStringPosition(it));
+			nodeKeyPositions.insert(osmObject.findStringPosition(it));
 		}
 
 		for (int i=0; i<pb.primitivegroup_size(); i++) {
@@ -273,7 +277,7 @@ int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::m
 			cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 			cout.flush();
 
-			bool done = ReadNodes(pg, nodeKeyPositions, tileIndex, sharedData);
+			bool done = ReadNodes(pg, nodeKeyPositions, tileIndex, osmObject.osmStore, osmObject);
 			if(done) continue;
 
 			// ----	Remember the position and skip ways
@@ -306,10 +310,10 @@ int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, std::m
 				break;
 			}
 
-			done = ReadWays(pg, waysInRelation, tileIndex, sharedData);
+			done = ReadWays(pg, waysInRelation, tileIndex, osmObject.osmStore, osmObject);
 			if(done) continue;
 
-			done = ReadRelations(pg, tileIndex, sharedData);
+			done = ReadRelations(pg, tileIndex, osmObject.osmStore, osmObject);
 			if(done) continue;
 
 			// Everything should be ended

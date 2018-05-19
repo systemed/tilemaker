@@ -58,6 +58,8 @@ using namespace std;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
 
+kaguya::State luaState;
+
 int lua_error_handler(int errCode, const char *errMessage)
 {
 	cerr << "lua runtime error: " << errMessage << endl;
@@ -132,7 +134,8 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise SharedData
 
-	class SharedData sharedData(&luaState, &indices, &cachedGeometryNames, &osmStore);
+	class SharedData sharedData(&osmStore);
+	OSMObject osmObject(luaState, &indices, &sharedData.cachedGeometries, &cachedGeometryNames, &osmStore);
 
 	// ----	Read bounding box from first .pbf
 
@@ -184,7 +187,7 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex);
+		sharedData.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, osmObject);
 
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
@@ -223,11 +226,15 @@ int main(int argc, char* argv[]) {
 	
 		cout << "Reading " << inputFile << endl;
 
-		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, sharedData);
+		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
 		if(ret != 0)
 			return ret;
 	}
 	osmStore.reportSize();
+
+	sharedData.layers = osmObject.layers;
+	sharedData.layerMap = osmObject.layerMap;
+	sharedData.layerOrder = osmObject.layerOrder;
 
 	// ----	Write out each tile
 
@@ -288,7 +295,7 @@ int main(int argc, char* argv[]) {
 
 	if (sqlite) {
 		// Write mbtiles 1.3+ json object
-		sharedData.mbtiles.writeMetadata("json", sharedData.osmObject.serialiseLayerJSON());
+		sharedData.mbtiles.writeMetadata("json", osmObject.serialiseLayerJSON());
 
 		// Write user-defined metadata
 		if (jsonConfig["settings"].HasMember("metadata")) {

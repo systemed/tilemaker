@@ -4,9 +4,12 @@ using namespace rapidjson;
 
 // ----	initialization routines
 
-OSMObject::OSMObject(kaguya::State *luaPtr, map< string, RTree> *idxPtr, vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr) {
+OSMObject::OSMObject(kaguya::State &luaObj, map< string, RTree> *idxPtr, 
+	vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr):
+	luaState(luaObj)
+{
+	baseZoom = 0;
 	newWayID = MAX_WAY_ID;
-	luaState = luaPtr;
 	indices = idxPtr;
 	cachedGeometries = geomPtr;
 	cachedGeometryNames = namePtr;

@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <map>
-#include "kaguya.hpp"
 
 #include "rapidjson/document.h"
 
@@ -11,8 +10,6 @@
 #include "output_object.h"
 #include "osm_object.h"
 #include "mbtiles.h"
-
-extern kaguya::State luaState;
 
 class SharedData
 {
@@ -23,7 +20,6 @@ public:
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;
 	std::string defaultView;
-	OSMObject osmObject;
 	OSMStore *osmStore;
 	bool includeID, compress, gzip;
 	std::string compressOpt;
@@ -36,10 +32,14 @@ public:
 	std::string outputFile;
 	std::map< uint, std::vector<OutputObject> > *tileIndexForZoom;
 
-	SharedData(kaguya::State *luaPtr, std::map< std::string, RTree> *idxPtr, std::map<uint,std::string> *namePtr, OSMStore *osmStore);
+	std::vector<LayerDef> layers;				// List of layers
+	std::map<std::string,uint> layerMap;				// Layer->position map
+	std::vector<std::vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
+
+	SharedData(OSMStore *osmStore);
 	virtual ~SharedData();
 	void readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-		            std::map< uint, std::vector<OutputObject> > &tileIndex);
+		            std::map< uint, std::vector<OutputObject> > &tileIndex, OSMObject &osmObject);
 };
 
 #endif //_SHARED_DATA_H

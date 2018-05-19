@@ -2,10 +2,7 @@
 #include "read_shp.h"
 using namespace std;
 
-kaguya::State luaState;
-
-SharedData::SharedData(kaguya::State *luaPtr, map< string, RTree> *idxPtr, map<uint,string> *namePtr, OSMStore *osmStore) :
-	osmObject(luaPtr, idxPtr, &this->cachedGeometries, namePtr, osmStore)
+SharedData::SharedData(OSMStore *osmStore)
 {
 	this->osmStore = osmStore;
 	includeID = false, compress = true, gzip = true;
@@ -22,8 +19,9 @@ SharedData::~SharedData()
 // ----	Read all config details from JSON file
 
 void SharedData::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-                map< uint, vector<OutputObject> > &tileIndex) {
+                map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject) {
 	baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
+	osmObject.baseZoom = baseZoom;
 	startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 	endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
 	includeID      = jsonConfig["settings"]["include_ids"].GetBool();
