@@ -9,12 +9,92 @@ using namespace std;
 typedef vector<OutputObject>::const_iterator OutputObjectsConstIt;
 typedef pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void ProcessObjects(OutputObjectsConstItPair &ooListSameLayer, class SharedData *sharedData, double simplifyLevel, TileBbox &bbox,
+void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstIt &ooSameLayerEnd, 
+	class SharedData *sharedData, TileBbox &bbox, Geometry &g)
+{
+	// If a object is a polygon or a linestring that is followed by
+	// other objects with the same geometry type and the same attributes,
+	// the following objects are merged into the first object, by taking union of geometries.
+	auto gTyp = jt->geomType;
+	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+		MultiPolygon *gAcc = nullptr;
+		try{
+			gAcc = &boost::get<MultiPolygon>(g);
+		} catch (boost::bad_get &err) {
+			cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
+			return;
+		}
+	
+		Paths current;
+		ConvertToClipper(*gAcc, current);
+
+		while (jt+1 != ooSameLayerEnd &&
+				(jt+1)->geomType == gTyp &&
+				(jt+1)->attributes == jt->attributes) {
+			jt++;
+
+			try {
+
+				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				Paths newPaths;
+				ConvertToClipper(gNew, newPaths);
+
+				Clipper cl;
+				cl.StrictlySimple(true);
+				cl.AddPaths(current, ptSubject, true);
+				cl.AddPaths(newPaths, ptClip, true);
+				Paths tmpUnion;
+				cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
+				swap(current, tmpUnion);
+			}
+			catch (std::out_of_range &err)
+			{
+				if (sharedData->verbose)
+					cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+			}
+		}
+
+		ConvertFromClipper(current, *gAcc);
+	}
+	if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+		MultiLinestring *gAcc = nullptr;
+		try {
+		gAcc = &boost::get<MultiLinestring>(g);
+		} catch (boost::bad_get &err) {
+			cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
+			return;
+		}
+		while (jt+1 != ooSameLayerEnd &&
+				(jt+1)->geomType == gTyp &&
+				(jt+1)->attributes == jt->attributes) {
+			jt++;
+			try
+			{
+				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				MultiLinestring gTmp;
+				geom::union_(*gAcc, gNew, gTmp);
+				*gAcc = move(gTmp);
+			}
+			catch (std::out_of_range &err)
+			{
+				if (sharedData->verbose)
+					cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+			}
+			catch (boost::bad_get &err) {
+				cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
+				continue;
+			}
+		}
+	}
+}
+
+void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputObjectsConstIt &ooSameLayerEnd, 
+	class SharedData *sharedData, double simplifyLevel, TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
 	NodeStore &nodes = sharedData->osmStore->nodes;
 
-	for (auto jt = ooListSameLayer.first; jt != ooListSameLayer.second; ++jt) {
+	for (OutputObjectsConstIt jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 			
 		if (jt->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
@@ -33,80 +113,8 @@ void ProcessObjects(OutputObjectsConstItPair &ooListSameLayer, class SharedData 
 				continue;
 			}
 
-			// If a object is a polygon or a linestring that is followed by
-			// other objects with the same geometry type and the same attributes,
-			// the following objects are merged into the first object, by taking union of geometries.
-			auto gTyp = jt->geomType;
-			if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
-				MultiPolygon *gAcc = nullptr;
-				try{
-					gAcc = &boost::get<MultiPolygon>(g);
-				} catch (boost::bad_get &err) {
-					cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
-					continue;
-				}
-			
-				Paths current;
-				ConvertToClipper(*gAcc, current);
-
-				while (jt+1 != ooListSameLayer.second &&
-						(jt+1)->geomType == gTyp &&
-						(jt+1)->attributes == jt->attributes) {
-					jt++;
-
-					try {
-		
-						MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
-						Paths newPaths;
-						ConvertToClipper(gNew, newPaths);
-
-						Clipper cl;
-						cl.StrictlySimple(true);
-						cl.AddPaths(current, ptSubject, true);
-						cl.AddPaths(newPaths, ptClip, true);
-						Paths tmpUnion;
-						cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
-						swap(current, tmpUnion);
-					}
-					catch (std::out_of_range &err)
-					{
-						if (sharedData->verbose)
-							cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
-					}
-				}
-
-				ConvertFromClipper(current, *gAcc);
-			}
-			if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
-				MultiLinestring *gAcc = nullptr;
-				try {
-				gAcc = &boost::get<MultiLinestring>(g);
-				} catch (boost::bad_get &err) {
-					cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
-					continue;
-				}
-				while (jt+1 != ooListSameLayer.second &&
-						(jt+1)->geomType == gTyp &&
-						(jt+1)->attributes == jt->attributes) {
-					jt++;
-					try
-					{
-						MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
-						MultiLinestring gTmp;
-						geom::union_(*gAcc, gNew, gTmp);
-						*gAcc = move(gTmp);
-					}
-					catch (std::out_of_range &err)
-					{
-						if (sharedData->verbose)
-							cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
-					}
-					catch (boost::bad_get &err) {
-						cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
-						continue;
-					}
-				}
-			}
+			//This may increment the jt iterator
+			CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
@@ -126,6 +134,9 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 	vector<vector_tile::Tile_Value> valueList;
 	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
 
+	//uint tileX = index >> 16;
+	uint tileY = index & 65535;
+
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
@@ -134,7 +145,6 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {
 			if (ld.simplifyLength > 0) {
-				uint tileY = index & 65535;
 				double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
 				simplifyLevel = meter2degp(ld.simplifyLength, latp);
 			} else {
@@ -149,7 +159,7 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 		// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 		OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
 		// Loop through output objects
-		ProcessObjects(ooListSameLayer, sharedData, simplifyLevel, bbox, vtLayer, keyList, valueList);
+		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags
