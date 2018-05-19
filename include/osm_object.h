@@ -40,7 +40,7 @@ class OSMObject {
 
 public:
 
-	kaguya::State *luaState;				// Lua reference
+	kaguya::State &luaState;				// Lua reference
 	std::map<std::string, RTree> *indices;			// Spatial indices
 	std::vector<Geometry> *cachedGeometries;		// Cached geometries
 	std::map<uint,std::string> *cachedGeometryNames;	// Cached geometry names
@@ -64,6 +64,7 @@ public:
 	std::vector<LayerDef> layers;				// List of layers
 	std::map<std::string,uint> layerMap;				// Layer->position map
 	std::vector<std::vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
+	uint baseZoom;
 
 	std::vector<OutputObject> outputs;			// All output objects
 
@@ -83,7 +84,8 @@ public:
 
 	// ----	initialization routines
 
-	OSMObject(kaguya::State *luaPtr, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, std::map<uint,std::string> *namePtr, OSMStore *storePtr);
+	OSMObject(kaguya::State &luaObj, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, 
+		std::map<uint,std::string> *namePtr, OSMStore *storePtr);
 
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
