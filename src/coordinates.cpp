@@ -76,7 +76,7 @@ TileBbox::TileBbox(uint i, uint z) {
 		              geom::make<Point>(maxLon+xmargin, maxLatp+ymargin));
 }
 
-pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) {
+pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	int x = (lon -   minLon) / xscale;
 	int y = (maxLatp - latp) / yscale;
 	return pair<int,int>(x,y);

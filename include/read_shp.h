@@ -27,13 +27,13 @@ void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std
 /// Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void readShapefile(std::string filename,
                    std::vector<std::string> &columns,
-                   Box &clippingBox,
+                   const Box &clippingBox,
                    std::map< uint, std::vector<OutputObject> > &tileIndex,
                    std::vector<Geometry> &cachedGeometries,
                    OSMObject &osmObject,
-                   uint baseZoom, uint layerNum, std::string &layerName,
+                   uint baseZoom, uint layerNum, const std::string &layerName,
                    bool isIndexed,
-                   std::string &indexName);
+                   const std::string &indexName);
 
 #endif //_READ_SHP_H
 

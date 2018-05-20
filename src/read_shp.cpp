@@ -93,13 +93,13 @@ void addShapefileAttributes(
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void readShapefile(string filename, 
                    vector<string> &columns,
-                   Box &clippingBox, 
+                   const Box &clippingBox, 
                    map< uint, vector<OutputObject> > &tileIndex, 
                    vector<Geometry> &cachedGeometries,
 				   OSMObject &osmObject,
-                   uint baseZoom, uint layerNum, string &layerName,
+                   uint baseZoom, uint layerNum, const string &layerName,
                    bool isIndexed,
-				   string &indexName) {
+				   const string &indexName) {
 
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");

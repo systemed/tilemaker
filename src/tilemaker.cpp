@@ -69,7 +69,7 @@ int lua_error_handler(int errCode, const char *errMessage)
 	exit(0);
 }
 
-void loadExternalShpFiles(class Config &config, bool hasClippingBox, Box &clippingBox,
+void loadExternalShpFiles(class Config &config, bool hasClippingBox, const Box &clippingBox,
                 map< uint, vector<OutputObject> > &tileIndex, 
 				std::vector<Geometry> &cachedGeometries,
 				OSMObject &osmObject)
@@ -214,6 +214,14 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	if(hasClippingBox)
+	{
+		config.minLon = minLon;
+		config.maxLon = maxLon;
+		config.minLat = minLat;
+		config.maxLat = maxLat;
+	}
+
 	// ----	Initialise SharedData
 
 	class SharedData sharedData(config, &osmStore);
@@ -222,13 +230,6 @@ int main(int argc, char* argv[]) {
 	sharedData.verbose = verbose;
 	sharedData.sqlite = sqlite;
 	sharedData.cachedGeometries = &cachedGeometries;
-	if(hasClippingBox)
-	{
-		sharedData.config.minLon = minLon;
-		sharedData.config.maxLon = maxLon;
-		sharedData.config.minLat = minLat;
-		sharedData.config.maxLat = maxLat;
-	}
 
 	OSMObject osmObject(config, luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
 

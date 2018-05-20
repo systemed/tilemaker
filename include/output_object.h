@@ -58,11 +58,11 @@ public:
 	// Returns a boost::variant -
 	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 	Geometry buildWayGeometry(const OSMStore &osmStore,
-	                      TileBbox *bboxPtr, 
+	                      const TileBbox *bboxPtr, 
 	                      const std::vector<Geometry> &cachedGeometries) const;
 	
 	// Add a node geometry
-	void buildNodeGeometry(LatpLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
+	void buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
 	
 	// Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;

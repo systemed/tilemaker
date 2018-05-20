@@ -105,7 +105,7 @@ public:
 
 	TileBbox(uint i, uint z);
 
-	std::pair<int,int> scaleLatpLon(double latp, double lon);
+	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 };
 
 #endif //_COORDINATES_H

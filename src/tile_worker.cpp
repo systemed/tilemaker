@@ -10,7 +10,7 @@ typedef vector<OutputObject>::const_iterator OutputObjectsConstIt;
 typedef pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
 void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstIt &ooSameLayerEnd, 
-	class SharedData *sharedData, TileBbox &bbox, Geometry &g)
+	class SharedData *sharedData, const TileBbox &bbox, Geometry &g)
 {
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
@@ -89,10 +89,10 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 }
 
 void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputObjectsConstIt &ooSameLayerEnd, 
-	class SharedData *sharedData, double simplifyLevel, TileBbox &bbox,
+	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
-	NodeStore &nodes = sharedData->osmStore->nodes;
+	const NodeStore &nodes = sharedData->osmStore->nodes;
 
 	for (OutputObjectsConstIt jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 			
@@ -128,7 +128,7 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 }
 
 void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vector_tile::Tile &tile, 
-	TileBbox &bbox, std::vector<uint> &ltx, class SharedData *sharedData)
+	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
@@ -140,7 +140,7 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
-		LayerDef ld = sharedData->config.layers[layerNum];
+		const LayerDef &ld = sharedData->config.layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {

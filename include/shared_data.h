@@ -61,16 +61,18 @@ class SharedData
 {
 public:
 	uint zoom;
+
+	///Number of worker threads to create
 	int threadNum;
-	OSMStore *osmStore;
+	const OSMStore *osmStore;
 	bool verbose;
 	bool sqlite;
 	MBTiles mbtiles;
 	std::string outputFile;
-	std::map< uint, std::vector<OutputObject> > *tileIndexForZoom;
-	std::vector<Geometry> *cachedGeometries;
+	const std::map< uint, std::vector<OutputObject> > *tileIndexForZoom;
+	const std::vector<Geometry> *cachedGeometries;
 
-	class Config &config;
+	const class Config &config;
 
 	SharedData(class Config &configIn, OSMStore *osmStore);
 	virtual ~SharedData();

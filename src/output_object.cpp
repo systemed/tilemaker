@@ -93,7 +93,7 @@ bool OutputObject::hasAttribute(const string &key) const {
 // Returns a boost::variant -
 //   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 Geometry OutputObject::buildWayGeometry(const OSMStore &osmStore,
-                      TileBbox *bboxPtr, 
+                      const TileBbox *bboxPtr, 
                       const vector<Geometry> &cachedGeometries) const {
 
 	ClipGeometryVisitor clip(bboxPtr->clippingBox);
@@ -140,7 +140,7 @@ Geometry OutputObject::buildWayGeometry(const OSMStore &osmStore,
 }
 
 // Add a node geometry
-void OutputObject::buildNodeGeometry(LatpLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
+void OutputObject::buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 	featurePtr->add_geometry(9);					// moveTo, repeat x1
 	pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
 	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
