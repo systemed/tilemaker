@@ -70,7 +70,7 @@ int lua_error_handler(int errCode, const char *errMessage)
 }
 
 void loadExternalShpFiles(class Config &config, bool hasClippingBox, const Box &clippingBox,
-                map< uint, vector<OutputObject> > &tileIndex, 
+                map< uint64_t, vector<OutputObject> > &tileIndex, 
 				std::vector<Geometry> &cachedGeometries,
 				OSMObject &osmObject)
 {
@@ -105,7 +105,7 @@ int main(int argc, char* argv[]) {
 	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
-	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
+	map< uint64_t, vector<OutputObject> > tileIndex;				// objects to be output
 
 	// ----	Read command-line options
 	
@@ -280,7 +280,7 @@ int main(int argc, char* argv[]) {
 	// Loop through zoom levels
 	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
-		map< uint, vector<OutputObject> > generatedIndex;
+		map< uint64_t, vector<OutputObject> > generatedIndex;
 		if (zoom==sharedData.config.baseZoom) {
 			// ----	Sort each tile
 			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
@@ -294,10 +294,10 @@ int main(int argc, char* argv[]) {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
 			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
-				uint index = it->first;
-				uint tilex = (index >> 16  ) / pow(2, sharedData.config.baseZoom-zoom);
-				uint tiley = (index & 65535) / pow(2, sharedData.config.baseZoom-zoom);
-				uint newIndex = (tilex << 16) + tiley;
+				uint64_t index = it->first;
+				uint64_t tilex = (index >> 32  ) / pow(2, sharedData.config.baseZoom-zoom);
+				uint64_t tiley = (index & 4294967295) / pow(2, sharedData.config.baseZoom-zoom);
+				uint64_t newIndex = (tilex << 32) + tiley;
 				const vector<OutputObject> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
 					generatedIndex[newIndex].push_back(*jt);

@@ -37,7 +37,7 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, s
 				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 				osmObject.luaState["node_function"](&osmObject);
 				if (!osmObject.empty()) {
-					uint32_t index = latpLon2index(node, osmObject.config.baseZoom);
+					uint64_t index = latpLon2index(node, osmObject.config.baseZoom);
 					for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 						tileIndex[index].push_back(*jt);
 					}
@@ -213,7 +213,7 @@ bool ReadRelations(PrimitiveGroup &pg, std::map< uint64_t, std::vector<OutputObj
 					}
 
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-						uint32_t index = *it;
+						uint64_t index = *it;
 						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
 							tileIndex[index].push_back(*jt);
 						}

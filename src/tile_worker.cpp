@@ -127,15 +127,15 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 	}
 }
 
-void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vector_tile::Tile &tile, 
+void ProcessLayer(uint zoom, uint64_t index, const vector<OutputObject> &ooList, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
 
-	//uint tileX = index >> 16;
-	uint tileY = index & 65535;
+	//uint tileX = index >> 32;
+	uint tileY = index & 4294967296;
 
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
@@ -184,7 +184,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
-	uint index = 0;
+	uint64_t index = 0;
 	uint zoom = sharedData->zoom;
 	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
 		uint interval = 100;
@@ -198,7 +198,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		// Create tile
 		vector_tile::Tile tile;
 		index = it->first;
-		TileBbox bbox(index,zoom);
+		TileBbox bbox(index, zoom);
 		const vector<OutputObject> &ooList = it->second;
 		if (sharedData->config.clippingBoxFromJSON && (sharedData->config.maxLon<=bbox.minLon 
 			|| sharedData->config.minLon>=bbox.maxLon || sharedData->config.maxLat<=bbox.minLat 

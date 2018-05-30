@@ -23,8 +23,8 @@ double tiley2latp(uint y, uint z) { return 180.0 - scalbn(y, -(int)z) * 360.0; }
 double tiley2lat(uint y, uint z) { return latp2lat(tiley2latp(y, z)); }
 
 // Get a tile index
-uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
-	return lon2tilex(ll.lon /10000000.0, baseZoom) * 65536 +
+uint64_t latpLon2index(LatpLon ll, uint baseZoom) {
+	return lon2tilex(ll.lon /10000000.0, baseZoom) * 4294967296 +
 	       latp2tiley(ll.latp/10000000.0, baseZoom);
 }
 
@@ -37,17 +37,17 @@ double meter2degp(double meter, double latp) {
 }
 
 // the range between smallest y and largest y is filled, for each x
-void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
-	vector<uint32_t> tileList(tileSet.begin(), tileSet.end());
+void fillCoveredTiles(unordered_set<uint64_t> &tileSet) {
+	vector<uint64_t> tileList(tileSet.begin(), tileSet.end());
 	sort(tileList.begin(), tileList.end());
 
-	uint prevX = 0, prevY = static_cast<uint>(-2);
-	for (uint32_t index: tileList) {
-		uint tileX = index >> 16, tileY = index & 65535;
+	uint64_t prevX = 0, prevY = static_cast<uint64_t>(-2);
+	for (uint64_t index: tileList) {
+		uint64_t tileX = index >> 32, tileY = index & 4294967296;
 		if (tileX == prevX) {
 			// this loop has no effect at the first iteration
-			for (uint fillY = prevY+1; fillY < tileY; fillY++) {
-				tileSet.insert((tileX << 16) + fillY);
+			for (uint64_t fillY = prevY+1; fillY < tileY; fillY++) {
+				tileSet.insert((tileX << 32) + fillY);
 			}
 		}
 		prevX = tileX, prevY = tileY;
@@ -58,10 +58,10 @@ void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-TileBbox::TileBbox(uint i, uint z) {
+TileBbox::TileBbox(uint64_t i, uint z) {
 	index = i; zoom = z;
-	tiley = index & 65535;
-	tilex = index >> 16;
+	tiley = index & 4294967295L;
+	tilex = index >> 32;
 	minLon = tilex2lon(tilex  ,zoom);
 	minLat = tiley2lat(tiley+1,zoom);
 	maxLon = tilex2lon(tilex+1,zoom);
