@@ -3,6 +3,18 @@
 using namespace std;
 namespace geom = boost::geometry;
 
+TileCoordinates_::TileCoordinates_()
+{
+	this->x = 0;
+	this->y = 0;
+}
+
+TileCoordinates_::TileCoordinates_(TileCoordinate x, TileCoordinate y)
+{
+	this->x = x;
+	this->y = y;
+}
+
 double deg2rad(double deg) { return (M_PI/180.0) * deg; }
 double rad2deg(double rad) { return (180.0/M_PI) * rad; }
 
@@ -23,9 +35,9 @@ double tiley2latp(uint y, uint z) { return 180.0 - scalbn(y, -(int)z) * 360.0; }
 double tiley2lat(uint y, uint z) { return latp2lat(tiley2latp(y, z)); }
 
 // Get a tile index
-uint64_t latpLon2index(LatpLon ll, uint baseZoom) {
-	return lon2tilex(ll.lon /10000000.0, baseZoom) * 4294967296 +
-	       latp2tiley(ll.latp/10000000.0, baseZoom);
+TileCoordinates latpLon2index(LatpLon ll, uint baseZoom) {
+	return TileCoordinates(lon2tilex(ll.lon /10000000.0, baseZoom),
+	       latp2tiley(ll.latp/10000000.0, baseZoom));
 }
 
 // Convert to actual length
@@ -37,17 +49,17 @@ double meter2degp(double meter, double latp) {
 }
 
 // the range between smallest y and largest y is filled, for each x
-void fillCoveredTiles(unordered_set<uint64_t> &tileSet) {
-	vector<uint64_t> tileList(tileSet.begin(), tileSet.end());
-	sort(tileList.begin(), tileList.end());
+void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
+	vector<TileCoordinates> tileList(tileSet.begin(), tileSet.end());
+	sort(tileList.begin(), tileList.end(), TileCoordinatesCompare());
 
 	uint64_t prevX = 0, prevY = static_cast<uint64_t>(-2);
-	for (uint64_t index: tileList) {
-		uint64_t tileX = index >> 32, tileY = index & 4294967296;
+	for (TileCoordinates index: tileList) {
+		uint64_t tileX = index.x, tileY = index.y;
 		if (tileX == prevX) {
 			// this loop has no effect at the first iteration
 			for (uint64_t fillY = prevY+1; fillY < tileY; fillY++) {
-				tileSet.insert((tileX << 32) + fillY);
+				tileSet.insert(TileCoordinates(tileX, fillY));
 			}
 		}
 		prevX = tileX, prevY = tileY;
@@ -58,10 +70,11 @@ void fillCoveredTiles(unordered_set<uint64_t> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-TileBbox::TileBbox(uint64_t i, uint z) {
-	index = i; zoom = z;
-	tiley = index & 4294967295L;
-	tilex = index >> 32;
+TileBbox::TileBbox(TileCoordinates i, uint z) {
+	zoom = z;
+	index = i;
+        tilex = i.x;
+        tiley = i.y;
 	minLon = tilex2lon(tilex  ,zoom);
 	minLat = tiley2lat(tiley+1,zoom);
 	maxLon = tilex2lon(tilex+1,zoom);

@@ -8,7 +8,8 @@
 #include "shared_data.h"
 
 int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys, 
-	std::map< uint64_t, std::vector<OutputObject> > &tileIndex, OSMObject &osmObject);
+	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
+	OSMObject &osmObject);
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 
 	double &minLat, double &maxLat, bool &hasClippingBox);

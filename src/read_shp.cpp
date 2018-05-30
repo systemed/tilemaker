@@ -29,7 +29,7 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObject &oo, map< uint64_t, vector<OutputObject> > &tileIndex, uint baseZoom,
+void addToTileIndexByBbox(OutputObject &oo, map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
@@ -37,25 +37,25 @@ void addToTileIndexByBbox(OutputObject &oo, map< uint64_t, vector<OutputObject> 
 	uint maxTileY = latp2tiley(maxLatp, baseZoom);
 	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
 		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-			uint64_t index = x*4294967296+y;
+			TileCoordinates index(x, y);
 			tileIndex[index].push_back(oo);
 		}
 	}
 }
 
 // Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObject &oo, map< uint64_t, vector<OutputObject> > &tileIndex, uint baseZoom, const Linestring &ls) {
+void addToTileIndexPolyline(OutputObject &oo, map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, uint baseZoom, const Linestring &ls) {
 	uint lastx = UINT_MAX;
 	uint lasty;
 	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
 		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
 		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
 		if (lastx==UINT_MAX) {
-			tileIndex[tilex*4294967296+tiley].push_back(oo);
+			tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 		} else if (lastx!=tilex || lasty!=tiley) {
 			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
 				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
-					tileIndex[x*4294967296+y].push_back(oo);
+					tileIndex[TileCoordinates(x, y)].push_back(oo);
 				}
 			}
 		}
@@ -94,7 +94,7 @@ void addShapefileAttributes(
 void readShapefile(string filename, 
                    vector<string> &columns,
                    const Box &clippingBox, 
-                   map< uint64_t, vector<OutputObject> > &tileIndex, 
+                   map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
                    vector<Geometry> &cachedGeometries,
 				   OSMObject &osmObject,
                    uint baseZoom, uint layerNum, const string &layerName,
@@ -138,7 +138,7 @@ void readShapefile(string filename,
 				cachedGeometries.push_back(p);
 				OutputObject oo(CACHED_POINT, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
-				tileIndex[tilex*65536+tiley].push_back(oo);
+				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 				if (isIndexed) {
 					uint64_t id = cachedGeometries.size()-1;
 					geom::envelope(p, box); osmObject.indices->at(layerName).insert(std::make_pair(box, id));
