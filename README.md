@@ -65,7 +65,7 @@ or with luajit:
 
 To save memory (on any platform), you can choose 32-bit storage for node and way IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
 
-    make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS"
+    make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS -DCOMPACT_TILE_INDEX"
     make install
 
 ### Docker

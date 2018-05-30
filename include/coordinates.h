@@ -5,7 +5,11 @@
 #include <utility>
 #include <unordered_set>
 
+#ifdef COMPACT_TILE_INDEX
+typedef uint16_t TileCoordinate;
+#else
 typedef uint32_t TileCoordinate;
+#endif
 class TileCoordinates_
 {
 public:
@@ -92,7 +96,7 @@ void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<
 		p2 = *it;
 
 		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
-		uint64_t tileX2 = static_cast<uint64_t>(tileXf2), tileY2 = static_cast<uint64_t>(tileYf2);
+		TileCoordinate tileX2 = static_cast<TileCoordinate>(tileXf2), tileY2 = static_cast<TileCoordinate>(tileYf2);
 
 		// insert vertex
 		tileSet.insert(TileCoordinates(tileX2, tileY2));
@@ -100,16 +104,16 @@ void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<
 		if (it == points.begin()) continue;
 
 		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
-		uint64_t tileX1 = static_cast<uint64_t>(tileXf1), tileY1 = static_cast<uint64_t>(tileYf1);
+		TileCoordinate tileX1 = static_cast<TileCoordinate>(tileXf1), tileY1 = static_cast<TileCoordinate>(tileYf1);
 		double dx = tileXf2 - tileXf1, dy = tileYf2 - tileYf1;
 
 		// insert all X border
 		if (tileX1 != tileX2) {
 			double slope = dy / dx;
-			uint64_t tileXmin = std::min(tileX1, tileX2);
-			uint64_t tileXmax = std::max(tileX1, tileX2);
-			for (uint64_t tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
-				uint64_t tileYcur = static_cast<uint64_t>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
+			TileCoordinate tileXmin = std::min(tileX1, tileX2);
+			TileCoordinate tileXmax = std::max(tileX1, tileX2);
+			for (TileCoordinate tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
+				TileCoordinate tileYcur = static_cast<TileCoordinate>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
 				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
 			}
 		}
@@ -117,10 +121,10 @@ void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<
 		// insert all Y border
 		if (tileY1 != tileY2) {
 			double slope = dx / dy;
-			uint64_t tileYmin = std::min(tileY1, tileY2);
-			uint64_t tileYmax = std::max(tileY1, tileY2);
-			for (uint64_t tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
-				uint64_t tileXcur = static_cast<uint64_t>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
+			TileCoordinate tileYmin = std::min(tileY1, tileY2);
+			TileCoordinate tileYmax = std::max(tileY1, tileY2);
+			for (TileCoordinate tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
+				TileCoordinate tileXcur = static_cast<TileCoordinate>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
 				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
 			}
 		}
@@ -139,7 +143,6 @@ public:
 	double minLon, maxLon, minLat, maxLat, minLatp, maxLatp;
 	double xmargin, ymargin, xscale, yscale;
 	TileCoordinates index;
-	TileCoordinate tiley, tilex; //FIXME This duplicates the index variable
 	uint zoom;
 	Box clippingBox;
 

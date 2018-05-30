@@ -154,6 +154,9 @@ int main(int argc, char* argv[]) {
 	#ifdef COMPACT_WAYS
 	cout << "tilemaker compiled without 64-bit way support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
+	#ifdef COMPACT_TILE_INDEX
+	cout << "tilemaker compiled without 64-bit tile index support, this limits accuracy at very high zoom levels" << endl;
+	#endif
 
 	// ---- Check config
 	

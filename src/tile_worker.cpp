@@ -216,13 +216,13 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			// Write to sqlite
 			tile.SerializeToString(&data);
 			if (sharedData->config.compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->config.gzip); }
-			sharedData->mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, sharedData->config.compress ? &compressed : &data);
+			sharedData->mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData->config.compress ? &compressed : &data);
 
 		} else {
 			// Write to file
 			stringstream dirname, filename;
-			dirname  << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex;
-			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
+			dirname  << sharedData->outputFile << "/" << zoom << "/" << bbox.index.x;
+			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.index.x << "/" << bbox.index.y << ".pbf";
 			boost::filesystem::create_directories(dirname.str());
 			fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 			if (sharedData->config.compress) {

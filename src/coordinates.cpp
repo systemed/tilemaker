@@ -53,12 +53,12 @@ void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
 	vector<TileCoordinates> tileList(tileSet.begin(), tileSet.end());
 	sort(tileList.begin(), tileList.end(), TileCoordinatesCompare());
 
-	uint64_t prevX = 0, prevY = static_cast<uint64_t>(-2);
+	TileCoordinate prevX = 0, prevY = static_cast<TileCoordinate>(-2);
 	for (TileCoordinates index: tileList) {
-		uint64_t tileX = index.x, tileY = index.y;
+		TileCoordinate tileX = index.x, tileY = index.y;
 		if (tileX == prevX) {
 			// this loop has no effect at the first iteration
-			for (uint64_t fillY = prevY+1; fillY < tileY; fillY++) {
+			for (TileCoordinate fillY = prevY+1; fillY < tileY; fillY++) {
 				tileSet.insert(TileCoordinates(tileX, fillY));
 			}
 		}
@@ -73,12 +73,10 @@ void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
 TileBbox::TileBbox(TileCoordinates i, uint z) {
 	zoom = z;
 	index = i;
-        tilex = i.x;
-        tiley = i.y;
-	minLon = tilex2lon(tilex  ,zoom);
-	minLat = tiley2lat(tiley+1,zoom);
-	maxLon = tilex2lon(tilex+1,zoom);
-	maxLat = tiley2lat(tiley  ,zoom);
+	minLon = tilex2lon(i.x  ,zoom);
+	minLat = tiley2lat(i.y+1,zoom);
+	maxLon = tilex2lon(i.x+1,zoom);
+	maxLat = tiley2lat(i.y  ,zoom);
 	minLatp = lat2latp(minLat);
 	maxLatp = lat2latp(maxLat);
 	xmargin = (maxLon -minLon )/200.0;
