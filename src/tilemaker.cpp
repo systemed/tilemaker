@@ -226,7 +226,8 @@ int main(int argc, char* argv[]) {
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 
-	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore);
+	class PbfReader pbfReader;
+	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore, pbfReader);
 
 	// ---- Load external shp files
 
@@ -247,7 +248,7 @@ int main(int argc, char* argv[]) {
 	
 		cout << "Reading " << inputFile << endl;
 
-		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
+		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
 		if(ret != 0)
 			return ret;
 	}

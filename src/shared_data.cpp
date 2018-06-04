@@ -2,8 +2,8 @@
 using namespace std;
 
 SharedData::SharedData(class Config &configIn, OSMStore *osmStore, const std::vector<Geometry> &cachedGeometriesIn):
-	config(configIn),
-	cachedGeometries(cachedGeometriesIn)
+	cachedGeometries(cachedGeometriesIn),
+	config(configIn)
 {
 	this->osmStore = osmStore;
 	sqlite=false;

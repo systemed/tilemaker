@@ -10,6 +10,7 @@
 #include "osm_store.h"
 #include "shared_data.h"
 #include "output_object.h"
+#include "read_pbf.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
@@ -35,6 +36,7 @@ public:
 	std::vector<Geometry> &cachedGeometries;		// Cached geometries
 	std::map<uint,std::string> &cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
+	class PbfReader &pbfReader;
 
 	uint64_t osmID;							// ID of OSM object
 	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
@@ -54,35 +56,15 @@ public:
 	class Config &config;
 	std::vector<OutputObject> outputs;			// All output objects
 
-	// Common tag storage
-	std::vector<std::string> stringTable;				// Tag table from the current PrimitiveGroup
-	std::map<std::string, uint> tagMap;				// String->position map
-
-	// Tag storage for denseNodes
-	uint denseStart;							// Start of key/value table section (DenseNodes)
-	uint denseEnd;							// End of key/value table section (DenseNodes)
-	DenseNodes *densePtr;					// DenseNodes object
-
-	// Tag storage for ways/relations
-	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *keysPtr;
-	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
-	uint tagLength;
-
 	// ----	initialization routines
 
 	OSMObject(class Config &configIn, kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
-		std::map<uint,std::string> &namePtr, OSMStore *storePtr);
-
-	// Read string dictionary from the .pbf
-	void readStringTable(PrimitiveBlock *pbPtr);
+		std::map<uint,std::string> &namePtr, OSMStore *storePtr, class PbfReader &pbfReaderIn);
 
 	// ----	Helpers provided for main routine
 
 	// Has this object been assigned to any layers?
 	bool empty();
-
-	// Find a string in the dictionary
-	int findStringPosition(std::string str);
 
 	// ----	Set an osm element to make it accessible from Lua
 
@@ -94,10 +76,6 @@ public:
 		isRelation = false;
 
 		setLocation(node.lon, node.latp, node.lon, node.latp);
-
-		denseStart = kvStart;
-		denseEnd = kvEnd;
-		densePtr = dPtr;
 	}
 
 	// We are now processing a way
@@ -118,9 +96,6 @@ public:
 			throw std::out_of_range(ss.str());
 		}
 
-		keysPtr = way->mutable_keys();
-		valsPtr = way->mutable_vals();
-		tagLength = way->keys_size();
 	}
 
 	// We are now processing a relation
@@ -136,9 +111,6 @@ public:
 		innerWayVec = innerWayVecPtr;
 		//setLocation(...); TODO
 
-		keysPtr = relation->mutable_keys();
-		valsPtr = relation->mutable_vals();
-		tagLength = relation->keys_size();
 	}
 
 	// Internal: clear current cached state

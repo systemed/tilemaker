@@ -5,29 +5,16 @@ using namespace rapidjson;
 // ----	initialization routines
 
 OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, 
-	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr):
+	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
+	class PbfReader &pbfReaderIn):
 	luaState(luaObj),
 	cachedGeometries(geomPtr),
 	cachedGeometryNames(namePtr),
+	pbfReader(pbfReaderIn),
 	config(configIn)
 {
 	newWayID = MAX_WAY_ID;
 	osmStore = storePtr;
-}
-
-// Read string dictionary from the .pbf
-void OSMObject::readStringTable(PrimitiveBlock *pbPtr) {
-	// Populate the string table
-	stringTable.clear();
-	stringTable.resize(pbPtr->stringtable().s_size());
-	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
-		stringTable[i] = pbPtr->stringtable().s(i);
-	}
-	// Create a string->position map
-	tagMap.clear();
-	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
-		tagMap.insert(pair<string, int> (pbPtr->stringtable().s(i), i));
-	}
 }
 
 // ----	Helpers provided for main routine
@@ -35,16 +22,6 @@ void OSMObject::readStringTable(PrimitiveBlock *pbPtr) {
 // Has this object been assigned to any layers?
 bool OSMObject::empty() {
 	return outputs.size()==0;
-}
-
-// Find a string in the dictionary
-int OSMObject::findStringPosition(string str) {
-	auto p = find(stringTable.begin(), stringTable.end(), str);
-	if (p == stringTable.end()) {
-		return -1;
-	} else {
-		return distance(stringTable.begin(), p);
-	}
 }
 
 // ----	Metadata queries called from Lua
@@ -56,36 +33,14 @@ string OSMObject::Id() const {
 
 // Check if there's a value for a given key
 bool OSMObject::Holds(const string& key) const {
-	if (tagMap.find(key) == tagMap.end()) { return false; }
-	uint keyNum = tagMap.at(key);
-	if (isWay) {
-		for (uint n=0; n > tagLength; n++) {
-			if (keysPtr->Get(n)==keyNum) { return true; }
-		}
-	} else {
-		for (uint n=denseStart; n<denseEnd; n+=2) {
-			if (uint(densePtr->keys_vals(n))==keyNum) { return true; }
-		}
-	}
-	return false;
+	
+	return pbfReader.Holds(key);
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
 string OSMObject::Find(const string& key) const {
-	// First, convert the string into a number
-	if (tagMap.find(key) == tagMap.end()) { return ""; }
-	uint keyNum = tagMap.at(key);
-	if (isWay) {
-		// Then see if this number is in the way tags, and return its value if so
-		for (uint n=0; n < tagLength; n++) {
-			if (keysPtr->Get(n)==keyNum) { return stringTable[valsPtr->Get(n)]; }
-		}
-	} else {
-		for (uint n=denseStart; n<denseEnd; n+=2) {
-			if (uint(densePtr->keys_vals(n))==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
-		}
-	}
-	return "";
+
+	return pbfReader.Find(key);
 }
 
 // ----	Spatial queries called from Lua

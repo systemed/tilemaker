@@ -3,7 +3,17 @@
 #include "pbf_blocks.h"
 using namespace std;
 
-bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, 
+PbfReader::PbfReader()
+{
+
+}
+
+PbfReader::~PbfReader()
+{
+
+}
+
+bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, 
 	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
 	class OSMStore *osmStore, OSMObject &osmObject)
 {
@@ -35,6 +45,12 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions,
 			}
 			// For tagged nodes, call Lua, then save the OutputObject
 			if (significant) {
+				isWay = false;
+				isRelation = false;
+				denseStart = kvStart;
+				denseEnd = kvPos-1;
+				densePtr = &dense;
+
 				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
 				osmObject.luaState["node_function"](&osmObject);
 				if (!osmObject.empty()) {
@@ -50,7 +66,7 @@ bool ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions,
 	return false;
 }
 
-bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, 
+bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, 
 	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
 	class OSMStore *osmStore, OSMObject &osmObject)
 {
@@ -74,6 +90,12 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation,
 			bool ok = true;
 			try
 			{
+				isWay = true;
+				isRelation = false;
+				keysPtr = pbfWay.mutable_keys();
+				valsPtr = pbfWay.mutable_vals();
+				tagLength = pbfWay.keys_size();
+
 				osmObject.setWay(&pbfWay, &nodeVec);
 			}
 			catch (std::out_of_range &err)
@@ -137,7 +159,7 @@ bool ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation,
 	return false;
 }
 
-bool ReadRelations(PrimitiveGroup &pg, 
+bool PbfReader::ReadRelations(PrimitiveGroup &pg, 
 	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex,
 	class OSMStore *osmStore, OSMObject &osmObject)
 {
@@ -146,10 +168,10 @@ bool ReadRelations(PrimitiveGroup &pg,
 	RelationStore &relations = osmStore->relations;
 
 	if (pg.relations_size() > 0) {
-		int typeKey = osmObject.findStringPosition("type");
-		int mpKey   = osmObject.findStringPosition("multipolygon");
-		int innerKey= osmObject.findStringPosition("inner");
-		//int outerKey= osmObject.findStringPosition("outer");
+		int typeKey = this->findStringPosition("type");
+		int mpKey   = this->findStringPosition("multipolygon");
+		int innerKey= this->findStringPosition("inner");
+		//int outerKey= this->findStringPosition("outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
@@ -172,6 +194,12 @@ bool ReadRelations(PrimitiveGroup &pg,
 				bool ok = true;
 				try
 				{
+					isWay = false;
+					isRelation = true;
+					keysPtr = pbfRelation.mutable_keys();
+					valsPtr = pbfRelation.mutable_vals();
+					tagLength = pbfRelation.keys_size();
+
 					osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
 				}
 				catch (std::out_of_range &err)
@@ -229,7 +257,7 @@ bool ReadRelations(PrimitiveGroup &pg,
 	return false;
 }
 
-int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, 
+int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, 
 	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
 	OSMObject &osmObject)
 {
@@ -270,10 +298,10 @@ int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys,
 		}
 
 		// Read the string table, and pre-calculate the positions of valid node keys
-		osmObject.readStringTable(&pb);
+		this->readStringTable(&pb);
 		unordered_set<int> nodeKeyPositions;
 		for (auto it : nodeKeys) {
-			nodeKeyPositions.insert(osmObject.findStringPosition(it));
+			nodeKeyPositions.insert(this->findStringPosition(it));
 		}
 
 		for (int i=0; i<pb.primitivegroup_size(); i++) {
@@ -330,6 +358,79 @@ int ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys,
 
 	return 0;
 }
+
+// Read string dictionary from the .pbf
+void PbfReader::readStringTable(PrimitiveBlock *pbPtr) {
+	// Populate the string table
+	stringTable.clear();
+	stringTable.resize(pbPtr->stringtable().s_size());
+	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
+		stringTable[i] = pbPtr->stringtable().s(i);
+	}
+	// Create a string->position map
+	tagMap.clear();
+	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
+		tagMap.insert(pair<string, int> (pbPtr->stringtable().s(i), i));
+	}
+}
+
+// Find a string in the dictionary
+int PbfReader::findStringPosition(string str) {
+	auto p = find(stringTable.begin(), stringTable.end(), str);
+	if (p == stringTable.end()) {
+		return -1;
+	} else {
+		return distance(stringTable.begin(), p);
+	}
+}
+
+/*void PbfReader::WayTagsToMap(Way *way, std::map<std::string, std::string> &tagsOut) 
+{
+	auto keysPtr = way->mutable_keys();
+	auto valsPtr = way->mutable_vals();
+	auto tagLength = way->keys_size();
+
+	for (uint n=0; n > tagLength; n++)
+		tagsOut[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];	
+}*/
+
+// Check if there's a value for a given key
+bool PbfReader::Holds(const string& key) const {
+	auto it = tagMap.find(key);
+	if (it == tagMap.end()) { return false; }
+	uint keyNum = it->second;
+	if (isWay or isRelation) {
+		for (uint n=0; n > tagLength; n++) {
+			if (keysPtr->Get(n)==keyNum) { return true; }
+		}
+	} else {
+		for (uint n=denseStart; n<denseEnd; n+=2) {
+			if (uint(densePtr->keys_vals(n))==keyNum) { return true; }
+		}
+	}
+	return false;
+}
+
+// Get an OSM tag for a given key (or return empty string if none)
+std::string PbfReader::Find(const string& key) const {
+	// First, convert the string into a number
+	auto it = tagMap.find(key);
+	if (it == tagMap.end()) { return ""; }
+	uint keyNum = it->second;
+	if (isWay or isRelation) {
+		// Then see if this number is in the way tags, and return its value if so
+		for (uint n=0; n < tagLength; n++) {
+			if (keysPtr->Get(n)==keyNum) { return stringTable[valsPtr->Get(n)]; }
+		}
+	} else {
+		for (uint n=denseStart; n<denseEnd; n+=2) {
+			if (uint(densePtr->keys_vals(n))==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
+		}
+	}
+	return "";
+}
+
+// *************************************************
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 
 	double &minLat, double &maxLat, bool &hasClippingBox)
