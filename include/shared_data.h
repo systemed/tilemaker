@@ -34,7 +34,7 @@ public:
 	std::vector<std::vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
 	uint baseZoom, startZoom, endZoom;
 	uint mvtVersion;
-	bool includeID, compress, gzip;
+	bool includeID, compress, gzip, combineSimilarObjs;
 	std::string compressOpt;
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;

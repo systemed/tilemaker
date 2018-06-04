@@ -33,5 +33,5 @@ void MBTiles::saveTile(int zoom, int x, int y, string *data) {
 }
 
 void MBTiles::close() {
-	db << "CREATE UNIQUE INDEX tile_index on tiles (zoom_level, tile_column, tile_row);";
+	db << "CREATE UNIQUE INDEX IF NOT EXISTS tile_index on tiles (zoom_level, tile_column, tile_row);";
 }

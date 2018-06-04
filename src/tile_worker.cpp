@@ -114,7 +114,8 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 			}
 
 			//This may increment the jt iterator
-			CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
+			if(sharedData->config.combineSimilarObjs)
+				CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);

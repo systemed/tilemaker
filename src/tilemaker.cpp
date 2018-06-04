@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool verbose = false, sqlite= false;
+	bool verbose = false, sqlite= false, combineSimilarObjs = true;
 
 	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -124,7 +124,8 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("verbose",po::bool_switch(&verbose),                                    "verbose error output")
-		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
+		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
+		("combine",po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -224,6 +225,7 @@ int main(int argc, char* argv[]) {
 		config.minLat = minLat;
 		config.maxLat = maxLat;
 	}
+	config.combineSimilarObjs = combineSimilarObjs;
 
 	// ----	Initialise SharedData
 
