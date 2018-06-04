@@ -1,7 +1,3 @@
-/*
-	tilemaker
-	Richard Fairhurst, June 2015
-*/
 
 // C++ includes
 #include <iostream>
@@ -116,7 +112,7 @@ int main(int argc, char* argv[]) {
 	string outputFile;
 	bool verbose = false, sqlite= false, combineSimilarObjs = true;
 
-	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	po::options_description desc("tilemaker (c) 2016-2018 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
@@ -218,6 +214,8 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	// ----	Command line options override config settings
+
 	if(hasClippingBox)
 	{
 		config.minLon = minLon;
@@ -225,7 +223,8 @@ int main(int argc, char* argv[]) {
 		config.minLat = minLat;
 		config.maxLat = maxLat;
 	}
-	config.combineSimilarObjs = combineSimilarObjs;
+	if(vm.count("combine")>0)
+		config.combineSimilarObjs = combineSimilarObjs;
 
 	// ----	Initialise SharedData
 
