@@ -4,15 +4,14 @@ using namespace rapidjson;
 
 // ----	initialization routines
 
-OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, map< string, RTree> *idxPtr, 
-	vector<Geometry> *geomPtr, map<uint,string> *namePtr, OSMStore *storePtr):
+OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, 
+	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr):
 	luaState(luaObj),
+	cachedGeometries(geomPtr),
+	cachedGeometryNames(namePtr),
 	config(configIn)
 {
 	newWayID = MAX_WAY_ID;
-	indices = idxPtr;
-	cachedGeometries = geomPtr;
-	cachedGeometryNames = namePtr;
 	osmStore = storePtr;
 }
 
@@ -104,8 +103,8 @@ vector<uint> OSMObject::findIntersectingGeometries(const string &layerName) {
 	vector<IndexValue> results;
 	vector<uint> ids;
 
-	auto f = indices->find(layerName);
-	if (f==indices->end()) {
+	auto f = indices.find(layerName);
+	if (f==indices.end()) {
 		cerr << "Couldn't find indexed layer " << layerName << endl;
 	} else if (!isWay) {
 		Point p(lon1/10000000.0,latp1/10000000.0);
@@ -124,16 +123,16 @@ vector<uint> OSMObject::verifyIntersectResults(vector<IndexValue> &results, Poin
 	vector<uint> ids;
 	for (auto it : results) {
 		uint id=it.second;
-		if      (         geom::intersects(cachedGeometries->at(id),p1)) { ids.push_back(id); }
-		else if (isWay && geom::intersects(cachedGeometries->at(id),p2)) { ids.push_back(id); }
+		if      (         geom::intersects(cachedGeometries.at(id),p1)) { ids.push_back(id); }
+		else if (isWay && geom::intersects(cachedGeometries.at(id),p2)) { ids.push_back(id); }
 	}
 	return ids;
 }
 vector<string> OSMObject::namesOfGeometries(vector<uint> &ids) {
 	vector<string> names;
 	for (uint i=0; i<ids.size(); i++) {
-		if (cachedGeometryNames->find(ids[i])!=cachedGeometryNames->end()) {
-			names.push_back(cachedGeometryNames->at(ids[i]));
+		if (cachedGeometryNames.find(ids[i])!=cachedGeometryNames.end()) {
+			names.push_back(cachedGeometryNames.at(ids[i]));
 		}
 	}
 	return names;

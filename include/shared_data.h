@@ -70,11 +70,11 @@ public:
 	MBTiles mbtiles;
 	std::string outputFile;
 	const std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > *tileIndexForZoom;
-	const std::vector<Geometry> *cachedGeometries;
+	const std::vector<Geometry> &cachedGeometries;
 
 	const class Config &config;
 
-	SharedData(class Config &configIn, OSMStore *osmStore);
+	SharedData(class Config &configIn, OSMStore *osmStore, const std::vector<Geometry> &cachedGeometriesIn);
 	virtual ~SharedData();
 };
 

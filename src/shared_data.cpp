@@ -1,14 +1,14 @@
 #include "shared_data.h"
 using namespace std;
 
-SharedData::SharedData(class Config &configIn, OSMStore *osmStore):
-	config(configIn)
+SharedData::SharedData(class Config &configIn, OSMStore *osmStore, const std::vector<Geometry> &cachedGeometriesIn):
+	config(configIn),
+	cachedGeometries(cachedGeometriesIn)
 {
 	this->osmStore = osmStore;
 	sqlite=false;
 	this->tileIndexForZoom = nullptr;
 	verbose = false;
-	cachedGeometries = nullptr;
 }
 
 SharedData::~SharedData()

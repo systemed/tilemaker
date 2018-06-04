@@ -18,7 +18,7 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-/*
+/**
 	OSMObject - represents the object (from the .osm.pbf) currently being processed
 	
 	Only one instance of this class is ever used. Its main purpose is to provide a 
@@ -31,9 +31,9 @@ class OSMObject {
 public:
 
 	kaguya::State &luaState;				// Lua reference
-	std::map<std::string, RTree> *indices;			// Spatial indices
-	std::vector<Geometry> *cachedGeometries;		// Cached geometries
-	std::map<uint,std::string> *cachedGeometryNames;	// Cached geometry names
+	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
+	std::vector<Geometry> &cachedGeometries;		// Cached geometries
+	std::map<uint,std::string> &cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
 
 	uint64_t osmID;							// ID of OSM object
@@ -70,8 +70,8 @@ public:
 
 	// ----	initialization routines
 
-	OSMObject(class Config &configIn, kaguya::State &luaObj, std::map< std::string, RTree> *idxPtr, std::vector<Geometry> *geomPtr, 
-		std::map<uint,std::string> *namePtr, OSMStore *storePtr);
+	OSMObject(class Config &configIn, kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
+		std::map<uint,std::string> &namePtr, OSMStore *storePtr);
 
 	// Read string dictionary from the .pbf
 	void readStringTable(PrimitiveBlock *pbPtr);

@@ -75,7 +75,7 @@ void loadExternalShpFiles(class Config &config, bool hasClippingBox, const Box &
 		// External layer sources
 		LayerDef &layer = config.layers[layerNum];
 		if(layer.indexed)
-			osmObject.indices->operator[](layer.name)=RTree();
+			osmObject.indices.operator[](layer.name)=RTree();
 
 		if (layer.source.size()>0) {
 			if (!hasClippingBox) {
@@ -97,11 +97,11 @@ int main(int argc, char* argv[]) {
 
 	OSMStore osmStore;									// global OSM store
 
-	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
 	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
-	map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > tileIndex;				// objects to be output
+	// For each tile, objects to be used in processing
+	map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > tileIndex;				
 
 	// ----	Read command-line options
 	
@@ -226,16 +226,7 @@ int main(int argc, char* argv[]) {
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 
-	// ----	Initialise SharedData
-
-	class SharedData sharedData(config, &osmStore);
-	sharedData.threadNum = threadNum;
-	sharedData.outputFile = outputFile;
-	sharedData.verbose = verbose;
-	sharedData.sqlite = sqlite;
-	sharedData.cachedGeometries = &cachedGeometries;
-
-	OSMObject osmObject(config, luaState, &indices, &cachedGeometries, &cachedGeometryNames, &osmStore);
+	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore);
 
 	// ---- Load external shp files
 
@@ -249,6 +240,26 @@ int main(int argc, char* argv[]) {
 
 	vector<string> nodeKeyVec = luaState["node_keys"];
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
+
+	// ----	Read all PBFs
+	
+	for (auto inputFile : inputFiles) {
+	
+		cout << "Reading " << inputFile << endl;
+
+		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
+		if(ret != 0)
+			return ret;
+	}
+	osmStore.reportSize();
+
+	// ----	Initialise SharedData
+
+	class SharedData sharedData(config, &osmStore, cachedGeometries);
+	sharedData.threadNum = threadNum;
+	sharedData.outputFile = outputFile;
+	sharedData.verbose = verbose;
+	sharedData.sqlite = sqlite;
 
 	// ----	Initialise mbtiles if required
 	
@@ -266,18 +277,6 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.config.endZoom));
 		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
 	}
-
-	// ----	Read all PBFs
-	
-	for (auto inputFile : inputFiles) {
-	
-		cout << "Reading " << inputFile << endl;
-
-		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
-		if(ret != 0)
-			return ret;
-	}
-	osmStore.reportSize();
 
 	// ----	Write out each tile
 

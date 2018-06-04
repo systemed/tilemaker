@@ -141,8 +141,8 @@ void readShapefile(string filename,
 				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 				if (isIndexed) {
 					uint64_t id = cachedGeometries.size()-1;
-					geom::envelope(p, box); osmObject.indices->at(layerName).insert(std::make_pair(box, id));
-					if (indexField>-1) { osmObject.cachedGeometryNames->operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+					geom::envelope(p, box); osmObject.indices.at(layerName).insert(std::make_pair(box, id));
+					if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
 				}
 			}
 
@@ -163,8 +163,8 @@ void readShapefile(string filename,
 					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
 					if (isIndexed) {
 						uint id = cachedGeometries.size()-1;
-						geom::envelope(*it, box); osmObject.indices->at(layerName).insert(std::make_pair(box, id));
-						if (indexField>-1) { osmObject.cachedGeometryNames->operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+						geom::envelope(*it, box); osmObject.indices.at(layerName).insert(std::make_pair(box, id));
+						if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
 					}
 				}
 			}
@@ -232,8 +232,8 @@ void readShapefile(string filename,
 				addToTileIndexByBbox(oo, tileIndex, baseZoom, box.min_corner().get<0>(), box.min_corner().get<1>(), box.max_corner().get<0>(), box.max_corner().get<1>());
 				if (isIndexed) {
 					uint id = cachedGeometries.size()-1;
-					osmObject.indices->at(layerName).insert(std::make_pair(box, id));
-					if (indexField>-1) { osmObject.cachedGeometryNames->operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+					osmObject.indices.at(layerName).insert(std::make_pair(box, id));
+					if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
 				}
 			}
 
