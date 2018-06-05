@@ -27,20 +27,6 @@ private:
 	// Find a string in the dictionary
 	int findStringPosition(std::string str);
 
-	//void WayTagsToMap(Way *way, std::map<std::string, std::string> &tagsOut);
-
-	bool isWay, isRelation;					// Way, node, relation?
-
-	// Tag storage for denseNodes
-	uint denseStart;							// Start of key/value table section (DenseNodes)
-	uint denseEnd;							// End of key/value table section (DenseNodes)
-	DenseNodes *densePtr;					// DenseNodes object
-
-	// Tag storage for ways/relations
-	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *keysPtr;
-	::google::protobuf::RepeatedField< ::google::protobuf::uint32 > *valsPtr;
-	uint tagLength;
-
 	// Common tag storage
 	std::vector<std::string> stringTable;				// Tag table from the current PrimitiveGroup
 	std::map<std::string, uint> tagMap;				// String->position map
@@ -52,9 +38,6 @@ public:
 	int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys, 
 		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
 		OSMObject &osmObject);
-
-	bool Holds(const std::string& key) const;
-	std::string Find(const std::string& key) const;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

@@ -5,12 +5,10 @@ using namespace rapidjson;
 // ----	initialization routines
 
 OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, 
-	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
-	class PbfReader &pbfReaderIn):
+	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr):
 	luaState(luaObj),
 	cachedGeometries(geomPtr),
 	cachedGeometryNames(namePtr),
-	pbfReader(pbfReaderIn),
 	config(configIn)
 {
 	newWayID = MAX_WAY_ID;
@@ -34,13 +32,15 @@ string OSMObject::Id() const {
 // Check if there's a value for a given key
 bool OSMObject::Holds(const string& key) const {
 	
-	return pbfReader.Holds(key);
+	return currentTags.find(key) != currentTags.end();
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
 string OSMObject::Find(const string& key) const {
 
-	return pbfReader.Find(key);
+	auto it = currentTags.find(key);
+	if(it == currentTags.end()) return "";
+	return it->second;
 }
 
 // ----	Spatial queries called from Lua

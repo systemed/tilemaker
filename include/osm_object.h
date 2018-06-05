@@ -36,7 +36,6 @@ public:
 	std::vector<Geometry> &cachedGeometries;		// Cached geometries
 	std::map<uint,std::string> &cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
-	class PbfReader &pbfReader;
 
 	uint64_t osmID;							// ID of OSM object
 	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
@@ -55,11 +54,12 @@ public:
 
 	class Config &config;
 	std::vector<OutputObject> outputs;			// All output objects
+	std::map<std::string, std::string> currentTags;
 
 	// ----	initialization routines
 
 	OSMObject(class Config &configIn, kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
-		std::map<uint,std::string> &namePtr, OSMStore *storePtr, class PbfReader &pbfReaderIn);
+		std::map<uint,std::string> &namePtr, OSMStore *storePtr);
 
 	// ----	Helpers provided for main routine
 
@@ -69,17 +69,19 @@ public:
 	// ----	Set an osm element to make it accessible from Lua
 
 	// We are now processing a node
-	inline void setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node) {
+	inline void setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node, const std::map<std::string, std::string> &tags) {
 		reset();
 		osmID = id;
 		isWay = false;
 		isRelation = false;
 
 		setLocation(node.lon, node.latp, node.lon, node.latp);
+
+		currentTags = tags;
 	}
 
 	// We are now processing a way
-	inline void setWay(Way *way, NodeVec *nodeVecPtr) {
+	inline void setWay(Way *way, NodeVec *nodeVecPtr, const std::map<std::string, std::string> &tags) {
 		reset();
 		osmID = way->id();
 		isWay = true;
@@ -96,12 +98,14 @@ public:
 			throw std::out_of_range(ss.str());
 		}
 
+		currentTags = tags;
 	}
 
 	// We are now processing a relation
 	// (note that we store relations as ways with artificial IDs, and that
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
-	inline void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr) {
+	inline void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
+		const std::map<std::string, std::string> &tags) {
 		reset();
 		osmID = --newWayID;
 		isWay = true;
@@ -111,6 +115,7 @@ public:
 		innerWayVec = innerWayVecPtr;
 		//setLocation(...); TODO
 
+		currentTags = tags;
 	}
 
 	// Internal: clear current cached state

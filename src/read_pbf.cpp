@@ -45,13 +45,11 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 			}
 			// For tagged nodes, call Lua, then save the OutputObject
 			if (significant) {
-				isWay = false;
-				isRelation = false;
-				denseStart = kvStart;
-				denseEnd = kvPos-1;
-				densePtr = &dense;
+				std::map<std::string, std::string> tags;
+				for (uint n=kvStart; n<kvPos-1; n+=2)
+					tags[stringTable[dense.keys_vals(n)]] = stringTable[dense.keys_vals(n+1)];
 
-				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node);
+				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node, tags);
 				osmObject.luaState["node_function"](&osmObject);
 				if (!osmObject.empty()) {
 					TileCoordinates index = latpLon2index(node, osmObject.config.baseZoom);
@@ -90,13 +88,13 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 			bool ok = true;
 			try
 			{
-				isWay = true;
-				isRelation = false;
-				keysPtr = pbfWay.mutable_keys();
-				valsPtr = pbfWay.mutable_vals();
-				tagLength = pbfWay.keys_size();
+				auto keysPtr = pbfWay.mutable_keys();
+				auto valsPtr = pbfWay.mutable_vals();
+				std::map<std::string, std::string> tags;
+				for (uint n=0; n < pbfWay.keys_size(); n++)
+					tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-				osmObject.setWay(&pbfWay, &nodeVec);
+				osmObject.setWay(&pbfWay, &nodeVec, tags);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -194,13 +192,13 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg,
 				bool ok = true;
 				try
 				{
-					isWay = false;
-					isRelation = true;
-					keysPtr = pbfRelation.mutable_keys();
-					valsPtr = pbfRelation.mutable_vals();
-					tagLength = pbfRelation.keys_size();
+					auto keysPtr = pbfRelation.mutable_keys();
+					auto valsPtr = pbfRelation.mutable_vals();
+					std::map<std::string, std::string> tags;
+					for (uint n=0; n < pbfRelation.keys_size(); n++)
+						tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-					osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec);
+					osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
 				}
 				catch (std::out_of_range &err)
 				{
@@ -382,52 +380,6 @@ int PbfReader::findStringPosition(string str) {
 	} else {
 		return distance(stringTable.begin(), p);
 	}
-}
-
-/*void PbfReader::WayTagsToMap(Way *way, std::map<std::string, std::string> &tagsOut) 
-{
-	auto keysPtr = way->mutable_keys();
-	auto valsPtr = way->mutable_vals();
-	auto tagLength = way->keys_size();
-
-	for (uint n=0; n > tagLength; n++)
-		tagsOut[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];	
-}*/
-
-// Check if there's a value for a given key
-bool PbfReader::Holds(const string& key) const {
-	auto it = tagMap.find(key);
-	if (it == tagMap.end()) { return false; }
-	uint keyNum = it->second;
-	if (isWay or isRelation) {
-		for (uint n=0; n > tagLength; n++) {
-			if (keysPtr->Get(n)==keyNum) { return true; }
-		}
-	} else {
-		for (uint n=denseStart; n<denseEnd; n+=2) {
-			if (uint(densePtr->keys_vals(n))==keyNum) { return true; }
-		}
-	}
-	return false;
-}
-
-// Get an OSM tag for a given key (or return empty string if none)
-std::string PbfReader::Find(const string& key) const {
-	// First, convert the string into a number
-	auto it = tagMap.find(key);
-	if (it == tagMap.end()) { return ""; }
-	uint keyNum = it->second;
-	if (isWay or isRelation) {
-		// Then see if this number is in the way tags, and return its value if so
-		for (uint n=0; n < tagLength; n++) {
-			if (keysPtr->Get(n)==keyNum) { return stringTable[valsPtr->Get(n)]; }
-		}
-	} else {
-		for (uint n=denseStart; n<denseEnd; n+=2) {
-			if (uint(densePtr->keys_vals(n))==keyNum) { return stringTable[densePtr->keys_vals(n+1)]; }
-		}
-	}
-	return "";
 }
 
 // *************************************************

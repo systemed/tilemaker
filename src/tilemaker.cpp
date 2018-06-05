@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
 		config.combineSimilarObjs = combineSimilarObjs;
 
 	class PbfReader pbfReader;
-	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore, pbfReader);
+	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore);
 
 	// ---- Load external shp files
 
