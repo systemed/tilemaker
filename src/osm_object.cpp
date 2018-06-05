@@ -249,8 +249,13 @@ std::string OSMObject::serialiseLayerJSON() {
 	return json;
 }
 
+void OSMObject::everyNode(NodeID id, LatpLon node)
+{
+	osmStore->nodes.insert_back(id, node);
+}
+
 // We are now processing a node
-void OSMObject::setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node, const std::map<std::string, std::string> &tags) {
+void OSMObject::setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = id;
 	isWay = false;

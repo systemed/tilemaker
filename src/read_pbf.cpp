@@ -48,7 +48,7 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 					tags[stringTable[dense.keys_vals(n)]] = stringTable[dense.keys_vals(n+1)];
 
 				for(size_t i=0; i<outputs.size(); i++)
-					outputs[i]->setNode(nodeId, &dense, kvStart, kvPos-1, node, tags);
+					outputs[i]->setNode(nodeId, node, tags);
 			}
 		}
 		return true;

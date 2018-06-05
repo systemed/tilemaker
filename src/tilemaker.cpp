@@ -245,7 +245,6 @@ int main(int argc, char* argv[]) {
 	
 	class PbfReader pbfReader;
 	pbfReader.outputs.push_back(&osmObject);
-	pbfReader.outputs.push_back(&osmStore);
 	for (auto inputFile : inputFiles) {
 	
 		cout << "Reading " << inputFile << endl;

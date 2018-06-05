@@ -11,6 +11,24 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+class PbfReaderOutput
+{
+public:
+	virtual void everyNode(NodeID id, LatpLon node) {};
+
+	// We are now processing a node
+	virtual void setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {};
+
+	// We are now processing a way
+	virtual void setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {};
+
+	// We are now processing a relation
+	// (note that we store relations as ways with artificial IDs, and that
+	//  we use decrementing positive IDs to give a bit more space for way IDs)
+	virtual void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
+		const std::map<std::string, std::string> &tags) {};
+};
+
 class PbfReader
 {
 private:

@@ -15,10 +15,6 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 
-// Protobuf
-#include "osmformat.pb.h"
-#include "vector_tile.pb.h"
-
 /**
 	OSMObject - represents the object (from the .osm.pbf) currently being processed
 	
@@ -71,8 +67,10 @@ public:
 
 	// ----	Set an osm element to make it accessible from Lua
 
+	virtual void everyNode(NodeID id, LatpLon node);
+
 	// We are now processing a node
-	virtual void setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node, const std::map<std::string, std::string> &tags);
+	virtual void setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags);
 
 	// We are now processing a way
 	virtual void setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags);

@@ -194,8 +194,3 @@ Linestring OSMStore::nodeListLinestring(const NodeVec &nodeVec) const {
 	return nodeListLinestring(makeNodeList(nodeVec));
 }
 
-void OSMStore::everyNode(NodeID id, LatpLon node)
-{
-	nodes.insert_back(id, node);
-}
-
