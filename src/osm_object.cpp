@@ -5,10 +5,12 @@ using namespace rapidjson;
 // ----	initialization routines
 
 OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, 
-	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr):
+	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
+	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex):
 	luaState(luaObj),
 	cachedGeometries(geomPtr),
 	cachedGeometryNames(namePtr),
+	tileIndex(tileIndex),
 	config(configIn)
 {
 	newWayID = MAX_WAY_ID;
@@ -246,3 +248,160 @@ std::string OSMObject::serialiseLayerJSON() {
 	string json(buffer.GetString(), buffer.GetSize());
 	return json;
 }
+
+// We are now processing a node
+void OSMObject::setNode(NodeID id, DenseNodes *dPtr, int kvStart, int kvEnd, LatpLon node, const std::map<std::string, std::string> &tags) {
+	reset();
+	osmID = id;
+	isWay = false;
+	isRelation = false;
+
+	setLocation(node.lon, node.latp, node.lon, node.latp);
+
+	currentTags = tags;
+
+	this->luaState["node_function"](this);
+	if (!this->empty()) {
+		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
+		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+			tileIndex[index].push_back(*jt);
+		}
+	}
+}
+
+// We are now processing a way
+void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {
+	reset();
+	osmID = way->id();
+	isWay = true;
+	isRelation = false;
+
+	nodeVec = nodeVecPtr;
+	try {
+		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
+				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+
+	} catch (std::out_of_range &err) {
+		std::stringstream ss;
+		ss << "Way " << osmID << " is missing a node";
+		throw std::out_of_range(ss.str());
+	}
+
+	currentTags = tags;
+
+	bool ok = true;
+	if (ok)
+	{
+		this->luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+		kaguya::LuaFunction way_function = this->luaState["way_function"];
+		kaguya::LuaRef ret = way_function(this);
+		assert(!ret);
+	}
+
+	if (!this->empty() || inRelation) {
+		// Store the way's nodes in the global way store
+		WayStore &ways = osmStore->ways;
+		WayID wayId = static_cast<WayID>(way->id());
+		ways.insert_back(wayId, *nodeVec);
+	}
+
+	if (!this->empty()) {
+		// create a list of tiles this way passes through (tileSet)
+		unordered_set<TileCoordinates> tileSet;
+		try {
+			insertIntermediateTiles(osmStore->nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
+
+			// then, for each tile, store the OutputObject for each layer
+			bool polygonExists = false;
+			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+				TileCoordinates index = *it;
+				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+					if (jt->geomType == POLYGON) {
+						polygonExists = true;
+						continue;
+					}
+					tileIndex[index].push_back(*jt);
+				}
+			}
+
+			// for polygon, fill inner tiles
+			if (polygonExists) {
+				fillCoveredTiles(tileSet);
+				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+					TileCoordinates index = *it;
+					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+						if (jt->geomType != POLYGON) continue;
+						tileIndex[index].push_back(*jt);
+					}
+				}
+			}
+		} catch(std::out_of_range &err)
+		{
+			cerr << "Error calculating intermediate tiles: " << err.what() << endl;
+		}
+	}
+
+}
+
+// We are now processing a relation
+// (note that we store relations as ways with artificial IDs, and that
+//  we use decrementing positive IDs to give a bit more space for way IDs)
+void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
+	const std::map<std::string, std::string> &tags) {
+	reset();
+	osmID = --newWayID;
+	isWay = true;
+	isRelation = true;
+
+	outerWayVec = outerWayVecPtr;
+	innerWayVec = innerWayVecPtr;
+	//setLocation(...); TODO
+
+	currentTags = tags;
+
+	bool ok = true;
+	if (ok)
+		this->luaState["way_function"](this);
+
+	if (!this->empty()) {								
+
+		WayID relID = this->osmID;
+		// Store the relation members in the global relation store
+		RelationStore &relations = osmStore->relations;
+		relations.insert_front(relID, *outerWayVec, *innerWayVec);
+
+		MultiPolygon mp;
+		try
+		{
+			// for each tile the relation may cover, put the output objects.
+			mp = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
+		}
+		catch(std::out_of_range &err)
+		{
+			cout << "In relation " << relID << ": " << err.what() << endl;
+			return;
+		}		
+
+		unordered_set<TileCoordinates> tileSet;
+		if (mp.size() == 1) {
+			insertIntermediateTiles(mp[0].outer(), this->config.baseZoom, tileSet);
+			fillCoveredTiles(tileSet);
+		} else {
+			for (Polygon poly: mp) {
+				unordered_set<TileCoordinates> tileSetTmp;
+				insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
+				fillCoveredTiles(tileSetTmp);
+				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
+			}
+		}
+
+		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+			TileCoordinates index = *it;
+			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+				tileIndex[index].push_back(*jt);
+			}
+		}
+	}
+
+}
+

@@ -13,12 +13,9 @@ PbfReader::~PbfReader()
 
 }
 
-bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions, 
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-	class OSMStore *osmStore, OSMObject &osmObject)
+bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions)
 {
 	// ----	Read nodes
-	NodeStore &nodes = osmStore->nodes;
 
 	if (pg.has_dense()) {
 		int64_t nodeId  = 0;
@@ -31,7 +28,8 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 			lon    += dense.lon(j);
 			lat    += dense.lat(j);
 			LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
-			nodes.insert_back(nodeId, node);
+			for(size_t i=0; i<outputs.size(); i++)
+				outputs[i]->everyNode(nodeId, node);
 			bool significant = false;
 			int kvStart = kvPos;
 			if (dense.keys_vals_size()>0) {
@@ -49,14 +47,8 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 				for (uint n=kvStart; n<kvPos-1; n+=2)
 					tags[stringTable[dense.keys_vals(n)]] = stringTable[dense.keys_vals(n+1)];
 
-				osmObject.setNode(nodeId, &dense, kvStart, kvPos-1, node, tags);
-				osmObject.luaState["node_function"](&osmObject);
-				if (!osmObject.empty()) {
-					TileCoordinates index = latpLon2index(node, osmObject.config.baseZoom);
-					for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-						tileIndex[index].push_back(*jt);
-					}
-				}
+				for(size_t i=0; i<outputs.size(); i++)
+					outputs[i]->setNode(nodeId, &dense, kvStart, kvPos-1, node, tags);
 			}
 		}
 		return true;
@@ -64,12 +56,9 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 	return false;
 }
 
-bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation, 
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-	class OSMStore *osmStore, OSMObject &osmObject)
+bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation)
 {
 	// ----	Read ways
-	WayStore &ways = osmStore->ways;
 
 	if (pg.ways_size() > 0) {
 		Way pbfWay;
@@ -85,7 +74,6 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 				nodeVec.push_back(static_cast<NodeID>(nodeId));
 			}
 
-			bool ok = true;
 			try
 			{
 				auto keysPtr = pbfWay.mutable_keys();
@@ -94,76 +82,25 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 				for (uint n=0; n < pbfWay.keys_size(); n++)
 					tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-				osmObject.setWay(&pbfWay, &nodeVec, tags);
+				for(size_t i=0; i<outputs.size(); i++)
+					outputs[i]->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
 			}
 			catch (std::out_of_range &err)
 			{
 				// Way is missing a node?
-				ok = false;
 				cerr << endl << err.what() << endl;
 			}
 
-			if (ok)
-			{
-				osmObject.luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
-				kaguya::LuaFunction way_function = osmObject.luaState["way_function"];
-				kaguya::LuaRef ret = way_function(&osmObject);
-				assert(!ret);
-			}
-
-			if (!osmObject.empty() || waysInRelation.count(wayId)) {
-				// Store the way's nodes in the global way store
-				ways.insert_back(wayId, nodeVec);
-			}
-
-			if (!osmObject.empty()) {
-				// create a list of tiles this way passes through (tileSet)
-				unordered_set<TileCoordinates> tileSet;
-				try {
-					insertIntermediateTiles(osmStore->nodeListLinestring(nodeVec), osmObject.config.baseZoom, tileSet);
-
-					// then, for each tile, store the OutputObject for each layer
-					bool polygonExists = false;
-					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-						TileCoordinates index = *it;
-						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-							if (jt->geomType == POLYGON) {
-								polygonExists = true;
-								continue;
-							}
-							tileIndex[index].push_back(*jt);
-						}
-					}
-
-					// for polygon, fill inner tiles
-					if (polygonExists) {
-						fillCoveredTiles(tileSet);
-						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-							TileCoordinates index = *it;
-							for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-								if (jt->geomType != POLYGON) continue;
-								tileIndex[index].push_back(*jt);
-							}
-						}
-					}
-				} catch(std::out_of_range &err)
-				{
-					cerr << "Error calculating intermediate tiles: " << err.what() << endl;
-				}
-			}
 		}
 		return true;
 	}
 	return false;
 }
 
-bool PbfReader::ReadRelations(PrimitiveGroup &pg, 
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex,
-	class OSMStore *osmStore, OSMObject &osmObject)
+bool PbfReader::ReadRelations(PrimitiveGroup &pg)
 {
 	// ----	Read relations
 	//		(just multipolygons for now; we should do routes in time)
-	RelationStore &relations = osmStore->relations;
 
 	if (pg.relations_size() > 0) {
 		int typeKey = this->findStringPosition("type");
@@ -189,7 +126,6 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg,
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
 
-				bool ok = true;
 				try
 				{
 					auto keysPtr = pbfRelation.mutable_keys();
@@ -198,56 +134,15 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg,
 					for (uint n=0; n < pbfRelation.keys_size(); n++)
 						tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-					osmObject.setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
+					for(size_t i=0; i<outputs.size(); i++)
+						outputs[i]->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
 				}
 				catch (std::out_of_range &err)
 				{
 					// Relation is missing a member?
-					ok = false;
 					cerr << endl << err.what() << endl;
 				}
 
-				if (ok)
-					osmObject.luaState["way_function"](&osmObject);
-
-				if (!osmObject.empty()) {								
-
-					WayID relID = osmObject.osmID;
-					// Store the relation members in the global relation store
-					relations.insert_front(relID, outerWayVec, innerWayVec);
-
-					MultiPolygon mp;
-					try
-					{
-						// for each tile the relation may cover, put the output objects.
-						mp = osmStore->wayListMultiPolygon(outerWayVec, innerWayVec);
-					}
-					catch(std::out_of_range &err)
-					{
-						cout << "In relation " << relID << ": " << err.what() << endl;
-						continue;
-					}		
-
-					unordered_set<TileCoordinates> tileSet;
-					if (mp.size() == 1) {
-						insertIntermediateTiles(mp[0].outer(), osmObject.config.baseZoom, tileSet);
-						fillCoveredTiles(tileSet);
-					} else {
-						for (Polygon poly: mp) {
-							unordered_set<TileCoordinates> tileSetTmp;
-							insertIntermediateTiles(poly.outer(), osmObject.config.baseZoom, tileSetTmp);
-							fillCoveredTiles(tileSetTmp);
-							tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
-						}
-					}
-
-					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-						TileCoordinates index = *it;
-						for (auto jt = osmObject.outputs.begin(); jt != osmObject.outputs.end(); ++jt) {
-							tileIndex[index].push_back(*jt);
-						}
-					}
-				}
 			}
 		}
 		return true;
@@ -255,9 +150,7 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg,
 	return false;
 }
 
-int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys, 
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-	OSMObject &osmObject)
+int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys)
 {
 	// ----	Read PBF
 	// note that the order of reading and processing is:
@@ -307,7 +200,7 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 			cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 			cout.flush();
 
-			bool done = ReadNodes(pg, nodeKeyPositions, tileIndex, osmObject.osmStore, osmObject);
+			bool done = ReadNodes(pg, nodeKeyPositions);
 			if(done) continue;
 
 			// ----	Remember the position and skip ways
@@ -340,10 +233,10 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 				break;
 			}
 
-			done = ReadWays(pg, waysInRelation, tileIndex, osmObject.osmStore, osmObject);
+			done = ReadWays(pg, waysInRelation);
 			if(done) continue;
 
-			done = ReadRelations(pg, tileIndex, osmObject.osmStore, osmObject);
+			done = ReadRelations(pg);
 			if(done) continue;
 
 			// Everything should be ended

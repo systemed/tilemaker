@@ -5,22 +5,20 @@
 #include <unordered_set>
 #include <vector>
 #include <map>
-#include "shared_data.h"
+#include "osm_store.h"
+
+// Protobuf
+#include "osmformat.pb.h"
+#include "vector_tile.pb.h"
 
 class PbfReader
 {
 private:
-	bool ReadNodes(PrimitiveGroup &pg, const std::unordered_set<int> &nodeKeyPositions, 
-		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-		class OSMStore *osmStore, class OSMObject &osmObject);
+	bool ReadNodes(PrimitiveGroup &pg, const std::unordered_set<int> &nodeKeyPositions);
 
-	bool ReadWays(PrimitiveGroup &pg, std::unordered_set<WayID> &waysInRelation, 
-		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-		class OSMStore *osmStore, class OSMObject &osmObject);
+	bool ReadWays(PrimitiveGroup &pg, std::unordered_set<WayID> &waysInRelation);
 
-	bool ReadRelations(PrimitiveGroup &pg, 
-		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex,
-		class OSMStore *osmStore, class OSMObject &osmObject);
+	bool ReadRelations(PrimitiveGroup &pg);
 
 	void readStringTable(PrimitiveBlock *pbPtr);
 
@@ -35,9 +33,9 @@ public:
 	PbfReader();
 	virtual ~PbfReader();
 
-	int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys, 
-		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
-		OSMObject &osmObject);
+	int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys);
+
+	std::vector<PbfReaderOutput *> outputs;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 
