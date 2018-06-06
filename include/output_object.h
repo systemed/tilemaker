@@ -58,12 +58,10 @@ public:
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// Returns a boost::variant -
 	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
-	                      const TileBbox *bboxPtr, 
-	                      const std::vector<Geometry> &cachedGeometries) const = 0;
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const = 0;
 	
 	// Add a node geometry
-	virtual void buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
+	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const = 0;
 	
 	// Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
@@ -77,23 +75,29 @@ public:
 class OutputObjectOsmStore : public OutputObject
 {
 public:
-	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id);
+	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
+		const OSMStore &osmStore);
 
-	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
-	                      const TileBbox *bboxPtr, 
-	                      const std::vector<Geometry> &cachedGeometries) const;
-	
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
+
+	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
+
+private:
+	const OSMStore &osmStore;
 };
 
 class OutputObjectCached : public OutputObject
 {
 public:
-	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id);
+	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
+		const std::vector<Geometry> &cachedGeometries);
 
-	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
-	                      const TileBbox *bboxPtr, 
-	                      const std::vector<Geometry> &cachedGeometries) const;
-	
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
+
+	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
+
+private:
+	const std::vector<Geometry> &cachedGeometries;
 };
 
 typedef std::shared_ptr<OutputObject> OutputObjectRef;

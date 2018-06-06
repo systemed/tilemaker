@@ -91,15 +91,6 @@ bool OutputObject::hasAttribute(const string &key) const {
 	return it != attributes.end();
 }
 
-// Add a node geometry
-void OutputObject::buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
-	featurePtr->add_geometry(9);					// moveTo, repeat x1
-	pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
-	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
-	featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
-	featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
-}
-
 // Write attribute key/value pairs (dictionary-encoded)
 void OutputObject::writeAttributes(vector<string> *keyList, vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const {
 	for (auto it = attributes.begin(); it != attributes.end(); ++it) {
@@ -182,15 +173,15 @@ namespace vector_tile {
 
 // ***********************************************
 
-OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id):
-	OutputObject(type, l, id)
+OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
+	const OSMStore &osmStore):
+	OutputObject(type, l, id),
+	osmStore(osmStore)
 {
 
 }
 
-Geometry OutputObjectOsmStore::buildWayGeometry(const OSMStore &osmStore,
-                      const TileBbox *bboxPtr, 
-                      const std::vector<Geometry> &cachedGeometries) const
+Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox *bboxPtr) const
 {
 	ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
@@ -198,10 +189,10 @@ Geometry OutputObjectOsmStore::buildWayGeometry(const OSMStore &osmStore,
 		if (geomType==POLYGON || geomType==CENTROID) {
 			// polygon
 			MultiPolygon mp;
-			if (osmStore.ways.count(objectID)) {
-				mp.emplace_back(osmStore.nodeListPolygon(objectID));
+			if (this->osmStore.ways.count(objectID)) {
+				mp.emplace_back(this->osmStore.nodeListPolygon(objectID));
 			} else {
-				mp = osmStore.wayListMultiPolygon(objectID);
+				mp = this->osmStore.wayListMultiPolygon(objectID);
 			}
 
 			// write out
@@ -219,8 +210,8 @@ Geometry OutputObjectOsmStore::buildWayGeometry(const OSMStore &osmStore,
 		} else if (geomType==LINESTRING) {
 			// linestring
 			Linestring ls;
-			if (osmStore.ways.count(objectID)) {
-				ls = osmStore.nodeListLinestring(objectID);
+			if (this->osmStore.ways.count(objectID)) {
+				ls = this->osmStore.nodeListLinestring(objectID);
 			}
 			return clip(ls);
 
@@ -232,23 +223,34 @@ Geometry OutputObjectOsmStore::buildWayGeometry(const OSMStore &osmStore,
 	return MultiLinestring(); // return a blank geometry
 }
 
+// Add a node geometry
+void OutputObjectOsmStore::buildNodeGeometry(const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const
+{
+	LatpLon ll = osmStore.nodes.at(objectID);
+	featurePtr->add_geometry(9);					// moveTo, repeat x1
+	pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
+	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
+	featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
+	featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
+}
+
 // **********************************************
 
-OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id):
-	OutputObject(type, l, id)
+OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
+	const std::vector<Geometry> &cachedGeometries):
+	OutputObject(type, l, id),
+	cachedGeometries(cachedGeometries)
 {
 
 }
 
-Geometry OutputObjectCached::buildWayGeometry(const OSMStore &osmStore,
-                      const TileBbox *bboxPtr, 
-                      const std::vector<Geometry> &cachedGeometries) const
+Geometry OutputObjectCached::buildWayGeometry(const TileBbox *bboxPtr) const
 {
 	ClipGeometryVisitor clip(bboxPtr->clippingBox);
 
 	try {
 		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			const Geometry &g = cachedGeometries[objectID];
+			const Geometry &g = this->cachedGeometries[objectID];
 			return boost::apply_visitor(clip, g);
 		}
 	} catch (std::invalid_argument &err) {
@@ -256,5 +258,10 @@ Geometry OutputObjectCached::buildWayGeometry(const OSMStore &osmStore,
 	}
 
 	return MultiLinestring(); // return a blank geometry
+}
+
+void OutputObjectCached::buildNodeGeometry(const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const
+{
+
 }
 

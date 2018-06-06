@@ -259,7 +259,7 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise SharedData
 
-	class TileData tileData(osmStore, cachedGeometries);
+	class TileData tileData;
 
 	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;

@@ -16,9 +16,6 @@ class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
 public:
 	ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData);
 
-	void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
-	Geometry buildWayGeometry(const TileBbox &bbox) const;
-
 private:
 	const class TileData &tileData;
 };
@@ -48,7 +45,7 @@ class TileData
 	friend TilesAtZoomIterator;
 
 public:
-	TileData(const OSMStore &osmStore, const std::vector<Geometry> &cachedGeometries);
+	TileData();
 
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
@@ -57,8 +54,6 @@ public:
 	void SetTileIndexForZoom(const TileIndex *tileIndexForZoom);
 
 private:
-	const OSMStore &osmStore;
-	const std::vector<Geometry> &cachedGeometries;
 	const TileIndex *tileIndexForZoom;
 };
 

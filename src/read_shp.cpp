@@ -136,7 +136,7 @@ void readShapefile(string filename,
 				uint tilex =  lon2tilex(p.x(), baseZoom);
 				uint tiley = latp2tiley(p.y(), baseZoom);
 				cachedGeometries.push_back(p);
-				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1);
+				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1, cachedGeometries);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 				if (isIndexed) {
@@ -158,7 +158,7 @@ void readShapefile(string filename,
 				geom::intersection(ls, clippingBox, out);
 				for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
 					cachedGeometries.push_back(*it);
-					OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1);
+					OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1, cachedGeometries);
 					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
 					if (isIndexed) {
@@ -224,7 +224,7 @@ void readShapefile(string filename,
 			if (boost::size(out)>0) {
 				// create OutputObject
 				cachedGeometries.push_back(out);
-				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POLYGON, layerNum, cachedGeometries.size()-1);
+				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POLYGON, layerNum, cachedGeometries.size()-1, cachedGeometries);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 				// add to tile index
 				geom::model::box<Point> box;

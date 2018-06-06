@@ -173,7 +173,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	}
 	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 					layers.layerMap[layerName],
-					osmID);
+					osmID, *osmStore);
 	outputs.push_back(oo);
 }
 void OSMObject::LayerAsCentroid(const string &layerName) {
@@ -182,7 +182,7 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 	}
 	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
-					osmID);
+					osmID, *osmStore);
 	outputs.push_back(oo);
 }
 

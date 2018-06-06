@@ -8,19 +8,6 @@ ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, co
 	*(OutputObjectsConstIt *)this = it;
 }
 
-void ObjectsAtSubLayerIterator::buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const
-{
-	const NodeStore &nodes = tileData.osmStore.nodes;
-	OutputObjectsConstIt it = *this;
-	return (*it)->buildNodeGeometry(nodes.at((*it)->objectID), &bbox, featurePtr);
-}
-
-Geometry ObjectsAtSubLayerIterator::buildWayGeometry(const TileBbox &bbox) const
-{
-	OutputObjectsConstIt it = *this;
-	return (*it)->buildWayGeometry(tileData.osmStore, &bbox, tileData.cachedGeometries);
-}
-
 // ********************************
 
 TilesAtZoomIterator::TilesAtZoomIterator(TileIndex::const_iterator it, class TileData &tileData):
@@ -43,16 +30,14 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	TileIndex::const_iterator it = *this;
 	const std::vector<OutputObjectRef> &ooList = it->second;
-	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0);
+	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0, *(OSMStore *)nullptr);
 	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }
 
 // *********************************
 
-TileData::TileData(const OSMStore &osmStore, const std::vector<Geometry> &cachedGeometries):
-	osmStore(osmStore),
-	cachedGeometries(cachedGeometries)
+TileData::TileData()
 {
 	this->tileIndexForZoom = nullptr;
 }

@@ -32,7 +32,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt.buildWayGeometry(bbox));
+				MultiPolygon gNew = boost::get<MultiPolygon>((*jt)->buildWayGeometry(bbox));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -67,7 +67,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			jt++;
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt.buildWayGeometry(bbox));
+				MultiLinestring gNew = boost::get<MultiLinestring>((*jt)->buildWayGeometry(bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -93,13 +93,13 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			
 		if ((*jt)->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			jt.buildNodeGeometry(bbox, featurePtr);
+			(*jt)->buildNodeGeometry(bbox, featurePtr);
 			(*jt)->writeAttributes(&keyList, &valueList, featurePtr);
 			if (sharedData->config.includeID) { featurePtr->set_id((*jt)->objectID); }
 		} else {
 			Geometry g;
 			try {
-				g = jt.buildWayGeometry(bbox);
+				g = (*jt)->buildWayGeometry(bbox);
 			}
 			catch (std::out_of_range &err)
 			{
