@@ -298,7 +298,7 @@ int main(int argc, char* argv[]) {
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
 			// at z14, we can just use tileIndex
-			tileData.tileIndexForZoom = &tileIndex;
+			tileData.SetTileIndexForZoom(&tileIndex);
 		} else {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
@@ -318,7 +318,7 @@ int main(int argc, char* argv[]) {
 				sort(ooset.begin(), ooset.end());
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
-			tileData.tileIndexForZoom = &generatedIndex;
+			tileData.SetTileIndexForZoom(&generatedIndex);
 
 		}
 
@@ -336,7 +336,7 @@ int main(int argc, char* argv[]) {
 			for (auto &t: worker) t.join();
 
 		}
-		tileData.tileIndexForZoom = nullptr;
+		tileData.SetTileIndexForZoom(nullptr);
 	}
 
 	// ----	Close tileset

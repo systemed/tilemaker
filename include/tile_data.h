@@ -2,18 +2,63 @@
 #define _TILE_DATA_H
 
 #include <map>
+#include <vector>
 #include "osm_store.h"
 #include "output_object.h"
 
+typedef std::vector<OutputObject>::const_iterator OutputObjectsConstIt;
+typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
+typedef std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > TileIndexForZoom;
+
+class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
+{
+public:
+	ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData);
+
+	void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
+	Geometry buildWayGeometry(const TileBbox &bbox) const;
+
+private:
+	const class TileData &tileData;
+};
+
+typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAtSubLayerConstItPair;
+
+class TilesAtZoomIterator : public TileIndexForZoom::const_iterator
+{
+public:
+	TilesAtZoomIterator(TileIndexForZoom::const_iterator it, class TileData &tileData);
+
+	TileCoordinates GetCoordinates() const;
+	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
+
+private:
+	class TileData &tileData;
+};
+
+/**
+ * The tile worker process should access all map data through this class and its associated iterators.
+ * This gives us room for future work on getting input data in a lazy fashion (in order to avoid
+ * overwhelming memory resources.)
+ */
 class TileData
 {
+	friend ObjectsAtSubLayerIterator;
+	friend TilesAtZoomIterator;
+
 public:
 	TileData(const OSMStore &osmStore, const std::vector<Geometry> &cachedGeometries);
 
-	//The plan is to make this class a facade, and somehow hide the detail of these variables
+	class TilesAtZoomIterator GetTilesAtZoomBegin();
+	class TilesAtZoomIterator GetTilesAtZoomEnd();
+	size_t GetTilesAtZoomSize();
+
+	void SetTileIndexForZoom(const TileIndexForZoom *tileIndexForZoom);
+
+private:
 	const OSMStore &osmStore;
-	const std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > *tileIndexForZoom;
 	const std::vector<Geometry> &cachedGeometries;
+	const TileIndexForZoom *tileIndexForZoom;
 };
 
 #endif //_TILE_DATA_H

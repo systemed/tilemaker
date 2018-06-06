@@ -6,10 +6,7 @@
 using namespace ClipperLib;
 using namespace std;
 
-typedef vector<OutputObject>::const_iterator OutputObjectsConstIt;
-typedef pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
-
-void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstIt &ooSameLayerEnd, 
+void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	class SharedData *sharedData, const TileBbox &bbox, Geometry &g)
 {
 	// If a object is a polygon or a linestring that is followed by
@@ -35,7 +32,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries));
+				MultiPolygon gNew = boost::get<MultiPolygon>(jt.buildWayGeometry(bbox));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -70,7 +67,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 			jt++;
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries));
+				MultiLinestring gNew = boost::get<MultiLinestring>(jt.buildWayGeometry(bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -88,23 +85,21 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 	}
 }
 
-void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputObjectsConstIt &ooSameLayerEnd, 
+void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
-	const NodeStore &nodes = sharedData->tileData.osmStore.nodes;
-
-	for (OutputObjectsConstIt jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
+	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 			
 		if (jt->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
+			jt.buildNodeGeometry(bbox, featurePtr);
 			jt->writeAttributes(&keyList, &valueList, featurePtr);
 			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
 		} else {
 			Geometry g;
 			try {
-				g = jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries);
+				g = jt.buildWayGeometry(bbox);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -128,9 +123,11 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 	}
 }
 
-void ProcessLayer(uint zoom, TileCoordinates index, const vector<OutputObject> &ooList, vector_tile::Tile &tile, 
+void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
+	TileCoordinates index = it.GetCoordinates();
+
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
@@ -154,11 +151,7 @@ void ProcessLayer(uint zoom, TileCoordinates index, const vector<OutputObject> &
 			simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 		}
 
-		// compare only by `layer`
-		auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
-		// We get the range within ooList, where the layer of each object is `layerNum`.
-		// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-		OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
+		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
 		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, bbox, vtLayer, keyList, valueList);
 	}
@@ -185,29 +178,26 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
-	TileCoordinates index(0, 0);
 	uint zoom = sharedData->zoom;
-	for (auto it = sharedData->tileData.tileIndexForZoom->begin(); it != sharedData->tileData.tileIndexForZoom->end(); ++it) {
+	for (auto it = sharedData->tileData.GetTilesAtZoomBegin(); it != sharedData->tileData.GetTilesAtZoomEnd(); ++it) {
 		uint interval = 100;
 		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
 		if (threadId == 0 && (tc % interval) == 0) {
-			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileData.tileIndexForZoom->size() << "               \r";
+			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileData.GetTilesAtZoomSize() << "               \r";
 			cout.flush();
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
 
 		// Create tile
 		vector_tile::Tile tile;
-		index = it->first;
-		TileBbox bbox(index, zoom);
-		const vector<OutputObject> &ooList = it->second;
+		TileBbox bbox(it.GetCoordinates(), zoom);
 		if (sharedData->config.clippingBoxFromJSON && (sharedData->config.maxLon<=bbox.minLon 
 			|| sharedData->config.minLon>=bbox.maxLon || sharedData->config.maxLat<=bbox.minLat 
 			|| sharedData->config.minLat>=bbox.maxLat)) { continue; }
 
 		// Loop through layers
 		for (auto lt = sharedData->layers.layerOrder.begin(); lt != sharedData->layers.layerOrder.end(); ++lt) {
-			ProcessLayer(zoom, index, ooList, tile, bbox, *lt, sharedData);
+			ProcessLayer(zoom, it, tile, bbox, *lt, sharedData);
 		}
 
 		// Write to file or sqlite
