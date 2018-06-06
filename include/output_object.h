@@ -58,12 +58,12 @@ public:
 	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	// Returns a boost::variant -
 	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-	Geometry buildWayGeometry(const OSMStore &osmStore,
+	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
 	                      const TileBbox *bboxPtr, 
-	                      const std::vector<Geometry> &cachedGeometries) const;
+	                      const std::vector<Geometry> &cachedGeometries) const = 0;
 	
 	// Add a node geometry
-	void buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
+	virtual void buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
 	
 	// Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
@@ -72,6 +72,28 @@ public:
 	// (we can't easily use find() because of the different value-type encoding - 
 	//  should be possible to improve this though)
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
+};
+
+class OutputObjectOsmStore : public OutputObject
+{
+public:
+	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id);
+
+	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
+	                      const TileBbox *bboxPtr, 
+	                      const std::vector<Geometry> &cachedGeometries) const;
+	
+};
+
+class OutputObjectCached : public OutputObject
+{
+public:
+	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id);
+
+	virtual Geometry buildWayGeometry(const OSMStore &osmStore,
+	                      const TileBbox *bboxPtr, 
+	                      const std::vector<Geometry> &cachedGeometries) const;
+	
 };
 
 typedef std::shared_ptr<OutputObject> OutputObjectRef;

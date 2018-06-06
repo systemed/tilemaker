@@ -43,7 +43,7 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	TileIndex::const_iterator it = *this;
 	const std::vector<OutputObjectRef> &ooList = it->second;
-	OutputObjectRef referenceObj = make_shared<OutputObject>(POINT, layerNum, 0);
+	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0);
 	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }

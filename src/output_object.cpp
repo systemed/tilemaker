@@ -91,56 +91,6 @@ bool OutputObject::hasAttribute(const string &key) const {
 	return it != attributes.end();
 }
 
-// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
-// Returns a boost::variant -
-//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-Geometry OutputObject::buildWayGeometry(const OSMStore &osmStore,
-                      const TileBbox *bboxPtr, 
-                      const vector<Geometry> &cachedGeometries) const {
-
-	ClipGeometryVisitor clip(bboxPtr->clippingBox);
-
-	try {
-		if (geomType==POLYGON || geomType==CENTROID) {
-			// polygon
-			MultiPolygon mp;
-			if (osmStore.ways.count(objectID)) {
-				mp.emplace_back(osmStore.nodeListPolygon(objectID));
-			} else {
-				mp = osmStore.wayListMultiPolygon(objectID);
-			}
-
-			// write out
-			if (geomType==CENTROID) {
-				// centroid only
-				Point p;
-				geom::centroid(mp, p);
-				return clip(p);
-
-			} else {
-				// full polygon
-				return clip(mp);
-			}
-
-		} else if (geomType==LINESTRING) {
-			// linestring
-			Linestring ls;
-			if (osmStore.ways.count(objectID)) {
-				ls = osmStore.nodeListLinestring(objectID);
-			}
-			return clip(ls);
-
-		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			const Geometry &g = cachedGeometries[objectID];
-			return boost::apply_visitor(clip, g);
-		}
-	} catch (std::invalid_argument &err) {
-		cerr << "Error in buildWayGeometry: " << err.what() << endl;
-	}
-
-	return MultiLinestring(); // return a blank geometry
-}
-
 // Add a node geometry
 void OutputObject::buildNodeGeometry(LatpLon ll, const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
 	featurePtr->add_geometry(9);					// moveTo, repeat x1
@@ -228,5 +178,83 @@ namespace vector_tile {
 		std::string stry = y.SerializeAsString();
 		return strx < stry;
 	}
+}
+
+// ***********************************************
+
+OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id):
+	OutputObject(type, l, id)
+{
+
+}
+
+Geometry OutputObjectOsmStore::buildWayGeometry(const OSMStore &osmStore,
+                      const TileBbox *bboxPtr, 
+                      const std::vector<Geometry> &cachedGeometries) const
+{
+	ClipGeometryVisitor clip(bboxPtr->clippingBox);
+
+	try {
+		if (geomType==POLYGON || geomType==CENTROID) {
+			// polygon
+			MultiPolygon mp;
+			if (osmStore.ways.count(objectID)) {
+				mp.emplace_back(osmStore.nodeListPolygon(objectID));
+			} else {
+				mp = osmStore.wayListMultiPolygon(objectID);
+			}
+
+			// write out
+			if (geomType==CENTROID) {
+				// centroid only
+				Point p;
+				geom::centroid(mp, p);
+				return clip(p);
+
+			} else {
+				// full polygon
+				return clip(mp);
+			}
+
+		} else if (geomType==LINESTRING) {
+			// linestring
+			Linestring ls;
+			if (osmStore.ways.count(objectID)) {
+				ls = osmStore.nodeListLinestring(objectID);
+			}
+			return clip(ls);
+
+		}
+	} catch (std::invalid_argument &err) {
+		cerr << "Error in buildWayGeometry: " << err.what() << endl;
+	}
+
+	return MultiLinestring(); // return a blank geometry
+}
+
+// **********************************************
+
+OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id):
+	OutputObject(type, l, id)
+{
+
+}
+
+Geometry OutputObjectCached::buildWayGeometry(const OSMStore &osmStore,
+                      const TileBbox *bboxPtr, 
+                      const std::vector<Geometry> &cachedGeometries) const
+{
+	ClipGeometryVisitor clip(bboxPtr->clippingBox);
+
+	try {
+		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
+			const Geometry &g = cachedGeometries[objectID];
+			return boost::apply_visitor(clip, g);
+		}
+	} catch (std::invalid_argument &err) {
+		cerr << "Error in buildWayGeometry: " << err.what() << endl;
+	}
+
+	return MultiLinestring(); // return a blank geometry
 }
 

@@ -171,7 +171,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObject>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
+	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
@@ -180,7 +180,7 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObject>(CENTROID,
+	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
