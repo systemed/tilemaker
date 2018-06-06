@@ -181,9 +181,9 @@ OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_
 
 }
 
-Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox *bboxPtr) const
+Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const
 {
-	ClipGeometryVisitor clip(bboxPtr->clippingBox);
+	ClipGeometryVisitor clip(bbox.clippingBox);
 
 	try {
 		if (geomType==POLYGON || geomType==CENTROID) {
@@ -224,11 +224,11 @@ Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox *bboxPtr) const
 }
 
 // Add a node geometry
-void OutputObjectOsmStore::buildNodeGeometry(const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const
+void OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const
 {
 	LatpLon ll = osmStore.nodes.at(objectID);
 	featurePtr->add_geometry(9);					// moveTo, repeat x1
-	pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
+	pair<int,int> xy = bbox.scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
 	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
 	featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 	featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
@@ -244,9 +244,9 @@ OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l,
 
 }
 
-Geometry OutputObjectCached::buildWayGeometry(const TileBbox *bboxPtr) const
+Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
 {
-	ClipGeometryVisitor clip(bboxPtr->clippingBox);
+	ClipGeometryVisitor clip(bbox.clippingBox);
 
 	try {
 		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
@@ -260,7 +260,7 @@ Geometry OutputObjectCached::buildWayGeometry(const TileBbox *bboxPtr) const
 	return MultiLinestring(); // return a blank geometry
 }
 
-void OutputObjectCached::buildNodeGeometry(const TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const
+void OutputObjectCached::buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const
 {
 
 }

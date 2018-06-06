@@ -2,6 +2,8 @@
 #include "tile_data.h"
 using namespace std;
 
+typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
+
 ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData):
 	tileData(tileData)
 {

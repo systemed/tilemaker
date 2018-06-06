@@ -8,7 +8,6 @@
 #include "output_object.h"
 
 typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
-typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
