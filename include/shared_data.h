@@ -8,8 +8,8 @@
 
 #include "osm_store.h"
 #include "output_object.h"
-#include "osm_object.h"
 #include "mbtiles.h"
+#include "tile_data.h"
 
 struct LayerDef {
 	std::string name;
@@ -26,12 +26,27 @@ struct LayerDef {
 	std::map<std::string, uint> attributeMap;
 };
 
-class Config
+class LayerDefinition
 {
-public:
+public:	
 	std::vector<LayerDef> layers;				// List of layers
 	std::map<std::string,uint> layerMap;				// Layer->position map
 	std::vector<std::vector<uint> > layerOrder;		// Order of (grouped) layers, e.g. [ [0], [1,2,3], [4] ]
+
+	// Define a layer (as read from the .json file)
+	uint addLayer(std::string name, uint minzoom, uint maxzoom,
+			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+			const std::string &source,
+			const std::vector<std::string> &sourceColumns,
+			bool indexed,
+			const std::string &indexName,	
+			const std::string &writeTo);
+};
+
+class Config
+{
+public:
+	class LayerDefinition layers;
 	uint baseZoom, startZoom, endZoom;
 	uint mvtVersion;
 	bool includeID, compress, gzip, combineSimilarObjs;
@@ -45,16 +60,6 @@ public:
 	virtual ~Config();
 
 	void readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox);
-
-	// Define a layer (as read from the .json file)
-	uint addLayer(std::string name, uint minzoom, uint maxzoom,
-			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
-			const std::string &source,
-			const std::vector<std::string> &sourceColumns,
-			bool indexed,
-			const std::string &indexName,	
-			const std::string &writeTo);
-
 };
 
 class SharedData
@@ -64,17 +69,17 @@ public:
 
 	///Number of worker threads to create
 	int threadNum;
-	const OSMStore *osmStore;
+	class TileData &tileData;
+	const class LayerDefinition &layers;
 	bool verbose;
 	bool sqlite;
 	MBTiles mbtiles;
 	std::string outputFile;
-	const std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > *tileIndexForZoom;
-	const std::vector<Geometry> &cachedGeometries;
 
 	const class Config &config;
 
-	SharedData(class Config &configIn, OSMStore *osmStore, const std::vector<Geometry> &cachedGeometriesIn);
+	SharedData(const class Config &configIn, const class LayerDefinition &layers,
+		class TileData &tileData);
 	virtual ~SharedData();
 };
 

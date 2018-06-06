@@ -73,12 +73,12 @@ public:
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
 };
 
-// Comparision functions
+// Comparison functions
 
 bool operator==(const OutputObject &x, const OutputObject &y);
 
 // Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-// Note that attributes is preffered to objectID.
+// Note that attributes is preferred to objectID.
 // It is to arrange objects with the identical attributes continuously.
 // Such objects will be merged into one object, to reduce the size of output.
 bool operator<(const OutputObject &x, const OutputObject &y);

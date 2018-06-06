@@ -50,13 +50,16 @@ public:
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
 
-	class Config &config;
+	const class Config &config;
+	class LayerDefinition &layers;
+	
 	std::vector<OutputObject> outputs;			// All output objects
 	std::map<std::string, std::string> currentTags;
 
 	// ----	initialization routines
 
-	OSMObject(class Config &configIn, kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
+	OSMObject(const class Config &configIn, class LayerDefinition &layers, 
+		kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
 		std::map<uint,std::string> &namePtr, OSMStore *storePtr, 
 		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex);
 

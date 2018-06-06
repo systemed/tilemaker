@@ -35,7 +35,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -70,7 +70,7 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 			jt++;
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries));
+				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -92,7 +92,7 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
-	const NodeStore &nodes = sharedData->osmStore->nodes;
+	const NodeStore &nodes = sharedData->tileData.osmStore.nodes;
 
 	for (OutputObjectsConstIt jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 			
@@ -104,7 +104,7 @@ void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputOb
 		} else {
 			Geometry g;
 			try {
-				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->cachedGeometries);
+				g = jt->buildWayGeometry(sharedData->tileData.osmStore, &bbox, sharedData->tileData.cachedGeometries);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -141,7 +141,7 @@ void ProcessLayer(uint zoom, TileCoordinates index, const vector<OutputObject> &
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
-		const LayerDef &ld = sharedData->config.layers[layerNum];
+		const LayerDef &ld = sharedData->layers.layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {
@@ -165,7 +165,7 @@ void ProcessLayer(uint zoom, TileCoordinates index, const vector<OutputObject> &
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(sharedData->config.layers[ltx.at(0)].name);
+		vtLayer->set_name(sharedData->layers.layers[ltx.at(0)].name);
 		vtLayer->set_version(sharedData->config.mvtVersion);
 		vtLayer->set_extent(4096);
 		for (uint j=0; j<keyList.size()  ; j++) {
@@ -187,11 +187,11 @@ int outputProc(uint threadId, class SharedData *sharedData)
 	uint tc = 0;
 	TileCoordinates index(0, 0);
 	uint zoom = sharedData->zoom;
-	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
+	for (auto it = sharedData->tileData.tileIndexForZoom->begin(); it != sharedData->tileData.tileIndexForZoom->end(); ++it) {
 		uint interval = 100;
 		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
 		if (threadId == 0 && (tc % interval) == 0) {
-			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom->size() << "               \r";
+			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileData.tileIndexForZoom->size() << "               \r";
 			cout.flush();
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
@@ -206,7 +206,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			|| sharedData->config.minLat>=bbox.maxLat)) { continue; }
 
 		// Loop through layers
-		for (auto lt = sharedData->config.layerOrder.begin(); lt != sharedData->config.layerOrder.end(); ++lt) {
+		for (auto lt = sharedData->layers.layerOrder.begin(); lt != sharedData->layers.layerOrder.end(); ++lt) {
 			ProcessLayer(zoom, index, ooList, tile, bbox, *lt, sharedData);
 		}
 

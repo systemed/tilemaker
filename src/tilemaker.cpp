@@ -65,15 +65,16 @@ int lua_error_handler(int errCode, const char *errMessage)
 	exit(0);
 }
 
-void loadExternalShpFiles(class Config &config, bool hasClippingBox, const Box &clippingBox,
+void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
+				bool hasClippingBox, const Box &clippingBox,
                 map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
 				std::vector<Geometry> &cachedGeometries,
 				OSMObject &osmObject)
 {
-	for(size_t layerNum=0; layerNum<config.layers.size(); layerNum++)	
+	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
 	{
 		// External layer sources
-		LayerDef &layer = config.layers[layerNum];
+		LayerDef &layer = layers.layers[layerNum];
 		if(layer.indexed)
 			osmObject.indices.operator[](layer.name)=RTree();
 
@@ -226,11 +227,12 @@ int main(int argc, char* argv[]) {
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 
-	OSMObject osmObject(config, luaState, cachedGeometries, cachedGeometryNames, &osmStore, tileIndex);
+	class LayerDefinition layers(config.layers);
+	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, tileIndex);
 
 	// ---- Load external shp files
 
-	loadExternalShpFiles(config, hasClippingBox, clippingBox, tileIndex, cachedGeometries, osmObject);
+	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, tileIndex, cachedGeometries, osmObject);
 
 	// ---- Call init_function of Lua logic
 
@@ -257,7 +259,9 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise SharedData
 
-	class SharedData sharedData(config, &osmStore, cachedGeometries);
+	class TileData tileData(osmStore, cachedGeometries);
+
+	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
 	sharedData.verbose = verbose;
@@ -294,7 +298,7 @@ int main(int argc, char* argv[]) {
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
 			// at z14, we can just use tileIndex
-			sharedData.tileIndexForZoom = &tileIndex;
+			tileData.tileIndexForZoom = &tileIndex;
 		} else {
 			// otherwise, we need to run through the z14 list, and assign each way
 			// to a tile at our zoom level
@@ -314,7 +318,7 @@ int main(int argc, char* argv[]) {
 				sort(ooset.begin(), ooset.end());
 				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 			}
-			sharedData.tileIndexForZoom = &generatedIndex;
+			tileData.tileIndexForZoom = &generatedIndex;
 
 		}
 
@@ -332,7 +336,7 @@ int main(int argc, char* argv[]) {
 			for (auto &t: worker) t.join();
 
 		}
-		sharedData.tileIndexForZoom = nullptr;
+		tileData.tileIndexForZoom = nullptr;
 	}
 
 	// ----	Close tileset

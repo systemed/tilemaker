@@ -1,19 +1,54 @@
 #include "shared_data.h"
 using namespace std;
 
-SharedData::SharedData(class Config &configIn, OSMStore *osmStore, const std::vector<Geometry> &cachedGeometriesIn):
-	cachedGeometries(cachedGeometriesIn),
+SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
+	class TileData &tileData):
+	tileData(tileData),
+	layers(layers),
 	config(configIn)
 {
-	this->osmStore = osmStore;
 	sqlite=false;
-	this->tileIndexForZoom = nullptr;
 	verbose = false;
 }
 
 SharedData::~SharedData()
 {
 
+}
+
+// *****************************************************************
+
+// Define a layer (as read from the .json file)
+uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
+		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+		const std::string &source,
+		const std::vector<std::string> &sourceColumns,
+		bool indexed,
+		const std::string &indexName,		
+		const std::string &writeTo) 
+{
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+		source, sourceColumns, indexed, indexName,
+		std::map<std::string,uint>() };
+	layers.push_back(layer);
+	uint layerNum = layers.size()-1;
+	layerMap[name] = layerNum;
+
+	if (writeTo.empty()) {
+		vector<uint> r = { layerNum };
+		layerOrder.push_back(r);
+	} else {
+		if (layerMap.count(writeTo) == 0) {
+			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
+		}
+		uint lookingFor = layerMap[writeTo];
+		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
+			if (it->at(0)==lookingFor) {
+				it->push_back(layerNum);
+			}
+		}
+	}
+	return layerNum;
 }
 
 // *****************************************************************
@@ -103,7 +138,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		}
 		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 
-		addLayer(layerName, minZoom, maxZoom,
+		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 				source, sourceColumns, indexed, indexName,
 				writeTo);
@@ -112,38 +147,5 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
 	}
-}
-
-// Define a layer (as read from the .json file)
-uint Config::addLayer(string name, uint minzoom, uint maxzoom,
-		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
-		const std::string &source,
-		const std::vector<std::string> &sourceColumns,
-		bool indexed,
-		const std::string &indexName,		
-		const std::string &writeTo) 
-{
-	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-		source, sourceColumns, indexed, indexName,
-		std::map<std::string,uint>() };
-	layers.push_back(layer);
-	uint layerNum = layers.size()-1;
-	layerMap[name] = layerNum;
-
-	if (writeTo.empty()) {
-		vector<uint> r = { layerNum };
-		layerOrder.push_back(r);
-	} else {
-		if (layerMap.count(writeTo) == 0) {
-			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
-		}
-		uint lookingFor = layerMap[writeTo];
-		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
-			if (it->at(0)==lookingFor) {
-				it->push_back(layerNum);
-			}
-		}
-	}
-	return layerNum;
 }
 

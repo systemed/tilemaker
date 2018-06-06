@@ -4,14 +4,16 @@ using namespace rapidjson;
 
 // ----	initialization routines
 
-OSMObject::OSMObject(class Config &configIn, kaguya::State &luaObj, 
+OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers,
+	kaguya::State &luaObj, 
 	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
 	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex):
 	luaState(luaObj),
 	cachedGeometries(geomPtr),
 	cachedGeometryNames(namePtr),
 	tileIndex(tileIndex),
-	config(configIn)
+	config(configIn),
+	layers(layers)
 {
 	newWayID = MAX_WAY_ID;
 	osmStore = storePtr;
@@ -166,20 +168,20 @@ const MultiPolygon &OSMObject::multiPolygon() {
 
 // Add layer
 void OSMObject::Layer(const string &layerName, bool area) {
-	if (config.layerMap.count(layerName) == 0) {
+	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 	OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
-					config.layerMap[layerName],
+					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
 }
 void OSMObject::LayerAsCentroid(const string &layerName) {
-	if (config.layerMap.count(layerName) == 0) {
+	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 	OutputObject oo(CENTROID,
-					config.layerMap[layerName],
+					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
 }
@@ -212,7 +214,7 @@ void OSMObject::AttributeBoolean(const string &key, const bool val) {
 
 // Record attribute name/type for vector_layers table
 void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
-	config.layers[layer].attributeMap[key] = type;
+	layers.layers[layer].attributeMap[key] = type;
 }
 
 std::string OSMObject::serialiseLayerJSON() {
@@ -221,7 +223,7 @@ std::string OSMObject::serialiseLayerJSON() {
 	Document::AllocatorType& allocator = document.GetAllocator();
 
 	Value layerArray(kArrayType);
-	for (auto it = config.layers.begin(); it != config.layers.end(); ++it) {
+	for (auto it = layers.layers.begin(); it != layers.layers.end(); ++it) {
 		Value fieldObj(kObjectType);
 		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
 			Value k(jt->first.c_str(), allocator);
