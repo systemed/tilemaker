@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
 				TileCoordinate tilex = index.x / pow(2, sharedData.config.baseZoom-zoom);
 				TileCoordinate tiley = index.y / pow(2, sharedData.config.baseZoom-zoom);
 				TileCoordinates newIndex(tilex, tiley);
-				const vector<OutputObject> &ooset = it->second;
+				const vector<OutputObjectRef> &ooset = it->second;
 				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
 					generatedIndex[newIndex].push_back(*jt);
 				}

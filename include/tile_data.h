@@ -3,12 +3,13 @@
 
 #include <map>
 #include <vector>
+#include <memory>
 #include "osm_store.h"
 #include "output_object.h"
 
-typedef std::vector<OutputObject>::const_iterator OutputObjectsConstIt;
+typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
-typedef std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > TileIndex;
+typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
 {

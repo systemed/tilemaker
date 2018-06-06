@@ -171,7 +171,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	OutputObject oo(isWay ? (area ? POLYGON : LINESTRING) : POINT,
+	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObject>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
@@ -180,7 +180,7 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	OutputObject oo(CENTROID,
+	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObject>(CENTROID,
 					layers.layerMap[layerName],
 					osmID);
 	outputs.push_back(oo);
@@ -192,24 +192,24 @@ void OSMObject::Attribute(const string &key, const string &val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs[outputs.size()-1].addAttribute(key, v);
-	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 0);
+	outputs[outputs.size()-1]->addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 0);
 }
 
 void OSMObject::AttributeNumeric(const string &key, const float val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs[outputs.size()-1].addAttribute(key, v);
-	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 1);
+	outputs[outputs.size()-1]->addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 1);
 }
 
 void OSMObject::AttributeBoolean(const string &key, const bool val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs[outputs.size()-1].addAttribute(key, v);
-	setVectorLayerMetadata(outputs[outputs.size()-1].layer, key, 2);
+	outputs[outputs.size()-1]->addAttribute(key, v);
+	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 2);
 }
 
 // Record attribute name/type for vector_layers table
@@ -323,7 +323,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
 				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->geomType == POLYGON) {
+					if ((*jt)->geomType == POLYGON) {
 						polygonExists = true;
 						continue;
 					}
@@ -337,7 +337,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-						if (jt->geomType != POLYGON) continue;
+						if ((*jt)->geomType != POLYGON) continue;
 						tileIndex[index].push_back(*jt);
 					}
 				}

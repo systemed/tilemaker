@@ -11,6 +11,8 @@ using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;
 
+
+
 ClipGeometryVisitor::ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) 
 {
 	const Point &minc = clippingBox.min_corner();
@@ -192,26 +194,26 @@ int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_t
 
 // Comparision functions
 
-bool operator==(const OutputObject &x, const OutputObject &y) {
+bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
-		x.layer == y.layer &&
-		x.geomType == y.geomType &&
-		x.attributes == y.attributes &&
-		x.objectID == y.objectID;
+		x->layer == y->layer &&
+		x->geomType == y->geomType &&
+		x->attributes == y->attributes &&
+		x->objectID == y->objectID;
 }
 
 // Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
 // Note that attributes is preffered to objectID.
 // It is to arrange objects with the identical attributes continuously.
 // Such objects will be merged into one object, to reduce the size of output.
-bool operator<(const OutputObject &x, const OutputObject &y) {
-	if (x.layer < y.layer) return true;
-	if (x.layer > y.layer) return false;
-	if (x.geomType < y.geomType) return true;
-	if (x.geomType > y.geomType) return false;
-	if (x.attributes < y.attributes) return true;
-	if (x.attributes > y.attributes) return false;
-	if (x.objectID < y.objectID) return true;
+bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
+	if (x->layer < y->layer) return true;
+	if (x->layer > y->layer) return false;
+	if (x->geomType < y->geomType) return true;
+	if (x->geomType > y->geomType) return false;
+	if (x->attributes < y->attributes) return true;
+	if (x->attributes > y->attributes) return false;
+	if (x->objectID < y->objectID) return true;
 	return false;
 }
 

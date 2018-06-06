@@ -12,13 +12,13 @@ void ObjectsAtSubLayerIterator::buildNodeGeometry(const TileBbox &bbox, vector_t
 {
 	const NodeStore &nodes = tileData.osmStore.nodes;
 	OutputObjectsConstIt it = *this;
-	return it->buildNodeGeometry(nodes.at(it->objectID), &bbox, featurePtr);
+	return (*it)->buildNodeGeometry(nodes.at((*it)->objectID), &bbox, featurePtr);
 }
 
 Geometry ObjectsAtSubLayerIterator::buildWayGeometry(const TileBbox &bbox) const
 {
 	OutputObjectsConstIt it = *this;
-	return it->buildWayGeometry(tileData.osmStore, &bbox, tileData.cachedGeometries);
+	return (*it)->buildWayGeometry(tileData.osmStore, &bbox, tileData.cachedGeometries);
 }
 
 // ********************************
@@ -38,12 +38,13 @@ TileCoordinates TilesAtZoomIterator::GetCoordinates() const
 ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const
 {
 	// compare only by `layer`
-	auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
+	auto layerComp = [](const OutputObjectRef &x, const OutputObjectRef &y) -> bool { return x->layer < y->layer; };
 	// We get the range within ooList, where the layer of each object is `layerNum`.
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	TileIndex::const_iterator it = *this;
-	const std::vector<OutputObject> &ooList = it->second;
-	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
+	const std::vector<OutputObjectRef> &ooList = it->second;
+	OutputObjectRef referenceObj = make_shared<OutputObject>(POINT, layerNum, 0);
+	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }
 

@@ -29,7 +29,7 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObject &oo, TileIndex &tileIndex, uint baseZoom,
+void addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
@@ -44,7 +44,7 @@ void addToTileIndexByBbox(OutputObject &oo, TileIndex &tileIndex, uint baseZoom,
 }
 
 // Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObject &oo, TileIndex &tileIndex, uint baseZoom, const Linestring &ls) {
+void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, uint baseZoom, const Linestring &ls) {
 	uint lastx = UINT_MAX;
 	uint lasty;
 	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
@@ -66,7 +66,7 @@ void addToTileIndexPolyline(OutputObject &oo, TileIndex &tileIndex, uint baseZoo
 // Read requested attributes from a shapefile, and encode into an OutputObject
 void addShapefileAttributes(
 		DBFHandle &dbf,
-		OutputObject &oo,
+		OutputObjectRef &oo,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
 		OSMObject &osmObject) {
 
@@ -76,16 +76,16 @@ void addShapefileAttributes(
 		vector_tile::Tile_Value v;
 		switch (columnTypeMap[pos]) {
 			case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo.layer, key, 1);
+			         osmObject.setVectorLayerMetadata(oo->layer, key, 1);
 			         break;
 			case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo.layer, key, 1);
+			         osmObject.setVectorLayerMetadata(oo->layer, key, 1);
 			         break;
 			default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo.layer, key, 3);
+			         osmObject.setVectorLayerMetadata(oo->layer, key, 3);
 			         break;
 		}
-		oo.addAttribute(key, v);
+		oo->addAttribute(key, v);
 	}
 }
 
@@ -136,7 +136,7 @@ void readShapefile(string filename,
 				uint tilex =  lon2tilex(p.x(), baseZoom);
 				uint tiley = latp2tiley(p.y(), baseZoom);
 				cachedGeometries.push_back(p);
-				OutputObject oo(CACHED_POINT, layerNum, cachedGeometries.size()-1);
+				OutputObjectRef oo = std::make_shared<OutputObject>(CACHED_POINT, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 				if (isIndexed) {
@@ -158,7 +158,7 @@ void readShapefile(string filename,
 				geom::intersection(ls, clippingBox, out);
 				for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
 					cachedGeometries.push_back(*it);
-					OutputObject oo(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1);
+					OutputObjectRef oo = std::make_shared<OutputObject>(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1);
 					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
 					if (isIndexed) {
@@ -224,7 +224,7 @@ void readShapefile(string filename,
 			if (boost::size(out)>0) {
 				// create OutputObject
 				cachedGeometries.push_back(out);
-				OutputObject oo(CACHED_POLYGON, layerNum, cachedGeometries.size()-1);
+				OutputObjectRef oo = std::make_shared<OutputObject>(CACHED_POLYGON, layerNum, cachedGeometries.size()-1);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 				// add to tile index
 				geom::model::box<Point> box;

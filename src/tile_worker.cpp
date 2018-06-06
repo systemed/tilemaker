@@ -12,13 +12,13 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
-	auto gTyp = jt->geomType;
+	auto gTyp = (*jt)->geomType;
 	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
 		MultiPolygon *gAcc = nullptr;
 		try{
 			gAcc = &boost::get<MultiPolygon>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
+			cerr << "Error: Polygon " << (*jt)->objectID << " has unexpected type" << endl;
 			return;
 		}
 	
@@ -26,8 +26,8 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 		ConvertToClipper(*gAcc, current);
 
 		while (jt+1 != ooSameLayerEnd &&
-				(jt+1)->geomType == gTyp &&
-				(jt+1)->attributes == jt->attributes) {
+				(*(jt+1))->geomType == gTyp &&
+				(*(jt+1))->attributes == (*jt)->attributes) {
 			jt++;
 
 			try {
@@ -47,7 +47,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing POLYGON " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
 			}
 		}
 
@@ -58,12 +58,12 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 		try {
 		gAcc = &boost::get<MultiLinestring>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
+			cerr << "Error: LineString " << (*jt)->objectID << " has unexpected type" << endl;
 			return;
 		}
 		while (jt+1 != ooSameLayerEnd &&
-				(jt+1)->geomType == gTyp &&
-				(jt+1)->attributes == jt->attributes) {
+				(*(jt+1))->geomType == gTyp &&
+				(*(jt+1))->attributes == (*jt)->attributes) {
 			jt++;
 			try
 			{
@@ -75,10 +75,10 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing LINESTRING " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
 			}
 			catch (boost::bad_get &err) {
-				cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
+				cerr << "Error while processing LINESTRING " << (*jt)->objectID << " has unexpected type" << endl;
 				continue;
 			}
 		}
@@ -91,11 +91,11 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 {
 	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 			
-		if (jt->geomType == POINT) {
+		if ((*jt)->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			jt.buildNodeGeometry(bbox, featurePtr);
-			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
+			(*jt)->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id((*jt)->objectID); }
 		} else {
 			Geometry g;
 			try {
@@ -104,7 +104,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing geometry " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing geometry " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
 				continue;
 			}
 
@@ -116,8 +116,8 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
+			(*jt)->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id((*jt)->objectID); }
 
 		}
 	}

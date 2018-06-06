@@ -33,7 +33,7 @@ public:
 	std::vector<Geometry> &cachedGeometries;		// Cached geometries
 	std::map<uint,std::string> &cachedGeometryNames;	// Cached geometry names
 	OSMStore *osmStore;						// Global OSM store
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex;
+	TileIndex &tileIndex;
 
 	uint64_t osmID;							// ID of OSM object
 	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
@@ -53,7 +53,7 @@ public:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	std::vector<OutputObject> outputs;			// All output objects
+	std::vector<OutputObjectRef> outputs;			// All output objects
 	std::map<std::string, std::string> currentTags;
 
 	// ----	initialization routines
@@ -61,7 +61,7 @@ public:
 	OSMObject(const class Config &configIn, class LayerDefinition &layers, 
 		kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
 		std::map<uint,std::string> &namePtr, OSMStore *storePtr, 
-		std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex);
+		TileIndex &tileIndex);
 
 	// ----	Helpers provided for main routine
 
