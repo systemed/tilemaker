@@ -7,7 +7,7 @@ using namespace rapidjson;
 OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers,
 	kaguya::State &luaObj, 
 	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
-	std::map< TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > &tileIndex):
+	TileIndex &tileIndex):
 	luaState(luaObj),
 	cachedGeometries(geomPtr),
 	cachedGeometryNames(namePtr),

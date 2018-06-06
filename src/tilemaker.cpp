@@ -67,7 +67,7 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 				bool hasClippingBox, const Box &clippingBox,
-                map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
+				TileIndex &tileIndex, 
 				std::vector<Geometry> &cachedGeometries,
 				OSMObject &osmObject)
 {
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	// For each tile, objects to be used in processing
-	map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > tileIndex;				
+	TileIndex tileIndex;				
 
 	// ----	Read command-line options
 	
@@ -289,7 +289,7 @@ int main(int argc, char* argv[]) {
 	// Loop through zoom levels
 	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
-		map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > generatedIndex;
+		TileIndex generatedIndex;
 		if (zoom==sharedData.config.baseZoom) {
 			// ----	Sort each tile
 			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {

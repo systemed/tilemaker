@@ -29,7 +29,7 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObject &oo, map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, uint baseZoom,
+void addToTileIndexByBbox(OutputObject &oo, TileIndex &tileIndex, uint baseZoom,
                           double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
@@ -44,7 +44,7 @@ void addToTileIndexByBbox(OutputObject &oo, map< TileCoordinates, vector<OutputO
 }
 
 // Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObject &oo, map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, uint baseZoom, const Linestring &ls) {
+void addToTileIndexPolyline(OutputObject &oo, TileIndex &tileIndex, uint baseZoom, const Linestring &ls) {
 	uint lastx = UINT_MAX;
 	uint lasty;
 	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
@@ -94,7 +94,7 @@ void addShapefileAttributes(
 void readShapefile(string filename, 
                    vector<string> &columns,
                    const Box &clippingBox, 
-                   map< TileCoordinates, vector<OutputObject>, TileCoordinatesCompare > &tileIndex, 
+                   TileIndex &tileIndex, 
                    vector<Geometry> &cachedGeometries,
 				   OSMObject &osmObject,
                    uint baseZoom, uint layerNum, const string &layerName,
@@ -229,7 +229,10 @@ void readShapefile(string filename,
 				// add to tile index
 				geom::model::box<Point> box;
 				geom::envelope(out, box);
-				addToTileIndexByBbox(oo, tileIndex, baseZoom, box.min_corner().get<0>(), box.min_corner().get<1>(), box.max_corner().get<0>(), box.max_corner().get<1>());
+				addToTileIndexByBbox(oo, tileIndex, baseZoom, 
+					box.min_corner().get<0>(), box.min_corner().get<1>(), 
+					box.max_corner().get<0>(), box.max_corner().get<1>());
+
 				if (isIndexed) {
 					uint id = cachedGeometries.size()-1;
 					osmObject.indices.at(layerName).insert(std::make_pair(box, id));

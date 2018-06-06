@@ -23,15 +23,15 @@ Geometry ObjectsAtSubLayerIterator::buildWayGeometry(const TileBbox &bbox) const
 
 // ********************************
 
-TilesAtZoomIterator::TilesAtZoomIterator(TileIndexForZoom::const_iterator it, class TileData &tileData):
+TilesAtZoomIterator::TilesAtZoomIterator(TileIndex::const_iterator it, class TileData &tileData):
 	tileData(tileData)
 {
-	*(TileIndexForZoom::const_iterator *)this = it;
+	*(TileIndex::const_iterator *)this = it;
 }
 
 TileCoordinates TilesAtZoomIterator::GetCoordinates() const
 {
-	TileIndexForZoom::const_iterator it = *this;
+	TileIndex::const_iterator it = *this;
 	return it->first;
 }
 
@@ -41,7 +41,7 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 	auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
 	// We get the range within ooList, where the layer of each object is `layerNum`.
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-	TileIndexForZoom::const_iterator it = *this;
+	TileIndex::const_iterator it = *this;
 	const std::vector<OutputObject> &ooList = it->second;
 	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
@@ -71,7 +71,7 @@ size_t TileData::GetTilesAtZoomSize()
 	return tileIndexForZoom->size();
 }
 
-void TileData::SetTileIndexForZoom(const TileIndexForZoom *tileIndexForZoom)
+void TileData::SetTileIndexForZoom(const TileIndex *tileIndexForZoom)
 {
 	this->tileIndexForZoom = tileIndexForZoom;
 }

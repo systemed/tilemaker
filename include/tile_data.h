@@ -8,7 +8,7 @@
 
 typedef std::vector<OutputObject>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
-typedef std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > TileIndexForZoom;
+typedef std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare > TileIndex;
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
 {
@@ -24,10 +24,10 @@ private:
 
 typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAtSubLayerConstItPair;
 
-class TilesAtZoomIterator : public TileIndexForZoom::const_iterator
+class TilesAtZoomIterator : public TileIndex::const_iterator
 {
 public:
-	TilesAtZoomIterator(TileIndexForZoom::const_iterator it, class TileData &tileData);
+	TilesAtZoomIterator(TileIndex::const_iterator it, class TileData &tileData);
 
 	TileCoordinates GetCoordinates() const;
 	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
@@ -53,12 +53,12 @@ public:
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
 	size_t GetTilesAtZoomSize();
 
-	void SetTileIndexForZoom(const TileIndexForZoom *tileIndexForZoom);
+	void SetTileIndexForZoom(const TileIndex *tileIndexForZoom);
 
 private:
 	const OSMStore &osmStore;
 	const std::vector<Geometry> &cachedGeometries;
-	const TileIndexForZoom *tileIndexForZoom;
+	const TileIndex *tileIndexForZoom;
 };
 
 #endif //_TILE_DATA_H
