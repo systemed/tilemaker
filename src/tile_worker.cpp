@@ -195,7 +195,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 	// Loop through tiles
 	uint tc = 0;
 	uint zoom = sharedData->zoom;
-	for (auto it = sharedData->tileData.GetTilesAtZoomBegin(); it != sharedData->tileData.GetTilesAtZoomEnd(); ++it) {
+	for (TilesAtZoomIterator it = sharedData->tileData.GetTilesAtZoomBegin(); it != sharedData->tileData.GetTilesAtZoomEnd(); ++it) {
 		uint interval = 100;
 		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
 		if (threadId == 0 && (tc % interval) == 0) {

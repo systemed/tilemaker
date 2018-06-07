@@ -1,16 +1,17 @@
 #include <algorithm>
+#include <iostream>
 #include "tile_data.h"
 using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileIndex &dstTiles)
+void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
 {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
 		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
 			TileCoordinates index = it->first;
-			dstTiles[index].insert(dstTiles[index].end(), it->second.begin(), it->second.end());
+			dstCoords.insert(index);
 		}
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
@@ -20,9 +21,34 @@ void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, Ti
 			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
 			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
 			TileCoordinates newIndex(tilex, tiley);
-			const vector<OutputObjectRef> &ooset = it->second;
-			for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
-				dstTiles[newIndex].push_back(*jt);
+			dstCoords.insert(newIndex);
+		}
+	}
+}
+
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
+	std::vector<OutputObjectRef> &dstTile)
+{
+	if (zoom==baseZoom) {
+		// at z14, we can just use tileIndex
+		auto oosetIt = srcTiles.find(dstIndex);
+		if(oosetIt == srcTiles.end()) return;
+		dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+	} else {
+		// otherwise, we need to run through the z14 list, and assign each way
+		// to a tile at our zoom level
+		int scale = pow(2, baseZoom-zoom);
+		TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
+		TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
+
+		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
+		{
+			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
+			{
+				TileCoordinates srcIndex(x, y);
+				auto oosetIt = srcTiles.find(srcIndex);
+				if(oosetIt == srcTiles.end()) continue;
+				dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
 			}
 		}
 	}
@@ -31,36 +57,60 @@ void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, Ti
 // *********************************
 
 ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData):
+	OutputObjectsConstIt(it),
 	tileData(tileData)
 {
-	*(OutputObjectsConstIt *)this = it;
+
 }
 
 // ********************************
 
-TilesAtZoomIterator::TilesAtZoomIterator(TileIndex::const_iterator it, class TileData &tileData):
-	tileData(tileData)
+TilesAtZoomIterator::TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom):
+	TileCoordinatesSet::const_iterator(it),
+	tileData(tileData),
+	zoom(zoom)
 {
-	*(TileIndex::const_iterator *)this = it;
+	RefreshData();
 }
 
 TileCoordinates TilesAtZoomIterator::GetCoordinates() const
 {
-	TileIndex::const_iterator it = *this;
-	return it->first;
+	TileCoordinatesSet::const_iterator it = *this;
+	return *it;
 }
 
 ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const
 {
+	TileCoordinatesSet::const_iterator it = *this;
+
 	// compare only by `layer`
 	auto layerComp = [](const OutputObjectRef &x, const OutputObjectRef &y) -> bool { return x->layer < y->layer; };
 	// We get the range within ooList, where the layer of each object is `layerNum`.
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-	TileIndex::const_iterator it = *this;
-	const std::vector<OutputObjectRef> &ooList = it->second;
+	const std::vector<OutputObjectRef> &ooList = data;
 	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0, *(OSMStore *)nullptr);
 	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
+}
+
+TilesAtZoomIterator& TilesAtZoomIterator::operator++()
+{
+	TileCoordinatesSet::const_iterator::operator++();
+	RefreshData();
+	return *this;
+}
+
+void TilesAtZoomIterator::RefreshData()
+{
+	data.clear();
+	TileCoordinatesSet::const_iterator it = *this;
+	if(it == tileData.tileCoordinates.end()) return;
+
+	MergeSingleTileDataAtZoom(*it, zoom, tileData.baseZoom, tileData.tileIndexPbf, data);
+	MergeSingleTileDataAtZoom(*it, zoom, tileData.baseZoom, tileData.tileIndexShp, data);
+
+	sort(data.begin(), data.end());
+	data.erase(unique(data.begin(), data.end()), data.end());
 }
 
 // *********************************
@@ -70,36 +120,32 @@ TileData::TileData(const TileIndex &tileIndexPbf, const TileIndex &tileIndexShp,
 	tileIndexShp(tileIndexShp),
 	baseZoom(baseZoom)
 {
-
+	zoom = 0;
 }
 
 class TilesAtZoomIterator TileData::GetTilesAtZoomBegin()
 {
-	return TilesAtZoomIterator(generatedIndex.begin(), *this);
+	return TilesAtZoomIterator(tileCoordinates.begin(), *this, zoom);
 }
 
 class TilesAtZoomIterator TileData::GetTilesAtZoomEnd()
 {
-	return TilesAtZoomIterator(generatedIndex.end(), *this);
+	return TilesAtZoomIterator(tileCoordinates.end(), *this, zoom);
 }
 
 size_t TileData::GetTilesAtZoomSize()
 {
-	return generatedIndex.size();
+	size_t count=0;
+	for(auto it = tileCoordinates.begin(); it != tileCoordinates.end(); it++) count++;
+	return count;
 }
 
 void TileData::SetZoom(uint zoom)
 {
-	// Create list of tiles, and the data in them
-	generatedIndex.clear();
-	MergeTileDataAtZoom(zoom, baseZoom, tileIndexPbf, generatedIndex);
-	MergeTileDataAtZoom(zoom, baseZoom, tileIndexShp, generatedIndex);
-
-	// ----	Sort each tile
-	for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
-		auto &ooset = it->second;
-		sort(ooset.begin(), ooset.end());
-		ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-	}
+	this->zoom = zoom;
+	// Create list of tiles
+	tileCoordinates.clear();
+	MergeTileCoordsAtZoom(zoom, baseZoom, tileIndexPbf, tileCoordinates);
+	MergeTileCoordsAtZoom(zoom, baseZoom, tileIndexShp, tileCoordinates);
 }
 

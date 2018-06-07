@@ -28,9 +28,9 @@ public:
 struct TileCoordinatesCompare
 {
     bool operator()(const class TileCoordinates_& a, const class TileCoordinates_& b) const {
-		if(a.x < b.x)
-			return false;
 		if(a.x > b.x)
+			return false;
+		if(a.x < b.x)
 			return true;
         return a.y < b.y;
     }
