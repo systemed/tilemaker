@@ -92,6 +92,30 @@ void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 	}
 }
 
+void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileIndex &dstTiles)
+{
+	if (zoom==baseZoom) {
+		// at z14, we can just use tileIndex
+		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+			TileCoordinates index = it->first;
+			dstTiles[index].insert(dstTiles[index].end(), it->second.begin(), it->second.end());
+		}
+	} else {
+		// otherwise, we need to run through the z14 list, and assign each way
+		// to a tile at our zoom level
+		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+			TileCoordinates index = it->first;
+			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
+			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
+			TileCoordinates newIndex(tilex, tiley);
+			const vector<OutputObjectRef> &ooset = it->second;
+			for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
+				dstTiles[newIndex].push_back(*jt);
+			}
+		}
+	}
+}
+
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
@@ -102,7 +126,7 @@ int main(int argc, char* argv[]) {
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	// For each tile, objects to be used in processing
-	TileIndex tileIndex;				
+	TileIndex tileIndexPbf, tileIndexShp;
 
 	// ----	Read command-line options
 	
@@ -228,11 +252,11 @@ int main(int argc, char* argv[]) {
 		config.combineSimilarObjs = combineSimilarObjs;
 
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, tileIndex);
+	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, tileIndexPbf);
 
 	// ---- Load external shp files
 
-	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, tileIndex, cachedGeometries, osmObject);
+	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, tileIndexShp, cachedGeometries, osmObject);
 
 	// ---- Call init_function of Lua logic
 
@@ -290,37 +314,17 @@ int main(int argc, char* argv[]) {
 	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 		// Create list of tiles, and the data in them
 		TileIndex generatedIndex;
-		if (zoom==sharedData.config.baseZoom) {
-			// ----	Sort each tile
-			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
-				auto &ooset = it->second;
-				sort(ooset.begin(), ooset.end());
-				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-			}
-			// at z14, we can just use tileIndex
-			tileData.SetTileIndexForZoom(&tileIndex);
-		} else {
-			// otherwise, we need to run through the z14 list, and assign each way
-			// to a tile at our zoom level
-			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
-				TileCoordinates index = it->first;
-				TileCoordinate tilex = index.x / pow(2, sharedData.config.baseZoom-zoom);
-				TileCoordinate tiley = index.y / pow(2, sharedData.config.baseZoom-zoom);
-				TileCoordinates newIndex(tilex, tiley);
-				const vector<OutputObjectRef> &ooset = it->second;
-				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
-					generatedIndex[newIndex].push_back(*jt);
-				}
-			}
-			// sort each new tile
-			for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
-				auto &ooset = it->second;
-				sort(ooset.begin(), ooset.end());
-				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-			}
-			tileData.SetTileIndexForZoom(&generatedIndex);
+		MergeTileDataAtZoom(zoom, sharedData.config.baseZoom, tileIndexPbf, generatedIndex);
+		MergeTileDataAtZoom(zoom, sharedData.config.baseZoom, tileIndexShp, generatedIndex);
 
+		// ----	Sort each tile
+		for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
+			auto &ooset = it->second;
+			sort(ooset.begin(), ooset.end());
+			ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
 		}
+
+		tileData.SetTileIndexForZoom(&generatedIndex);
 
 		sharedData.zoom = zoom;
 		if(threadNum == 1) {
