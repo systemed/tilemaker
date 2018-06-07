@@ -12,13 +12,17 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
-	auto gTyp = (*jt)->geomType;
+	OutputObjectRef oo = *jt;
+	OutputObjectRef ooNext;
+	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+
+	auto gTyp = oo->geomType;
 	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
 		MultiPolygon *gAcc = nullptr;
 		try{
 			gAcc = &boost::get<MultiPolygon>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: Polygon " << (*jt)->objectID << " has unexpected type" << endl;
+			cerr << "Error: Polygon " << oo->objectID << " has unexpected type" << endl;
 			return;
 		}
 	
@@ -26,13 +30,16 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 		ConvertToClipper(*gAcc, current);
 
 		while (jt+1 != ooSameLayerEnd &&
-				(*(jt+1))->geomType == gTyp &&
-				(*(jt+1))->attributes == (*jt)->attributes) {
+				ooNext->geomType == gTyp &&
+				ooNext->attributes == oo->attributes) {
 			jt++;
+			oo = *jt;
+			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			else ooNext.reset();
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>((*jt)->buildWayGeometry(bbox));
+				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(bbox));
 				Paths newPaths;
 				ConvertToClipper(gNew, newPaths);
 
@@ -47,7 +54,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing POLYGON " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 		}
 
@@ -58,16 +65,21 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 		try {
 		gAcc = &boost::get<MultiLinestring>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: LineString " << (*jt)->objectID << " has unexpected type" << endl;
+			cerr << "Error: LineString " << oo->objectID << " has unexpected type" << endl;
 			return;
 		}
+
 		while (jt+1 != ooSameLayerEnd &&
-				(*(jt+1))->geomType == gTyp &&
-				(*(jt+1))->attributes == (*jt)->attributes) {
+				ooNext->geomType == gTyp &&
+				ooNext->attributes == oo->attributes) {
 			jt++;
+			oo = *jt;
+			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			else ooNext.reset();
+
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>((*jt)->buildWayGeometry(bbox));
+				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -75,10 +87,10 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing LINESTRING " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 			catch (boost::bad_get &err) {
-				cerr << "Error while processing LINESTRING " << (*jt)->objectID << " has unexpected type" << endl;
+				cerr << "Error while processing LINESTRING " << oo->objectID << " has unexpected type" << endl;
 				continue;
 			}
 		}
@@ -90,34 +102,38 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
 	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
-			
-		if ((*jt)->geomType == POINT) {
+		OutputObjectRef oo = *jt;
+
+		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			(*jt)->buildNodeGeometry(bbox, featurePtr);
-			(*jt)->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id((*jt)->objectID); }
+			oo->buildNodeGeometry(bbox, featurePtr);
+			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 		} else {
 			Geometry g;
 			try {
-				g = (*jt)->buildWayGeometry(bbox);
+				g = oo->buildWayGeometry(bbox);
 			}
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing geometry " << (*jt)->geomType << "," << (*jt)->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
 
 			//This may increment the jt iterator
 			if(sharedData->config.combineSimilarObjs)
+			{
 				CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
+				oo = *jt;
+			}
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			(*jt)->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id((*jt)->objectID); }
+			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 
 		}
 	}
