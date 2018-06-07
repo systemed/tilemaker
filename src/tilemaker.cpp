@@ -92,30 +92,6 @@ void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 	}
 }
 
-void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileIndex &dstTiles)
-{
-	if (zoom==baseZoom) {
-		// at z14, we can just use tileIndex
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
-			dstTiles[index].insert(dstTiles[index].end(), it->second.begin(), it->second.end());
-		}
-	} else {
-		// otherwise, we need to run through the z14 list, and assign each way
-		// to a tile at our zoom level
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
-			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
-			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
-			TileCoordinates newIndex(tilex, tiley);
-			const vector<OutputObjectRef> &ooset = it->second;
-			for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
-				dstTiles[newIndex].push_back(*jt);
-			}
-		}
-	}
-}
-
 int main(int argc, char* argv[]) {
 
 	// ----	Initialise data collections
@@ -283,7 +259,7 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise SharedData
 
-	class TileData tileData;
+	class TileData tileData(tileIndexPbf, tileIndexShp, config.baseZoom);
 
 	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;
@@ -312,21 +288,10 @@ int main(int argc, char* argv[]) {
 
 	// Loop through zoom levels
 	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
-		// Create list of tiles, and the data in them
-		TileIndex generatedIndex;
-		MergeTileDataAtZoom(zoom, sharedData.config.baseZoom, tileIndexPbf, generatedIndex);
-		MergeTileDataAtZoom(zoom, sharedData.config.baseZoom, tileIndexShp, generatedIndex);
 
-		// ----	Sort each tile
-		for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
-			auto &ooset = it->second;
-			sort(ooset.begin(), ooset.end());
-			ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-		}
-
-		tileData.SetTileIndexForZoom(&generatedIndex);
-
+		tileData.SetZoom(zoom);
 		sharedData.zoom = zoom;
+
 		if(threadNum == 1) {
 			// Single thread (is easier to debug)
 			outputProc(0, &sharedData);
@@ -340,7 +305,6 @@ int main(int argc, char* argv[]) {
 			for (auto &t: worker) t.join();
 
 		}
-		tileData.SetTileIndexForZoom(nullptr);
 	}
 
 	// ----	Close tileset

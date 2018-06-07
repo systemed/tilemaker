@@ -4,6 +4,32 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
+void MergeTileDataAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileIndex &dstTiles)
+{
+	if (zoom==baseZoom) {
+		// at z14, we can just use tileIndex
+		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+			TileCoordinates index = it->first;
+			dstTiles[index].insert(dstTiles[index].end(), it->second.begin(), it->second.end());
+		}
+	} else {
+		// otherwise, we need to run through the z14 list, and assign each way
+		// to a tile at our zoom level
+		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+			TileCoordinates index = it->first;
+			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
+			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
+			TileCoordinates newIndex(tilex, tiley);
+			const vector<OutputObjectRef> &ooset = it->second;
+			for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
+				dstTiles[newIndex].push_back(*jt);
+			}
+		}
+	}
+}
+
+// *********************************
+
 ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData):
 	tileData(tileData)
 {
@@ -39,28 +65,41 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 
 // *********************************
 
-TileData::TileData()
+TileData::TileData(const TileIndex &tileIndexPbf, const TileIndex &tileIndexShp, uint baseZoom):
+	tileIndexPbf(tileIndexPbf),
+	tileIndexShp(tileIndexShp),
+	baseZoom(baseZoom)
 {
-	this->tileIndexForZoom = nullptr;
+
 }
 
 class TilesAtZoomIterator TileData::GetTilesAtZoomBegin()
 {
-	return TilesAtZoomIterator(tileIndexForZoom->begin(), *this);
+	return TilesAtZoomIterator(generatedIndex.begin(), *this);
 }
 
 class TilesAtZoomIterator TileData::GetTilesAtZoomEnd()
 {
-	return TilesAtZoomIterator(tileIndexForZoom->end(), *this);
+	return TilesAtZoomIterator(generatedIndex.end(), *this);
 }
 
 size_t TileData::GetTilesAtZoomSize()
 {
-	return tileIndexForZoom->size();
+	return generatedIndex.size();
 }
 
-void TileData::SetTileIndexForZoom(const TileIndex *tileIndexForZoom)
+void TileData::SetZoom(uint zoom)
 {
-	this->tileIndexForZoom = tileIndexForZoom;
+	// Create list of tiles, and the data in them
+	generatedIndex.clear();
+	MergeTileDataAtZoom(zoom, baseZoom, tileIndexPbf, generatedIndex);
+	MergeTileDataAtZoom(zoom, baseZoom, tileIndexShp, generatedIndex);
+
+	// ----	Sort each tile
+	for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
+		auto &ooset = it->second;
+		sort(ooset.begin(), ooset.end());
+		ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
+	}
 }
 

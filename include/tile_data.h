@@ -44,16 +44,18 @@ class TileData
 	friend TilesAtZoomIterator;
 
 public:
-	TileData();
+	TileData(const TileIndex &tileIndexPbf, const TileIndex &tileIndexShp, uint baseZoom);
 
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
 	size_t GetTilesAtZoomSize();
 
-	void SetTileIndexForZoom(const TileIndex *tileIndexForZoom);
+	void SetZoom(uint zoom);
 
 private:
-	const TileIndex *tileIndexForZoom;
+	const TileIndex &tileIndexPbf, &tileIndexShp;
+	TileIndex generatedIndex;
+	uint baseZoom;
 };
 
 #endif //_TILE_DATA_H
