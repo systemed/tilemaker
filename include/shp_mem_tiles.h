@@ -1,13 +1,12 @@
-#ifndef _OSM_MEM_TILES
-#define _OSM_MEM_TILES
+#ifndef _SHP_MEM_TILES
+#define _SHP_MEM_TILES
 
 #include "tile_data.h"
-#include "osm_store.h"
 
-class OsmMemTiles : public TileDataSource
+class ShpMemTiles : public TileDataSource
 {
 public:
-	OsmMemTiles(uint baseZoom);
+	ShpMemTiles(uint baseZoom);
 
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
@@ -15,7 +14,8 @@ public:
 		std::vector<OutputObjectRef> &dstTile);
 
 	TileIndex tileIndex;
-	OSMStore osmStore;									// global OSM store
+	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
 
 private:
 	uint baseZoom;

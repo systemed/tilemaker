@@ -50,6 +50,7 @@ extern "C" {
 #include "read_shp.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
+#include "shp_mem_tiles.h"
 
 // Namespaces
 using namespace std;
@@ -94,13 +95,6 @@ void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 }
 
 int main(int argc, char* argv[]) {
-
-	// ----	Initialise data collections
-
-	OSMStore osmStore;									// global OSM store
-
-	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
-	map<uint, string> cachedGeometryNames;			//  | optional names for each one
 
 	// ----	Read command-line options
 	
@@ -227,13 +221,15 @@ int main(int argc, char* argv[]) {
 
 	// For each tile, objects to be used in processing
 	class OsmMemTiles osmMemTiles(config.baseZoom);
-	TileIndex tileIndexShp;
+	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, osmMemTiles.tileIndex);
+	OSMObject osmObject(config, layers, luaState, shpMemTiles.cachedGeometries, 
+		shpMemTiles.cachedGeometryNames, &osmMemTiles.osmStore, osmMemTiles.tileIndex);
 
 	// ---- Load external shp files
 
-	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, tileIndexShp, cachedGeometries, osmObject);
+	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, 
+		shpMemTiles.tileIndex, shpMemTiles.cachedGeometries, osmObject);
 
 	// ---- Call init_function of Lua logic
 
@@ -256,11 +252,11 @@ int main(int argc, char* argv[]) {
 		if(ret != 0)
 			return ret;
 	}
-	osmStore.reportSize();
+	osmMemTiles.osmStore.reportSize();
 
 	// ----	Initialise SharedData
-
-	class TileData tileData(&osmMemTiles, tileIndexShp, config.baseZoom);
+	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
+	class TileData tileData(sources);
 
 	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;

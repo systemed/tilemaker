@@ -100,14 +100,35 @@ TilesAtZoomIterator& TilesAtZoomIterator::operator++()
 	return *this;
 }
 
+TilesAtZoomIterator TilesAtZoomIterator::operator++(int a)
+{
+	TileCoordinatesSet::const_iterator::operator++(a);
+	RefreshData();
+	return *this;
+}
+
+TilesAtZoomIterator& TilesAtZoomIterator::operator--()
+{
+	TileCoordinatesSet::const_iterator::operator--();
+	RefreshData();
+	return *this;
+}
+
+TilesAtZoomIterator TilesAtZoomIterator::operator--(int a)
+{
+	TileCoordinatesSet::const_iterator::operator--(a);
+	RefreshData();
+	return *this;
+}
+
 void TilesAtZoomIterator::RefreshData()
 {
 	data.clear();
 	TileCoordinatesSet::const_iterator it = *this;
 	if(it == tileData.tileCoordinates.end()) return;
 
-	tileData.osmMemTiles->MergeSingleTileDataAtZoom(*it, zoom, data);
-	MergeSingleTileDataAtZoom(*it, zoom, tileData.baseZoom, tileData.tileIndexShp, data);
+	for(size_t i=0; i<tileData.sources.size(); i++)
+		tileData.sources[i]->MergeSingleTileDataAtZoom(*it, zoom, data);
 
 	sort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());
@@ -115,10 +136,8 @@ void TilesAtZoomIterator::RefreshData()
 
 // *********************************
 
-TileData::TileData(class OsmMemTiles *osmMemTiles, const TileIndex &tileIndexShp, uint baseZoom):
-	osmMemTiles(osmMemTiles),
-	tileIndexShp(tileIndexShp),
-	baseZoom(baseZoom)
+TileData::TileData(const std::vector<class TileDataSource *> sources):
+	sources(sources)
 {
 	zoom = 0;
 }
@@ -145,7 +164,7 @@ void TileData::SetZoom(uint zoom)
 	this->zoom = zoom;
 	// Create list of tiles
 	tileCoordinates.clear();
-	osmMemTiles->MergeTileCoordsAtZoom(zoom, tileCoordinates);
-	MergeTileCoordsAtZoom(zoom, baseZoom, tileIndexShp, tileCoordinates);
+	for(size_t i=0; i<sources.size(); i++)
+		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
 }
 

@@ -18,8 +18,10 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoo
 class TileDataSource
 {
 public:
+	///This must be thread safe!
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
 
+	///This must be thread safe!
 	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile)=0;
 };
@@ -47,6 +49,9 @@ public:
 	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
 
 	TilesAtZoomIterator& operator++();
+	TilesAtZoomIterator operator++(int a);
+	TilesAtZoomIterator& operator--();
+	TilesAtZoomIterator operator--(int a);
 
 private:
 	void RefreshData();
@@ -67,7 +72,7 @@ class TileData
 	friend TilesAtZoomIterator;
 
 public:
-	TileData(class OsmMemTiles *osmMemTiles, const TileIndex &tileIndexShp, uint baseZoom);
+	TileData(const std::vector<class TileDataSource *> sources);
 
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
@@ -76,10 +81,9 @@ public:
 	void SetZoom(uint zoom);
 
 private:
-	class OsmMemTiles *osmMemTiles;
-	const TileIndex &tileIndexShp;
+	const std::vector<class TileDataSource *> sources;
 	TileCoordinatesSet tileCoordinates;
-	uint zoom, baseZoom;
+	uint zoom;
 };
 
 #endif //_TILE_DATA_H
