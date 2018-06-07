@@ -5,12 +5,24 @@
 #include <set>
 #include <vector>
 #include <memory>
-#include "osm_store.h"
 #include "output_object.h"
 
 typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
+
+void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
+	std::vector<OutputObjectRef> &dstTile);
+
+class TileDataSource
+{
+public:
+	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
+
+	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+		std::vector<OutputObjectRef> &dstTile)=0;
+};
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
 {
@@ -55,7 +67,7 @@ class TileData
 	friend TilesAtZoomIterator;
 
 public:
-	TileData(const TileIndex &tileIndexPbf, const TileIndex &tileIndexShp, uint baseZoom);
+	TileData(class OsmMemTiles *osmMemTiles, const TileIndex &tileIndexShp, uint baseZoom);
 
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
@@ -64,7 +76,8 @@ public:
 	void SetZoom(uint zoom);
 
 private:
-	const TileIndex &tileIndexPbf, &tileIndexShp;
+	class OsmMemTiles *osmMemTiles;
+	const TileIndex &tileIndexShp;
 	TileCoordinatesSet tileCoordinates;
 	uint zoom, baseZoom;
 };

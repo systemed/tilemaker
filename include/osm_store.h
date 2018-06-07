@@ -1,26 +1,6 @@
 #ifndef _OSM_STORE_H
 #define _OSM_STORE_H
 
-/**
-	OSM Store
-
-	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
-	Only one instance of OSMStore is ever used. It will serve as the global data store. All data determined
-	to be output will be set here, from tilemaker.cpp.
-
-	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
-	These functions are used by osm_output, and can be used by osm_object to provide the geometry information to Lua.
-
-	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
-	These store can be altered for efficient memory use without global code changes.
-	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
-
-	Possible future improvements to save memory:
-	- pack WayStore (e.g. zigzag PBF encoding and varint)
-	- combine innerWays and outerWays into one vector, with a single-byte index marking the changeover
-	- use two arrays (sorted keys and elements) instead of map
-*/
-
 #include <utility>
 #include <vector>
 #include <unordered_map>
@@ -155,9 +135,27 @@ public:
 	size_t size();
 };
 
-//
-// OSM store, containing all above.
-//
+/**
+	OSM Store
+
+	OSM store, containing all above.
+
+	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
+	Only one instance of OSMStore is ever used. It will serve as the global data store. All data determined
+	to be output will be set here, from tilemaker.cpp.
+
+	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
+	These functions are used by osm_output, and can be used by osm_object to provide the geometry information to Lua.
+
+	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
+	These store can be altered for efficient memory use without global code changes.
+	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
+
+	Possible future improvements to save memory:
+	- pack WayStore (e.g. zigzag PBF encoding and varint)
+	- combine innerWays and outerWays into one vector, with a single-byte index marking the changeover
+	- use two arrays (sorted keys and elements) instead of map
+*/
 class OSMStore
 {
 

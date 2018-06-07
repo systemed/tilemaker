@@ -106,7 +106,7 @@ void TilesAtZoomIterator::RefreshData()
 	TileCoordinatesSet::const_iterator it = *this;
 	if(it == tileData.tileCoordinates.end()) return;
 
-	MergeSingleTileDataAtZoom(*it, zoom, tileData.baseZoom, tileData.tileIndexPbf, data);
+	tileData.osmMemTiles->MergeSingleTileDataAtZoom(*it, zoom, data);
 	MergeSingleTileDataAtZoom(*it, zoom, tileData.baseZoom, tileData.tileIndexShp, data);
 
 	sort(data.begin(), data.end());
@@ -115,8 +115,8 @@ void TilesAtZoomIterator::RefreshData()
 
 // *********************************
 
-TileData::TileData(const TileIndex &tileIndexPbf, const TileIndex &tileIndexShp, uint baseZoom):
-	tileIndexPbf(tileIndexPbf),
+TileData::TileData(class OsmMemTiles *osmMemTiles, const TileIndex &tileIndexShp, uint baseZoom):
+	osmMemTiles(osmMemTiles),
 	tileIndexShp(tileIndexShp),
 	baseZoom(baseZoom)
 {
@@ -145,7 +145,7 @@ void TileData::SetZoom(uint zoom)
 	this->zoom = zoom;
 	// Create list of tiles
 	tileCoordinates.clear();
-	MergeTileCoordsAtZoom(zoom, baseZoom, tileIndexPbf, tileCoordinates);
+	osmMemTiles->MergeTileCoordsAtZoom(zoom, tileCoordinates);
 	MergeTileCoordsAtZoom(zoom, baseZoom, tileIndexShp, tileCoordinates);
 }
 

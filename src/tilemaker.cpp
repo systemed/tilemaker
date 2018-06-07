@@ -49,6 +49,7 @@ extern "C" {
 #include "read_pbf.h"
 #include "read_shp.h"
 #include "tile_worker.h"
+#include "osm_mem_tiles.h"
 
 // Namespaces
 using namespace std;
@@ -100,9 +101,6 @@ int main(int argc, char* argv[]) {
 
 	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	map<uint, string> cachedGeometryNames;			//  | optional names for each one
-
-	// For each tile, objects to be used in processing
-	TileIndex tileIndexPbf, tileIndexShp;
 
 	// ----	Read command-line options
 	
@@ -227,8 +225,11 @@ int main(int argc, char* argv[]) {
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 
+	// For each tile, objects to be used in processing
+	class OsmMemTiles osmMemTiles(config.baseZoom);
+	TileIndex tileIndexShp;
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, tileIndexPbf);
+	OSMObject osmObject(config, layers, luaState, cachedGeometries, cachedGeometryNames, &osmStore, osmMemTiles.tileIndex);
 
 	// ---- Load external shp files
 
@@ -259,7 +260,7 @@ int main(int argc, char* argv[]) {
 
 	// ----	Initialise SharedData
 
-	class TileData tileData(tileIndexPbf, tileIndexShp, config.baseZoom);
+	class TileData tileData(&osmMemTiles, tileIndexShp, config.baseZoom);
 
 	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;
