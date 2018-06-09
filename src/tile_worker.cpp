@@ -106,7 +106,13 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 
 		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			oo->buildNodeGeometry(bbox, featurePtr);
+			LatpLon pos = oo->buildNodeGeometry(bbox);
+			featurePtr->add_geometry(9);					// moveTo, repeat x1
+			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
+			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
+			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
+			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
+
 			oo->writeAttributes(&keyList, &valueList, featurePtr);
 			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 		} else {

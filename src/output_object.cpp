@@ -11,8 +11,6 @@ using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;
 
-
-
 ClipGeometryVisitor::ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) 
 {
 	const Point &minc = clippingBox.min_corner();
@@ -80,6 +78,11 @@ OutputObject::OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) 
 	geomType = type;
 	layer = l;
 	objectID = id;
+}
+
+OutputObject::~OutputObject()
+{
+
 }
 
 void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &value) {
@@ -174,9 +177,14 @@ namespace vector_tile {
 // ***********************************************
 
 OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
-	const OSMStore &osmStore):
+	Geometry geom):
 	OutputObject(type, l, id),
-	osmStore(osmStore)
+	geom(geom)
+{
+
+}
+
+OutputObjectOsmStore::~OutputObjectOsmStore()
 {
 
 }
@@ -184,54 +192,20 @@ OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_
 Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const
 {
 	ClipGeometryVisitor clip(bbox.clippingBox);
-
-	try {
-		if (geomType==POLYGON || geomType==CENTROID) {
-			// polygon
-			MultiPolygon mp;
-			if (this->osmStore.ways.count(objectID)) {
-				mp.emplace_back(this->osmStore.nodeListPolygon(objectID));
-			} else {
-				mp = this->osmStore.wayListMultiPolygon(objectID);
-			}
-
-			// write out
-			if (geomType==CENTROID) {
-				// centroid only
-				Point p;
-				geom::centroid(mp, p);
-				return clip(p);
-
-			} else {
-				// full polygon
-				return clip(mp);
-			}
-
-		} else if (geomType==LINESTRING) {
-			// linestring
-			Linestring ls;
-			if (this->osmStore.ways.count(objectID)) {
-				ls = this->osmStore.nodeListLinestring(objectID);
-			}
-			return clip(ls);
-
-		}
-	} catch (std::invalid_argument &err) {
-		cerr << "Error in buildWayGeometry: " << err.what() << endl;
-	}
-
-	return MultiLinestring(); // return a blank geometry
+	
+	return boost::apply_visitor(clip, geom);
 }
 
 // Add a node geometry
-void OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const
+LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const
 {
-	LatpLon ll = osmStore.nodes.at(objectID);
-	featurePtr->add_geometry(9);					// moveTo, repeat x1
-	pair<int,int> xy = bbox.scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
-	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
-	featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
-	featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
+	const Point *pt = boost::get<Point>(&geom);
+	if(pt == nullptr)
+		throw runtime_error("Geometry type is not point");
+	LatpLon out;
+	out.latp = pt->y();
+	out.lon = pt->x();
+	return out;
 }
 
 // **********************************************
@@ -240,6 +214,11 @@ OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l,
 	const std::vector<Geometry> &cachedGeometries):
 	OutputObject(type, l, id),
 	cachedGeometries(cachedGeometries)
+{
+
+}
+
+OutputObjectCached::~OutputObjectCached()
 {
 
 }
@@ -260,8 +239,12 @@ Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
 	return MultiLinestring(); // return a blank geometry
 }
 
-void OutputObjectCached::buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const
+LatpLon OutputObjectCached::buildNodeGeometry(const TileBbox &bbox) const
 {
-
+	throw runtime_error("Geometry point type not supported");
+	LatpLon out;
+	out.latp = 0;
+	out.lon = 0;	
+	return out;
 }
 

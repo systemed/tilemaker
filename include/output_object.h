@@ -50,7 +50,8 @@ public:
 	std::map <std::string, vector_tile::Tile_Value> attributes;	// attributes
 
 	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id);
-	
+	virtual ~OutputObject();	
+
 	void addAttribute(const std::string &key, vector_tile::Tile_Value &value);
 
 	bool hasAttribute(const std::string &key) const;
@@ -61,7 +62,7 @@ public:
 	virtual Geometry buildWayGeometry(const TileBbox &bbox) const = 0;
 	
 	// Add a node geometry
-	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const = 0;
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const = 0;
 	
 	// Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
@@ -76,14 +77,15 @@ class OutputObjectOsmStore : public OutputObject
 {
 public:
 	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
-		const OSMStore &osmStore);
+		Geometry geom);
+	virtual ~OutputObjectOsmStore();
 
 	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
 
-	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
 
 private:
-	const OSMStore &osmStore;
+	Geometry geom;
 };
 
 class OutputObjectCached : public OutputObject
@@ -91,10 +93,11 @@ class OutputObjectCached : public OutputObject
 public:
 	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
 		const std::vector<Geometry> &cachedGeometries);
+	virtual ~OutputObjectCached();
 
 	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
 
-	virtual void buildNodeGeometry(const TileBbox &bbox, vector_tile::Tile_Feature *featurePtr) const;
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
 
 private:
 	const std::vector<Geometry> &cachedGeometries;

@@ -88,7 +88,8 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 	// We get the range within ooList, where the layer of each object is `layerNum`.
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	const std::vector<OutputObjectRef> &ooList = data;
-	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0, *(OSMStore *)nullptr);
+	Geometry geom;
+	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0, geom);
 	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }

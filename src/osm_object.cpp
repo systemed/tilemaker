@@ -1,5 +1,5 @@
 #include "osm_object.h"
-
+#include <iostream>
 using namespace std;
 
 kaguya::State *g_luaState = nullptr;
@@ -179,14 +179,52 @@ const MultiPolygon &OSMObject::multiPolygon() {
 
 // ----	Requests from Lua to write this way/node to a vector tile's Layer
 
-// Add layer
+// Add object to specified layer from Lua
 void OSMObject::Layer(const string &layerName, bool area) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
+
+	Geometry geom;
+	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
+	try {
+		if (geomType==POINT) {
+			LatpLon pt = osmStore.nodes.at(osmID);
+			geom = Point(pt.lon, pt.latp);
+		}
+		else if (geomType==POLYGON) {
+			// polygon
+
+			if(isRelation)
+			{
+				try
+				{
+					geom = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+				}
+				catch(std::out_of_range &err)
+				{
+					cout << "In relation " << osmID << ": " << err.what() << endl;
+					return;
+				}
+			}
+			else if(isWay)
+			{
+				geom = osmStore.nodeListLinestring(*nodeVec);
+			}
+
+		}
+		else if (geomType==LINESTRING) {
+			// linestring
+			Linestring ls = this->osmStore.nodeListLinestring(*nodeVec);
+			geom = ls;
+		}
+	} catch (std::invalid_argument &err) {
+		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
+	}
+
+	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(geomType,
 					layers.layerMap[layerName],
-					osmID, osmStore);
+					osmID, geom);
 	outputs.push_back(oo);
 }
 
@@ -194,9 +232,40 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
+
+	Geometry geom;
+	try {
+
+		Geometry tmp;
+		if(isRelation)
+		{
+			try
+			{
+				tmp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+			}
+			catch(std::out_of_range &err)
+			{
+				cout << "In relation " << osmID << ": " << err.what() << endl;
+				return;
+			}
+		}
+		else if(isWay)
+		{
+			tmp = osmStore.nodeListLinestring(*nodeVec);
+		}
+
+		// write out centroid only
+		Point p;
+		geom::centroid(tmp, p);
+		geom = p;
+
+	} catch (std::invalid_argument &err) {
+		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
+	}
+
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
-					osmID, osmStore);
+					osmID, geom);
 	outputs.push_back(oo);
 }
 
@@ -233,7 +302,7 @@ void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &
 
 void OSMObject::startOsmData()
 {
-
+	osmStore.clear();
 }
 
 void OSMObject::everyNode(NodeID id, LatpLon node)
@@ -252,6 +321,7 @@ void OSMObject::setNode(NodeID id, LatpLon node, const std::map<std::string, std
 
 	currentTags = tags;
 
+	//Start Lua processing for node
 	luaState["node_function"](this);
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
@@ -285,6 +355,8 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 	if (ok)
 	{
 		luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+
+		//Start Lua processing for way
 		kaguya::LuaFunction way_function = luaState["way_function"];
 		kaguya::LuaRef ret = way_function(this);
 		assert(!ret);
@@ -353,7 +425,10 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 
 	bool ok = true;
 	if (ok)
+	{
+		//Start Lua processing for relation
 		luaState["way_function"](this);
+	}
 
 	if (!this->empty()) {								
 
