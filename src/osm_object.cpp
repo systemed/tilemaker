@@ -156,7 +156,7 @@ double OSMObject::Length() {
 const Linestring &OSMObject::linestring() {
 	if (!linestringInited) {
 		linestringInited = true;
-		linestringCache = osmMemTiles.osmStore.nodeListLinestring(*nodeVec);
+		linestringCache = osmStore.nodeListLinestring(*nodeVec);
 	}
 	return linestringCache;
 }
@@ -164,7 +164,7 @@ const Linestring &OSMObject::linestring() {
 const Polygon &OSMObject::polygon() {
 	if (!polygonInited) {
 		polygonInited = true;
-		polygonCache = osmMemTiles.osmStore.nodeListPolygon(*nodeVec);
+		polygonCache = osmStore.nodeListPolygon(*nodeVec);
 	}
 	return polygonCache;
 }
@@ -172,7 +172,7 @@ const Polygon &OSMObject::polygon() {
 const MultiPolygon &OSMObject::multiPolygon() {
 	if (!multiPolygonInited) {
 		multiPolygonInited = true;
-		multiPolygonCache = osmMemTiles.osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+		multiPolygonCache = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
 	}
 	return multiPolygonCache;
 }
@@ -186,7 +186,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	}
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 					layers.layerMap[layerName],
-					osmID, osmMemTiles.osmStore);
+					osmID, osmStore);
 	outputs.push_back(oo);
 }
 
@@ -196,7 +196,7 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 	}
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
-					osmID, osmMemTiles.osmStore);
+					osmID, osmStore);
 	outputs.push_back(oo);
 }
 
@@ -231,9 +231,14 @@ void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &
 	layers.layers[layer].attributeMap[key] = type;
 }
 
+void OSMObject::startOsmData()
+{
+
+}
+
 void OSMObject::everyNode(NodeID id, LatpLon node)
 {
-	osmMemTiles.osmStore.nodes.insert_back(id, node);
+	osmStore.nodes.insert_back(id, node);
 }
 
 // We are now processing a node
@@ -265,8 +270,8 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 
 	nodeVec = nodeVecPtr;
 	try {
-		setLocation(osmMemTiles.osmStore.nodes.at(nodeVec->front()).lon, osmMemTiles.osmStore.nodes.at(nodeVec->front()).latp,
-				osmMemTiles.osmStore.nodes.at(nodeVec->back()).lon, osmMemTiles.osmStore.nodes.at(nodeVec->back()).latp);
+		setLocation(osmStore.nodes.at(nodeVec->front()).lon, osmStore.nodes.at(nodeVec->front()).latp,
+				osmStore.nodes.at(nodeVec->back()).lon, osmStore.nodes.at(nodeVec->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -287,7 +292,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 
 	if (!this->empty() || inRelation) {
 		// Store the way's nodes in the global way store
-		WayStore &ways = osmMemTiles.osmStore.ways;
+		WayStore &ways = osmStore.ways;
 		WayID wayId = static_cast<WayID>(way->id());
 		ways.insert_back(wayId, *nodeVec);
 	}
@@ -296,7 +301,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmMemTiles.osmStore.nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -354,14 +359,14 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 
 		WayID relID = this->osmID;
 		// Store the relation members in the global relation store
-		RelationStore &relations = osmMemTiles.osmStore.relations;
+		RelationStore &relations = osmStore.relations;
 		relations.insert_front(relID, *outerWayVec, *innerWayVec);
 
 		MultiPolygon mp;
 		try
 		{
 			// for each tile the relation may cover, put the output objects.
-			mp = osmMemTiles.osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+			mp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
 		}
 		catch(std::out_of_range &err)
 		{
@@ -390,6 +395,11 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 		}
 	}
 
+}
+
+void OSMObject::endOsmData()
+{
+	osmStore.reportSize();
 }
 
 vector<string> OSMObject::GetSignificantNodeKeys()

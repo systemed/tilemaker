@@ -14,6 +14,8 @@
 class PbfReaderOutput
 {
 public:
+	virtual void startOsmData() {};
+
 	virtual void everyNode(NodeID id, LatpLon node) {};
 
 	// We are now processing a node
@@ -27,6 +29,8 @@ public:
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
 	virtual void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
 		const std::map<std::string, std::string> &tags) {};
+
+	virtual void endOsmData() {};
 };
 
 class PbfReader
@@ -53,7 +57,7 @@ public:
 
 	int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys);
 
-	std::vector<PbfReaderOutput *> outputs;
+	PbfReaderOutput * output;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

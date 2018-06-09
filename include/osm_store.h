@@ -164,6 +164,9 @@ public:
 	WayStore ways;
 	RelationStore relations;
 
+	// @brief Make the store empty
+	void clear();
+
 	void reportSize();
 
 	// Relation -> MultiPolygon

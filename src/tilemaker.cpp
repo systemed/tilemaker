@@ -190,7 +190,7 @@ int main(int argc, char* argv[]) {
 	// ----	Read all PBFs
 	
 	class PbfReader pbfReader;
-	pbfReader.outputs.push_back(&osmObject);
+	pbfReader.output = &osmObject;
 	for (auto inputFile : inputFiles) {
 	
 		cout << "Reading " << inputFile << endl;
@@ -199,7 +199,6 @@ int main(int argc, char* argv[]) {
 		if(ret != 0)
 			return ret;
 	}
-	osmMemTiles.osmStore.reportSize();
 
 	// ----	Initialise SharedData
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};

@@ -33,31 +33,6 @@ class OSMObject : public PbfReaderOutput
 { 
 
 public:
-	kaguya::State luaState;
-	const class ShpMemTiles &shpMemTiles;
-	class OsmMemTiles &osmMemTiles;
-
-	uint64_t osmID;							// ID of OSM object
-	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
-	bool isWay, isRelation;					// Way, node, relation?
-
-	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
-	NodeVec *nodeVec;						// node vector
-	WayVec *outerWayVec, *innerWayVec;		// way vectors
-
-	Linestring linestringCache;
-	bool linestringInited;
-	Polygon polygonCache;
-	bool polygonInited;
-	MultiPolygon multiPolygonCache;
-	bool multiPolygonInited;
-
-	const class Config &config;
-	class LayerDefinition &layers;
-	
-	std::vector<OutputObjectRef> outputs;			// All output objects
-	std::map<std::string, std::string> currentTags;
-
 	// ----	initialization routines
 
 	OSMObject(const class Config &configIn, class LayerDefinition &layers, 
@@ -73,6 +48,8 @@ public:
 
 	// ----	Set an osm element to make it accessible from Lua
 
+	virtual void startOsmData();
+
 	virtual void everyNode(NodeID id, LatpLon node);
 
 	// We are now processing a node
@@ -86,6 +63,8 @@ public:
 	//  we use decrementing positive IDs to give a bit more space for way IDs)
 	virtual void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
 		const std::map<std::string, std::string> &tags);
+
+	virtual void endOsmData();
 
 	// Internal: clear current cached state
 	inline void reset() {
@@ -154,6 +133,35 @@ public:
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 
 	std::vector<std::string> GetSignificantNodeKeys();
+
+private:
+	OSMStore osmStore;									// global OSM store
+
+	kaguya::State luaState;
+	const class ShpMemTiles &shpMemTiles;
+	class OsmMemTiles &osmMemTiles;
+
+	uint64_t osmID;							// ID of OSM object
+	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
+	bool isWay, isRelation;					// Way, node, relation?
+
+	int32_t lon1,latp1,lon2,latp2;			// Start/end co-ordinates of OSM object
+	NodeVec *nodeVec;						// node vector
+	WayVec *outerWayVec, *innerWayVec;		// way vectors
+
+	Linestring linestringCache;
+	bool linestringInited;
+	Polygon polygonCache;
+	bool polygonInited;
+	MultiPolygon multiPolygonCache;
+	bool multiPolygonInited;
+
+	const class Config &config;
+	class LayerDefinition &layers;
+	
+	std::vector<OutputObjectRef> outputs;			// All output objects
+	std::map<std::string, std::string> currentTags;
+
 };
 
 #endif //_OSM_OBJECT_H

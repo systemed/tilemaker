@@ -16,8 +16,6 @@ public:
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 
-	OSMStore osmStore;									// global OSM store
-
 private:
 	TileIndex tileIndex;
 	uint baseZoom;

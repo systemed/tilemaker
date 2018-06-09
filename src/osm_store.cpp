@@ -166,6 +166,13 @@ void OSMStore::reportSize() {
 	cout << "Stored " << nodes.size() << " nodes, " << ways.size() << " ways, " << relations.size() << " relations" << endl;
 }
 
+void OSMStore::clear()
+{
+	nodes.clear();
+	ways.clear();
+	relations.clear();
+}
+
 // Relation -> MultiPolygon
 MultiPolygon OSMStore::wayListMultiPolygon(WayID relId) const {
 	return wayListMultiPolygon(relations.at(relId));
@@ -193,4 +200,5 @@ Linestring OSMStore::nodeListLinestring(WayID wayId) const {
 Linestring OSMStore::nodeListLinestring(const NodeVec &nodeVec) const {
 	return nodeListLinestring(makeNodeList(nodeVec));
 }
+
 

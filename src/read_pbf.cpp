@@ -5,7 +5,7 @@ using namespace std;
 
 PbfReader::PbfReader()
 {
-
+	output = nullptr;
 }
 
 PbfReader::~PbfReader()
@@ -28,8 +28,8 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 			lon    += dense.lon(j);
 			lat    += dense.lat(j);
 			LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
-			for(size_t i=0; i<outputs.size(); i++)
-				outputs[i]->everyNode(nodeId, node);
+			if(output != nullptr)
+				output->everyNode(nodeId, node);
 			bool significant = false;
 			int kvStart = kvPos;
 			if (dense.keys_vals_size()>0) {
@@ -47,8 +47,8 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 				for (uint n=kvStart; n<kvPos-1; n+=2)
 					tags[stringTable[dense.keys_vals(n)]] = stringTable[dense.keys_vals(n+1)];
 
-				for(size_t i=0; i<outputs.size(); i++)
-					outputs[i]->setNode(nodeId, node, tags);
+				if(output != nullptr)
+					output->setNode(nodeId, node, tags);
 			}
 		}
 		return true;
@@ -82,8 +82,8 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 				for (uint n=0; n < pbfWay.keys_size(); n++)
 					tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-				for(size_t i=0; i<outputs.size(); i++)
-					outputs[i]->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
+				if(output != nullptr)
+					output->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
 			}
 			catch (std::out_of_range &err)
 			{
@@ -134,8 +134,8 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg)
 					for (uint n=0; n < pbfRelation.keys_size(); n++)
 						tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-					for(size_t i=0; i<outputs.size(); i++)
-						outputs[i]->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
+					if(output != nullptr)
+						output->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
 				}
 				catch (std::out_of_range &err)
 				{
@@ -159,6 +159,10 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 
 	fstream infile(inputFile, ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+
+	if(output != nullptr)
+		output->startOsmData();
+
 	HeaderBlock block;
 	readBlock(&block, &infile);
 
@@ -246,6 +250,9 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 	}
 	cout << endl;
 	infile.close();
+
+	if(output != nullptr)
+		output->endOsmData();
 
 	return 0;
 }
