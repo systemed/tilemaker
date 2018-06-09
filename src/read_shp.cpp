@@ -28,41 +28,6 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 	}
 }
 
-// Add an OutputObject to all tiles between min/max lat/lon
-void addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex, uint baseZoom,
-                          double minLon, double minLatp, double maxLon, double maxLatp) {
-	uint minTileX =  lon2tilex(minLon, baseZoom);
-	uint maxTileX =  lon2tilex(maxLon, baseZoom);
-	uint minTileY = latp2tiley(minLatp, baseZoom);
-	uint maxTileY = latp2tiley(maxLatp, baseZoom);
-	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-			TileCoordinates index(x, y);
-			tileIndex[index].push_back(oo);
-		}
-	}
-}
-
-// Add an OutputObject to all tiles along a polyline
-void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, uint baseZoom, const Linestring &ls) {
-	uint lastx = UINT_MAX;
-	uint lasty;
-	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
-		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
-		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
-		if (lastx==UINT_MAX) {
-			tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
-		} else if (lastx!=tilex || lasty!=tiley) {
-			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
-				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
-					tileIndex[TileCoordinates(x, y)].push_back(oo);
-				}
-			}
-		}
-		lastx=tilex; lasty=tiley;
-	}
-}
-
 // Read requested attributes from a shapefile, and encode into an OutputObject
 void addShapefileAttributes(
 		DBFHandle &dbf,
@@ -109,7 +74,6 @@ void readShapefile(string filename,
 		return;
 	int numEntities=0, shpType=0;
 	vector<Point> points;
-	geom::model::box<Point> box;
 	double adfMinBound[4], adfMaxBound[4];
 	SHPGetInfo(shp, &numEntities, &shpType, adfMinBound, adfMaxBound);
 	
@@ -134,20 +98,15 @@ void readShapefile(string filename,
 			// Points
 			Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
 			if (geom::within(p, clippingBox)) {
-				uint tilex =  lon2tilex(p.x(), baseZoom);
-				uint tiley = latp2tiley(p.y(), baseZoom);
-				cachedGeometries.push_back(p);
-				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1, cachedGeometries);
+
+				string name;
+				bool hasName = false;
+				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+
+				OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
+
+				std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1, cachedGeometries);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
-				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
-				if (isIndexed)
-				{
-					string name;
-					bool hasName = false;
-					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-					geom::envelope(p, box);
-					shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
-				}
 			}
 
 		} else if (shapeType==3) {
@@ -161,18 +120,14 @@ void readShapefile(string filename,
 				MultiLinestring out;
 				geom::intersection(ls, clippingBox, out);
 				for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
-					cachedGeometries.push_back(*it);
-					OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1, cachedGeometries);
+
+					string name;
+					bool hasName = false;
+					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+
+					OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
+
 					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
-					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
-					if (isIndexed) 
-					{
-						string name;
-						bool hasName = false;
-						if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-						geom::envelope(*it, box);
-						shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
-					}
 				}
 			}
 
@@ -229,23 +184,15 @@ void readShapefile(string filename,
 			MultiPolygon out;
 			geom::intersection(multi, clippingBox, out);
 			if (boost::size(out)>0) {
-				// create OutputObject
-				cachedGeometries.push_back(out);
-				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POLYGON, layerNum, cachedGeometries.size()-1, cachedGeometries);
-				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
-				// add to tile index
-				geom::model::box<Point> box;
-				geom::envelope(out, box);
-				addToTileIndexByBbox(oo, tileIndex, baseZoom, 
-					box.min_corner().get<0>(), box.min_corner().get<1>(), 
-					box.max_corner().get<0>(), box.max_corner().get<1>());
 
-				if (isIndexed) {
-					string name;
-					bool hasName = false;
-					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-					shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
-				}
+				string name;
+				bool hasName = false;
+				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+
+				// create OutputObject
+				OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
+
+				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 			}
 
 		} else {

@@ -17,7 +17,11 @@ public:
 	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box);
 	virtual bool Intersects(const std::string &layerName, Box &box);
 	virtual void CreateNamedLayerIndex(const std::string &layerName);
-	virtual void AddObjectedToIndex(const std::string &layerName, Box &box, bool hasName, const std::string &name);
+	virtual OutputObjectRef AddObjectedToIndex(uint_least8_t layerNum,
+		const std::string &layerName, 
+		enum OutputGeometryType geomType,
+		Geometry geometry, 
+		bool isIndexed, bool hasName, const std::string &name);
 
 	TileIndex tileIndex;
 	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
@@ -28,6 +32,9 @@ private:
 	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box);
 	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2);
 	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids);
+	void addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex,
+		double minLon, double minLatp, double maxLon, double maxLatp);
+	void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, Geometry *geom);
 
 	uint baseZoom;
 };
