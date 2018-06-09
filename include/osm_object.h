@@ -12,9 +12,6 @@
 #include "read_pbf.h"
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
 
 // Lua
 extern "C" {
@@ -155,7 +152,6 @@ public:
 	// ----	vector_layers metadata entry
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
-	std::string serialiseLayerJSON();
 
 	std::vector<std::string> GetSignificantNodeKeys();
 };

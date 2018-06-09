@@ -41,6 +41,8 @@ public:
 			bool indexed,
 			const std::string &indexName,	
 			const std::string &writeTo);
+
+	std::string serialiseToJSON();
 };
 
 class Config

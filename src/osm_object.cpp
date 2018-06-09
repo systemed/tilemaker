@@ -1,7 +1,6 @@
 #include "osm_object.h"
 
 using namespace std;
-using namespace rapidjson;
 
 kaguya::State *g_luaState = nullptr;
 
@@ -190,6 +189,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 					osmID, osmMemTiles.osmStore);
 	outputs.push_back(oo);
 }
+
 void OSMObject::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
@@ -229,40 +229,6 @@ void OSMObject::AttributeBoolean(const string &key, const bool val) {
 // Record attribute name/type for vector_layers table
 void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
 	layers.layers[layer].attributeMap[key] = type;
-}
-
-std::string OSMObject::serialiseLayerJSON() {
-	Document document;
-	document.SetObject();
-	Document::AllocatorType& allocator = document.GetAllocator();
-
-	Value layerArray(kArrayType);
-	for (auto it = layers.layers.begin(); it != layers.layers.end(); ++it) {
-		Value fieldObj(kObjectType);
-		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
-			Value k(jt->first.c_str(), allocator);
-			switch (jt->second) {
-				case 0: fieldObj.AddMember(k, "String" , allocator); break;
-				case 1:	fieldObj.AddMember(k, "Number" , allocator); break;
-				case 2:	fieldObj.AddMember(k, "Boolean", allocator); break;
-			}
-		}
-		Value layerObj(kObjectType);
-		Value name(it->name.c_str(), allocator);
-		layerObj.AddMember("id",      name,        allocator);
-		layerObj.AddMember("fields",  fieldObj,    allocator);
-		layerObj.AddMember("minzoom", it->minzoom, allocator);
-		layerObj.AddMember("maxzoom", it->maxzoom, allocator);
-		layerArray.PushBack(layerObj, allocator);
-	}
-
-	document.AddMember("vector_layers", layerArray, allocator);
-
-	StringBuffer buffer;
-	Writer<StringBuffer> writer(buffer);
-	document.Accept(writer);
-	string json(buffer.GetString(), buffer.GetSize());
-	return json;
 }
 
 void OSMObject::everyNode(NodeID id, LatpLon node)

@@ -255,7 +255,7 @@ int main(int argc, char* argv[]) {
 
 	if (sqlite) {
 		// Write mbtiles 1.3+ json object
-		sharedData.mbtiles.writeMetadata("json", osmObject.serialiseLayerJSON());
+		sharedData.mbtiles.writeMetadata("json", layers.serialiseToJSON());
 
 		// Write user-defined metadata
 		if (jsonConfig["settings"].HasMember("metadata")) {
