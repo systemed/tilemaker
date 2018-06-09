@@ -84,9 +84,8 @@ void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			readShapefile(layer.source, layer.sourceColumns, clippingBox, shpMemTiles.tileIndex,
-			              shpMemTiles.cachedGeometries,
-			              osmObject,
+			readShapefile(layer.source, layer.sourceColumns, clippingBox,
+			              layers,
 			              config.baseZoom, layerNum, layer.name, layer.indexed,
 			              layer.indexName,
 						  shpMemTiles);

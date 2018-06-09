@@ -33,7 +33,7 @@ void addShapefileAttributes(
 		DBFHandle &dbf,
 		OutputObjectRef &oo,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
-		OSMObject &osmObject) {
+		class LayerDefinition &layers) {
 
 	for (auto it : columnMap) {
 		int pos = it.first;
@@ -41,27 +41,24 @@ void addShapefileAttributes(
 		vector_tile::Tile_Value v;
 		switch (columnTypeMap[pos]) {
 			case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo->layer, key, 1);
+			         layers.layers[oo->layer].attributeMap[key] = 1;
 			         break;
 			case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo->layer, key, 1);
+			         layers.layers[oo->layer].attributeMap[key] = 1;
 			         break;
 			default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
-			         osmObject.setVectorLayerMetadata(oo->layer, key, 3);
+			         layers.layers[oo->layer].attributeMap[key] = 3;
 			         break;
 		}
 		oo->addAttribute(key, v);
 	}
 }
 
-
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void readShapefile(string filename, 
                    vector<string> &columns,
                    const Box &clippingBox, 
-                   TileIndex &tileIndex, 
-                   vector<Geometry> &cachedGeometries,
-				   OSMObject &osmObject,
+				   class LayerDefinition &layers,
                    uint baseZoom, uint layerNum, const string &layerName,
                    bool isIndexed,
 				   const string &indexName,
@@ -103,10 +100,9 @@ void readShapefile(string filename,
 				bool hasName = false;
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-				OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
 
-				std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1, cachedGeometries);
-				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
+				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 			}
 
 		} else if (shapeType==3) {
@@ -125,9 +121,9 @@ void readShapefile(string filename,
 					bool hasName = false;
 					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-					OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
+					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
 
-					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
+					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 				}
 			}
 
@@ -190,9 +186,9 @@ void readShapefile(string filename,
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 				// create OutputObject
-				OutputObjectRef oo = shpMemTiles.AddObjectedToIndex(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
 
-				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
+				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 			}
 
 		} else {
