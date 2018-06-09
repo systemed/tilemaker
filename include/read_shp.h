@@ -33,7 +33,8 @@ void readShapefile(std::string filename,
                    OSMObject &osmObject,
                    uint baseZoom, uint layerNum, const std::string &layerName,
                    bool isIndexed,
-                   const std::string &indexName);
+                   const std::string &indexName,
+				   class ShpMemTiles &shpMemTiles);
 
 #endif //_READ_SHP_H
 

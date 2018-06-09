@@ -99,8 +99,9 @@ void readShapefile(string filename,
 				   OSMObject &osmObject,
                    uint baseZoom, uint layerNum, const string &layerName,
                    bool isIndexed,
-				   const string &indexName) {
-
+				   const string &indexName,
+				   class ShpMemTiles &shpMemTiles) 
+{
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");
 	DBFHandle dbf = DBFOpen(filename.c_str(), "rb");
@@ -139,10 +140,13 @@ void readShapefile(string filename,
 				OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_POINT, layerNum, cachedGeometries.size()-1, cachedGeometries);
 				addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
-				if (isIndexed) {
-					uint64_t id = cachedGeometries.size()-1;
-					geom::envelope(p, box); osmObject.indices.at(layerName).insert(std::make_pair(box, id));
-					if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+				if (isIndexed)
+				{
+					string name;
+					bool hasName = false;
+					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+					geom::envelope(p, box);
+					shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
 				}
 			}
 
@@ -161,10 +165,13 @@ void readShapefile(string filename,
 					OutputObjectRef oo = std::make_shared<OutputObjectCached>(CACHED_LINESTRING, layerNum, cachedGeometries.size()-1, cachedGeometries);
 					addShapefileAttributes(dbf,oo,i,columnMap,columnTypeMap,osmObject);
 					addToTileIndexPolyline(oo, tileIndex, baseZoom, *it);
-					if (isIndexed) {
-						uint id = cachedGeometries.size()-1;
-						geom::envelope(*it, box); osmObject.indices.at(layerName).insert(std::make_pair(box, id));
-						if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+					if (isIndexed) 
+					{
+						string name;
+						bool hasName = false;
+						if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+						geom::envelope(*it, box);
+						shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
 					}
 				}
 			}
@@ -234,9 +241,10 @@ void readShapefile(string filename,
 					box.max_corner().get<0>(), box.max_corner().get<1>());
 
 				if (isIndexed) {
-					uint id = cachedGeometries.size()-1;
-					osmObject.indices.at(layerName).insert(std::make_pair(box, id));
-					if (indexField>-1) { osmObject.cachedGeometryNames.operator[](id)=DBFReadStringAttribute(dbf, i, indexField); }
+					string name;
+					bool hasName = false;
+					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+					shpMemTiles.AddObjectedToIndex(layerName, box, hasName, name);
 				}
 			}
 

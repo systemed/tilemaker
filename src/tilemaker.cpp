@@ -69,27 +69,27 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
 				bool hasClippingBox, const Box &clippingBox,
-				TileIndex &tileIndex, 
-				std::vector<Geometry> &cachedGeometries,
-				OSMObject &osmObject)
+				OSMObject &osmObject,
+				class ShpMemTiles &shpMemTiles)
 {
 	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
 	{
 		// External layer sources
 		LayerDef &layer = layers.layers[layerNum];
 		if(layer.indexed)
-			osmObject.indices.operator[](layer.name)=RTree();
+			shpMemTiles.CreateNamedLayerIndex(layer.name);
 
 		if (layer.source.size()>0) {
 			if (!hasClippingBox) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			readShapefile(layer.source, layer.sourceColumns, clippingBox, tileIndex,
-			              cachedGeometries,
+			readShapefile(layer.source, layer.sourceColumns, clippingBox, shpMemTiles.tileIndex,
+			              shpMemTiles.cachedGeometries,
 			              osmObject,
 			              config.baseZoom, layerNum, layer.name, layer.indexed,
-			              layer.indexName);
+			              layer.indexName,
+						  shpMemTiles);
 		}
 	}
 }
@@ -223,13 +223,13 @@ int main(int argc, char* argv[]) {
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaState, shpMemTiles.cachedGeometries, 
-		shpMemTiles.cachedGeometryNames, &osmMemTiles.osmStore, osmMemTiles.tileIndex);
+	OSMObject osmObject(config, layers, luaState, shpMemTiles, 
+		&osmMemTiles.osmStore, osmMemTiles.tileIndex);
 
 	// ---- Load external shp files
 
 	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, 
-		shpMemTiles.tileIndex, shpMemTiles.cachedGeometries, osmObject);
+		osmObject, shpMemTiles);
 
 	// ---- Call init_function of Lua logic
 

@@ -24,6 +24,19 @@ public:
 	///This must be thread safe!
 	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile)=0;
+
+	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box)
+	{
+		return std::vector<std::string>();
+	};
+
+	virtual bool Intersects(const std::string &layerName, Box &box)
+	{
+		return false;
+	};
+
+	virtual void CreateNamedLayerIndex(const std::string &name) {};
+
 };
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt

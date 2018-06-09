@@ -11,6 +11,7 @@
 #include "shared_data.h"
 #include "output_object.h"
 #include "read_pbf.h"
+#include "shp_mem_tiles.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
@@ -29,9 +30,7 @@ class OSMObject : public PbfReaderOutput
 public:
 
 	kaguya::State &luaState;				// Lua reference
-	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
-	std::vector<Geometry> &cachedGeometries;		// Cached geometries
-	std::map<uint,std::string> &cachedGeometryNames;	// Cached geometry names
+	class ShpMemTiles &shpMemTiles;
 	OSMStore *osmStore;						// Global OSM store
 	TileIndex &tileIndex;
 
@@ -59,8 +58,7 @@ public:
 	// ----	initialization routines
 
 	OSMObject(const class Config &configIn, class LayerDefinition &layers, 
-		kaguya::State &luaObj, std::vector<Geometry> &geomPtr, 
-		std::map<uint,std::string> &namePtr, OSMStore *storePtr, 
+		kaguya::State &luaObj, class ShpMemTiles &shpMemTiles, OSMStore *storePtr, 
 		TileIndex &tileIndex);
 
 	// ----	Helpers provided for main routine
@@ -111,12 +109,8 @@ public:
 	// ----	Spatial queries called from Lua
 
 	// Find intersecting shapefile layer
-	// TODO: multipolygon relations not supported, will always return false
 	std::vector<std::string> FindIntersecting(const std::string &layerName);
 	bool Intersects(const std::string &layerName);
-	std::vector<uint> findIntersectingGeometries(const std::string &layerName);
-	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2);
-	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids);
 
 	// Returns whether it is closed polygon
 	bool IsClosed() const;

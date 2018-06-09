@@ -6,11 +6,11 @@ using namespace rapidjson;
 
 OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers,
 	kaguya::State &luaObj, 
-	vector<Geometry> &geomPtr, map<uint,string> &namePtr, OSMStore *storePtr,
+	class ShpMemTiles &shpMemTiles, 
+	OSMStore *storePtr,
 	TileIndex &tileIndex):
 	luaState(luaObj),
-	cachedGeometries(geomPtr),
-	cachedGeometryNames(namePtr),
+	shpMemTiles(shpMemTiles),
 	tileIndex(tileIndex),
 	config(configIn),
 	layers(layers)
@@ -50,51 +50,24 @@ string OSMObject::Find(const string& key) const {
 // ----	Spatial queries called from Lua
 
 // Find intersecting shapefile layer
-// TODO: multipolygon relations not supported, will always return false
-vector<string> OSMObject::FindIntersecting(const string &layerName) {
-	vector<uint> ids = findIntersectingGeometries(layerName);
-	return namesOfGeometries(ids);
+vector<string> OSMObject::FindIntersecting(const string &layerName) 
+{
+	// TODO: multipolygon relations not supported, will always return empty vector
+	if(isRelation) return vector<string>();
+	Point p1(lon1/10000000.0,latp1/10000000.0);
+	Point p2(lon2/10000000.0,latp2/10000000.0);
+	Box box = Box(p1,p2);
+	return shpMemTiles.FindIntersecting(layerName, box);
 }
-bool OSMObject::Intersects(const string &layerName) {
-	return !findIntersectingGeometries(layerName).empty();
-}
-vector<uint> OSMObject::findIntersectingGeometries(const string &layerName) {
-	vector<IndexValue> results;
-	vector<uint> ids;
 
-	auto f = indices.find(layerName);
-	if (f==indices.end()) {
-		cerr << "Couldn't find indexed layer " << layerName << endl;
-	} else if (!isWay) {
-		Point p(lon1/10000000.0,latp1/10000000.0);
-		f->second.query(geom::index::intersects(p), back_inserter(results));
-		return verifyIntersectResults(results,p,p);
-	} else if (!isRelation) {
-		Point p1(lon1/10000000.0,latp1/10000000.0);
-		Point p2(lon1/10000000.0,latp1/10000000.0);
-		Box box = Box(p1,p2);
-		f->second.query(geom::index::intersects(box), back_inserter(results));
-		return verifyIntersectResults(results,p1,p2);
-	}
-	return vector<uint>();	// empty, relations not supported
-}
-vector<uint> OSMObject::verifyIntersectResults(vector<IndexValue> &results, Point &p1, Point &p2) {
-	vector<uint> ids;
-	for (auto it : results) {
-		uint id=it.second;
-		if      (         geom::intersects(cachedGeometries.at(id),p1)) { ids.push_back(id); }
-		else if (isWay && geom::intersects(cachedGeometries.at(id),p2)) { ids.push_back(id); }
-	}
-	return ids;
-}
-vector<string> OSMObject::namesOfGeometries(vector<uint> &ids) {
-	vector<string> names;
-	for (uint i=0; i<ids.size(); i++) {
-		if (cachedGeometryNames.find(ids[i])!=cachedGeometryNames.end()) {
-			names.push_back(cachedGeometryNames.at(ids[i]));
-		}
-	}
-	return names;
+bool OSMObject::Intersects(const string &layerName)
+{
+	// TODO: multipolygon relations not supported, will always return false
+	if(isRelation) return false;
+	Point p1(lon1/10000000.0,latp1/10000000.0);
+	Point p2(lon2/10000000.0,latp2/10000000.0);
+	Box box = Box(p1,p2);
+	return shpMemTiles.Intersects(layerName, box);
 }
 
 // Returns whether it is closed polygon
