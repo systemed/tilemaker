@@ -55,15 +55,18 @@ void addShapefileAttributes(
 }
 
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
-void readShapefile(string filename, 
-                   vector<string> &columns,
-                   const Box &clippingBox, 
+void readShapefile(const Box &clippingBox, 
 				   class LayerDefinition &layers,
-                   uint baseZoom, uint layerNum, const string &layerName,
-                   bool isIndexed,
-				   const string &indexName,
+                   uint baseZoom, uint layerNum,
 				   class ShpMemTiles &shpMemTiles) 
 {
+	LayerDef &layer = layers.layers[layerNum];
+	const string &filename = layer.source;
+	const vector<string> &columns = layer.sourceColumns;
+	const string &layerName = layer.name;
+	bool isIndexed = layer.indexed;
+	const string &indexName = layer.indexName;
+
 	// open shapefile
 	SHPHandle shp = SHPOpen(filename.c_str(), "rb");
 	DBFHandle dbf = DBFOpen(filename.c_str(), "rb");

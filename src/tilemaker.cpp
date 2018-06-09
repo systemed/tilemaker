@@ -25,14 +25,6 @@
 typedef unsigned uint;
 #endif
 
-// Lua
-extern "C" {
-	#include "lua.h"
-    #include "lualib.h"
-    #include "lauxlib.h"
-}
-#include "kaguya.hpp"
-
 #include "geomtypes.h"
 
 // Tilemaker code
@@ -56,42 +48,6 @@ extern "C" {
 using namespace std;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
-
-kaguya::State luaState;
-
-int lua_error_handler(int errCode, const char *errMessage)
-{
-	cerr << "lua runtime error: " << errMessage << endl;
-	std::string traceback = luaState["debug"]["traceback"];
-	cerr << "traceback: " << traceback << endl;
-	exit(0);
-}
-
-void loadExternalShpFiles(class Config &config, class LayerDefinition &layers,
-				bool hasClippingBox, const Box &clippingBox,
-				OSMObject &osmObject,
-				class ShpMemTiles &shpMemTiles)
-{
-	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
-	{
-		// External layer sources
-		LayerDef &layer = layers.layers[layerNum];
-		if(layer.indexed)
-			shpMemTiles.CreateNamedLayerIndex(layer.name);
-
-		if (layer.source.size()>0) {
-			if (!hasClippingBox) {
-				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-				exit(EXIT_FAILURE);
-			}
-			readShapefile(layer.source, layer.sourceColumns, clippingBox,
-			              layers,
-			              config.baseZoom, layerNum, layer.name, layer.indexed,
-			              layer.indexName,
-						  shpMemTiles);
-		}
-	}
-}
 
 int main(int argc, char* argv[]) {
 
@@ -165,27 +121,6 @@ int main(int argc, char* argv[]) {
 		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
 		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
 	}
-	// ----	Initialise Lua
-
-	luaState.setErrorHandler(lua_error_handler);
-	luaState.dofile(luaFile.c_str());
-	luaState["OSM"].setClass(kaguya::UserdataMetatable<OSMObject>()
-		.addFunction("Id", &OSMObject::Id)
-		.addFunction("Holds", &OSMObject::Holds)
-		.addFunction("Find", &OSMObject::Find)
-		.addFunction("FindIntersecting", &OSMObject::FindIntersecting)
-		.addFunction("Intersects", &OSMObject::Intersects)
-		.addFunction("IsClosed", &OSMObject::IsClosed)
-		.addFunction("ScaleToMeter", &OSMObject::ScaleToMeter)
-		.addFunction("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
-		.addFunction("Area", &OSMObject::Area)
-		.addFunction("Length", &OSMObject::Length)
-		.addFunction("Layer", &OSMObject::Layer)
-		.addFunction("LayerAsCentroid", &OSMObject::LayerAsCentroid)
-		.addFunction("Attribute", &OSMObject::Attribute)
-		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
-		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
-	);
 
 	// ----	Read JSON config
 
@@ -222,21 +157,34 @@ int main(int argc, char* argv[]) {
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaState, shpMemTiles, 
-		&osmMemTiles.osmStore, osmMemTiles.tileIndex);
+	OSMObject osmObject(config, layers, luaFile, 
+		shpMemTiles, 
+		osmMemTiles);
 
 	// ---- Load external shp files
 
-	loadExternalShpFiles(config, layers, hasClippingBox, clippingBox, 
-		osmObject, shpMemTiles);
+	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
+	{
+		// External layer sources
+		LayerDef &layer = layers.layers[layerNum];
+		if(layer.indexed)
+			shpMemTiles.CreateNamedLayerIndex(layer.name);
 
-	// ---- Call init_function of Lua logic
-
-	luaState("if init_function~=nil then init_function() end");
+		if (layer.source.size()>0) {
+			if (!hasClippingBox) {
+				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+				exit(EXIT_FAILURE);
+			}
+			readShapefile(clippingBox,
+			              layers,
+			              config.baseZoom, layerNum,
+						  shpMemTiles);
+		}
+	}
 
 	// ----	Read significant node tags
 
-	vector<string> nodeKeyVec = luaState["node_keys"];
+	vector<string> nodeKeyVec = osmObject.GetSignificantNodeKeys();
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
 
 	// ----	Read all PBFs
@@ -326,9 +274,6 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.close();
 	}
 	google::protobuf::ShutdownProtobufLibrary();
-
-	// Call exit_function of Lua logic
-	luaState("if exit_function~=nil then exit_function() end");
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }

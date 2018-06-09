@@ -1,22 +1,63 @@
 #include "osm_object.h"
+
 using namespace std;
 using namespace rapidjson;
+
+kaguya::State *g_luaState = nullptr;
+
+int lua_error_handler(int errCode, const char *errMessage)
+{
+	cerr << "lua runtime error: " << errMessage << endl;
+	std::string traceback = (*g_luaState)["debug"]["traceback"];
+	cerr << "traceback: " << traceback << endl;
+	exit(0);
+}
 
 // ----	initialization routines
 
 OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers,
-	kaguya::State &luaObj, 
-	class ShpMemTiles &shpMemTiles, 
-	OSMStore *storePtr,
-	TileIndex &tileIndex):
-	luaState(luaObj),
+	const string &luaFile,
+	const class ShpMemTiles &shpMemTiles, 
+	class OsmMemTiles &osmMemTiles):
 	shpMemTiles(shpMemTiles),
-	tileIndex(tileIndex),
+	osmMemTiles(osmMemTiles),
 	config(configIn),
 	layers(layers)
 {
 	newWayID = MAX_WAY_ID;
-	osmStore = storePtr;
+
+	// ----	Initialise Lua
+	g_luaState = &luaState;
+	luaState.setErrorHandler(lua_error_handler);
+	luaState.dofile(luaFile.c_str());
+	luaState["OSM"].setClass(kaguya::UserdataMetatable<OSMObject>()
+		.addFunction("Id", &OSMObject::Id)
+		.addFunction("Holds", &OSMObject::Holds)
+		.addFunction("Find", &OSMObject::Find)
+		.addFunction("FindIntersecting", &OSMObject::FindIntersecting)
+		.addFunction("Intersects", &OSMObject::Intersects)
+		.addFunction("IsClosed", &OSMObject::IsClosed)
+		.addFunction("ScaleToMeter", &OSMObject::ScaleToMeter)
+		.addFunction("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
+		.addFunction("Area", &OSMObject::Area)
+		.addFunction("Length", &OSMObject::Length)
+		.addFunction("Layer", &OSMObject::Layer)
+		.addFunction("LayerAsCentroid", &OSMObject::LayerAsCentroid)
+		.addFunction("Attribute", &OSMObject::Attribute)
+		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
+		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
+	);
+
+	// ---- Call init_function of Lua logic
+
+	luaState("if init_function~=nil then init_function() end");
+
+}
+
+OSMObject::~OSMObject()
+{
+	// Call exit_function of Lua logic
+	luaState("if exit_function~=nil then exit_function() end");
 }
 
 // ----	Helpers provided for main routine
@@ -116,7 +157,7 @@ double OSMObject::Length() {
 const Linestring &OSMObject::linestring() {
 	if (!linestringInited) {
 		linestringInited = true;
-		linestringCache = osmStore->nodeListLinestring(*nodeVec);
+		linestringCache = osmMemTiles.osmStore.nodeListLinestring(*nodeVec);
 	}
 	return linestringCache;
 }
@@ -124,7 +165,7 @@ const Linestring &OSMObject::linestring() {
 const Polygon &OSMObject::polygon() {
 	if (!polygonInited) {
 		polygonInited = true;
-		polygonCache = osmStore->nodeListPolygon(*nodeVec);
+		polygonCache = osmMemTiles.osmStore.nodeListPolygon(*nodeVec);
 	}
 	return polygonCache;
 }
@@ -132,7 +173,7 @@ const Polygon &OSMObject::polygon() {
 const MultiPolygon &OSMObject::multiPolygon() {
 	if (!multiPolygonInited) {
 		multiPolygonInited = true;
-		multiPolygonCache = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
+		multiPolygonCache = osmMemTiles.osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
 	}
 	return multiPolygonCache;
 }
@@ -144,18 +185,18 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
+	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(isWay ? (area ? POLYGON : LINESTRING) : POINT,
 					layers.layerMap[layerName],
-					osmID, *osmStore);
+					osmID, osmMemTiles.osmStore);
 	outputs.push_back(oo);
 }
 void OSMObject::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
-	std::shared_ptr<OutputObject> oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
+	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
-					osmID, *osmStore);
+					osmID, osmMemTiles.osmStore);
 	outputs.push_back(oo);
 }
 
@@ -226,7 +267,7 @@ std::string OSMObject::serialiseLayerJSON() {
 
 void OSMObject::everyNode(NodeID id, LatpLon node)
 {
-	osmStore->nodes.insert_back(id, node);
+	osmMemTiles.osmStore.nodes.insert_back(id, node);
 }
 
 // We are now processing a node
@@ -240,11 +281,11 @@ void OSMObject::setNode(NodeID id, LatpLon node, const std::map<std::string, std
 
 	currentTags = tags;
 
-	this->luaState["node_function"](this);
+	luaState["node_function"](this);
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			tileIndex[index].push_back(*jt);
+			osmMemTiles.AddObject(index, *jt);
 		}
 	}
 }
@@ -258,8 +299,8 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 
 	nodeVec = nodeVecPtr;
 	try {
-		setLocation(osmStore->nodes.at(nodeVec->front()).lon, osmStore->nodes.at(nodeVec->front()).latp,
-				osmStore->nodes.at(nodeVec->back()).lon, osmStore->nodes.at(nodeVec->back()).latp);
+		setLocation(osmMemTiles.osmStore.nodes.at(nodeVec->front()).lon, osmMemTiles.osmStore.nodes.at(nodeVec->front()).latp,
+				osmMemTiles.osmStore.nodes.at(nodeVec->back()).lon, osmMemTiles.osmStore.nodes.at(nodeVec->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -272,15 +313,15 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 	bool ok = true;
 	if (ok)
 	{
-		this->luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
-		kaguya::LuaFunction way_function = this->luaState["way_function"];
+		luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
+		kaguya::LuaFunction way_function = luaState["way_function"];
 		kaguya::LuaRef ret = way_function(this);
 		assert(!ret);
 	}
 
 	if (!this->empty() || inRelation) {
 		// Store the way's nodes in the global way store
-		WayStore &ways = osmStore->ways;
+		WayStore &ways = osmMemTiles.osmStore.ways;
 		WayID wayId = static_cast<WayID>(way->id());
 		ways.insert_back(wayId, *nodeVec);
 	}
@@ -289,7 +330,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore->nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmMemTiles.osmStore.nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -300,7 +341,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 						polygonExists = true;
 						continue;
 					}
-					tileIndex[index].push_back(*jt);
+					osmMemTiles.AddObject(index, *jt);
 				}
 			}
 
@@ -311,7 +352,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 						if ((*jt)->geomType != POLYGON) continue;
-						tileIndex[index].push_back(*jt);
+						osmMemTiles.AddObject(index, *jt);
 					}
 				}
 			}
@@ -341,20 +382,20 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 
 	bool ok = true;
 	if (ok)
-		this->luaState["way_function"](this);
+		luaState["way_function"](this);
 
 	if (!this->empty()) {								
 
 		WayID relID = this->osmID;
 		// Store the relation members in the global relation store
-		RelationStore &relations = osmStore->relations;
+		RelationStore &relations = osmMemTiles.osmStore.relations;
 		relations.insert_front(relID, *outerWayVec, *innerWayVec);
 
 		MultiPolygon mp;
 		try
 		{
 			// for each tile the relation may cover, put the output objects.
-			mp = osmStore->wayListMultiPolygon(*outerWayVec, *innerWayVec);
+			mp = osmMemTiles.osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
 		}
 		catch(std::out_of_range &err)
 		{
@@ -378,10 +419,15 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-				tileIndex[index].push_back(*jt);
+				osmMemTiles.AddObject(index, *jt);
 			}
 		}
 	}
 
+}
+
+vector<string> OSMObject::GetSignificantNodeKeys()
+{
+	return luaState["node_keys"];
 }
 

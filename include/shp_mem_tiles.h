@@ -14,9 +14,11 @@ public:
 		std::vector<OutputObjectRef> &dstTile);
 
 	// Find intersecting shapefile layer
-	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box);
-	virtual bool Intersects(const std::string &layerName, Box &box);
+	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const;
+	virtual bool Intersects(const std::string &layerName, Box &box) const;
 	virtual void CreateNamedLayerIndex(const std::string &layerName);
+
+	// Used in shape file loading
 	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
@@ -24,11 +26,15 @@ public:
 		bool isIndexed, bool hasName, const std::string &name);
 
 private:
-	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box);
-	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2);
-	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids);
+	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
+	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2) const;
+	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids) const;
+
+	/// Add an OutputObject to all tiles between min/max lat/lon
 	void addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex,
 		double minLon, double minLatp, double maxLon, double maxLatp);
+
+	/// Add an OutputObject to all tiles along a polyline
 	void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, Geometry *geom);
 
 	uint baseZoom;

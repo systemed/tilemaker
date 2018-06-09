@@ -5,16 +5,24 @@
 #include <string>
 #include <sstream>
 #include <map>
-#include "kaguya.hpp"
 #include "geomtypes.h"
 #include "osm_store.h"
 #include "shared_data.h"
 #include "output_object.h"
 #include "read_pbf.h"
 #include "shp_mem_tiles.h"
+#include "osm_mem_tiles.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+
+// Lua
+extern "C" {
+	#include "lua.h"
+    #include "lualib.h"
+    #include "lauxlib.h"
+}
+#include "kaguya.hpp"
 
 /**
 	OSMObject - represents the object (from the .osm.pbf) currently being processed
@@ -28,11 +36,9 @@ class OSMObject : public PbfReaderOutput
 { 
 
 public:
-
-	kaguya::State &luaState;				// Lua reference
-	class ShpMemTiles &shpMemTiles;
-	OSMStore *osmStore;						// Global OSM store
-	TileIndex &tileIndex;
+	kaguya::State luaState;
+	const class ShpMemTiles &shpMemTiles;
+	class OsmMemTiles &osmMemTiles;
 
 	uint64_t osmID;							// ID of OSM object
 	WayID newWayID = MAX_WAY_ID;			// Decrementing new ID for relations
@@ -58,8 +64,10 @@ public:
 	// ----	initialization routines
 
 	OSMObject(const class Config &configIn, class LayerDefinition &layers, 
-		kaguya::State &luaObj, class ShpMemTiles &shpMemTiles, OSMStore *storePtr, 
-		TileIndex &tileIndex);
+		const std::string &luaFile,
+		const class ShpMemTiles &shpMemTiles, 
+		class OsmMemTiles &osmMemTiles);
+	virtual ~OSMObject();
 
 	// ----	Helpers provided for main routine
 
@@ -148,6 +156,8 @@ public:
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 	std::string serialiseLayerJSON();
+
+	std::vector<std::string> GetSignificantNodeKeys();
 };
 
 #endif //_OSM_OBJECT_H

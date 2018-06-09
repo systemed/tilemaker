@@ -37,6 +37,15 @@ public:
 
 	virtual void CreateNamedLayerIndex(const std::string &name) {};
 
+	// Used in shape file loading
+	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
+		const std::string &layerName, 
+		enum OutputGeometryType geomType,
+		Geometry geometry, 
+		bool isIndexed, bool hasName, const std::string &name) {return OutputObjectRef();};
+
+	//Used in OSM data loading
+	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
 };
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt

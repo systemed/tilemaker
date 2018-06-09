@@ -21,16 +21,16 @@ void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom,
 
 // Find intersecting shapefile layer
 // TODO: multipolygon relations not supported, will always return false
-vector<string> ShpMemTiles::FindIntersecting(const string &layerName, Box &box) {
+vector<string> ShpMemTiles::FindIntersecting(const string &layerName, Box &box) const {
 	vector<uint> ids = findIntersectingGeometries(layerName, box);
 	return namesOfGeometries(ids);
 }
 
-bool ShpMemTiles::Intersects(const string &layerName, Box &box) {
+bool ShpMemTiles::Intersects(const string &layerName, Box &box) const {
 	return !findIntersectingGeometries(layerName, box).empty();
 }
 
-vector<uint> ShpMemTiles::findIntersectingGeometries(const string &layerName, Box &box) {
+vector<uint> ShpMemTiles::findIntersectingGeometries(const string &layerName, Box &box) const {
 	vector<IndexValue> results;
 	vector<uint> ids;
 
@@ -44,7 +44,7 @@ vector<uint> ShpMemTiles::findIntersectingGeometries(const string &layerName, Bo
 	return verifyIntersectResults(results,box.min_corner(),box.max_corner());
 }
 
-vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Point &p1, Point &p2) {
+vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Point &p1, Point &p2) const {
 	vector<uint> ids;
 	for (auto it : results) {
 		uint id=it.second;
@@ -54,7 +54,7 @@ vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Po
 	return ids;
 }
 
-vector<string> ShpMemTiles::namesOfGeometries(vector<uint> &ids) {
+vector<string> ShpMemTiles::namesOfGeometries(vector<uint> &ids) const {
 	vector<string> names;
 	for (uint i=0; i<ids.size(); i++) {
 		if (cachedGeometryNames.find(ids[i])!=cachedGeometryNames.end()) {

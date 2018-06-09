@@ -19,3 +19,7 @@ void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom,
 	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 
+void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
+{
+	tileIndex[index].push_back(oo);
+}
