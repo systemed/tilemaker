@@ -133,27 +133,25 @@ double OSMObject::ScaleToKiloMeter() {
 double OSMObject::Area() {
 	if (!IsClosed()) return 0;
 	if (isRelation) {
-		return geom::area(multiPolygon());
+		return geom::area(multiPolygonCached());
 	} else if (isWay) {
-		return geom::area(polygon());
-	} else {
-		return 0;
+		return geom::area(polygonCached());
 	}
+	return 0;
 }
 
 // Returns length
 double OSMObject::Length() {
 	if (isRelation) {
-		return geom::length(multiPolygon());
+		return geom::length(multiPolygonCached());
 	} else if (isWay) {
-		return geom::length(linestring());
-	} else {
-		return 0;
+		return geom::length(linestringCached());
 	}
+	return 0;
 }
 
-// Lazy geometries creation
-const Linestring &OSMObject::linestring() {
+// Cached geometries creation
+const Linestring &OSMObject::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
 		linestringCache = osmStore.nodeListLinestring(*nodeVec);
@@ -161,7 +159,7 @@ const Linestring &OSMObject::linestring() {
 	return linestringCache;
 }
 
-const Polygon &OSMObject::polygon() {
+const Polygon &OSMObject::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
 		polygonCache = osmStore.nodeListPolygon(*nodeVec);
@@ -169,7 +167,7 @@ const Polygon &OSMObject::polygon() {
 	return polygonCache;
 }
 
-const MultiPolygon &OSMObject::multiPolygon() {
+const MultiPolygon &OSMObject::multiPolygonCached() {
 	if (!multiPolygonInited) {
 		multiPolygonInited = true;
 		multiPolygonCache = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
@@ -199,7 +197,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 			{
 				try
 				{
-					geom = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+					geom = multiPolygonCached();
 				}
 				catch(std::out_of_range &err)
 				{
@@ -209,14 +207,13 @@ void OSMObject::Layer(const string &layerName, bool area) {
 			}
 			else if(isWay)
 			{
-				geom = osmStore.nodeListLinestring(*nodeVec);
+				geom = linestringCached();
 			}
 
 		}
 		else if (geomType==LINESTRING) {
 			// linestring
-			Linestring ls = this->osmStore.nodeListLinestring(*nodeVec);
-			geom = ls;
+			geom = linestringCached();
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;

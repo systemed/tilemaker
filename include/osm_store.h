@@ -69,7 +69,7 @@ public:
 typedef std::vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	std::unordered_map<WayID, const std::vector<NodeID>> mNodeLists;
+	std::unordered_map<WayID, const std::vector<NodeID> > mNodeLists;
 
 public:
 	// @brief Lookup a node list

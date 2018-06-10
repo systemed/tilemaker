@@ -1,5 +1,6 @@
 #include "shp_mem_tiles.h"
 using namespace std;
+namespace geom = boost::geometry;
 
 ShpMemTiles::ShpMemTiles(uint baseZoom):
 	TileDataSource(),

@@ -110,13 +110,6 @@ public:
 	// Returns length
 	double Length();
 
-	// Lazy geometries creation
-	const Linestring &linestring();
-
-	const Polygon &polygon();
-
-	const MultiPolygon &multiPolygon();
-
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 
 	// Add layer
@@ -133,6 +126,13 @@ public:
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 
 	std::vector<std::string> GetSignificantNodeKeys();
+
+	// Cached geometries creation
+	const Linestring &linestringCached();
+
+	const Polygon &polygonCached();
+
+	const MultiPolygon &multiPolygonCached();
 
 private:
 	OSMStore osmStore;									// global OSM store

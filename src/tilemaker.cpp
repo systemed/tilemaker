@@ -31,7 +31,6 @@ typedef unsigned uint;
 #include "helpers.h"
 #include "coordinates.h"
 
-#include "osm_store.h"
 #include "output_object.h"
 #include "osm_object.h"
 #include "mbtiles.h"

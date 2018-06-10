@@ -14,7 +14,6 @@
 #include <memory>
 #include "geomtypes.h"
 #include "coordinates.h"
-#include "osm_store.h"
 
 #include "clipper.hpp"
 
