@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _SHP_MEM_TILES
 #define _SHP_MEM_TILES
 

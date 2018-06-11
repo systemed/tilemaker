@@ -1,4 +1,4 @@
-#include "osm_object.h"
+#include "osm_lua_processing.h"
 #include <iostream>
 using namespace std;
 
@@ -14,7 +14,7 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 // ----	initialization routines
 
-OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers,
+OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles):
@@ -29,22 +29,22 @@ OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers
 	g_luaState = &luaState;
 	luaState.setErrorHandler(lua_error_handler);
 	luaState.dofile(luaFile.c_str());
-	luaState["OSM"].setClass(kaguya::UserdataMetatable<OSMObject>()
-		.addFunction("Id", &OSMObject::Id)
-		.addFunction("Holds", &OSMObject::Holds)
-		.addFunction("Find", &OSMObject::Find)
-		.addFunction("FindIntersecting", &OSMObject::FindIntersecting)
-		.addFunction("Intersects", &OSMObject::Intersects)
-		.addFunction("IsClosed", &OSMObject::IsClosed)
-		.addFunction("ScaleToMeter", &OSMObject::ScaleToMeter)
-		.addFunction("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
-		.addFunction("Area", &OSMObject::Area)
-		.addFunction("Length", &OSMObject::Length)
-		.addFunction("Layer", &OSMObject::Layer)
-		.addFunction("LayerAsCentroid", &OSMObject::LayerAsCentroid)
-		.addFunction("Attribute", &OSMObject::Attribute)
-		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
-		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
+	luaState["OSM"].setClass(kaguya::UserdataMetatable<OsmLuaProcessing>()
+		.addFunction("Id", &OsmLuaProcessing::Id)
+		.addFunction("Holds", &OsmLuaProcessing::Holds)
+		.addFunction("Find", &OsmLuaProcessing::Find)
+		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
+		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
+		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
+		.addFunction("ScaleToMeter", &OsmLuaProcessing::ScaleToMeter)
+		.addFunction("ScaleToKiloMeter", &OsmLuaProcessing::ScaleToKiloMeter)
+		.addFunction("Area", &OsmLuaProcessing::Area)
+		.addFunction("Length", &OsmLuaProcessing::Length)
+		.addFunction("Layer", &OsmLuaProcessing::Layer)
+		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
+		.addFunction("Attribute", &OsmLuaProcessing::Attribute)
+		.addFunction("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric)
+		.addFunction("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean)
 	);
 
 	// ---- Call init_function of Lua logic
@@ -53,7 +53,7 @@ OSMObject::OSMObject(const class Config &configIn, class LayerDefinition &layers
 
 }
 
-OSMObject::~OSMObject()
+OsmLuaProcessing::~OsmLuaProcessing()
 {
 	// Call exit_function of Lua logic
 	luaState("if exit_function~=nil then exit_function() end");
@@ -62,25 +62,25 @@ OSMObject::~OSMObject()
 // ----	Helpers provided for main routine
 
 // Has this object been assigned to any layers?
-bool OSMObject::empty() {
+bool OsmLuaProcessing::empty() {
 	return outputs.size()==0;
 }
 
 // ----	Metadata queries called from Lua
 
 // Get the ID of the current object
-string OSMObject::Id() const {
+string OsmLuaProcessing::Id() const {
 	return to_string(osmID);
 }
 
 // Check if there's a value for a given key
-bool OSMObject::Holds(const string& key) const {
+bool OsmLuaProcessing::Holds(const string& key) const {
 	
 	return currentTags.find(key) != currentTags.end();
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
-string OSMObject::Find(const string& key) const {
+string OsmLuaProcessing::Find(const string& key) const {
 
 	auto it = currentTags.find(key);
 	if(it == currentTags.end()) return "";
@@ -90,7 +90,7 @@ string OSMObject::Find(const string& key) const {
 // ----	Spatial queries called from Lua
 
 // Find intersecting shapefile layer
-vector<string> OSMObject::FindIntersecting(const string &layerName) 
+vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) 
 {
 	// TODO: multipolygon relations not supported, will always return empty vector
 	if(isRelation) return vector<string>();
@@ -100,7 +100,7 @@ vector<string> OSMObject::FindIntersecting(const string &layerName)
 	return shpMemTiles.FindIntersecting(layerName, box);
 }
 
-bool OSMObject::Intersects(const string &layerName)
+bool OsmLuaProcessing::Intersects(const string &layerName)
 {
 	// TODO: multipolygon relations not supported, will always return false
 	if(isRelation) return false;
@@ -111,7 +111,7 @@ bool OSMObject::Intersects(const string &layerName)
 }
 
 // Returns whether it is closed polygon
-bool OSMObject::IsClosed() const {
+bool OsmLuaProcessing::IsClosed() const {
 	if (!isWay) return false; // nonsense: it isn't a way
 	if (isRelation) {
 		return true; // TODO: check it when non-multipolygon are supported
@@ -121,16 +121,16 @@ bool OSMObject::IsClosed() const {
 }
 
 // Scale to (kilo)meter
-double OSMObject::ScaleToMeter() {
+double OsmLuaProcessing::ScaleToMeter() {
 	return degp2meter(1.0, (latp1/2+latp2/2)/10000000.0);
 }
 
-double OSMObject::ScaleToKiloMeter() {
+double OsmLuaProcessing::ScaleToKiloMeter() {
 	return (1/1000.0) * ScaleToMeter();
 }
 
 // Returns area
-double OSMObject::Area() {
+double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
 	if (isRelation) {
 		return geom::area(multiPolygonCached());
@@ -141,7 +141,7 @@ double OSMObject::Area() {
 }
 
 // Returns length
-double OSMObject::Length() {
+double OsmLuaProcessing::Length() {
 	if (isRelation) {
 		return geom::length(multiPolygonCached());
 	} else if (isWay) {
@@ -151,7 +151,7 @@ double OSMObject::Length() {
 }
 
 // Cached geometries creation
-const Linestring &OSMObject::linestringCached() {
+const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
 		linestringCache = osmStore.nodeListLinestring(*nodeVec);
@@ -159,7 +159,7 @@ const Linestring &OSMObject::linestringCached() {
 	return linestringCache;
 }
 
-const Polygon &OSMObject::polygonCached() {
+const Polygon &OsmLuaProcessing::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
 		polygonCache = osmStore.nodeListPolygon(*nodeVec);
@@ -167,7 +167,7 @@ const Polygon &OSMObject::polygonCached() {
 	return polygonCache;
 }
 
-const MultiPolygon &OSMObject::multiPolygonCached() {
+const MultiPolygon &OsmLuaProcessing::multiPolygonCached() {
 	if (!multiPolygonInited) {
 		multiPolygonInited = true;
 		multiPolygonCache = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
@@ -178,7 +178,7 @@ const MultiPolygon &OSMObject::multiPolygonCached() {
 // ----	Requests from Lua to write this way/node to a vector tile's Layer
 
 // Add object to specified layer from Lua
-void OSMObject::Layer(const string &layerName, bool area) {
+void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
@@ -225,7 +225,7 @@ void OSMObject::Layer(const string &layerName, bool area) {
 	outputs.push_back(oo);
 }
 
-void OSMObject::LayerAsCentroid(const string &layerName) {
+void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
@@ -267,7 +267,7 @@ void OSMObject::LayerAsCentroid(const string &layerName) {
 }
 
 // Set attributes in a vector tile's Attributes table
-void OSMObject::Attribute(const string &key, const string &val) {
+void OsmLuaProcessing::Attribute(const string &key, const string &val) {
 	if (val.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
@@ -276,7 +276,7 @@ void OSMObject::Attribute(const string &key, const string &val) {
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 0);
 }
 
-void OSMObject::AttributeNumeric(const string &key, const float val) {
+void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
@@ -284,7 +284,7 @@ void OSMObject::AttributeNumeric(const string &key, const float val) {
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 1);
 }
 
-void OSMObject::AttributeBoolean(const string &key, const bool val) {
+void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
@@ -293,22 +293,22 @@ void OSMObject::AttributeBoolean(const string &key, const bool val) {
 }
 
 // Record attribute name/type for vector_layers table
-void OSMObject::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
+void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
 	layers.layers[layer].attributeMap[key] = type;
 }
 
-void OSMObject::startOsmData()
+void OsmLuaProcessing::startOsmData()
 {
 	osmStore.clear();
 }
 
-void OSMObject::everyNode(NodeID id, LatpLon node)
+void OsmLuaProcessing::everyNode(NodeID id, LatpLon node)
 {
 	osmStore.nodes.insert_back(id, node);
 }
 
 // We are now processing a node
-void OSMObject::setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {
+void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = id;
 	isWay = false;
@@ -329,7 +329,7 @@ void OSMObject::setNode(NodeID id, LatpLon node, const std::map<std::string, std
 }
 
 // We are now processing a way
-void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {
+void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = way->id();
 	isWay = true;
@@ -407,7 +407,7 @@ void OSMObject::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std
 // We are now processing a relation
 // (note that we store relations as ways with artificial IDs, and that
 //  we use decrementing positive IDs to give a bit more space for way IDs)
-void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
+void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
 	const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = --newWayID;
@@ -469,12 +469,12 @@ void OSMObject::setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *
 
 }
 
-void OSMObject::endOsmData()
+void OsmLuaProcessing::endOsmData()
 {
 	osmStore.reportSize();
 }
 
-vector<string> OSMObject::GetSignificantNodeKeys()
+vector<string> OsmLuaProcessing::GetSignificantNodeKeys()
 {
 	return luaState["node_keys"];
 }

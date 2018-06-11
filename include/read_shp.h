@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _READ_SHP_H
 #define _READ_SHP_H
 
@@ -7,7 +8,7 @@
 #include <map>
 #include "geomtypes.h"
 #include "output_object.h"
-#include "osm_object.h"
+#include "osm_lua_processing.h"
 
 // Shapelib
 #include "shapefil.h"

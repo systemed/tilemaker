@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _WRITE_GEOMETRY_H
 #define _WRITE_GEOMETRY_H
 
@@ -10,13 +11,11 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-/*
-	WriteGeometryVisitor
-	- takes a boost::geometry object and writes it into a tile
-*/
-
 typedef std::vector<std::pair<int,int> > XYString;
 
+/**
+	\brief WriteGeometryVisitor takes a boost::geometry object and writes it into a tile
+*/
 class WriteGeometryVisitor : public boost::static_visitor<> { 
 
 public:
@@ -38,7 +37,7 @@ public:
 	// Linestring
 	void operator()(const Linestring &ls) const;
 
-	// Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
+	/// \brief Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
 	void writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, std::pair<int,int> *lastPos, bool closePath) const;
 };
 

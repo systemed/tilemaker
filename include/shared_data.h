@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _SHARED_DATA_H
 #define _SHARED_DATA_H
 
@@ -11,6 +12,7 @@
 #include "mbtiles.h"
 #include "tile_data.h"
 
+///\brief Defines map single layer appearance
 struct LayerDef {
 	std::string name;
 	uint minzoom;
@@ -26,6 +28,7 @@ struct LayerDef {
 	std::map<std::string, uint> attributeMap;
 };
 
+///\brief Defines layers used in map rendering
 class LayerDefinition
 {
 public:	
@@ -45,6 +48,7 @@ public:
 	std::string serialiseToJSON();
 };
 
+///\brief Config read from JSON to control behavior of program
 class Config
 {
 public:
@@ -64,6 +68,7 @@ public:
 	void readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox);
 };
 
+///\brief Data used by worker threads ::outputProc to write output
 class SharedData
 {
 public:

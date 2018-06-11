@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _OSM_STORE_H
 #define _OSM_STORE_H
 
@@ -136,16 +137,13 @@ public:
 };
 
 /**
-	OSM Store
-
-	OSM store, containing all above.
+	\brief OSM store keeps nodes, ways and relations in memory for later access
 
 	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
-	Only one instance of OSMStore is ever used. It will serve as the global data store. All data determined
-	to be output will be set here, from tilemaker.cpp.
+	It will serve as the global data store. OSM data destined for output will be set here from OsmMemTiles.
 
 	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
-	These functions are used by osm_output, and can be used by osm_object to provide the geometry information to Lua.
+	These functions are used by osm_output, and can be used by OsmLuaProcessing to provide the geometry information to Lua.
 
 	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
 	These store can be altered for efficient memory use without global code changes.

@@ -1,3 +1,4 @@
+/*! \file */ 
 
 // C++ includes
 #include <iostream>
@@ -32,7 +33,7 @@ typedef unsigned uint;
 #include "coordinates.h"
 
 #include "output_object.h"
-#include "osm_object.h"
+#include "osm_lua_processing.h"
 #include "mbtiles.h"
 #include "write_geometry.h"
 
@@ -48,6 +49,13 @@ using namespace std;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
 
+/**
+ *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
+ *
+ * Data is loaded into OsmMemTiles and ShpMemTiles.
+ *
+ * Worker threads write the output tiles, and start in the outputProc function.
+ */
 int main(int argc, char* argv[]) {
 
 	// ----	Read command-line options
@@ -156,7 +164,7 @@ int main(int argc, char* argv[]) {
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
-	OSMObject osmObject(config, layers, luaFile, 
+	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
 		shpMemTiles, 
 		osmMemTiles);
 
@@ -183,13 +191,13 @@ int main(int argc, char* argv[]) {
 
 	// ----	Read significant node tags
 
-	vector<string> nodeKeyVec = osmObject.GetSignificantNodeKeys();
+	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
 
 	// ----	Read all PBFs
 	
 	class PbfReader pbfReader;
-	pbfReader.output = &osmObject;
+	pbfReader.output = &osmLuaProcessing;
 	for (auto inputFile : inputFiles) {
 	
 		cout << "Reading " << inputFile << endl;

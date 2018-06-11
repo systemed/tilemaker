@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _COORDINATES_H
 #define _COORDINATES_H
 

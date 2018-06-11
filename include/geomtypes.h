@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _GEOM_TYPES_H
 #define _GEOM_TYPES_H
 

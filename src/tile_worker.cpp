@@ -1,3 +1,4 @@
+/*! \file */ 
 #include "tile_worker.h"
 #include <fstream>
 #include <boost/filesystem.hpp>

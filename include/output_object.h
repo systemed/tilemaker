@@ -1,12 +1,6 @@
+/*! \file */ 
 #ifndef _OUTPUT_OBJECT_H
 #define _OUTPUT_OBJECT_H
-
-/*
-	OutputObject - any object (node, linestring, polygon) to be outputted to tiles
-
-	Possible future improvements to save memory:
-	- use a global dictionary for attribute key/values
-*/
 
 #include <vector>
 #include <string>
@@ -21,6 +15,7 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+///\brief Specifies geometry type for an OutputObject
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
 
 class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
@@ -40,6 +35,12 @@ public:
 	Geometry operator()(const MultiPolygon &mp) const;
 };
 
+/**
+ * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
+
+ * Possible future improvements to save memory:
+ * - use a global dictionary for attribute key/values
+*/
 class OutputObject { 
 
 public:
@@ -55,23 +56,29 @@ public:
 
 	bool hasAttribute(const std::string &key) const;
 
-	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
-	// Returns a boost::variant -
-	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
+	 * Returns a boost::variant -
+	 *   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+	 */
 	virtual Geometry buildWayGeometry(const TileBbox &bbox) const = 0;
 	
-	// Add a node geometry
+	///\brief Add a node geometry
 	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const = 0;
 	
-	// Write attribute key/value pairs (dictionary-encoded)
+	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
 	
-	// Find a value in the value dictionary
-	// (we can't easily use find() because of the different value-type encoding - 
-	//  should be possible to improve this though)
+	/**
+	 * \brief Find a value in the value dictionary
+	 * (we can't easily use find() because of the different value-type encoding - 
+	 *  should be possible to improve this though)
+	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
 };
 
+/**
+ * \brief An OutputObject derived class that contains data originally from OsmMemTiles
+*/
 class OutputObjectOsmStore : public OutputObject
 {
 public:
@@ -87,6 +94,9 @@ private:
 	Geometry geom;
 };
 
+/**
+ * \brief An OutputObject derived class that contains data originally from ShpMemTiles
+*/
 class OutputObjectCached : public OutputObject
 {
 public:
@@ -108,10 +118,12 @@ typedef std::shared_ptr<OutputObject> OutputObjectRef;
 
 bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
 
-// Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-// Note that attributes is preferred to objectID.
-// It is to arrange objects with the identical attributes continuously.
-// Such objects will be merged into one object, to reduce the size of output.
+/**
+ * Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
+ * Note that attributes is preferred to objectID.
+ * It is to arrange objects with the identical attributes continuously.
+ * Such objects will be merged into one object, to reduce the size of output.
+ */
 bool operator<(const OutputObjectRef &x, const OutputObjectRef &y);
 
 namespace vector_tile {
@@ -119,9 +131,8 @@ namespace vector_tile {
 	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
 }
 
-// Hashing function so we can use an unordered_set
-
 namespace std {
+	/// Hashing function so we can use an unordered_set
 	template<>
 	struct hash<OutputObjectRef> {
 		size_t operator()(const OutputObjectRef &oo) const {

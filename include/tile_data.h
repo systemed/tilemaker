@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _TILE_DATA_H
 #define _TILE_DATA_H
 
