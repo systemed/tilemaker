@@ -42,6 +42,7 @@ typedef unsigned uint;
 #include "read_shp.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
+#include "osm_disk_tiles.h"
 #include "shp_mem_tiles.h"
 
 // Namespaces
@@ -52,7 +53,7 @@ namespace geom = boost::geometry;
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
  *
- * Data is loaded into OsmMemTiles and ShpMemTiles.
+ * Data is loaded into OsmMemTiles/OsmDiskTiles and ShpMemTiles.
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
@@ -65,18 +66,19 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool verbose = false, sqlite= false, combineSimilarObjs = true;
+	bool verbose = false, sqlite= false, combineSimilarObjs = true, tiledInput = false;
 
 	po::options_description desc("tilemaker (c) 2016-2018 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
-		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
-		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
-		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
-		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("verbose",po::bool_switch(&verbose),                                    "verbose error output")
-		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
-		("combine",po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
+		("input",      po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
+		("output",     po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
+		("config",     po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
+		("process",    po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
+		("verbose",    po::bool_switch(&verbose)->default_value(false),              "verbose error output")
+		("tiled-input",po::bool_switch(&tiledInput)->default_value(false),           "input data is tiled pdf files")
+		("threads",    po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
+		("combine",    po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -161,12 +163,16 @@ int main(int argc, char* argv[]) {
 		config.combineSimilarObjs = combineSimilarObjs;
 
 	// For each tile, objects to be used in processing
-	class OsmMemTiles osmMemTiles(config.baseZoom);
+	shared_ptr<class TileDataSource> osmTiles;
+	if(!tiledInput)
+		osmTiles.reset(new OsmMemTiles(config.baseZoom));
+	else
+		osmTiles.reset(new OsmDiskTiles(config.baseZoom));
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
 	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
 		shpMemTiles, 
-		osmMemTiles);
+		*osmTiles.get());
 
 	// ---- Load external shp files
 
@@ -194,21 +200,24 @@ int main(int argc, char* argv[]) {
 	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
 
-	// ----	Read all PBFs
+	if(!tiledInput)
+	{
+		// ----	Read all PBFs
 	
-	class PbfReader pbfReader;
-	pbfReader.output = &osmLuaProcessing;
-	for (auto inputFile : inputFiles) {
+		class PbfReader pbfReader;
+		pbfReader.output = &osmLuaProcessing;
+		for (auto inputFile : inputFiles) {
 	
-		cout << "Reading " << inputFile << endl;
+			cout << "Reading " << inputFile << endl;
 
-		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
-		if(ret != 0)
-			return ret;
+			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+			if(ret != 0)
+				return ret;
+		}
 	}
 
 	// ----	Initialise SharedData
-	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
+	std::vector<class TileDataSource *> sources = {osmTiles.get(), &shpMemTiles};
 	class TileData tileData(sources);
 
 	class SharedData sharedData(config, layers, tileData);

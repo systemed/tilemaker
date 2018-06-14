@@ -17,9 +17,9 @@ int lua_error_handler(int errCode, const char *errMessage)
 OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
 	const class ShpMemTiles &shpMemTiles, 
-	class OsmMemTiles &osmMemTiles):
+	class TileDataSource &outputTiles):
 	shpMemTiles(shpMemTiles),
-	osmMemTiles(osmMemTiles),
+	outputTiles(outputTiles),
 	config(configIn),
 	layers(layers)
 {
@@ -360,7 +360,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::stri
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			osmMemTiles.AddObject(index, *jt);
+			outputTiles.AddObject(index, *jt);
 		}
 	}
 }
@@ -420,7 +420,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 						polygonExists = true;
 						continue;
 					}
-					osmMemTiles.AddObject(index, *jt);
+					outputTiles.AddObject(index, *jt);
 				}
 			}
 
@@ -431,7 +431,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 						if ((*jt)->geomType != POLYGON) continue;
-						osmMemTiles.AddObject(index, *jt);
+						outputTiles.AddObject(index, *jt);
 					}
 				}
 			}
@@ -502,7 +502,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-				osmMemTiles.AddObject(index, *jt);
+				outputTiles.AddObject(index, *jt);
 			}
 		}
 	}

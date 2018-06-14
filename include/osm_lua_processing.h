@@ -38,7 +38,7 @@ public:
 	OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
 		const class ShpMemTiles &shpMemTiles, 
-		class OsmMemTiles &osmMemTiles);
+		class TileDataSource &outputTiles);
 	virtual ~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
@@ -143,7 +143,7 @@ private:
 
 	kaguya::State luaState;
 	const class ShpMemTiles &shpMemTiles;
-	class OsmMemTiles &osmMemTiles;
+	class TileDataSource &outputTiles;
 
 	uint64_t osmID;							///< ID of OSM object
 	WayID newWayID = MAX_WAY_ID;			///< Decrementing new ID for relations
