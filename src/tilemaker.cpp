@@ -117,18 +117,23 @@ int main(int argc, char* argv[]) {
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
-	// ----	Read bounding box from first .pbf
-
 	bool hasClippingBox = false;
 	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
-	int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
-		minLat, maxLat, hasClippingBox);
-	if(ret != 0) return ret;
+
+	if(!tiledInput)
+	{
+		// ----	Read bounding box from first .pbf
+
+		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
+			minLat, maxLat, hasClippingBox);
+		if(ret != 0) return ret;
+	}
+
 	Box clippingBox;
 	if(hasClippingBox)
 	{
 		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+			              geom::make<Point>(maxLon, lat2latp(maxLat)));
 	}
 
 	// ----	Read JSON config
@@ -167,7 +172,7 @@ int main(int argc, char* argv[]) {
 	if(!tiledInput)
 		osmTiles.reset(new OsmMemTiles(config.baseZoom));
 	else
-		osmTiles.reset(new OsmDiskTiles(config.baseZoom));
+		osmTiles.reset(new OsmDiskTiles(config.baseZoom, 12));
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
 	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 

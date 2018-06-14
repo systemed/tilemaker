@@ -13,7 +13,7 @@
 class OsmDiskTiles : public TileDataSource
 {
 public:
-	OsmDiskTiles(uint baseZoom);
+	OsmDiskTiles(uint baseZoom, uint tilesZoom);
 
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
@@ -24,7 +24,10 @@ public:
 
 private:
 	TileIndex tileIndex;
-	uint baseZoom;
+	uint baseZoom, tilesZoom;
+
+	bool tileBoundsSet;
+	int xMin, xMax, yMin, yMax;
 };
 
 #endif //_OSM_DISK_TILES
