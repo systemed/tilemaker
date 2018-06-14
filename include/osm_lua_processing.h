@@ -37,7 +37,7 @@ public:
 
 	OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
-		const class ShpMemTiles &shpMemTiles, 
+		const class TileDataSource &shpMemTiles, 
 		class TileDataSource &outputTiles);
 	virtual ~OsmLuaProcessing();
 
@@ -142,7 +142,7 @@ private:
 	OSMStore osmStore;									// global OSM store
 
 	kaguya::State luaState;
-	const class ShpMemTiles &shpMemTiles;
+	const class TileDataSource &shpMemTiles;
 	class TileDataSource &outputTiles;
 
 	uint64_t osmID;							///< ID of OSM object

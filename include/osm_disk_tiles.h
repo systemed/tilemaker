@@ -5,6 +5,23 @@
 #include "tile_data.h"
 #include "osm_store.h"
 
+class OsmDiskTmpTiles : public TileDataSource
+{
+public:
+	OsmDiskTmpTiles(uint baseZoom);
+
+	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {};
+
+	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+		std::vector<OutputObjectRef> &dstTile) {};
+
+	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
+
+	TileIndex tileIndex;
+private:
+	uint baseZoom;
+};
+
 /**
 	\brief OsmDiskTiles reads OSM objects on disk and provides a vector of OutputObjectRef for specified tiles
 	
@@ -13,7 +30,11 @@
 class OsmDiskTiles : public TileDataSource
 {
 public:
-	OsmDiskTiles(uint baseZoom, uint tilesZoom);
+	OsmDiskTiles(uint tilesZoom,
+		const class Config &config,
+		const std::string &luaFile,
+		const class LayerDefinition &layers,	
+		const class TileDataSource &shpData);
 
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
@@ -23,8 +44,11 @@ public:
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 
 private:
-	TileIndex tileIndex;
-	uint baseZoom, tilesZoom;
+	const uint tilesZoom;
+	const class Config &config;
+	const std::string luaFile;
+	const class LayerDefinition &layers;
+	const class TileDataSource &shpData;
 
 	bool tileBoundsSet;
 	int xMin, xMax, yMin, yMax;

@@ -168,16 +168,16 @@ int main(int argc, char* argv[]) {
 		config.combineSimilarObjs = combineSimilarObjs;
 
 	// For each tile, objects to be used in processing
+	class ShpMemTiles shpMemTiles(config.baseZoom);
+	class LayerDefinition layers(config.layers);
 	shared_ptr<class TileDataSource> osmTiles;
 	if(!tiledInput)
 		osmTiles.reset(new OsmMemTiles(config.baseZoom));
 	else
-		osmTiles.reset(new OsmDiskTiles(config.baseZoom, 12));
-	class ShpMemTiles shpMemTiles(config.baseZoom);
-	class LayerDefinition layers(config.layers);
-	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
-		shpMemTiles, 
-		*osmTiles.get());
+		osmTiles.reset(new OsmDiskTiles(12, config,
+			luaFile,
+			layers,	
+			shpMemTiles));
 
 	// ---- Load external shp files
 
@@ -200,13 +200,16 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	// ----	Read significant node tags
-
-	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
-	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
-
 	if(!tiledInput)
 	{
+		OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
+			shpMemTiles, 
+			*osmTiles.get());
+
+		// ----	Read significant node tags
+		vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
+		unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
+
 		// ----	Read all PBFs
 	
 		class PbfReader pbfReader;

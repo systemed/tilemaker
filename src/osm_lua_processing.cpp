@@ -16,7 +16,7 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
-	const class ShpMemTiles &shpMemTiles, 
+	const class TileDataSource &shpMemTiles, 
 	class TileDataSource &outputTiles):
 	shpMemTiles(shpMemTiles),
 	outputTiles(outputTiles),

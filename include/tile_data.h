@@ -26,12 +26,12 @@ public:
 	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile)=0;
 
-	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box)
+	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const
 	{
 		return std::vector<std::string>();
 	};
 
-	virtual bool Intersects(const std::string &layerName, Box &box)
+	virtual bool Intersects(const std::string &layerName, Box &box) const
 	{
 		return false;
 	};
