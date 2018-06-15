@@ -2,6 +2,7 @@
 #include "osm_store.h"
 #include <iostream>
 using namespace std;
+namespace bg = boost::geometry;
 
 // Views of data structures.
 //
@@ -180,6 +181,18 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayID relId) const {
 
 MultiPolygon OSMStore::wayListMultiPolygon(const WayVec &outerWayVec, const WayVec &innerWayVec) const {
 	return wayListMultiPolygon(makeWayList(outerWayVec, innerWayVec));
+}
+
+Linestring OSMStore::wayListLinestring(const WayVec &outerWayVec, const WayVec &innerWayVec) const {
+	MultiPolygon mp = wayListMultiPolygon(makeWayList(outerWayVec, innerWayVec));
+	if(mp.size()>=1)
+	{
+		Linestring out;
+		for(auto pt: mp[0].outer())
+			bg::append(out, pt);
+		return out;
+	}
+	return Linestring();
 }
 
 // Way -> Polygon

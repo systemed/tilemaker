@@ -154,7 +154,17 @@ double OsmLuaProcessing::Length() {
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
-		linestringCache = osmStore.nodeListLinestring(*nodeVec);
+
+		if(isRelation)
+		{
+			//A relation is being treated as a linestring, which might be
+			//caused by bug in the Lua script
+			linestringCache = osmStore.wayListLinestring(*outerWayVec, *innerWayVec);
+		}
+		else if(isWay)
+		{
+			linestringCache = osmStore.nodeListLinestring(*nodeVec);
+		}
 	}
 	return linestringCache;
 }
@@ -335,6 +345,8 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	isWay = true;
 	isRelation = false;
 
+	outerWayVec = nullptr;
+	innerWayVec = nullptr;
 	nodeVec = nodeVecPtr;
 	try {
 		setLocation(osmStore.nodes.at(nodeVec->front()).lon, osmStore.nodes.at(nodeVec->front()).latp,
@@ -416,6 +428,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 
 	outerWayVec = outerWayVecPtr;
 	innerWayVec = innerWayVecPtr;
+	nodeVec = nullptr;
 	//setLocation(...); TODO
 
 	currentTags = tags;

@@ -259,6 +259,10 @@ public:
 
 	MultiPolygon wayListMultiPolygon(const WayVec &outerWayVec, const WayVec &innerWayVec) const;
 
+	///It is not really meaningful to try using a relation as a linestring. Not normally used but included
+	///if Lua script attempts to do this.
+	Linestring wayListLinestring(const WayVec &outerWayVec, const WayVec &innerWayVec) const;
+
 	// Way -> Polygon
 	template<class NodeIt>
 	Polygon nodeListPolygon(NodeList<NodeIt> nodeList) const {
