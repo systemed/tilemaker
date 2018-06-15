@@ -70,7 +70,7 @@ TilesAtZoomIterator::TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, 
 	tileData(tileData),
 	zoom(zoom)
 {
-	RefreshData();
+	ready = false;
 }
 
 TileCoordinates TilesAtZoomIterator::GetCoordinates() const
@@ -79,8 +79,10 @@ TileCoordinates TilesAtZoomIterator::GetCoordinates() const
 	return *it;
 }
 
-ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const
+ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum)
 {
+	if(!ready)
+		RefreshData();
 	TileCoordinatesSet::const_iterator it = *this;
 
 	// compare only by `layer`
@@ -97,28 +99,32 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 TilesAtZoomIterator& TilesAtZoomIterator::operator++()
 {
 	TileCoordinatesSet::const_iterator::operator++();
-	RefreshData();
+	ready = false;
+	data.clear();
 	return *this;
 }
 
 TilesAtZoomIterator TilesAtZoomIterator::operator++(int a)
 {
 	TileCoordinatesSet::const_iterator::operator++(a);
-	RefreshData();
+	ready = false;
+	data.clear();
 	return *this;
 }
 
 TilesAtZoomIterator& TilesAtZoomIterator::operator--()
 {
 	TileCoordinatesSet::const_iterator::operator--();
-	RefreshData();
+	ready = false;
+	data.clear();
 	return *this;
 }
 
 TilesAtZoomIterator TilesAtZoomIterator::operator--(int a)
 {
 	TileCoordinatesSet::const_iterator::operator--(a);
-	RefreshData();
+	ready = false;
+	data.clear();
 	return *this;
 }
 
@@ -133,6 +139,7 @@ void TilesAtZoomIterator::RefreshData()
 
 	sort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());
+	ready = true;
 }
 
 // *********************************

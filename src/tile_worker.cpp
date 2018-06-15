@@ -147,7 +147,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 	}
 }
 
-void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
+void ProcessLayer(uint zoom, TilesAtZoomIterator &it, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
 	TileCoordinates index = it.GetCoordinates();
@@ -199,7 +199,6 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 
 int outputProc(uint threadId, class SharedData *sharedData)
 {
-
 	// Loop through tiles
 	uint tc = 0;
 	uint zoom = sharedData->zoom;
@@ -225,7 +224,6 @@ int outputProc(uint threadId, class SharedData *sharedData)
 		}
 
 		// Write to file or sqlite
-
 		string data, compressed;
 		if (sharedData->sqlite) {
 			// Write to sqlite

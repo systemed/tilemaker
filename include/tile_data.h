@@ -61,7 +61,9 @@ private:
 typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAtSubLayerConstItPair;
 
 /**
- * Corresponds to a single tile at a single zoom level.
+ * \brief Corresponds to a single tile at a single zoom level.
+ *
+ * This class is NOT shared between threads.
  */
 class TilesAtZoomIterator : public TileCoordinatesSet::const_iterator
 {
@@ -69,7 +71,7 @@ public:
 	TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom);
 
 	TileCoordinates GetCoordinates() const;
-	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
+	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer);
 
 	TilesAtZoomIterator& operator++();
 	TilesAtZoomIterator operator++(int a);
@@ -82,12 +84,15 @@ private:
 	class TileData &tileData;
 	std::vector<OutputObjectRef> data;
 	uint zoom;
+	bool ready;
 };
 
 /**
  * The tile worker process should access all map data through this class and its associated iterators.
  * This gives us room for future work on getting input data in a lazy fashion (in order to avoid
  * overwhelming memory resources.)
+ *
+ * This class IS shared between threads.
  */
 class TileData
 {
@@ -97,8 +102,13 @@ class TileData
 public:
 	TileData(const std::vector<class TileDataSource *> sources);
 
+	///Must be thread safe!
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
+
+	///Must be thread safe!
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
+
+	///Must be thread safe!
 	size_t GetTilesAtZoomSize();
 
 	void SetZoom(uint zoom);
