@@ -158,9 +158,11 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 		class PbfReader pbfReader;
 		pbfReader.output = &osmLuaProcessing;
 
-		string inputFile = to_string(tilesZoom) + "/" + to_string(tilex) + "/" + to_string(tiley) + ".pbf";
+		path inputFile(to_string(tilesZoom));
+		inputFile /= to_string(tilex); 
+		inputFile /= to_string(tiley) + ".pbf";
 		cout << inputFile << endl;
-		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+		int ret = pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
 		if(ret != 0)
 			return;
 
