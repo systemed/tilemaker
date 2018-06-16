@@ -50,7 +50,6 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint src
 			int scale = pow(2, srcZoom-destZoom);
 			TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
 			TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
-			//cout << "a" << dstIndex.x << "," << dstIndex.y << ":" << srcIndex1.x << "," << srcIndex1.y << "," << srcIndex2.x << "," << srcIndex2.y << endl;
 
 			for(int x=srcIndex1.x; x<srcIndex2.x; x++)
 			{

@@ -143,7 +143,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 		}
 
 		class LayerDefinition layersTmp(layers);
-		class OsmDiskTmpTiles tmpTiles(tilesZoom);
+		class OsmDiskTmpTiles tmpTiles(config.baseZoom);
 
 		OsmLuaProcessing osmLuaProcessing(config, layersTmp, luaFile, 
 			shpData, 
@@ -166,7 +166,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 		if(ret != 0)
 			return;
 
-		::MergeSingleTileDataAtZoom(dstIndex, zoom, tilesZoom, tmpTiles.tileIndex, dstTile);
+		::MergeSingleTileDataAtZoom(dstIndex, zoom, config.baseZoom, tmpTiles.tileIndex, dstTile);
 	}
 
 }
