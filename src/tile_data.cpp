@@ -66,7 +66,11 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint src
 		}
 		else
 		{
-			throw runtime_error("Not implemented");
+			int scale = pow(2, destZoom-srcZoom);
+			TileCoordinates srcIndex(dstIndex.x/scale, dstIndex.y/scale);
+			auto oosetIt = srcTiles.find(srcIndex);
+			if(oosetIt == srcTiles.end()) return;
+			dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
 		}
 	}
 }

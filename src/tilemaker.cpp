@@ -127,6 +127,8 @@ int main(int argc, char* argv[]) {
 		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
 			minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
+		cout << "first pbf file extent " << minLon <<","<< minLat \
+			<<","<< maxLon <<","<< maxLat << endl;
 	}
 
 	Box clippingBox;
@@ -148,8 +150,16 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
-
+		bool configHasClippingBox = false;
+		Box configClippingBox;
+		config.readConfig(jsonConfig, configHasClippingBox, configClippingBox);
+		if(configHasClippingBox)
+		{
+			hasClippingBox = true;
+			clippingBox = configClippingBox;
+			cout << "using config clipping box " << clippingBox.min_corner().get<0>() <<","<< clippingBox.min_corner().get<1>() \
+				<<","<< clippingBox.max_corner().get<0>() <<","<< clippingBox.max_corner().get<1>() << endl;
+		}
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
@@ -159,11 +169,13 @@ int main(int argc, char* argv[]) {
 
 	if(hasClippingBox)
 	{
-		config.minLon = minLon;
-		config.maxLon = maxLon;
-		config.minLat = minLat;
-		config.maxLat = maxLat;
+		config.hasClippingBox = true;
+		config.minLon = clippingBox.min_corner().get<0>();
+		config.maxLon = clippingBox.max_corner().get<0>();
+		config.minLat = clippingBox.min_corner().get<1>();
+		config.maxLat = clippingBox.max_corner().get<1>();
 	}
+	cout << "clipping to " << config.minLon <<","<< config.minLat <<","<< config.maxLon <<","<< config.maxLat << endl;
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 

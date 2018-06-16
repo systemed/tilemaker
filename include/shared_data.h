@@ -57,7 +57,7 @@ public:
 	uint mvtVersion;
 	bool includeID, compress, gzip, combineSimilarObjs;
 	std::string compressOpt;
-	bool clippingBoxFromJSON;
+	bool hasClippingBox;
 	double minLon, minLat, maxLon, maxLat;
 	std::string projectName, projectVersion, projectDesc;
 	std::string defaultView;
