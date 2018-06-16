@@ -12,8 +12,8 @@ typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
-void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
+void MergeTileCoordsAtZoom(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
 	std::vector<OutputObjectRef> &dstTile);
 
 class TileDataSource

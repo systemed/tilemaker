@@ -5,9 +5,9 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
+void MergeTileCoordsAtZoom(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
 {
-	if (zoom==baseZoom) {
+	if (destZoom==srcZoom) {
 		// at z14, we can just use tileIndex
 		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
 			TileCoordinates index = it->first;
@@ -16,20 +16,28 @@ void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, 
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
-			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
-			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
-			TileCoordinates newIndex(tilex, tiley);
-			dstCoords.insert(newIndex);
+		if(destZoom < srcZoom)
+		{
+			int scale = pow(2, srcZoom-destZoom);
+			for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+				TileCoordinates index = it->first;
+				TileCoordinate tilex = index.x / scale;
+				TileCoordinate tiley = index.y / scale;
+				TileCoordinates newIndex(tilex, tiley);
+				dstCoords.insert(newIndex);
+			}
+		}
+		else
+		{
+			throw runtime_error("Not implemented");
 		}
 	}
 }
 
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
 	std::vector<OutputObjectRef> &dstTile)
 {
-	if (zoom==baseZoom) {
+	if (destZoom==srcZoom) {
 		// at z14, we can just use tileIndex
 		auto oosetIt = srcTiles.find(dstIndex);
 		if(oosetIt == srcTiles.end()) return;
@@ -37,19 +45,28 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoo
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
-		int scale = pow(2, baseZoom-zoom);
-		TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
-		TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
-
-		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
+		if(destZoom < srcZoom)
 		{
-			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
+			int scale = pow(2, srcZoom-destZoom);
+			TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
+			TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
+			//cout << "a" << dstIndex.x << "," << dstIndex.y << ":" << srcIndex1.x << "," << srcIndex1.y << "," << srcIndex2.x << "," << srcIndex2.y << endl;
+
+			for(int x=srcIndex1.x; x<srcIndex2.x; x++)
 			{
-				TileCoordinates srcIndex(x, y);
-				auto oosetIt = srcTiles.find(srcIndex);
-				if(oosetIt == srcTiles.end()) continue;
-				dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+				for(int y=srcIndex1.y; y<srcIndex2.y; y++)
+				{
+					TileCoordinates srcIndex(x, y);
+					auto oosetIt = srcTiles.find(srcIndex);
+					if(oosetIt == srcTiles.end()) continue;
+					dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+					//cout << oosetIt->second.size() << endl;
+				}
 			}
+		}
+		else
+		{
+			throw runtime_error("Not implemented");
 		}
 	}
 }
