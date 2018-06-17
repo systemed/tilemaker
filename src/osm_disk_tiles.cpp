@@ -17,6 +17,11 @@ void OsmDiskTmpTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
 	tileIndex[index].push_back(oo);
 }
 
+uint OsmDiskTmpTiles::GetBaseZoom()
+{
+	return baseZoom;
+}
+
 // ********************************************
 
 string PathTrailing(const path &in)
@@ -143,7 +148,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 	std::vector<OutputObjectRef> &dstTile)
 {
 	class LayerDefinition layersTmp(layers);
-	class OsmDiskTmpTiles tmpTiles(config.baseZoom);
+	class OsmDiskTmpTiles tmpTiles(zoom);
 
 	OsmLuaProcessing osmLuaProcessing(config, layersTmp, luaFile, 
 		shpData, 
@@ -198,7 +203,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 
 	}
 
-	::MergeSingleTileDataAtZoom(dstIndex, zoom, config.baseZoom, tmpTiles.tileIndex, dstTile);
+	::MergeSingleTileDataAtZoom(dstIndex, zoom, tmpTiles.GetBaseZoom(), tmpTiles.tileIndex, dstTile);
 
 }
 
@@ -206,4 +211,10 @@ void OsmDiskTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
 {
 	//This is called when loading pbfs during initialization. OsmDiskTiles don't need that
 	//info, so do nothing.
+}
+
+uint OsmDiskTiles::GetBaseZoom()
+{
+	//This value should be unused
+	return tilesZoom;
 }

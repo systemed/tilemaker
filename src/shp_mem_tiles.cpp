@@ -119,6 +119,11 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 	return oo;
 }
 
+uint ShpMemTiles::GetBaseZoom()
+{
+	return baseZoom;
+}
+
 // Add an OutputObject to all tiles between min/max lat/lon
 void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex,
                           double minLon, double minLatp, double maxLon, double maxLatp) {

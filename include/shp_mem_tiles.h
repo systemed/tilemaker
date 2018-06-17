@@ -26,6 +26,8 @@ public:
 		Geometry geometry, 
 		bool isIndexed, bool hasName, const std::string &name);
 
+	virtual uint GetBaseZoom();
+
 private:
 	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
 	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2) const;

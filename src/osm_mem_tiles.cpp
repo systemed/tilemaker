@@ -23,3 +23,8 @@ void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
 {
 	tileIndex[index].push_back(oo);
 }
+
+uint OsmMemTiles::GetBaseZoom()
+{
+	return baseZoom;
+}

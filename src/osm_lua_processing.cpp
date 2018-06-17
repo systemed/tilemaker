@@ -359,7 +359,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::stri
 	}
 
 	if (!this->empty()) {
-		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
+		TileCoordinates index = latpLon2index(node, this->outputTiles.GetBaseZoom());
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			outputTiles.AddObject(index, *jt);
 		}
@@ -418,7 +418,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.nodeListLinestring(*nodeVec), this->outputTiles.GetBaseZoom(), tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -508,12 +508,12 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 
 		unordered_set<TileCoordinates> tileSet;
 		if (mp.size() == 1) {
-			insertIntermediateTiles(mp[0].outer(), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(mp[0].outer(), this->outputTiles.GetBaseZoom(), tileSet);
 			fillCoveredTiles(tileSet);
 		} else {
 			for (Polygon poly: mp) {
 				unordered_set<TileCoordinates> tileSetTmp;
-				insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
+				insertIntermediateTiles(poly.outer(), this->outputTiles.GetBaseZoom(), tileSetTmp);
 				fillCoveredTiles(tileSetTmp);
 				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 			}

@@ -20,6 +20,8 @@ public:
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 
+	virtual uint GetBaseZoom();
+
 	TileIndex tileIndex;
 private:
 	uint baseZoom;
@@ -47,6 +49,8 @@ public:
 		std::vector<OutputObjectRef> &dstTile);
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
+
+	virtual uint GetBaseZoom();
 
 private:
 	//This variables are generally safe for multiple threads to read, but not to write. (They are const anyway.)

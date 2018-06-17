@@ -47,6 +47,8 @@ public:
 
 	//Used in OSM data loading
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
+
+	virtual uint GetBaseZoom()=0;
 };
 
 class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
