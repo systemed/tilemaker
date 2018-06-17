@@ -186,8 +186,8 @@ int main(int argc, char* argv[]) {
 	{
 		hasClippingBox = true;
 		clippingBox.min_corner().set<0>(argClippingBox[0]);
-		clippingBox.max_corner().set<0>(argClippingBox[1]);
-		clippingBox.min_corner().set<1>(argClippingBox[2]);
+		clippingBox.max_corner().set<0>(argClippingBox[2]);
+		clippingBox.min_corner().set<1>(argClippingBox[1]);
 		clippingBox.max_corner().set<1>(argClippingBox[3]);
 	}
 

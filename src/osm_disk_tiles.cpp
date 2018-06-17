@@ -88,7 +88,7 @@ OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
 		int xMaxConf = lon2tilex(config.maxLon, tilesZoom)+1;
 		int yMinConf = lat2tiley(config.maxLat, tilesZoom)-1;
 		int yMaxConf = lat2tiley(config.minLat, tilesZoom);
-		
+ 		
 		if(xMinConf > xMin) xMin = xMinConf;
 		if(xMaxConf < xMax) xMax = xMaxConf;
 		if(yMinConf > yMin) yMin = yMinConf;
@@ -169,8 +169,12 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 
 		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
 		{
+			if(x < xMin or x > xMax) continue;
+
 			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
 			{
+				if(y < yMin or y > yMax) continue;
+
 				// ----	Read PBF file
 	
 				path inputFile(to_string(tilesZoom));
@@ -192,6 +196,8 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 			tilex = dstIndex.x / scale;
 			tiley = dstIndex.y / scale;
 		}
+
+		if(tilex < xMin or tilex > xMax or tiley < yMin or tiley > yMax) return;
 
 		// ----	Read PBF file
 	
