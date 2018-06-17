@@ -2,16 +2,6 @@
 #include <iostream>
 using namespace std;
 
-kaguya::State *g_luaState = nullptr;
-
-int lua_error_handler(int errCode, const char *errMessage)
-{
-	cerr << "lua runtime error: " << errMessage << endl;
-	std::string traceback = (*g_luaState)["debug"]["traceback"];
-	cerr << "traceback: " << traceback << endl;
-	exit(0);
-}
-
 // ----	initialization routines
 
 OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
@@ -26,8 +16,7 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 	newWayID = MAX_WAY_ID;
 
 	// ----	Initialise Lua
-	g_luaState = &luaState;
-	luaState.setErrorHandler(lua_error_handler);
+	luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
 	luaState.dofile(luaFile.c_str());
 	luaState["OSM"].setClass(kaguya::UserdataMetatable<OsmLuaProcessing>()
 		.addFunction("Id", &OsmLuaProcessing::Id)
@@ -356,7 +345,19 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::stri
 	currentTags = tags;
 
 	//Start Lua processing for node
-	luaState["node_function"](this);
+	try
+	{
+		luaState["node_function"](this);
+	}
+	catch(kaguya::LuaRuntimeError &err)
+	{
+		cerr << "kaguya::LuaRuntimeError: " << err.what() << endl;
+		auto debug = luaState["debug"];
+		auto traceback = debug["traceback"];
+		cerr << traceback() << endl;
+		return;
+	}
+
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
@@ -390,12 +391,20 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	bool ok = true;
 	if (ok)
 	{
-		luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
-
 		//Start Lua processing for way
-		kaguya::LuaFunction way_function = luaState["way_function"];
-		kaguya::LuaRef ret = way_function(this);
-		assert(!ret);
+		try
+		{
+			kaguya::LuaFunction way_function = luaState["way_function"];
+			kaguya::LuaRef ret = way_function(this);
+		}
+		catch(kaguya::LuaRuntimeError &err)
+		{
+			cerr << "kaguya::LuaRuntimeError: " << err.what() << endl;
+			auto debug = luaState["debug"];
+			auto traceback = debug["traceback"];
+			cerr << traceback() << endl;
+			return;
+		}
 	}
 
 	if (!this->empty() || inRelation) {
@@ -463,8 +472,19 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 	bool ok = true;
 	if (ok)
 	{
-		//Start Lua processing for relation
-		luaState["way_function"](this);
+		try
+		{
+			//Start Lua processing for relation
+			luaState["way_function"](this);
+		}
+		catch(kaguya::LuaRuntimeError &err)
+		{
+			cerr << "kaguya::LuaRuntimeError: " << err.what() << endl;
+			auto debug = luaState["debug"];
+			auto traceback = debug["traceback"];
+			cerr << traceback() << endl;
+			return;
+		}
 	}
 
 	if (!this->empty()) {								

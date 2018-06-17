@@ -172,9 +172,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 				inputFile /= to_string(x); 
 				inputFile /= to_string(y) + ".pbf";
 				cout << inputFile << endl;
-				int ret = pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
-				if(ret != 0)
-					return;
+				pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
 			}
 		}
 	}
@@ -196,9 +194,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 		inputFile /= to_string(tilex); 
 		inputFile /= to_string(tiley) + ".pbf";
 		cout << inputFile << endl;
-		int ret = pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
-		if(ret != 0)
-			return;
+		pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
 
 	}
 

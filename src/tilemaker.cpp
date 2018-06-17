@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
 	string luaFile;
 	string jsonFile;
 	uint threadNum;
-	string outputFile;
+	string outputFile, argClippingBoxStr;
 	bool verbose = false, sqlite= false, combineSimilarObjs = true, tiledInput = false;
 
 	po::options_description desc("tilemaker (c) 2016-2018 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
@@ -78,7 +78,8 @@ int main(int argc, char* argv[]) {
 		("verbose",    po::bool_switch(&verbose)->default_value(false),              "verbose error output")
 		("tiled-input",po::bool_switch(&tiledInput)->default_value(false),           "input data is tiled pdf files")
 		("threads",    po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
-		("combine",    po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
+		("combine",    po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)")
+		("bbox",       po::value< string >(&argClippingBoxStr),                      "clipping bounding box (left,bottom,right,top)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -165,8 +166,32 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	// ----	Command line options override config settings
+	/* ----	Command line options override config settings
+	 * 
+	 * The clipping box is determined, in order of precidence:
+	 * 1) command line argument (highest)
+	 * 2) json config file setting
+	 * 3) extent of first pbf input file
+	 */
 
+	stringstream argClippingBoxSs(argClippingBoxStr);
+	vector<double> argClippingBox;
+	while( argClippingBoxSs.good() )
+	{
+		string substr;
+		getline( argClippingBoxSs, substr, ',' );
+		argClippingBox.push_back( atof(substr.c_str()) );
+	}
+	if(argClippingBox.size() >= 4) //(left,bottom,right,top)
+	{
+		hasClippingBox = true;
+		clippingBox.min_corner().set<0>(argClippingBox[0]);
+		clippingBox.max_corner().set<0>(argClippingBox[1]);
+		clippingBox.min_corner().set<1>(argClippingBox[2]);
+		clippingBox.max_corner().set<1>(argClippingBox[3]);
+	}
+
+	// Copy final clipping box back into config
 	if(hasClippingBox)
 	{
 		config.hasClippingBox = true;
