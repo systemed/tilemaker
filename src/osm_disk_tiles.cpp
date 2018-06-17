@@ -74,7 +74,23 @@ OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
 		
 		firstDir = false;
 	}
-	cout << "x " << xMin << "," << xMax << endl;
+
+	//Limit available tile range if clipping box is defined. Only include tiles that are
+	//in the union of these areas.
+	if(config.hasClippingBox)
+	{
+		int xMinConf = lon2tilex(config.minLon, tilesZoom);
+		int xMaxConf = lon2tilex(config.maxLon, tilesZoom)+1;
+		int yMinConf = lat2tiley(config.maxLat, tilesZoom)-1;
+		int yMaxConf = lat2tiley(config.minLat, tilesZoom);
+		
+		if(xMinConf > xMin) xMin = xMinConf;
+		if(xMaxConf < xMax) xMax = xMaxConf;
+		if(yMinConf > yMin) yMin = yMinConf;
+		if(yMaxConf < yMax) yMax = yMaxConf;
+	}
+
+	cout << "disk tile extent x " << xMin << "," << xMax << endl;
 	cout << "y " << yMin << "," << yMax << endl;
 }
 
@@ -126,9 +142,41 @@ void OsmDiskTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoord
 void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
 	std::vector<OutputObjectRef> &dstTile)
 {
+	class LayerDefinition layersTmp(layers);
+	class OsmDiskTmpTiles tmpTiles(config.baseZoom);
+
+	OsmLuaProcessing osmLuaProcessing(config, layersTmp, luaFile, 
+		shpData, 
+		tmpTiles);
+
+	class PbfReader pbfReader;
+	pbfReader.output = &osmLuaProcessing;
+
+	// ----	Read significant node tags
+	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
+	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
+
 	if(zoom < tilesZoom)
 	{
+		int scale = pow(2, tilesZoom-zoom);
+		TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
+		TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
 
+		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
+		{
+			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
+			{
+				// ----	Read PBF file
+	
+				path inputFile(to_string(tilesZoom));
+				inputFile /= to_string(x); 
+				inputFile /= to_string(y) + ".pbf";
+				cout << inputFile << endl;
+				int ret = pbfReader.ReadPbfFile(inputFile.string(), nodeKeys);
+				if(ret != 0)
+					return;
+			}
+		}
 	}
 	else
 	{
@@ -142,22 +190,8 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 			tiley = dstIndex.y / scale;
 		}
 
-		class LayerDefinition layersTmp(layers);
-		class OsmDiskTmpTiles tmpTiles(config.baseZoom);
-
-		OsmLuaProcessing osmLuaProcessing(config, layersTmp, luaFile, 
-			shpData, 
-			tmpTiles);
-
-		// ----	Read significant node tags
-		vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
-		unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
-
 		// ----	Read PBF file
 	
-		class PbfReader pbfReader;
-		pbfReader.output = &osmLuaProcessing;
-
 		path inputFile(to_string(tilesZoom));
 		inputFile /= to_string(tilex); 
 		inputFile /= to_string(tiley) + ".pbf";
@@ -166,8 +200,9 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 		if(ret != 0)
 			return;
 
-		::MergeSingleTileDataAtZoom(dstIndex, zoom, config.baseZoom, tmpTiles.tileIndex, dstTile);
 	}
+
+	::MergeSingleTileDataAtZoom(dstIndex, zoom, config.baseZoom, tmpTiles.tileIndex, dstTile);
 
 }
 

@@ -5,6 +5,9 @@
 #include "tile_data.h"
 #include "osm_store.h"
 
+/**
+ * \brief Used by OsmDiskTiles has temporary storage while processing one or more tiles in a lazy fashion.
+ */
 class OsmDiskTmpTiles : public TileDataSource
 {
 public:
@@ -36,14 +39,18 @@ public:
 		const class LayerDefinition &layers,	
 		const class TileDataSource &shpData);
 
+	///This must be thread safe!
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
+	///This must be thread safe!
 	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile);
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 
 private:
+	//This variables are generally safe for multiple threads to read, but not to write. (They are const anyway.)
+
 	const uint tilesZoom;
 	const class Config &config;
 	const std::string luaFile;
