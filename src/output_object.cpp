@@ -7,6 +7,7 @@
 
 #include "output_object.h"
 #include "helpers.h"
+#include <iostream>
 using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;

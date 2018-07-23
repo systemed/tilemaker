@@ -22,6 +22,6 @@ install:
 	install -m 0755 tilemaker /usr/local/bin
 
 clean:
-	rm -f tilemaker src/*.o
+	rm -f tilemaker src/*.o clipper/*.o include/*.o
 
 .PHONY: install

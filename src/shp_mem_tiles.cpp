@@ -1,4 +1,5 @@
 #include "shp_mem_tiles.h"
+#include <iostream>
 using namespace std;
 namespace geom = boost::geometry;
 
