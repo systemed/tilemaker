@@ -1,6 +1,7 @@
 /*! \file */ 
 #include "tile_worker.h"
 #include <fstream>
+#include <stdexcept>
 #include <boost/filesystem.hpp>
 #include "helpers.h"
 #include "write_geometry.h"
@@ -203,6 +204,7 @@ int outputProc(uint threadId, class SharedData *sharedData)
 	uint tc = 0;
 	uint zoom = sharedData->zoom;
 	for (TilesAtZoomIterator it = sharedData->tileData.GetTilesAtZoomBegin(); it != sharedData->tileData.GetTilesAtZoomEnd(); ++it) {
+
 		uint interval = 100;
 		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
 		if (threadId == 0 && (tc % interval) == 0) {
@@ -238,6 +240,8 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.index.x << "/" << bbox.index.y << ".pbf";
 			boost::filesystem::create_directories(dirname.str());
 			fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
+			if(!outfile)
+				throw runtime_error("Failed to open output file");
 			if (sharedData->config.compress) {
 				tile.SerializeToString(&data);
 				outfile << compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->config.gzip);

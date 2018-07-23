@@ -119,24 +119,22 @@ int main(int argc, char* argv[]) {
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
 	bool hasClippingBox = false;
-	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	string clippingBoxSrc;
+	Box clippingBox;
 
 	if(!tiledInput)
 	{
 		// ----	Read bounding box from first .pbf
-
+		double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
 		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
 			minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
+		cout << inputFiles[0] << endl;
 		cout << "first pbf file extent " << minLon <<","<< minLat \
 			<<","<< maxLon <<","<< maxLat << endl;
-	}
-
-	Box clippingBox;
-	if(hasClippingBox)
-	{
-		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-			              geom::make<Point>(maxLon, lat2latp(maxLat)));
+		clippingBoxSrc = "first pbf file";
+		clippingBox = Box(geom::make<Point>(minLon, minLat),
+			              geom::make<Point>(maxLon, maxLat));
 	}
 
 	// ----	Read JSON config
@@ -160,6 +158,7 @@ int main(int argc, char* argv[]) {
 			clippingBox = configClippingBox;
 			cout << "using config clipping box " << clippingBox.min_corner().get<0>() <<","<< clippingBox.min_corner().get<1>() \
 				<<","<< clippingBox.max_corner().get<0>() <<","<< clippingBox.max_corner().get<1>() << endl;
+			clippingBoxSrc = "config file";
 		}
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
@@ -189,6 +188,7 @@ int main(int argc, char* argv[]) {
 		clippingBox.max_corner().set<0>(argClippingBox[2]);
 		clippingBox.min_corner().set<1>(argClippingBox[1]);
 		clippingBox.max_corner().set<1>(argClippingBox[3]);
+		clippingBoxSrc = "command line arguments";
 	}
 
 	// Copy final clipping box back into config
@@ -200,6 +200,7 @@ int main(int argc, char* argv[]) {
 		config.minLat = clippingBox.min_corner().get<1>();
 		config.maxLat = clippingBox.max_corner().get<1>();
 	}
+	cout << "clipping box source: " << clippingBoxSrc << endl;
 	cout << "clipping to " << config.minLon <<","<< config.minLat <<","<< config.maxLon <<","<< config.maxLat << endl;
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
