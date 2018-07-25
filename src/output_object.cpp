@@ -193,10 +193,8 @@ OutputObjectOsmStore::~OutputObjectOsmStore()
 Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const
 {
 	ClipGeometryVisitor clip(bbox.clippingBox);
-	
-	//FIXME this is related to the broken polygon bug?
-	//return boost::apply_visitor(clip, geom);
-	return geom;
+
+	return boost::apply_visitor(clip, geom);	
 }
 
 // Add a node geometry

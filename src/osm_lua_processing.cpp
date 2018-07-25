@@ -217,7 +217,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			else if(isWay)
 			{
-				geom = linestringCached();
+				Linestring ls = linestringCached();
+				MultiPolygon mp = {{{ls.begin(), ls.end()}}};
+				geom = mp;
 			}
 
 		}
@@ -258,7 +260,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		}
 		else if(isWay)
 		{
-			tmp = osmStore.nodeListLinestring(*nodeVec);
+			Linestring ls = linestringCached();
+			MultiPolygon mp = {{{ls.begin(), ls.end()}}};
+			tmp = mp;
 		}
 
 		// write out centroid only
