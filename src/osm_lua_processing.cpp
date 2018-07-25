@@ -217,8 +217,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			else if(isWay)
 			{
+				//Is there a more efficient way to do this?
 				Linestring ls = linestringCached();
-				MultiPolygon mp = {{{ls.begin(), ls.end()}}};
+				Polygon p;
+				geom::assign_points(p, ls);
+				MultiPolygon mp;
+				mp.push_back(p);
 				geom = mp;
 			}
 
@@ -260,8 +264,12 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		}
 		else if(isWay)
 		{
+			//Is there a more efficient way to do this?
 			Linestring ls = linestringCached();
-			MultiPolygon mp = {{{ls.begin(), ls.end()}}};
+			Polygon p;
+			geom::assign_points(p, ls);
+			MultiPolygon mp;
+			mp.push_back(p);	
 			tmp = mp;
 		}
 
@@ -483,8 +491,8 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 			}
 		}
 	}
-
 }
+
 
 void OsmLuaProcessing::endOsmData()
 {
