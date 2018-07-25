@@ -91,7 +91,7 @@ public:
 	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
 
 private:
-	Geometry geom;
+	const Geometry geom;
 };
 
 /**

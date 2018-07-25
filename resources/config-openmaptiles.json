@@ -20,7 +20,7 @@
 		"mountain_peak": { "minzoom": 11, "maxzoom": 14 },
 		"sea": {
 			"minzoom": 4, "maxzoom": 14,
-			"source": "water-polygons-split-4326/fixed_water_polygons.shp",
+			"source": "aaawater-polygons-split-4326/fixed_water_polygons.shp",
 			"simplify_below": 13, "simplify_level": 0.0003,
 			"write_to": "water"
 		}
