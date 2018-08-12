@@ -164,6 +164,32 @@ void ConvertToClipper(const MultiPolygon &mp, Paths &out)
 	}
 }
 
+void ConvertToClipper(const MultiPolygon &mp, PolyTree &out)
+{
+	// Convert boost geometries to clipper paths 
+	out.Clear();
+	Clipper c;
+	c.StrictlySimple(true);
+
+	Paths outers;
+	Paths inners;
+	for(size_t i=0; i<mp.size(); i++)
+	{
+		const Polygon &p = mp[i];
+		Path outerTmp;
+		Paths innersTmp;
+		ConvertToClipper(p, outerTmp, innersTmp);
+		outers.push_back(outerTmp);
+		inners.insert(inners.end(), innersTmp.begin(), innersTmp.end());
+	}
+
+	// Find polygon shapes
+	c.AddPaths(outers, ptSubject, true);
+	c.AddPaths(inners, ptClip, true);
+	c.Execute(ctDifference, out, pftEvenOdd, pftEvenOdd);
+	c.Clear();
+}
+
 void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 {
 	p.clear();
@@ -224,6 +250,7 @@ void ConvertFromClipper(const Paths &polys, MultiPolygon &mp)
 			const IntPoint &pt = pth[0];
 			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
+
 		//Fix orientation of rings
 		geom::correct(p);
 		mp.push_back(p);
@@ -231,3 +258,54 @@ void ConvertFromClipper(const Paths &polys, MultiPolygon &mp)
 	assert(polys.size() == mp.size());
 }
 
+void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
+{
+	mp.clear();
+
+	PolyNode *cursor = pt.GetFirst();
+	while(cursor != nullptr)
+	{
+		Polygon p;
+		Polygon::ring_type &otr = p.outer();
+		Polygon::inner_container_type &inns = p.inners();
+
+		for(size_t i=0; i<cursor->Contour.size(); i++)
+		{
+			const IntPoint &pt = cursor->Contour[i];
+			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+		}
+		if(cursor->Contour.size()>0)
+		{
+			//Start point in ring is repeated
+			const IntPoint &pt = cursor->Contour[0];
+			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+		}
+
+		for(size_t i=0; i<cursor->Childs.size(); i++)
+		{
+			const Path &inn = cursor->Childs[i]->Contour;
+			Polygon::ring_type inn2;
+			for(size_t j=0; j<inn.size(); j++)
+			{
+				const IntPoint &pt = inn[j];
+				inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+			}
+			if(inn.size()>0)
+			{
+				//Start point in ring is repeated
+				const IntPoint &pt = inn[0];
+				inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+			}
+			inns.push_back(inn2);
+
+			//FIXME what about children of children? i.e. nested polygons within holes
+		}
+
+		//Fix orientation of rings
+		geom::correct(p);
+		mp.push_back(p);
+
+		cursor = cursor->GetNext();
+	}
+
+}

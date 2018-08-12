@@ -27,7 +27,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			return;
 		}
 	
-		Paths current;
+		PolyTree current;
 		ConvertToClipper(*gAcc, current);
 
 		while (jt+1 != ooSameLayerEnd &&
@@ -41,16 +41,17 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			try {
 
 				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(bbox));
-				Paths newPaths;
-				ConvertToClipper(gNew, newPaths);
+				PolyTree newShapes;
+				ConvertToClipper(gNew, newShapes);
 
 				Clipper cl;
 				cl.StrictlySimple(true);
-				cl.AddPaths(current, ptSubject, true);
-				cl.AddPaths(newPaths, ptClip, true);
-				Paths tmpUnion;
-				cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
-				swap(current, tmpUnion);
+				Paths currentPaths, newShapePaths;
+				PolyTreeToPaths(current, currentPaths);
+				PolyTreeToPaths(newShapes, newShapePaths);
+				cl.AddPaths(currentPaths, ptSubject, true);
+				cl.AddPaths(newShapePaths, ptClip, true);
+				cl.Execute(ctUnion, current, pftEvenOdd, pftEvenOdd);
 			}
 			catch (std::out_of_range &err)
 			{
