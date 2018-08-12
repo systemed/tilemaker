@@ -60,7 +60,7 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	ConvertToClipper(mp, simplified);
 
 	// Clip to box
-	Paths clipped;
+	PolyTree clipped;
 	Clipper c2;
 	c2.StrictlySimple(true);
 	c2.AddPaths(simplified, ptSubject, true);

@@ -229,42 +229,13 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 	geom::correct(p);
 }
 
-void ConvertFromClipper(const Paths &polys, MultiPolygon &mp)
-{
-	mp.clear();
-
-	for(size_t pn=0; pn < polys.size(); pn++)
-	{
-		const Path &pth = polys[pn];
-		Polygon p;
-		Polygon::ring_type &otr = p.outer();
-
-		for(size_t i=0; i<pth.size(); i++)
-		{
-			const IntPoint &pt = pth[i];
-			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
-		}
-		if(pth.size()>0)
-		{
-			//Start point in ring is repeated
-			const IntPoint &pt = pth[0];
-			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
-		}
-
-		//Fix orientation of rings
-		geom::correct(p);
-		mp.push_back(p);
-	}
-	assert(polys.size() == mp.size());
-}
-
 void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
 {
 	mp.clear();
 
-	PolyNode *cursor = pt.GetFirst();
-	while(cursor != nullptr)
+	for(size_t j=0; j<pt.Childs.size(); j++)
 	{
+		PolyNode *cursor = pt.Childs[j];
 		Polygon p;
 		Polygon::ring_type &otr = p.outer();
 		Polygon::inner_container_type &inns = p.inners();
