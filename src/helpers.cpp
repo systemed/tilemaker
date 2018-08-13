@@ -12,6 +12,7 @@
 
 using namespace ClipperLib;
 namespace geom = boost::geometry;
+using namespace std;
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
 
@@ -229,32 +230,36 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
 	geom::correct(p);
 }
 
-void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
+void ConvertChildOuterPolyNodesFromClipper(const ClipperLib::PolyNode &pn, MultiPolygon &mp)
 {
-	mp.clear();
-
-	for(size_t j=0; j<pt.Childs.size(); j++)
+	for(size_t j=0; j<pn.Childs.size(); j++)
 	{
-		PolyNode *cursor = pt.Childs[j];
+		PolyNode &child = *pn.Childs[j];
+		if(child.IsHole())
+			throw runtime_error("Encoutered unexpected hole in clipper result");
 		Polygon p;
 		Polygon::ring_type &otr = p.outer();
 		Polygon::inner_container_type &inns = p.inners();
 
-		for(size_t i=0; i<cursor->Contour.size(); i++)
+		for(size_t i=0; i<child.Contour.size(); i++)
 		{
-			const IntPoint &pt = cursor->Contour[i];
+			const IntPoint &pt = child.Contour[i];
 			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
-		if(cursor->Contour.size()>0)
+		if(child.Contour.size()>0)
 		{
 			//Start point in ring is repeated
-			const IntPoint &pt = cursor->Contour[0];
+			const IntPoint &pt = child.Contour[0];
 			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
 
-		for(size_t i=0; i<cursor->Childs.size(); i++)
+		for(size_t i=0; i<child.Childs.size(); i++)
 		{
-			const Path &inn = cursor->Childs[i]->Contour;
+			PolyNode &innPn = *child.Childs[i];
+			if(!innPn.IsHole())
+				throw runtime_error("Encoutered unexpected outer shape in clipper result");
+			const Path &inn = innPn.Contour;
+
 			Polygon::ring_type inn2;
 			for(size_t j=0; j<inn.size(); j++)
 			{
@@ -268,15 +273,26 @@ void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
 				inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 			}
 			inns.push_back(inn2);
-
-			//FIXME what about children of children? i.e. nested polygons within holes
 		}
 
 		//Fix orientation of rings
 		geom::correct(p);
 		mp.push_back(p);
 
-		cursor = cursor->GetNext();
-	}
+		for(size_t i=0; i<child.Childs.size(); i++)
+		{
+			//Process nested polygon shapes recursively
+			PolyNode &innPn = *child.Childs[i];
+			ConvertChildOuterPolyNodesFromClipper(innPn, mp);
+		}
 
+	}
 }
+
+void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
+{
+	mp.clear();
+
+	ConvertChildOuterPolyNodesFromClipper(pt, mp);
+}
+
