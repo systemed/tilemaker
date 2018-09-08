@@ -1,19 +1,13 @@
+/*! \file */ 
 #ifndef _OUTPUT_OBJECT_H
 #define _OUTPUT_OBJECT_H
-
-/*
-	OutputObject - any object (node, linestring, polygon) to be outputted to tiles
-
-	Possible future improvements to save memory:
-	- use a global dictionary for attribute key/values
-*/
 
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 #include "geomtypes.h"
 #include "coordinates.h"
-#include "osm_store.h"
 
 #include "clipper.hpp"
 
@@ -21,6 +15,7 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+///\brief Specifies geometry type for an OutputObject
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
 
 class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
@@ -40,6 +35,12 @@ public:
 	Geometry operator()(const MultiPolygon &mp) const;
 };
 
+/**
+ * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
+
+ * Possible future improvements to save memory:
+ * - use a global dictionary for attribute key/values
+*/
 class OutputObject { 
 
 public:
@@ -49,52 +50,93 @@ public:
 	std::map <std::string, vector_tile::Tile_Value> attributes;	// attributes
 
 	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id);
-	
+	virtual ~OutputObject();	
+
 	void addAttribute(const std::string &key, vector_tile::Tile_Value &value);
 
 	bool hasAttribute(const std::string &key) const;
 
-	// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
-	// Returns a boost::variant -
-	//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-	Geometry buildWayGeometry(const OSMStore &osmStore,
-	                      TileBbox *bboxPtr, 
-	                      const std::vector<Geometry> &cachedGeometries) const;
+	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
+	 * Returns a boost::variant -
+	 *   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+	 */
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const = 0;
 	
-	// Add a node geometry
-	void buildNodeGeometry(LatpLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const;
+	///\brief Add a node geometry
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const = 0;
 	
-	// Write attribute key/value pairs (dictionary-encoded)
+	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
 	
-	// Find a value in the value dictionary
-	// (we can't easily use find() because of the different value-type encoding - 
-	//  should be possible to improve this though)
+	/**
+	 * \brief Find a value in the value dictionary
+	 * (we can't easily use find() because of the different value-type encoding - 
+	 *  should be possible to improve this though)
+	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
 };
 
-// Comparision functions
+/**
+ * \brief An OutputObject derived class that contains data originally from OsmMemTiles
+*/
+class OutputObjectOsmStore : public OutputObject
+{
+public:
+	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
+		Geometry geom);
+	virtual ~OutputObjectOsmStore();
 
-bool operator==(const OutputObject &x, const OutputObject &y);
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
 
-// Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-// Note that attributes is preffered to objectID.
-// It is to arrange objects with the identical attributes continuously.
-// Such objects will be merged into one object, to reduce the size of output.
-bool operator<(const OutputObject &x, const OutputObject &y);
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
+
+private:
+	const Geometry geom;
+};
+
+/**
+ * \brief An OutputObject derived class that contains data originally from ShpMemTiles
+*/
+class OutputObjectCached : public OutputObject
+{
+public:
+	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
+		const std::vector<Geometry> &cachedGeometries);
+	virtual ~OutputObjectCached();
+
+	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
+
+	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
+
+private:
+	const std::vector<Geometry> &cachedGeometries;
+};
+
+typedef std::shared_ptr<OutputObject> OutputObjectRef;
+
+// Comparison functions
+
+bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
+
+/**
+ * Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
+ * Note that attributes is preferred to objectID.
+ * It is to arrange objects with the identical attributes continuously.
+ * Such objects will be merged into one object, to reduce the size of output.
+ */
+bool operator<(const OutputObjectRef &x, const OutputObjectRef &y);
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
 	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
 }
 
-// Hashing function so we can use an unordered_set
-
 namespace std {
+	/// Hashing function so we can use an unordered_set
 	template<>
-	struct hash<OutputObject> {
-		size_t operator()(const OutputObject &oo) const {
-			return std::hash<uint_least8_t>()(oo.layer) ^ std::hash<NodeID>()(oo.objectID);
+	struct hash<OutputObjectRef> {
+		size_t operator()(const OutputObjectRef &oo) const {
+			return std::hash<uint_least8_t>()(oo->layer) ^ std::hash<NodeID>()(oo->objectID);
 		}
 	};
 }

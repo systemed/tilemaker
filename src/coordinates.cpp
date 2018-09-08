@@ -3,6 +3,18 @@
 using namespace std;
 namespace geom = boost::geometry;
 
+TileCoordinates_::TileCoordinates_()
+{
+	this->x = 0;
+	this->y = 0;
+}
+
+TileCoordinates_::TileCoordinates_(TileCoordinate x, TileCoordinate y)
+{
+	this->x = x;
+	this->y = y;
+}
+
 double deg2rad(double deg) { return (M_PI/180.0) * deg; }
 double rad2deg(double rad) { return (180.0/M_PI) * rad; }
 
@@ -23,9 +35,9 @@ double tiley2latp(uint y, uint z) { return 180.0 - scalbn(y, -(int)z) * 360.0; }
 double tiley2lat(uint y, uint z) { return latp2lat(tiley2latp(y, z)); }
 
 // Get a tile index
-uint32_t latpLon2index(LatpLon ll, uint baseZoom) {
-	return lon2tilex(ll.lon /10000000.0, baseZoom) * 65536 +
-	       latp2tiley(ll.latp/10000000.0, baseZoom);
+TileCoordinates latpLon2index(LatpLon ll, uint baseZoom) {
+	return TileCoordinates(lon2tilex(ll.lon /10000000.0, baseZoom),
+	       latp2tiley(ll.latp/10000000.0, baseZoom));
 }
 
 // Convert to actual length
@@ -37,17 +49,17 @@ double meter2degp(double meter, double latp) {
 }
 
 // the range between smallest y and largest y is filled, for each x
-void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
-	vector<uint32_t> tileList(tileSet.begin(), tileSet.end());
-	sort(tileList.begin(), tileList.end());
+void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
+	vector<TileCoordinates> tileList(tileSet.begin(), tileSet.end());
+	sort(tileList.begin(), tileList.end(), TileCoordinatesCompare());
 
-	uint prevX = 0, prevY = static_cast<uint>(-2);
-	for (uint32_t index: tileList) {
-		uint tileX = index >> 16, tileY = index & 65535;
+	TileCoordinate prevX = 0, prevY = static_cast<TileCoordinate>(-2);
+	for (TileCoordinates index: tileList) {
+		TileCoordinate tileX = index.x, tileY = index.y;
 		if (tileX == prevX) {
 			// this loop has no effect at the first iteration
-			for (uint fillY = prevY+1; fillY < tileY; fillY++) {
-				tileSet.insert((tileX << 16) + fillY);
+			for (TileCoordinate fillY = prevY+1; fillY < tileY; fillY++) {
+				tileSet.insert(TileCoordinates(tileX, fillY));
 			}
 		}
 		prevX = tileX, prevY = tileY;
@@ -58,14 +70,13 @@ void fillCoveredTiles(unordered_set<uint32_t> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-TileBbox::TileBbox(uint i, uint z) {
-	index = i; zoom = z;
-	tiley = index & 65535;
-	tilex = index >> 16;
-	minLon = tilex2lon(tilex  ,zoom);
-	minLat = tiley2lat(tiley+1,zoom);
-	maxLon = tilex2lon(tilex+1,zoom);
-	maxLat = tiley2lat(tiley  ,zoom);
+TileBbox::TileBbox(TileCoordinates i, uint z) {
+	zoom = z;
+	index = i;
+	minLon = tilex2lon(i.x  ,zoom);
+	minLat = tiley2lat(i.y+1,zoom);
+	maxLon = tilex2lon(i.x+1,zoom);
+	maxLat = tiley2lat(i.y  ,zoom);
 	minLatp = lat2latp(minLat);
 	maxLatp = lat2latp(maxLat);
 	xmargin = (maxLon -minLon )/200.0;
@@ -76,7 +87,7 @@ TileBbox::TileBbox(uint i, uint z) {
 		              geom::make<Point>(maxLon+xmargin, maxLatp+ymargin));
 }
 
-pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) {
+pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	int x = (lon -   minLon) / xscale;
 	int y = (maxLatp - latp) / yscale;
 	return pair<int,int>(x,y);

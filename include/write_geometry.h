@@ -1,3 +1,4 @@
+/*! \file */ 
 #ifndef _WRITE_GEOMETRY_H
 #define _WRITE_GEOMETRY_H
 
@@ -10,35 +11,33 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-/*
-	WriteGeometryVisitor
-	- takes a boost::geometry object and writes it into a tile
-*/
-
 typedef std::vector<std::pair<int,int> > XYString;
 
+/**
+	\brief WriteGeometryVisitor takes a boost::geometry object and writes it into a tile
+*/
 class WriteGeometryVisitor : public boost::static_visitor<> { 
 
 public:
-	TileBbox *bboxPtr;
+	const TileBbox *bboxPtr;
 	vector_tile::Tile_Feature *featurePtr;
 	double simplifyLevel;
 
-	WriteGeometryVisitor(TileBbox *bp, vector_tile::Tile_Feature *fp, double sl);
+	WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl);
 
 	// Point
-	void operator()(Point &p) const;
+	void operator()(const Point &p) const;
 
 	// Multipolygon
-	void operator()(MultiPolygon &mp) const;
+	void operator()(const MultiPolygon &mp) const;
 
 	// Multilinestring
-	void operator()(MultiLinestring &mls) const;
+	void operator()(const MultiLinestring &mls) const;
 
 	// Linestring
-	void operator()(Linestring &ls) const;
+	void operator()(const Linestring &ls) const;
 
-	// Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
+	/// \brief Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
 	void writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, std::pair<int,int> *lastPos, bool closePath) const;
 };
 

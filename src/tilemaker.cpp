@@ -1,7 +1,4 @@
-/*
-	tilemaker
-	Richard Fairhurst, June 2015
-*/
+/*! \file */ 
 
 // C++ includes
 #include <iostream>
@@ -29,55 +26,37 @@
 typedef unsigned uint;
 #endif
 
-// Lua
-extern "C" {
-	#include "lua.h"
-    #include "lualib.h"
-    #include "lauxlib.h"
-}
-#include "kaguya.hpp"
-
 #include "geomtypes.h"
 
 // Tilemaker code
 #include "helpers.h"
 #include "coordinates.h"
 
-#include "osm_store.h"
 #include "output_object.h"
-#include "osm_object.h"
+#include "osm_lua_processing.h"
 #include "mbtiles.h"
 #include "write_geometry.h"
 
 #include "shared_data.h"
 #include "read_pbf.h"
+#include "read_shp.h"
 #include "tile_worker.h"
+#include "osm_mem_tiles.h"
+#include "shp_mem_tiles.h"
 
 // Namespaces
 using namespace std;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
 
-kaguya::State luaState;
-
-int lua_error_handler(int errCode, const char *errMessage)
-{
-	cerr << "lua runtime error: " << errMessage << endl;
-	std::string traceback = luaState["debug"]["traceback"];
-	cerr << "traceback: " << traceback << endl;
-	exit(0);
-}
-
+/**
+ *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
+ *
+ * Data is loaded into OsmMemTiles and ShpMemTiles.
+ *
+ * Worker threads write the output tiles, and start in the outputProc function.
+ */
 int main(int argc, char* argv[]) {
-
-	// ----	Initialise data collections
-
-	OSMStore osmStore;									// global OSM store
-
-	map<string, RTree> indices;						// boost::geometry::index objects for shapefile indices
-	map<uint, string> cachedGeometryNames;			//  | optional names for each one
-
-	map< uint, vector<OutputObject> > tileIndex;				// objects to be output
 
 	// ----	Read command-line options
 	
@@ -86,9 +65,9 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool verbose = false, sqlite= false;
+	bool verbose = false, sqlite= false, combineSimilarObjs = true;
 
-	po::options_description desc("tilemaker (c) 2016 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	po::options_description desc("tilemaker (c) 2016-2018 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
@@ -96,7 +75,8 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("verbose",po::bool_switch(&verbose),                                    "verbose error output")
-		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
+		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
+		("combine",po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -126,59 +106,33 @@ int main(int argc, char* argv[]) {
 	#ifdef COMPACT_WAYS
 	cout << "tilemaker compiled without 64-bit way support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
+	#ifdef COMPACT_TILE_INDEX
+	cout << "tilemaker compiled without 64-bit tile index support, this limits accuracy at very high zoom levels" << endl;
+	#endif
 
 	// ---- Check config
 	
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
-	// ----	Initialise SharedData
-
-	class SharedData sharedData(&osmStore);
-	OSMObject osmObject(luaState, &indices, &sharedData.config.cachedGeometries, &cachedGeometryNames, &osmStore);
-
 	// ----	Read bounding box from first .pbf
 
 	bool hasClippingBox = false;
-	int ret = ReadPbfBoundingBox(inputFiles[0], sharedData.config.minLon, sharedData.config.maxLon, 
-		sharedData.config.minLat, sharedData.config.maxLat, hasClippingBox);
+	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
+		minLat, maxLat, hasClippingBox);
 	if(ret != 0) return ret;
 	Box clippingBox;
 	if(hasClippingBox)
-		clippingBox = Box(geom::make<Point>(sharedData.config.minLon, lat2latp(sharedData.config.minLat)),
-		                  geom::make<Point>(sharedData.config.maxLon, lat2latp(sharedData.config.maxLat)));
-
-	// ----	Initialise Lua
-
-	luaState.setErrorHandler(lua_error_handler);
-	luaState.dofile(luaFile.c_str());
-	luaState["OSM"].setClass(kaguya::UserdataMetatable<OSMObject>()
-		.addFunction("Id", &OSMObject::Id)
-		.addFunction("Holds", &OSMObject::Holds)
-		.addFunction("Find", &OSMObject::Find)
-		.addFunction("FindIntersecting", &OSMObject::FindIntersecting)
-		.addFunction("Intersects", &OSMObject::Intersects)
-		.addFunction("IsClosed", &OSMObject::IsClosed)
-		.addFunction("ScaleToMeter", &OSMObject::ScaleToMeter)
-		.addFunction("ScaleToKiloMeter", &OSMObject::ScaleToKiloMeter)
-		.addFunction("Area", &OSMObject::Area)
-		.addFunction("Length", &OSMObject::Length)
-		.addFunction("Layer", &OSMObject::Layer)
-		.addFunction("LayerAsCentroid", &OSMObject::LayerAsCentroid)
-		.addFunction("Attribute", &OSMObject::Attribute)
-		.addFunction("AttributeNumeric", &OSMObject::AttributeNumeric)
-		.addFunction("AttributeBoolean", &OSMObject::AttributeBoolean)
-	);
-
-	sharedData.config.clippingBoxFromJSON = false;
-	sharedData.threadNum = threadNum;
-	sharedData.outputFile = outputFile;
-	sharedData.verbose = verbose;
-	sharedData.sqlite = sqlite;
+	{
+		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+	}
 
 	// ----	Read JSON config
 
 	rapidjson::Document jsonConfig;
+	class Config config;
 	try {
 		FILE* fp = fopen(jsonFile.c_str(), "r");
 		char readBuffer[65536];
@@ -187,21 +141,81 @@ int main(int argc, char* argv[]) {
 		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
 
-		sharedData.config.readConfig(jsonConfig, hasClippingBox, clippingBox, tileIndex, osmObject);
+		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
 
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
 	}
 
-	// ---- Call init_function of Lua logic
+	// ----	Command line options override config settings
 
-	luaState("if init_function~=nil then init_function() end");
+	if(hasClippingBox)
+	{
+		config.minLon = minLon;
+		config.maxLon = maxLon;
+		config.minLat = minLat;
+		config.maxLat = maxLat;
+	}
+	if(vm.count("combine")>0)
+		config.combineSimilarObjs = combineSimilarObjs;
+
+	// For each tile, objects to be used in processing
+	class OsmMemTiles osmMemTiles(config.baseZoom);
+	class ShpMemTiles shpMemTiles(config.baseZoom);
+	class LayerDefinition layers(config.layers);
+	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
+		shpMemTiles, 
+		osmMemTiles);
+
+	// ---- Load external shp files
+
+	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
+	{
+		// External layer sources
+		LayerDef &layer = layers.layers[layerNum];
+		if(layer.indexed)
+			shpMemTiles.CreateNamedLayerIndex(layer.name);
+
+		if (layer.source.size()>0) {
+			if (!hasClippingBox) {
+				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+				exit(EXIT_FAILURE);
+			}
+			readShapefile(clippingBox,
+			              layers,
+			              config.baseZoom, layerNum,
+						  shpMemTiles);
+		}
+	}
 
 	// ----	Read significant node tags
 
-	vector<string> nodeKeyVec = luaState["node_keys"];
+	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
 	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
+
+	// ----	Read all PBFs
+	
+	class PbfReader pbfReader;
+	pbfReader.output = &osmLuaProcessing;
+	for (auto inputFile : inputFiles) {
+	
+		cout << "Reading " << inputFile << endl;
+
+		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+		if(ret != 0)
+			return ret;
+	}
+
+	// ----	Initialise SharedData
+	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
+	class TileData tileData(sources);
+
+	class SharedData sharedData(config, layers, tileData);
+	sharedData.threadNum = threadNum;
+	sharedData.outputFile = outputFile;
+	sharedData.verbose = verbose;
+	sharedData.sqlite = sqlite;
 
 	// ----	Initialise mbtiles if required
 	
@@ -220,61 +234,14 @@ int main(int argc, char* argv[]) {
 		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
 	}
 
-	// ----	Read all PBFs
-	
-	for (auto inputFile : inputFiles) {
-	
-		cout << "Reading " << inputFile << endl;
-
-		int ret = ReadPbfFile(inputFile, nodeKeys, tileIndex, osmObject);
-		if(ret != 0)
-			return ret;
-	}
-	osmStore.reportSize();
-
-	sharedData.config.layers = osmObject.layers;
-	sharedData.config.layerMap = osmObject.layerMap;
-	sharedData.config.layerOrder = osmObject.layerOrder;
-
 	// ----	Write out each tile
 
 	// Loop through zoom levels
 	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
-		// Create list of tiles, and the data in them
-		map< uint, vector<OutputObject> > generatedIndex;
-		if (zoom==sharedData.config.baseZoom) {
-			// ----	Sort each tile
-			for (auto it = tileIndex.begin(); it != tileIndex.end(); ++it) {
-				auto &ooset = it->second;
-				sort(ooset.begin(), ooset.end());
-				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-			}
-			// at z14, we can just use tileIndex
-			sharedData.tileIndexForZoom = &tileIndex;
-		} else {
-			// otherwise, we need to run through the z14 list, and assign each way
-			// to a tile at our zoom level
-			for (auto it = tileIndex.begin(); it!= tileIndex.end(); ++it) {
-				uint index = it->first;
-				uint tilex = (index >> 16  ) / pow(2, sharedData.config.baseZoom-zoom);
-				uint tiley = (index & 65535) / pow(2, sharedData.config.baseZoom-zoom);
-				uint newIndex = (tilex << 16) + tiley;
-				const vector<OutputObject> &ooset = it->second;
-				for (auto jt = ooset.begin(); jt != ooset.end(); ++jt) {
-					generatedIndex[newIndex].push_back(*jt);
-				}
-			}
-			// sort each new tile
-			for (auto it = generatedIndex.begin(); it != generatedIndex.end(); ++it) {
-				auto &ooset = it->second;
-				sort(ooset.begin(), ooset.end());
-				ooset.erase(unique(ooset.begin(), ooset.end()), ooset.end());
-			}
-			sharedData.tileIndexForZoom = &generatedIndex;
 
-		}
-
+		tileData.SetZoom(zoom);
 		sharedData.zoom = zoom;
+
 		if(threadNum == 1) {
 			// Single thread (is easier to debug)
 			outputProc(0, &sharedData);
@@ -288,14 +255,13 @@ int main(int argc, char* argv[]) {
 			for (auto &t: worker) t.join();
 
 		}
-		sharedData.tileIndexForZoom = nullptr;
 	}
 
 	// ----	Close tileset
 
 	if (sqlite) {
 		// Write mbtiles 1.3+ json object
-		sharedData.mbtiles.writeMetadata("json", osmObject.serialiseLayerJSON());
+		sharedData.mbtiles.writeMetadata("json", layers.serialiseToJSON());
 
 		// Write user-defined metadata
 		if (jsonConfig["settings"].HasMember("metadata")) {
@@ -314,9 +280,6 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.close();
 	}
 	google::protobuf::ShutdownProtobufLibrary();
-
-	// Call exit_function of Lua logic
-	luaState("if exit_function~=nil then exit_function() end");
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }

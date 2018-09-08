@@ -1,3 +1,4 @@
+/*! \file */ 
 #include "tile_worker.h"
 #include <fstream>
 #include <boost/filesystem.hpp>
@@ -6,51 +7,56 @@
 using namespace ClipperLib;
 using namespace std;
 
-typedef vector<OutputObject>::const_iterator OutputObjectsConstIt;
-typedef pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
-
-void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstIt &ooSameLayerEnd, 
-	class SharedData *sharedData, TileBbox &bbox, Geometry &g)
+void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+	class SharedData *sharedData, const TileBbox &bbox, Geometry &g)
 {
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
-	auto gTyp = jt->geomType;
+	OutputObjectRef oo = *jt;
+	OutputObjectRef ooNext;
+	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+
+	auto gTyp = oo->geomType;
 	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
 		MultiPolygon *gAcc = nullptr;
 		try{
 			gAcc = &boost::get<MultiPolygon>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: Polygon " << jt->objectID << " has unexpected type" << endl;
+			cerr << "Error: Polygon " << oo->objectID << " has unexpected type" << endl;
 			return;
 		}
 	
-		Paths current;
+		PolyTree current;
 		ConvertToClipper(*gAcc, current);
 
 		while (jt+1 != ooSameLayerEnd &&
-				(jt+1)->geomType == gTyp &&
-				(jt+1)->attributes == jt->attributes) {
+				ooNext->geomType == gTyp &&
+				ooNext->attributes == oo->attributes) {
 			jt++;
+			oo = *jt;
+			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			else ooNext.reset();
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
-				Paths newPaths;
-				ConvertToClipper(gNew, newPaths);
+				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(bbox));
+				PolyTree newShapes;
+				ConvertToClipper(gNew, newShapes);
 
 				Clipper cl;
 				cl.StrictlySimple(true);
-				cl.AddPaths(current, ptSubject, true);
-				cl.AddPaths(newPaths, ptClip, true);
-				Paths tmpUnion;
-				cl.Execute(ctUnion, tmpUnion, pftEvenOdd, pftEvenOdd);
-				swap(current, tmpUnion);
+				Paths currentPaths, newShapePaths;
+				PolyTreeToPaths(current, currentPaths);
+				PolyTreeToPaths(newShapes, newShapePaths);
+				cl.AddPaths(currentPaths, ptSubject, true);
+				cl.AddPaths(newShapePaths, ptClip, true);
+				cl.Execute(ctUnion, current, pftEvenOdd, pftEvenOdd);
 			}
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing POLYGON " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 		}
 
@@ -61,16 +67,21 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 		try {
 		gAcc = &boost::get<MultiLinestring>(g);
 		} catch (boost::bad_get &err) {
-			cerr << "Error: LineString " << jt->objectID << " has unexpected type" << endl;
+			cerr << "Error: LineString " << oo->objectID << " has unexpected type" << endl;
 			return;
 		}
+
 		while (jt+1 != ooSameLayerEnd &&
-				(jt+1)->geomType == gTyp &&
-				(jt+1)->attributes == jt->attributes) {
+				ooNext->geomType == gTyp &&
+				ooNext->attributes == oo->attributes) {
 			jt++;
+			oo = *jt;
+			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			else ooNext.reset();
+
 			try
 			{
-				MultiLinestring gNew = boost::get<MultiLinestring>(jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries));
+				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -78,69 +89,80 @@ void CheckNextObjectAndMerge(OutputObjectsConstIt &jt, const OutputObjectsConstI
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing LINESTRING " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 			catch (boost::bad_get &err) {
-				cerr << "Error while processing LINESTRING " << jt->objectID << " has unexpected type" << endl;
+				cerr << "Error while processing LINESTRING " << oo->objectID << " has unexpected type" << endl;
 				continue;
 			}
 		}
 	}
 }
 
-void ProcessObjects(const OutputObjectsConstIt &ooSameLayerBegin, const OutputObjectsConstIt &ooSameLayerEnd, 
-	class SharedData *sharedData, double simplifyLevel, TileBbox &bbox,
+void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
 {
-	NodeStore &nodes = sharedData->osmStore->nodes;
+	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
+		OutputObjectRef oo = *jt;
 
-	for (OutputObjectsConstIt jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
-			
-		if (jt->geomType == POINT) {
+		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			jt->buildNodeGeometry(nodes.at(jt->objectID), &bbox, featurePtr);
-			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
+			LatpLon pos = oo->buildNodeGeometry(bbox);
+			featurePtr->add_geometry(9);					// moveTo, repeat x1
+			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
+			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
+			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
+			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
+
+			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 		} else {
 			Geometry g;
 			try {
-				g = jt->buildWayGeometry(*sharedData->osmStore, &bbox, sharedData->config.cachedGeometries);
+				g = oo->buildWayGeometry(bbox);
 			}
 			catch (std::out_of_range &err)
 			{
 				if (sharedData->verbose)
-					cerr << "Error while processing geometry " << jt->geomType << "," << jt->objectID <<"," << err.what() << endl;
+					cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
 
 			//This may increment the jt iterator
-			CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
+			if(sharedData->config.combineSimilarObjs)
+			{
+				CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
+				oo = *jt;
+			}
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			jt->writeAttributes(&keyList, &valueList, featurePtr);
-			if (sharedData->config.includeID) { featurePtr->set_id(jt->objectID); }
+			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 
 		}
 	}
 }
 
-void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vector_tile::Tile &tile, 
-	TileBbox &bbox, std::vector<uint> &ltx, class SharedData *sharedData)
+void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
+	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
+	TileCoordinates index = it.GetCoordinates();
+
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
 
-	//uint tileX = index >> 16;
-	uint tileY = index & 65535;
+	//TileCoordinate tileX = index.x;
+	TileCoordinate tileY = index.y;
 
 	// Loop through sub-layers
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
-		LayerDef ld = sharedData->config.layers[layerNum];
+		const LayerDef &ld = sharedData->layers.layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
 		double simplifyLevel = 0.0;
 		if (zoom < ld.simplifyBelow) {
@@ -153,18 +175,14 @@ void ProcessLayer(uint zoom, uint index, const vector<OutputObject> &ooList, vec
 			simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 		}
 
-		// compare only by `layer`
-		auto layerComp = [](const OutputObject &x, const OutputObject &y) -> bool { return x.layer < y.layer; };
-		// We get the range within ooList, where the layer of each object is `layerNum`.
-		// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-		OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), OutputObject(POINT, layerNum, 0), layerComp);
+		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
 		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(sharedData->config.layers[ltx.at(0)].name);
+		vtLayer->set_name(sharedData->layers.layers[ltx.at(0)].name);
 		vtLayer->set_version(sharedData->config.mvtVersion);
 		vtLayer->set_extent(4096);
 		for (uint j=0; j<keyList.size()  ; j++) {
@@ -184,29 +202,26 @@ int outputProc(uint threadId, class SharedData *sharedData)
 
 	// Loop through tiles
 	uint tc = 0;
-	uint index = 0;
 	uint zoom = sharedData->zoom;
-	for (auto it = sharedData->tileIndexForZoom->begin(); it != sharedData->tileIndexForZoom->end(); ++it) {
+	for (TilesAtZoomIterator it = sharedData->tileData.GetTilesAtZoomBegin(); it != sharedData->tileData.GetTilesAtZoomEnd(); ++it) {
 		uint interval = 100;
 		if (zoom<9) { interval=1; } else if (zoom<11) { interval=10; }
 		if (threadId == 0 && (tc % interval) == 0) {
-			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileIndexForZoom->size() << "               \r";
+			cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << sharedData->tileData.GetTilesAtZoomSize() << "               \r";
 			cout.flush();
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
 
 		// Create tile
 		vector_tile::Tile tile;
-		index = it->first;
-		TileBbox bbox(index,zoom);
-		const vector<OutputObject> &ooList = it->second;
+		TileBbox bbox(it.GetCoordinates(), zoom);
 		if (sharedData->config.clippingBoxFromJSON && (sharedData->config.maxLon<=bbox.minLon 
 			|| sharedData->config.minLon>=bbox.maxLon || sharedData->config.maxLat<=bbox.minLat 
 			|| sharedData->config.minLat>=bbox.maxLat)) { continue; }
 
 		// Loop through layers
-		for (auto lt = sharedData->config.layerOrder.begin(); lt != sharedData->config.layerOrder.end(); ++lt) {
-			ProcessLayer(zoom, index, ooList, tile, bbox, *lt, sharedData);
+		for (auto lt = sharedData->layers.layerOrder.begin(); lt != sharedData->layers.layerOrder.end(); ++lt) {
+			ProcessLayer(zoom, it, tile, bbox, *lt, sharedData);
 		}
 
 		// Write to file or sqlite
@@ -216,13 +231,13 @@ int outputProc(uint threadId, class SharedData *sharedData)
 			// Write to sqlite
 			tile.SerializeToString(&data);
 			if (sharedData->config.compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData->config.gzip); }
-			sharedData->mbtiles.saveTile(zoom, bbox.tilex, bbox.tiley, sharedData->config.compress ? &compressed : &data);
+			sharedData->mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData->config.compress ? &compressed : &data);
 
 		} else {
 			// Write to file
 			stringstream dirname, filename;
-			dirname  << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex;
-			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.tilex << "/" << bbox.tiley << ".pbf";
+			dirname  << sharedData->outputFile << "/" << zoom << "/" << bbox.index.x;
+			filename << sharedData->outputFile << "/" << zoom << "/" << bbox.index.x << "/" << bbox.index.y << ".pbf";
 			boost::filesystem::create_directories(dirname.str());
 			fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 			if (sharedData->config.compress) {

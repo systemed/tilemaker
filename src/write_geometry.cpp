@@ -2,14 +2,14 @@
 using namespace std;
 namespace geom = boost::geometry;
 
-WriteGeometryVisitor::WriteGeometryVisitor(TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
+WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
 	bboxPtr = bp;
 	featurePtr = fp;
 	simplifyLevel = sl;
 }
 
 // Point
-void WriteGeometryVisitor::operator()(Point &p) const {
+void WriteGeometryVisitor::operator()(const Point &p) const {
 	if (geom::within(p, bboxPtr->clippingBox)) {
 		featurePtr->add_geometry(9);					// moveTo, repeat x1
 		pair<int,int> xy = bboxPtr->scaleLatpLon(p.y(), p.x());
@@ -20,15 +20,15 @@ void WriteGeometryVisitor::operator()(Point &p) const {
 }
 
 // Multipolygon
-void WriteGeometryVisitor::operator()(MultiPolygon &mp) const {
-	if (simplifyLevel>0) {
-		MultiPolygon simplified;
-		geom::simplify(mp, simplified, simplifyLevel);
-		mp = simplified;
-	}
+void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
+	MultiPolygon current;
+	if (simplifyLevel>0)
+		geom::simplify(mp, current, simplifyLevel);
+	else
+		current = mp;
 
 	pair<int,int> lastPos(0,0);
-	for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+	for (MultiPolygon::const_iterator it = current.begin(); it != current.end(); ++it) {
 		XYString scaledString;
 		Ring ring = geom::exterior_ring(*it);
 		for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
@@ -52,15 +52,15 @@ void WriteGeometryVisitor::operator()(MultiPolygon &mp) const {
 }
 
 // Multilinestring
-void WriteGeometryVisitor::operator()(MultiLinestring &mls) const {
-	if (simplifyLevel>0) {
-		MultiLinestring simplified;
-		geom::simplify(mls, simplified, simplifyLevel);
-		mls = simplified;
-	}
+void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
+	MultiLinestring current;
+	if (simplifyLevel>0)
+		geom::simplify(mls, current, simplifyLevel);
+	else 
+		current = mls;
 
 	pair<int,int> lastPos(0,0);
-	for (MultiLinestring::const_iterator it = mls.begin(); it != mls.end(); ++it) {
+	for (MultiLinestring::const_iterator it = current.begin(); it != current.end(); ++it) {
 		XYString scaledString;
 		for (Linestring::const_iterator jt = it->begin(); jt != it->end(); ++jt) {
 			pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
@@ -72,16 +72,16 @@ void WriteGeometryVisitor::operator()(MultiLinestring &mls) const {
 }
 
 // Linestring
-void WriteGeometryVisitor::operator()(Linestring &ls) const { 
-	if (simplifyLevel>0) {
-		Linestring simplified;
-		geom::simplify(ls, simplified, simplifyLevel);
-		ls = simplified;
-	}
+void WriteGeometryVisitor::operator()(const Linestring &ls) const { 
+	Linestring current;
+	if (simplifyLevel>0)
+		geom::simplify(ls, current, simplifyLevel);
+	else
+		current = ls;
 
 	pair<int,int> lastPos(0,0);
 	XYString scaledString;
-	for (Linestring::const_iterator jt = ls.begin(); jt != ls.end(); ++jt) {
+	for (Linestring::const_iterator jt = current.begin(); jt != current.end(); ++jt) {
 		pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
 		scaledString.push_back(xy);
 	}

@@ -12,6 +12,7 @@
 
 using namespace ClipperLib;
 namespace geom = boost::geometry;
+using namespace std;
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
 
@@ -104,7 +105,7 @@ std::string decompress_string(const std::string& str) {
     return outstring;
 }
 
-const double CLIPPER_SCALE = 1e6;
+const double CLIPPER_SCALE = 1e8;
 
 void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 {
@@ -113,12 +114,14 @@ void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 	const Polygon::ring_type &out = p.outer();
 	const Polygon::inner_container_type &inns = p.inners();
 
-	for(size_t i=0; i<out.size(); i++) {
+	for(size_t i=0; i<out.size(); i++)
+	{
 		const Point &pt = out[i];
 		outer.push_back(IntPoint(std::round(pt.x() * CLIPPER_SCALE), std::round(pt.y() * CLIPPER_SCALE)));
 	}
 
-	for(size_t i=0; i<inns.size(); i++) {
+	for(size_t i=0; i<inns.size(); i++)
+	{
 		Path in;
 		const Polygon::ring_type &inner = inns[i];
 		for(size_t j=0; j<inner.size(); j++)
@@ -130,19 +133,22 @@ void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)
 	}
 }
 
-void ConvertToClipper(const MultiPolygon &mp, Paths &out) {
+void ConvertToClipper(const MultiPolygon &mp, Paths &out)
+{
 	// Convert boost geometries to clipper paths 
 	out.clear();
 	Clipper c;
 	c.StrictlySimple(true);
-	for(size_t i=0; i<mp.size(); i++) {
+	for(size_t i=0; i<mp.size(); i++)
+	{
 		const Polygon &p = mp[i];
 		Path outer;
 		Paths inners;
 		ConvertToClipper(p, outer, inners);
 
 		// For polygons with holes,
-		if(inners.size()>0) {
+		if(inners.size()>0)
+		{
 			// Find polygon shapes without needing holes
 			Paths simp;
 			c.AddPath(outer, ptSubject, true);
@@ -151,36 +157,69 @@ void ConvertToClipper(const MultiPolygon &mp, Paths &out) {
 			c.Clear();
 
 			out.insert(out.end(), simp.begin(), simp.end());
-		} else {
+		}
+		else
+		{
 			out.push_back(outer);				
 		}
 	}
 }
 
-void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p) {
+void ConvertToClipper(const MultiPolygon &mp, PolyTree &out)
+{
+	// Convert boost geometries to clipper paths 
+	out.Clear();
+	Clipper c;
+	c.StrictlySimple(true);
+
+	Paths outers;
+	Paths inners;
+	for(size_t i=0; i<mp.size(); i++)
+	{
+		const Polygon &p = mp[i];
+		Path outerTmp;
+		Paths innersTmp;
+		ConvertToClipper(p, outerTmp, innersTmp);
+		outers.push_back(outerTmp);
+		inners.insert(inners.end(), innersTmp.begin(), innersTmp.end());
+	}
+
+	// Find polygon shapes
+	c.AddPaths(outers, ptSubject, true);
+	c.AddPaths(inners, ptClip, true);
+	c.Execute(ctDifference, out, pftEvenOdd, pftEvenOdd);
+	c.Clear();
+}
+
+void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p)
+{
 	p.clear();
 	Polygon::ring_type &out = p.outer();
 	Polygon::inner_container_type &inns = p.inners();
 	
-	for(size_t i=0; i<outer.size(); i++) {
+	for(size_t i=0; i<outer.size(); i++)
+	{
 		const IntPoint &pt = outer[i];
 		out.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 	}
-
-	if(outer.size()>0) {
+	if(outer.size()>0)
+	{
 		//Start point in ring is repeated
 		const IntPoint &pt = outer[0];
 		out.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 	}
 
-	for(size_t i=0; i<inners.size(); i++) {
+	for(size_t i=0; i<inners.size(); i++)
+	{
 		const Path &inn = inners[i];
 		Polygon::ring_type inn2;
-		for(size_t j=0; j<inn.size(); j++) {
+		for(size_t j=0; j<inn.size(); j++)
+		{
 			const IntPoint &pt = inn[j];
 			inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
-		if(inn.size()>0) {
+		if(inn.size()>0)
+		{
 			//Start point in ring is repeated
 			const IntPoint &pt = inn[0];
 			inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
@@ -191,26 +230,69 @@ void ConvertFromClipper(const Path &outer, const Paths &inners, Polygon &p) {
 	geom::correct(p);
 }
 
-void ConvertFromClipper(const Paths &polys, MultiPolygon &mp) {
-	mp.clear();
-
-	for(size_t pn=0; pn < polys.size(); pn++) {
-		const Path &pth = polys[pn];
+void ConvertChildOuterPolyNodesFromClipper(const ClipperLib::PolyNode &pn, MultiPolygon &mp)
+{
+	for(size_t j=0; j<pn.Childs.size(); j++)
+	{
+		PolyNode &child = *pn.Childs[j];
+		if(child.IsHole())
+			throw runtime_error("Encoutered unexpected hole in clipper result");
 		Polygon p;
 		Polygon::ring_type &otr = p.outer();
+		Polygon::inner_container_type &inns = p.inners();
 
-		for(size_t i=0; i<pth.size(); i++) {
-			const IntPoint &pt = pth[i];
+		for(size_t i=0; i<child.Contour.size(); i++)
+		{
+			const IntPoint &pt = child.Contour[i];
 			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
-		if(pth.size()>0) {
+		if(child.Contour.size()>0)
+		{
 			//Start point in ring is repeated
-			const IntPoint &pt = pth[0];
+			const IntPoint &pt = child.Contour[0];
 			otr.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
 		}
+
+		for(size_t i=0; i<child.Childs.size(); i++)
+		{
+			PolyNode &innPn = *child.Childs[i];
+			if(!innPn.IsHole())
+				throw runtime_error("Encoutered unexpected outer shape in clipper result");
+			const Path &inn = innPn.Contour;
+
+			Polygon::ring_type inn2;
+			for(size_t j=0; j<inn.size(); j++)
+			{
+				const IntPoint &pt = inn[j];
+				inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+			}
+			if(inn.size()>0)
+			{
+				//Start point in ring is repeated
+				const IntPoint &pt = inn[0];
+				inn2.push_back(Point(pt.X / CLIPPER_SCALE, pt.Y / CLIPPER_SCALE));
+			}
+			inns.push_back(inn2);
+		}
+
 		//Fix orientation of rings
 		geom::correct(p);
 		mp.push_back(p);
+
+		for(size_t i=0; i<child.Childs.size(); i++)
+		{
+			//Process nested polygon shapes recursively
+			PolyNode &innPn = *child.Childs[i];
+			ConvertChildOuterPolyNodesFromClipper(innPn, mp);
+		}
+
 	}
-	assert(polys.size() == mp.size());
 }
+
+void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
+{
+	mp.clear();
+
+	ConvertChildOuterPolyNodesFromClipper(pt, mp);
+}
+

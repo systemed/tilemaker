@@ -20,7 +20,7 @@
 		"mountain_peak": { "minzoom": 11, "maxzoom": 14 },
 		"sea": {
 			"minzoom": 4, "maxzoom": 14,
-			"source": "../mappatches/coast.shp",
+			"source": "water-polygons-split-4326/fixed_water_polygons.shp",
 			"simplify_below": 13, "simplify_level": 0.0003,
 			"write_to": "water"
 		}
@@ -33,7 +33,7 @@
 		"name": "Tilemaker to OpenTileMaps schema",
 		"version": "0.1",
 		"description": "Tile config based on opentilemap schema",
-		"compress": "gzip",
+		"compress": "none",
 		"metadata": {
 			"json": { "vector_layers": [
 						{ "id": "transportation",     "description": "transportation",     "fields": {"class":"String"}},

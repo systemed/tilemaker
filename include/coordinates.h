@@ -1,9 +1,52 @@
+/*! \file */ 
 #ifndef _COORDINATES_H
 #define _COORDINATES_H
 
 #include "geomtypes.h"
 #include <utility>
 #include <unordered_set>
+
+#ifdef COMPACT_TILE_INDEX
+typedef uint16_t TileCoordinate;
+#else
+typedef uint32_t TileCoordinate;
+#endif
+class TileCoordinates_
+{
+public:
+	TileCoordinate x, y;
+
+	TileCoordinates_();
+	TileCoordinates_(TileCoordinate x, TileCoordinate y);
+
+	bool operator ==(const TileCoordinates_ & obj) const
+	{
+		if (x != obj.x)
+			return false;
+		return y == obj.y;
+	}
+};
+struct TileCoordinatesCompare
+{
+    bool operator()(const class TileCoordinates_& a, const class TileCoordinates_& b) const {
+		if(a.x > b.x)
+			return false;
+		if(a.x < b.x)
+			return true;
+        return a.y < b.y;
+    }
+};
+typedef class TileCoordinates_ TileCoordinates;
+namespace std
+{
+	template<> struct hash<TileCoordinates>
+	{
+		size_t operator()(const TileCoordinates & obj) const
+		{
+			return hash<TileCoordinate>()(obj.x) ^ hash<TileCoordinate>()(obj.y);
+		}
+	};
+}
 
 struct LatpLon {
 	int32_t latp;
@@ -34,7 +77,7 @@ double tiley2latp(uint y, uint z);
 double tiley2lat(uint y, uint z);
 
 // Get a tile index
-uint32_t latpLon2index(LatpLon ll, uint baseZoom);
+TileCoordinates latpLon2index(LatpLon ll, uint baseZoom);
 
 // Earth's (mean) radius
 // http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
@@ -47,50 +90,50 @@ double degp2meter(double degp, double latp);
 double meter2degp(double meter, double latp);
 
 template<typename T>
-void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<uint32_t> &tileSet) {
+void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet) {
 	Point p2(0, 0);
 	for (auto it = points.begin(); it != points.end(); ++it) {
 		Point p1 = p2;
 		p2 = *it;
 
 		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
-		uint tileX2 = static_cast<uint>(tileXf2), tileY2 = static_cast<uint>(tileYf2);
+		TileCoordinate tileX2 = static_cast<TileCoordinate>(tileXf2), tileY2 = static_cast<TileCoordinate>(tileYf2);
 
 		// insert vertex
-		tileSet.insert((tileX2 << 16) + tileY2);
+		tileSet.insert(TileCoordinates(tileX2, tileY2));
 		// p1 is not available at the first iteration
 		if (it == points.begin()) continue;
 
 		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
-		uint tileX1 = static_cast<uint>(tileXf1), tileY1 = static_cast<uint>(tileYf1);
+		TileCoordinate tileX1 = static_cast<TileCoordinate>(tileXf1), tileY1 = static_cast<TileCoordinate>(tileYf1);
 		double dx = tileXf2 - tileXf1, dy = tileYf2 - tileYf1;
 
 		// insert all X border
 		if (tileX1 != tileX2) {
 			double slope = dy / dx;
-			uint tileXmin = std::min(tileX1, tileX2);
-			uint tileXmax = std::max(tileX1, tileX2);
-			for (uint tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
-				uint tileYcur = static_cast<uint>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
-				tileSet.insert((tileXcur << 16) + tileYcur);
+			TileCoordinate tileXmin = std::min(tileX1, tileX2);
+			TileCoordinate tileXmax = std::max(tileX1, tileX2);
+			for (TileCoordinate tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
+				TileCoordinate tileYcur = static_cast<TileCoordinate>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
+				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
 			}
 		}
 
 		// insert all Y border
 		if (tileY1 != tileY2) {
 			double slope = dx / dy;
-			uint tileYmin = std::min(tileY1, tileY2);
-			uint tileYmax = std::max(tileY1, tileY2);
-			for (uint tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
-				uint tileXcur = static_cast<uint>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
-				tileSet.insert((tileXcur << 16) + tileYcur);
+			TileCoordinate tileYmin = std::min(tileY1, tileY2);
+			TileCoordinate tileYmax = std::max(tileY1, tileY2);
+			for (TileCoordinate tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
+				TileCoordinate tileXcur = static_cast<TileCoordinate>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
+				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
 			}
 		}
 	}
 }
 
 // the range between smallest y and largest y is filled, for each x
-void fillCoveredTiles(std::unordered_set<uint32_t> &tileSet);
+void fillCoveredTiles(std::unordered_set<TileCoordinates> &tileSet);
 
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
@@ -100,12 +143,13 @@ class TileBbox {
 public:
 	double minLon, maxLon, minLat, maxLat, minLatp, maxLatp;
 	double xmargin, ymargin, xscale, yscale;
-	uint index, zoom, tiley, tilex;
+	TileCoordinates index;
+	uint zoom;
 	Box clippingBox;
 
-	TileBbox(uint i, uint z);
+	TileBbox(TileCoordinates i, uint z);
 
-	std::pair<int,int> scaleLatpLon(double latp, double lon);
+	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 };
 
 #endif //_COORDINATES_H

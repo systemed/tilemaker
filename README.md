@@ -65,7 +65,7 @@ or with luajit:
 
 To save memory (on any platform), you can choose 32-bit storage for node and way IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
 
-    make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS"
+    make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS -DCOMPACT_TILE_INDEX"
     make install
 
 ### Docker
@@ -108,6 +108,13 @@ You can get a run-down of available options with
     tilemaker --help
 
 When running, you may see "couldn't find constituent way" messages. This happens when the .pbf file contains a multipolygon relation, but not all the relation's members are present. Typically, this will happen when a multipolygon crosses the border of the extract - for example, a county boundary formed by a river with islands. In this case, the river will simply not be written to the tiles.
+
+### Speed optimization
+
+If you don't mind a larger output file, you can skip merging of similar geometries, which considerably speeds up tilemaker:
+
+    tilemaker --combine 0
+
 
 Rendering
 ---------

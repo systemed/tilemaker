@@ -7,6 +7,7 @@
 
 #include "output_object.h"
 #include "helpers.h"
+#include <iostream>
 using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;
@@ -59,7 +60,7 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	ConvertToClipper(mp, simplified);
 
 	// Clip to box
-	Paths clipped;
+	PolyTree clipped;
 	Clipper c2;
 	c2.StrictlySimple(true);
 	c2.AddPaths(simplified, ptSubject, true);
@@ -80,6 +81,11 @@ OutputObject::OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) 
 	objectID = id;
 }
 
+OutputObject::~OutputObject()
+{
+
+}
+
 void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &value) {
 	attributes[key]=value;
 }
@@ -87,65 +93,6 @@ void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &valu
 bool OutputObject::hasAttribute(const string &key) const {
 	auto it = attributes.find(key);
 	return it != attributes.end();
-}
-
-// Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
-// Returns a boost::variant -
-//   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-Geometry OutputObject::buildWayGeometry(const OSMStore &osmStore,
-                      TileBbox *bboxPtr, 
-                      const vector<Geometry> &cachedGeometries) const {
-
-	ClipGeometryVisitor clip(bboxPtr->clippingBox);
-
-	try {
-		if (geomType==POLYGON || geomType==CENTROID) {
-			// polygon
-			MultiPolygon mp;
-			if (osmStore.ways.count(objectID)) {
-				mp.emplace_back(osmStore.nodeListPolygon(objectID));
-			} else {
-				mp = osmStore.wayListMultiPolygon(objectID);
-			}
-
-			// write out
-			if (geomType==CENTROID) {
-				// centroid only
-				Point p;
-				geom::centroid(mp, p);
-				return clip(p);
-
-			} else {
-				// full polygon
-				return clip(mp);
-			}
-
-		} else if (geomType==LINESTRING) {
-			// linestring
-			Linestring ls;
-			if (osmStore.ways.count(objectID)) {
-				ls = osmStore.nodeListLinestring(objectID);
-			}
-			return clip(ls);
-
-		} else if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			const Geometry &g = cachedGeometries[objectID];
-			return boost::apply_visitor(clip, g);
-		}
-	} catch (std::invalid_argument &err) {
-		cerr << "Error in buildWayGeometry: " << err.what() << endl;
-	}
-
-	return MultiLinestring(); // return a blank geometry
-}
-
-// Add a node geometry
-void OutputObject::buildNodeGeometry(LatpLon ll, TileBbox *bboxPtr, vector_tile::Tile_Feature *featurePtr) const {
-	featurePtr->add_geometry(9);					// moveTo, repeat x1
-	pair<int,int> xy = bboxPtr->scaleLatpLon(ll.latp/10000000.0, ll.lon/10000000.0);
-	featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
-	featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
-	featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 }
 
 // Write attribute key/value pairs (dictionary-encoded)
@@ -192,26 +139,26 @@ int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_t
 
 // Comparision functions
 
-bool operator==(const OutputObject &x, const OutputObject &y) {
+bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
-		x.layer == y.layer &&
-		x.geomType == y.geomType &&
-		x.attributes == y.attributes &&
-		x.objectID == y.objectID;
+		x->layer == y->layer &&
+		x->geomType == y->geomType &&
+		x->attributes == y->attributes &&
+		x->objectID == y->objectID;
 }
 
 // Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
 // Note that attributes is preffered to objectID.
 // It is to arrange objects with the identical attributes continuously.
 // Such objects will be merged into one object, to reduce the size of output.
-bool operator<(const OutputObject &x, const OutputObject &y) {
-	if (x.layer < y.layer) return true;
-	if (x.layer > y.layer) return false;
-	if (x.geomType < y.geomType) return true;
-	if (x.geomType > y.geomType) return false;
-	if (x.attributes < y.attributes) return true;
-	if (x.attributes > y.attributes) return false;
-	if (x.objectID < y.objectID) return true;
+bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
+	if (x->layer < y->layer) return true;
+	if (x->layer > y->layer) return false;
+	if (x->geomType < y->geomType) return true;
+	if (x->geomType > y->geomType) return false;
+	if (x->attributes < y->attributes) return true;
+	if (x->attributes > y->attributes) return false;
+	if (x->objectID < y->objectID) return true;
 	return false;
 }
 
@@ -226,5 +173,79 @@ namespace vector_tile {
 		std::string stry = y.SerializeAsString();
 		return strx < stry;
 	}
+}
+
+// ***********************************************
+
+OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
+	Geometry geom):
+	OutputObject(type, l, id),
+	geom(geom)
+{
+
+}
+
+OutputObjectOsmStore::~OutputObjectOsmStore()
+{
+
+}
+
+Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const
+{
+	ClipGeometryVisitor clip(bbox.clippingBox);
+
+	return boost::apply_visitor(clip, geom);	
+}
+
+// Add a node geometry
+LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const
+{
+	const Point *pt = boost::get<Point>(&geom);
+	if(pt == nullptr)
+		throw runtime_error("Geometry type is not point");
+	LatpLon out;
+	out.latp = pt->y();
+	out.lon = pt->x();
+	return out;
+}
+
+// **********************************************
+
+OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
+	const std::vector<Geometry> &cachedGeometries):
+	OutputObject(type, l, id),
+	cachedGeometries(cachedGeometries)
+{
+
+}
+
+OutputObjectCached::~OutputObjectCached()
+{
+
+}
+
+Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
+{
+	ClipGeometryVisitor clip(bbox.clippingBox);
+
+	try {
+		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
+			const Geometry &g = this->cachedGeometries[objectID];
+			return boost::apply_visitor(clip, g);
+		}
+	} catch (std::invalid_argument &err) {
+		cerr << "Error in buildWayGeometry: " << err.what() << endl;
+	}
+
+	return MultiLinestring(); // return a blank geometry
+}
+
+LatpLon OutputObjectCached::buildNodeGeometry(const TileBbox &bbox) const
+{
+	throw runtime_error("Geometry point type not supported");
+	LatpLon out;
+	out.latp = 0;
+	out.lon = 0;	
+	return out;
 }
 

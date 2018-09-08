@@ -1,26 +1,6 @@
+/*! \file */ 
 #ifndef _OSM_STORE_H
 #define _OSM_STORE_H
-
-
-/**
-	OSM Store
-
-	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
-	Only one instance of OSMStore is ever used. It will serve as the global data store. All data determined
-	to be output will be set here, from tilemaker.cpp.
-
-	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
-	These functions are used by osm_output, and can be used by osm_object to provide the geometry information to Lua.
-
-	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
-	These store can be altered for efficient memory use without global code changes.
-	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
-
-	Possible future improvements to save memory:
-	- pack WayStore (e.g. zigzag PBF encoding and varint)
-	- combine innerWays and outerWays into one vector, with a single-byte index marking the changeover
-	- use two arrays (sorted keys and elements) instead of map
-*/
 
 #include <utility>
 #include <vector>
@@ -90,7 +70,7 @@ public:
 typedef std::vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	std::unordered_map<WayID, const std::vector<NodeID>> mNodeLists;
+	std::unordered_map<WayID, const std::vector<NodeID> > mNodeLists;
 
 public:
 	// @brief Lookup a node list
@@ -156,15 +136,34 @@ public:
 	size_t size();
 };
 
-//
-// OSM store, containing all above.
-//
-class OSMStore {
+/**
+	\brief OSM store keeps nodes, ways and relations in memory for later access
+
+	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
+	It will serve as the global data store. OSM data destined for output will be set here from OsmMemTiles.
+
+	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
+	These functions are used by osm_output, and can be used by OsmLuaProcessing to provide the geometry information to Lua.
+
+	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
+	These store can be altered for efficient memory use without global code changes.
+	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
+
+	Possible future improvements to save memory:
+	- pack WayStore (e.g. zigzag PBF encoding and varint)
+	- combine innerWays and outerWays into one vector, with a single-byte index marking the changeover
+	- use two arrays (sorted keys and elements) instead of map
+*/
+class OSMStore
+{
 
 public:
 	NodeStore nodes;
 	WayStore ways;
 	RelationStore relations;
+
+	// @brief Make the store empty
+	void clear();
 
 	void reportSize();
 
@@ -259,6 +258,10 @@ public:
 	MultiPolygon wayListMultiPolygon(WayID relId) const;
 
 	MultiPolygon wayListMultiPolygon(const WayVec &outerWayVec, const WayVec &innerWayVec) const;
+
+	///It is not really meaningful to try using a relation as a linestring. Not normally used but included
+	///if Lua script attempts to do this.
+	Linestring wayListLinestring(const WayVec &outerWayVec, const WayVec &innerWayVec) const;
 
 	// Way -> Polygon
 	template<class NodeIt>

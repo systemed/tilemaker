@@ -1,4 +1,4 @@
-
+/*! \file */ 
 #ifndef _MBTILES_H
 #define _MBTILES_H
 

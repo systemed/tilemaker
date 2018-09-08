@@ -1,12 +1,18 @@
 #include "shared_data.h"
-#include "read_shp.h"
-using namespace std;
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 
-SharedData::SharedData(OSMStore *osmStore)
+using namespace std;
+using namespace rapidjson;
+
+SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
+	class TileData &tileData):
+	tileData(tileData),
+	layers(layers),
+	config(configIn)
 {
-	this->osmStore = osmStore;
 	sqlite=false;
-	this->tileIndexForZoom = nullptr;
 	verbose = false;
 }
 
@@ -17,9 +23,82 @@ SharedData::~SharedData()
 
 // *****************************************************************
 
+// Define a layer (as read from the .json file)
+uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
+		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+		const std::string &source,
+		const std::vector<std::string> &sourceColumns,
+		bool indexed,
+		const std::string &indexName,		
+		const std::string &writeTo) 
+{
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+		source, sourceColumns, indexed, indexName,
+		std::map<std::string,uint>() };
+	layers.push_back(layer);
+	uint layerNum = layers.size()-1;
+	layerMap[name] = layerNum;
+
+	if (writeTo.empty()) {
+		vector<uint> r = { layerNum };
+		layerOrder.push_back(r);
+	} else {
+		if (layerMap.count(writeTo) == 0) {
+			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
+		}
+		uint lookingFor = layerMap[writeTo];
+		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
+			if (it->at(0)==lookingFor) {
+				it->push_back(layerNum);
+			}
+		}
+	}
+	return layerNum;
+}
+
+std::string LayerDefinition::serialiseToJSON() {
+	Document document;
+	document.SetObject();
+	Document::AllocatorType& allocator = document.GetAllocator();
+
+	Value layerArray(kArrayType);
+	for (auto it = layers.begin(); it != layers.end(); ++it) {
+		Value fieldObj(kObjectType);
+		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
+			Value k(jt->first.c_str(), allocator);
+			switch (jt->second) {
+				case 0: fieldObj.AddMember(k, "String" , allocator); break;
+				case 1:	fieldObj.AddMember(k, "Number" , allocator); break;
+				case 2:	fieldObj.AddMember(k, "Boolean", allocator); break;
+			}
+		}
+		Value layerObj(kObjectType);
+		Value name(it->name.c_str(), allocator);
+		layerObj.AddMember("id",      name,        allocator);
+		layerObj.AddMember("fields",  fieldObj,    allocator);
+		layerObj.AddMember("minzoom", it->minzoom, allocator);
+		layerObj.AddMember("maxzoom", it->maxzoom, allocator);
+		layerArray.PushBack(layerObj, allocator);
+	}
+
+	document.AddMember("vector_layers", layerArray, allocator);
+
+	StringBuffer buffer;
+	Writer<StringBuffer> writer(buffer);
+	document.Accept(writer);
+	string json(buffer.GetString(), buffer.GetSize());
+	return json;
+}
+
+
+// *****************************************************************
+
 Config::Config()
 {
 	includeID = false, compress = true, gzip = true;
+	clippingBoxFromJSON = false;
+	baseZoom = 0;
+	combineSimilarObjs = true;
 }
 
 Config::~Config()
@@ -29,10 +108,9 @@ Config::~Config()
 
 // ----	Read all config details from JSON file
 
-void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Box &clippingBox,
-                map< uint, vector<OutputObject> > &tileIndex, OSMObject &osmObject) {
+void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox) 
+{
 	baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
-	osmObject.baseZoom = baseZoom;
 	startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 	endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
 	includeID      = jsonConfig["settings"]["include_ids"].GetBool();
@@ -41,6 +119,8 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		exit (EXIT_FAILURE);
 	}
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
+	if(jsonConfig["settings"].HasMember("combine"))
+		combineSimilarObjs = jsonConfig["settings"]["combine"].GetBool();
 	mvtVersion     = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
 	projectName    = jsonConfig["settings"]["name"].GetString();
 	projectVersion = jsonConfig["settings"]["version"].GetString();
@@ -86,35 +166,26 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool hasClippingBox, Bo
 		double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
 		double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
-		uint layerNum = osmObject.addLayer(layerName, minZoom, maxZoom,
-				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, writeTo);
+		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
+		vector<string> sourceColumns;
+		if (it->value.HasMember("source_columns")) {
+			for (uint i=0; i<it->value["source_columns"].Size(); i++) {
+				sourceColumns.push_back(it->value["source_columns"][i].GetString());
+			}
+		}
+		bool indexed=false; if (it->value.HasMember("index")) {
+			indexed=it->value["index"].GetBool();
+		}
+		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
+
+		layers.addLayer(layerName, minZoom, maxZoom,
+				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+				source, sourceColumns, indexed, indexName,
+				writeTo);
+
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
-
-		// External layer sources
-		if (it->value.HasMember("source")) {
-			if (!hasClippingBox) {
-				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-				exit(EXIT_FAILURE);
-			}
-			vector<string> sourceColumns;
-			if (it->value.HasMember("source_columns")) {
-				for (uint i=0; i<it->value["source_columns"].Size(); i++) {
-					sourceColumns.push_back(it->value["source_columns"][i].GetString());
-				}
-			}
-			bool indexed=false; if (it->value.HasMember("index")) {
-				indexed=it->value["index"].GetBool();
-				osmObject.indices->operator[](layerName)=RTree();
-			}
-			string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
-			readShapefile(it->value["source"].GetString(), sourceColumns, clippingBox, tileIndex,
-			              cachedGeometries,
-			              osmObject,
-			              baseZoom, layerNum, layerName, indexed,
-			              indexName);
-		}
 	}
 }
 
