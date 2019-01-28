@@ -193,12 +193,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	Geometry geom;
+	Geometry geomOut;
 	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
 	try {
 		if (geomType==POINT) {
 			LatpLon pt = osmStore.nodes.at(osmID);
-			geom = Point(pt.lon, pt.latp);
+			geomOut = Point(pt.lon, pt.latp);
 		}
 		else if (geomType==POLYGON) {
 			// polygon
@@ -207,7 +207,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			{
 				try
 				{
-					geom = multiPolygonCached();
+					geomOut = multiPolygonCached();
 				}
 				catch(std::out_of_range &err)
 				{
@@ -223,13 +223,13 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				geom::assign_points(p, ls);
 				MultiPolygon mp;
 				mp.push_back(p);
-				geom = mp;
+				geomOut = mp;
 			}
 
 		}
 		else if (geomType==LINESTRING) {
 			// linestring
-			geom = linestringCached();
+			geomOut = linestringCached();
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
@@ -237,7 +237,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(geomType,
 					layers.layerMap[layerName],
-					osmID, geom);
+					osmID, geomOut);
 	outputs.push_back(oo);
 }
 
@@ -246,7 +246,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	Geometry geom;
+	Geometry centeroid;
 	try {
 
 		Geometry tmp;
@@ -284,7 +284,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		{
 			Point p;
 			geom::centroid(tmp, p);
-			geom = p;
+			centeroid = p;
 		}
 		catch (geom::centroid_exception &err)
 		{
@@ -299,7 +299,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
 					layers.layerMap[layerName],
-					osmID, geom);
+					osmID, centeroid);
 	outputs.push_back(oo);
 }
 
