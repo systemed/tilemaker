@@ -273,10 +273,25 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 			tmp = mp;
 		}
 
+		if(geom::is_empty(tmp))
+		{
+			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid" << endl;
+			return;
+		}
+
 		// write out centroid only
-		Point p;
-		geom::centroid(tmp, p);
-		geom = p;
+		try
+		{
+			Point p;
+			geom::centroid(tmp, p);
+			geom = p;
+		}
+		catch (geom::centroid_exception &err)
+		{
+			cerr << "Problem geom: " << boost::geometry::wkt(tmp) << std::endl;
+			cerr << err.what() << endl;
+			return;
+		}
 
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
