@@ -5,6 +5,8 @@
 #include "tile_data.h"
 #include "osm_store.h"
 
+bool CheckAvailableDiskTileExtent(uint tilesZoom, Box &clippingBox);
+
 /**
  * \brief Used by OsmDiskTiles has temporary storage while processing one or more tiles in a lazy fashion.
  */

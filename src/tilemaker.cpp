@@ -136,6 +136,11 @@ int main(int argc, char* argv[]) {
 		clippingBox = Box(geom::make<Point>(minLon, minLat),
 			              geom::make<Point>(maxLon, maxLat));
 	}
+	else
+	{
+		clippingBoxSrc = "tiles on disk";
+		hasClippingBox = CheckAvailableDiskTileExtent(12, clippingBox);
+	}
 
 	// ----	Read JSON config
 

@@ -5,25 +5,6 @@
 using namespace std;
 using namespace boost::filesystem;
 
-OsmDiskTmpTiles::OsmDiskTmpTiles(uint baseZoom):
-	TileDataSource(),
-	baseZoom(baseZoom)
-{
-
-}
-
-void OsmDiskTmpTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
-{
-	tileIndex[index].push_back(oo);
-}
-
-uint OsmDiskTmpTiles::GetBaseZoom()
-{
-	return baseZoom;
-}
-
-// ********************************************
-
 string PathTrailing(const path &in)
 {
 	string out;
@@ -32,17 +13,9 @@ string PathTrailing(const path &in)
 	return out;
 }
 
-OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
-		const class Config &config,
-		const std::string &luaFile,
-		const class LayerDefinition &layers,	
-		const class TileDataSource &shpData):
-	TileDataSource(),
-	tilesZoom(tilesZoom),
-	config(config),
-	luaFile(luaFile),
-	layers(layers),
-	shpData(shpData)
+void CheckAvailableDiskTiles(uint tilesZoom,
+	bool &tileBoundsSet,
+	int &xMin, int &xMax, int &yMin, int &yMax)
 {
 	tileBoundsSet = false;
 	xMin = 0; xMax = 0; yMin = 0; yMax = 0;
@@ -79,6 +52,65 @@ OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
 		
 		firstDir = false;
 	}
+
+	return tileBoundsSet;
+}
+
+bool CheckAvailableDiskTileExtent(uint tilesZoom, Box &clippingBox)
+{
+	bool tileBoundsSet = false;
+	int xMin=0, xMax=0, yMin=0, yMax=0;
+
+	CheckAvailableDiskTiles(tilesZoom,
+		tileBoundsSet,
+		xMin, xMax, yMin, yMax);
+
+	cout << "disk tile extent x " << xMin << "," << xMax << endl;
+	cout << "y " << yMin << "," << yMax << endl;
+
+	if(tileBoundsSet)
+		clippingBox = Box(geom::make<Point>(tilex2lon(xMin, tilesZoom), tiley2lat(yMax, tilesZoom)),
+		              geom::make<Point>(tilex2lon(xMax, tilesZoom), tiley2lat(yMin, tilesZoom)));
+
+	return tileBoundsSet;
+}
+
+// ********************************************
+
+OsmDiskTmpTiles::OsmDiskTmpTiles(uint baseZoom):
+	TileDataSource(),
+	baseZoom(baseZoom)
+{
+
+}
+
+void OsmDiskTmpTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
+{
+	tileIndex[index].push_back(oo);
+}
+
+uint OsmDiskTmpTiles::GetBaseZoom()
+{
+	return baseZoom;
+}
+
+// ********************************************
+
+OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
+		const class Config &config,
+		const std::string &luaFile,
+		const class LayerDefinition &layers,	
+		const class TileDataSource &shpData):
+	TileDataSource(),
+	tilesZoom(tilesZoom),
+	config(config),
+	luaFile(luaFile),
+	layers(layers),
+	shpData(shpData)
+{
+	CheckAvailableDiskTiles(tilesZoom,
+		tileBoundsSet,
+		xMin, xMax, yMin, yMax);
 
 	//Limit available tile range if clipping box is defined. Only include tiles that are
 	//in the union of these areas.
