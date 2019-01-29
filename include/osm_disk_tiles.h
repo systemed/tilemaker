@@ -5,7 +5,8 @@
 #include "tile_data.h"
 #include "osm_store.h"
 
-bool CheckAvailableDiskTileExtent(uint tilesZoom, Box &clippingBox);
+bool CheckAvailableDiskTileExtent(const std::string &basePath,
+	Box &clippingBox);
 
 /**
  * \brief Used by OsmDiskTiles has temporary storage while processing one or more tiles in a lazy fashion.
@@ -37,7 +38,7 @@ private:
 class OsmDiskTiles : public TileDataSource
 {
 public:
-	OsmDiskTiles(uint tilesZoom,
+	OsmDiskTiles(const std::string &basePath,
 		const class Config &config,
 		const std::string &luaFile,
 		const class LayerDefinition &layers,	
@@ -57,7 +58,7 @@ public:
 private:
 	//This variables are generally safe for multiple threads to read, but not to write. (They are const anyway.)
 
-	const uint tilesZoom;
+	uint tilesZoom;
 	const class Config &config;
 	const std::string luaFile;
 	const class LayerDefinition &layers;

@@ -130,8 +130,6 @@ int main(int argc, char* argv[]) {
 			minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
 		cout << inputFiles[0] << endl;
-		cout << "first pbf file extent " << minLon <<","<< minLat \
-			<<","<< maxLon <<","<< maxLat << endl;
 		clippingBoxSrc = "first pbf file";
 		clippingBox = Box(geom::make<Point>(minLon, minLat),
 			              geom::make<Point>(maxLon, maxLat));
@@ -139,8 +137,11 @@ int main(int argc, char* argv[]) {
 	else
 	{
 		clippingBoxSrc = "tiles on disk";
-		hasClippingBox = CheckAvailableDiskTileExtent(12, clippingBox);
+		hasClippingBox = CheckAvailableDiskTileExtent(inputFiles[0], clippingBox);
 	}
+
+	cout << "extent from " << clippingBoxSrc << ":" << clippingBox.min_corner().get<0>() <<","<< clippingBox.min_corner().get<1>() \
+		<<","<< clippingBox.max_corner().get<0>() <<","<< clippingBox.max_corner().get<1>() << endl;
 
 	// ----	Read JSON config
 
@@ -217,7 +218,8 @@ int main(int argc, char* argv[]) {
 	if(!tiledInput)
 		osmTiles.reset(new OsmMemTiles(config.baseZoom));
 	else
-		osmTiles.reset(new OsmDiskTiles(12, config,
+		osmTiles.reset(new OsmDiskTiles(inputFiles[0],
+			config,
 			luaFile,
 			layers,	
 			shpMemTiles));

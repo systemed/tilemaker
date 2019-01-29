@@ -13,18 +13,36 @@ string PathTrailing(const path &in)
 	return out;
 }
 
-void CheckAvailableDiskTiles(uint tilesZoom,
+void CheckAvailableDiskTiles(const std::string &basePath,
+	uint &tilesZoom,
 	bool &tileBoundsSet,
 	int &xMin, int &xMax, int &yMin, int &yMax)
 {
+	tilesZoom = 0;
 	tileBoundsSet = false;
 	xMin = 0; xMax = 0; yMin = 0; yMax = 0;
 
+	// Check for available zoom folders, choose the highest zoom
+	path basePath2 (basePath);
+	directory_iterator end_itr;
+	for (directory_iterator itr(basePath2); itr != end_itr; ++itr)
+	{
+		if(!is_directory(itr->path()))
+			continue;
+		auto itr2 = --(itr->path().end()); //Get the folder name
+		int zoom = atoi(itr2->c_str());
+		if (to_string(zoom) != *itr2)
+			continue;
+		if (zoom > tilesZoom)
+			tilesZoom = zoom;
+	}
+	if (tilesZoom==0)
+		throw runtime_error("No tile zoom folders found");
+
 	// Determine extent of available tile files
 	path p (to_string(tilesZoom));
-	directory_iterator end_itr;
 	bool firstDir = true;
-	for (directory_iterator itr(p); itr != end_itr; ++itr)
+	for (directory_iterator itr(basePath2/p); itr != end_itr; ++itr)
 	{
 		if(!is_directory(itr->path()))
 			continue;
@@ -52,16 +70,16 @@ void CheckAvailableDiskTiles(uint tilesZoom,
 		
 		firstDir = false;
 	}
-
-	return tileBoundsSet;
 }
 
-bool CheckAvailableDiskTileExtent(uint tilesZoom, Box &clippingBox)
+bool CheckAvailableDiskTileExtent(const std::string &basePath,
+	Box &clippingBox)
 {
+	uint tilesZoom = 0;
 	bool tileBoundsSet = false;
 	int xMin=0, xMax=0, yMin=0, yMax=0;
 
-	CheckAvailableDiskTiles(tilesZoom,
+	CheckAvailableDiskTiles(basePath, tilesZoom,
 		tileBoundsSet,
 		xMin, xMax, yMin, yMax);
 
@@ -69,8 +87,8 @@ bool CheckAvailableDiskTileExtent(uint tilesZoom, Box &clippingBox)
 	cout << "y " << yMin << "," << yMax << endl;
 
 	if(tileBoundsSet)
-		clippingBox = Box(geom::make<Point>(tilex2lon(xMin, tilesZoom), tiley2lat(yMax, tilesZoom)),
-		              geom::make<Point>(tilex2lon(xMax, tilesZoom), tiley2lat(yMin, tilesZoom)));
+		clippingBox = Box(geom::make<Point>(tilex2lon(xMin, tilesZoom), tiley2lat(yMax+1, tilesZoom)),
+		              geom::make<Point>(tilex2lon(xMax+1, tilesZoom), tiley2lat(yMin, tilesZoom)));
 
 	return tileBoundsSet;
 }
@@ -96,19 +114,18 @@ uint OsmDiskTmpTiles::GetBaseZoom()
 
 // ********************************************
 
-OsmDiskTiles::OsmDiskTiles(uint tilesZoom,
+OsmDiskTiles::OsmDiskTiles(const std::string &basePath,
 		const class Config &config,
 		const std::string &luaFile,
 		const class LayerDefinition &layers,	
 		const class TileDataSource &shpData):
 	TileDataSource(),
-	tilesZoom(tilesZoom),
 	config(config),
 	luaFile(luaFile),
 	layers(layers),
 	shpData(shpData)
 {
-	CheckAvailableDiskTiles(tilesZoom,
+	CheckAvailableDiskTiles(basePath, tilesZoom,
 		tileBoundsSet,
 		xMin, xMax, yMin, yMax);
 
