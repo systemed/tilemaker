@@ -211,21 +211,10 @@ int main(int argc, char* argv[]) {
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 
-	// For each tile, objects to be used in processing
-	class ShpMemTiles shpMemTiles(config.baseZoom);
-	class LayerDefinition layers(config.layers);
-	shared_ptr<class TileDataSource> osmTiles;
-	if(!tiledInput)
-		osmTiles.reset(new OsmMemTiles(config.baseZoom));
-	else
-		osmTiles.reset(new OsmDiskTiles(inputFiles[0],
-			config,
-			luaFile,
-			layers,	
-			shpMemTiles));
-
 	// ---- Load external shp files
 
+	class LayerDefinition layers(config.layers);
+	class ShpMemTiles shpMemTiles(config.baseZoom);
 	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
 	{
 		// External layer sources
@@ -245,29 +234,22 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	// For each tile, objects to be used in processing
+
+	shared_ptr<class TileDataSource> osmTiles;
 	if(!tiledInput)
-	{
-		OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
-			shpMemTiles, 
-			*osmTiles.get());
-
-		// ----	Read significant node tags
-		vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
-		unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
-
-		// ----	Read all PBFs
-	
-		class PbfReader pbfReader;
-		pbfReader.output = &osmLuaProcessing;
-		for (auto inputFile : inputFiles) {
-	
-			cout << "Reading " << inputFile << endl;
-
-			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
-			if(ret != 0)
-				return ret;
-		}
-	}
+		osmTiles.reset(new OsmMemTiles(config.baseZoom,
+			inputFiles,
+			config,
+			luaFile,
+			layers,	
+			shpMemTiles));
+	else
+		osmTiles.reset(new OsmDiskTiles(inputFiles[0],
+			config,
+			luaFile,
+			layers,	
+			shpMemTiles));
 
 	// ----	Initialise SharedData
 	std::vector<class TileDataSource *> sources = {osmTiles.get(), &shpMemTiles};

@@ -13,7 +13,12 @@
 class OsmMemTiles : public TileDataSource
 {
 public:
-	OsmMemTiles(uint baseZoom);
+	OsmMemTiles(uint baseZoom,
+		const std::vector<std::string> &inputFiles,
+		const class Config &config,
+		const std::string &luaFile,
+		const class LayerDefinition &layers,	
+		const class TileDataSource &shpMemTiles);
 
 	///This must be thread safe!
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
