@@ -117,6 +117,26 @@ If you don't mind a larger output file, you can skip merging of similar geometri
 
     tilemaker --combine 0
 
+### Tiled pbf input
+
+Input data can be loaded from tiled pbf files. The input tiles are in the usual slippy tile naming convensions. Tilemaker needs the folder containing the tiled data as a program argument:
+
+    tilemaker /path/to/tiledata --tiled-input --config resources/config-openmaptiles.json --process resources/process-openmaptiles.lua --output=tiles/
+
+The advantage of using a tiled pbf input is that the memory usage is much lower, even for large areas. For a small area, the file structure of the tiled data is as follows:
+
+    12/2030/1377.pbf
+    12/2030/1378.pbf
+    12/2031/1377.pbf
+    12/2031/1378.pbf
+
+Example tiled data can be downloaded from: https://archive.org/details/isle-of-wight-fosm.tar
+
+### Water shapefile
+
+Water data is usually loaded using shapefiles rather than from pbf data. Download shapefiles from somewhere like http://openstreetmapdata.com/data/water-polygons and specify the path in your config json file.
+
+During processing, the shapefile data is loaded into memory, so generating vector tiles for a large area is memory intensive.
 
 Rendering
 ---------
@@ -131,7 +151,6 @@ Contributing
 Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or http://irc.osm.org, channel #osm-dev) and http://help.osm.org.
 
 Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies.
-
 
 Copyright and contact
 ---------------------

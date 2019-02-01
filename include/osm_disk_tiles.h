@@ -59,6 +59,7 @@ private:
 	//This variables are generally safe for multiple threads to read, but not to write. (They are const anyway.)
 
 	uint tilesZoom;
+	const std::string basePath;
 	const class Config &config;
 	const std::string luaFile;
 	const class LayerDefinition &layers;

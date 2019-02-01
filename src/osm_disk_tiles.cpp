@@ -120,6 +120,7 @@ OsmDiskTiles::OsmDiskTiles(const std::string &basePath,
 		const class LayerDefinition &layers,	
 		const class TileDataSource &shpData):
 	TileDataSource(),
+	basePath(basePath),
 	config(config),
 	luaFile(luaFile),
 	layers(layers),
@@ -226,7 +227,8 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 
 				// ----	Read PBF file
 	
-				path inputFile(to_string(tilesZoom));
+				path inputFile(basePath);
+				inputFile /= to_string(tilesZoom);
 				inputFile /= to_string(x); 
 				inputFile /= to_string(y) + ".pbf";
 				cout << inputFile << endl;
@@ -250,7 +252,8 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 
 		// ----	Read PBF file
 	
-		path inputFile(to_string(tilesZoom));
+		path inputFile(basePath);
+		inputFile /= to_string(tilesZoom);
 		inputFile /= to_string(tilex); 
 		inputFile /= to_string(tiley) + ".pbf";
 		cout << inputFile << endl;
