@@ -273,11 +273,13 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 			tmp = mp;
 		}
 
+#if BOOST_VERSION >= 105900
 		if(geom::is_empty(tmp))
 		{
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid" << endl;
 			return;
 		}
+#endif
 
 		// write out centroid only
 		try
