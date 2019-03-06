@@ -91,7 +91,7 @@ int main(int argc, char* argv[]) {
 	
 	if (vm.count("help")) { cout << desc << endl; return 1; }
 	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
-	if (vm.count("input")==0) { cerr << "You must specify at least one source .osm.pbf file. Run with --help to find out more." << endl; return -1; }
+	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
 
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) {
 		sqlite=true;
@@ -115,18 +115,18 @@ int main(int argc, char* argv[]) {
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
 
-	// ----	Read bounding box from first .pbf
+	// ----	Read bounding box from first .pbf (if there is one)
 
 	bool hasClippingBox = false;
-	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
-	int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, 
-		minLat, maxLat, hasClippingBox);
-	if(ret != 0) return ret;
 	Box clippingBox;
-	if(hasClippingBox)
-	{
-		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+	if (inputFiles.size()>0) {
+		double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
+		if(ret != 0) return ret;
+		if(hasClippingBox) {
+			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+			                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+		}
 	}
 
 	// ----	Read JSON config
@@ -148,15 +148,6 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	// ----	Command line options override config settings
-
-	if(hasClippingBox)
-	{
-		config.minLon = minLon;
-		config.maxLon = maxLon;
-		config.minLat = minLat;
-		config.maxLat = maxLat;
-	}
 	if(vm.count("combine")>0)
 		config.combineSimilarObjs = combineSimilarObjs;
 

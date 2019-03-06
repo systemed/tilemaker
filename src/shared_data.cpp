@@ -134,6 +134,11 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		maxLat = jsonConfig["settings"]["bounding_box"][3].GetDouble();
 		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
 		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+	} else if (hasClippingBox) {
+		minLon = clippingBox.min_corner().x();
+		maxLon = clippingBox.max_corner().x();
+		minLat = latp2lat(clippingBox.min_corner().y());
+		maxLat = latp2lat(clippingBox.max_corner().y());
 	}
 	if (jsonConfig["settings"].HasMember("default_view")) {
 		defaultView = to_string(jsonConfig["settings"]["default_view"][0].GetDouble()) + "," +
