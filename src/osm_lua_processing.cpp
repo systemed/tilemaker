@@ -81,7 +81,6 @@ kaguya::LuaTable OsmLuaProcessing::newTable() {
 }
 
 kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table) {
-	cout << "calling remapping" << endl;
 	kaguya::LuaTable out_table = luaState["attribute_function"].call<kaguya::LuaTable>(in_table);
 	return out_table;
 }
