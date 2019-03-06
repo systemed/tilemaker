@@ -3,6 +3,7 @@
 using namespace std;
 
 kaguya::State *g_luaState = nullptr;
+bool supportsRemappingShapefiles = false;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -46,6 +47,11 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 		.addFunction("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric)
 		.addFunction("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean)
 	);
+	if (luaState["attribute_function"]) {
+		supportsRemappingShapefiles = true;
+	} else {
+		supportsRemappingShapefiles = false;
+	}
 
 	// ---- Call init_function of Lua logic
 
@@ -64,6 +70,20 @@ OsmLuaProcessing::~OsmLuaProcessing()
 // Has this object been assigned to any layers?
 bool OsmLuaProcessing::empty() {
 	return outputs.size()==0;
+}
+
+bool OsmLuaProcessing::canRemapShapefiles() {
+	return supportsRemappingShapefiles;
+}
+
+kaguya::LuaTable OsmLuaProcessing::newTable() {
+	return luaState.newTable();//kaguya::LuaTable(luaState);
+}
+
+kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table) {
+	cout << "calling remapping" << endl;
+	kaguya::LuaTable out_table = luaState["attribute_function"].call<kaguya::LuaTable>(in_table);
+	return out_table;
 }
 
 // ----	Metadata queries called from Lua

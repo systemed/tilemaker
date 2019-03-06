@@ -185,7 +185,7 @@ int main(int argc, char* argv[]) {
 			readShapefile(clippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
-						  shpMemTiles);
+						  shpMemTiles, osmLuaProcessing);
 		}
 	}
 

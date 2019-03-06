@@ -1,4 +1,5 @@
 #include "read_shp.h"
+
 using namespace std;
 namespace geom = boost::geometry;
 
@@ -33,24 +34,66 @@ void addShapefileAttributes(
 		DBFHandle &dbf,
 		OutputObjectRef &oo,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
-		class LayerDefinition &layers) {
+		class LayerDefinition &layers,
+		OsmLuaProcessing &osmLuaProcessing) {
 
-	for (auto it : columnMap) {
-		int pos = it.first;
-		string key = it.second;
-		vector_tile::Tile_Value v;
-		switch (columnTypeMap[pos]) {
-			case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 1;
-			         break;
-			case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 1;
-			         break;
-			default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 3;
-			         break;
+	if (osmLuaProcessing.canRemapShapefiles()) {
+		// Create table object
+		kaguya::LuaTable in_table = osmLuaProcessing.newTable();
+		for (auto it : columnMap) {
+			int pos = it.first;
+			string key = it.second;
+			switch (columnTypeMap[pos]) {
+				case 1:  in_table[key] = DBFReadIntegerAttribute(dbf, recordNum, pos); break;
+				case 2:  in_table[key] =  DBFReadDoubleAttribute(dbf, recordNum, pos); break;
+				default: in_table[key] =  DBFReadStringAttribute(dbf, recordNum, pos); break;
+			}
 		}
-		oo->addAttribute(key, v);
+
+		// Call remap function
+		kaguya::LuaTable out_table = osmLuaProcessing.remapAttributes(in_table);
+
+		// Write values to vector tiles
+		for (auto key : out_table.keys()) {
+			kaguya::LuaRef val = out_table[key];
+			vector_tile::Tile_Value v;
+			if (val.isType<std::string>()) {
+				v.set_string_value(static_cast<std::string const&>(val));
+				layers.layers[oo->layer].attributeMap[key] = 0;
+			} else if (val.isType<int>()) {
+				v.set_int_value(val);
+				layers.layers[oo->layer].attributeMap[key] = 1;
+			} else if (val.isType<double>()) {
+				v.set_double_value(val);
+				layers.layers[oo->layer].attributeMap[key] = 1;
+			} else if (val.isType<bool>()) {
+				v.set_bool_value(val);
+				layers.layers[oo->layer].attributeMap[key] = 2;
+			} else {
+				// don't even think about trying to write nested tables, thank you
+				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
+			}
+			oo->addAttribute(key, v);
+		}
+
+	} else {
+		for (auto it : columnMap) {
+			int pos = it.first;
+			string key = it.second;
+			vector_tile::Tile_Value v;
+			switch (columnTypeMap[pos]) {
+				case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
+				         layers.layers[oo->layer].attributeMap[key] = 1;
+				         break;
+				case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
+				         layers.layers[oo->layer].attributeMap[key] = 1;
+				         break;
+				default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
+				         layers.layers[oo->layer].attributeMap[key] = 0;
+				         break;
+			}
+			oo->addAttribute(key, v);
+		}
 	}
 }
 
@@ -58,7 +101,8 @@ void addShapefileAttributes(
 void readShapefile(const Box &clippingBox, 
 				   class LayerDefinition &layers,
                    uint baseZoom, uint layerNum,
-				   class ShpMemTiles &shpMemTiles) 
+				   class ShpMemTiles &shpMemTiles,
+				   OsmLuaProcessing &osmLuaProcessing)
 {
 	LayerDef &layer = layers.layers[layerNum];
 	const string &filename = layer.source;
@@ -105,7 +149,7 @@ void readShapefile(const Box &clippingBox,
 
 				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
 
-				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
+				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}
 
 		} else if (shapeType==3) {
@@ -126,7 +170,7 @@ void readShapefile(const Box &clippingBox,
 
 					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
 
-					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
+					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 				}
 			}
 
@@ -191,7 +235,7 @@ void readShapefile(const Box &clippingBox,
 				// create OutputObject
 				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
 
-				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
+				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}
 
 		} else {

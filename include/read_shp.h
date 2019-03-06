@@ -9,6 +9,7 @@
 #include "geomtypes.h"
 #include "output_object.h"
 #include "osm_lua_processing.h"
+#include "kaguya.hpp"
 
 // Shapelib
 #include "shapefil.h"
@@ -22,7 +23,8 @@ void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std
 void readShapefile(const Box &clippingBox,
                    class LayerDefinition &layers,
                    uint baseZoom, uint layerNum,
-				   class ShpMemTiles &shpMemTiles);
+				   class ShpMemTiles &shpMemTiles,
+				   OsmLuaProcessing &osmLuaProcessing);
 
 #endif //_READ_SHP_H
 

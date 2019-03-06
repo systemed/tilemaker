@@ -46,6 +46,11 @@ public:
 	// Has this object been assigned to any layers?
 	bool empty();
 
+	// Shapefile tag remapping
+	bool canRemapShapefiles();
+	kaguya::LuaTable newTable();
+	virtual kaguya::LuaTable remapAttributes(kaguya::LuaTable& in_table);
+
 	// ----	Data loading methods
 
 	/// \brief Called when data loading is starting
@@ -142,6 +147,7 @@ private:
 	OSMStore osmStore;									// global OSM store
 
 	kaguya::State luaState;
+	bool supportsRemappingShapefiles;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
 
