@@ -227,7 +227,10 @@ int main(int argc, char* argv[]) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			readShapefile(clippingBox,
+			Box projClippingBox = Box(geom::make<Point>(clippingBox.min_corner().get<0>(), lat2latp(clippingBox.min_corner().get<1>())),
+			              geom::make<Point>(clippingBox.max_corner().get<0>(), lat2latp(clippingBox.max_corner().get<1>())));
+
+			readShapefile(projClippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
 						  shpMemTiles);
