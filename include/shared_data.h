@@ -23,6 +23,7 @@ struct LayerDef {
 	double simplifyRatio;
 	std::string source;
 	std::vector<std::string> sourceColumns;
+	bool allSourceColumns;
 	bool indexed;
 	std::string indexName;
 	std::map<std::string, uint> attributeMap;
@@ -41,6 +42,7 @@ public:
 			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
 			const std::string &source,
 			const std::vector<std::string> &sourceColumns,
+			bool allSourceColumns,
 			bool indexed,
 			const std::string &indexName,	
 			const std::string &writeTo);

@@ -124,11 +124,19 @@ void readShapefile(const Box &clippingBox,
 	// prepare columns
 	unordered_map<int,string> columnMap;
 	unordered_map<int,int> columnTypeMap;
-	for (size_t i=0; i<columns.size(); i++) {
-		int dbfLoc = DBFGetFieldIndex(dbf,columns[i].c_str());
-		if (dbfLoc>-1) { 
-			columnMap[dbfLoc]=columns[i];
-			columnTypeMap[dbfLoc]=DBFGetFieldInfo(dbf,dbfLoc,NULL,NULL,NULL);
+	if (layer.allSourceColumns) {
+		for (size_t i=0; i<DBFGetFieldCount(dbf); i++) {
+			char name[12];
+			columnTypeMap[i] = DBFGetFieldInfo(dbf,i,name,NULL,NULL);
+			columnMap[i] = string(name);
+		}
+	} else {
+		for (size_t i=0; i<columns.size(); i++) {
+			int dbfLoc = DBFGetFieldIndex(dbf,columns[i].c_str());
+			if (dbfLoc>-1) { 
+				columnMap[dbfLoc]=columns[i];
+				columnTypeMap[dbfLoc]=DBFGetFieldInfo(dbf,dbfLoc,NULL,NULL,NULL);
+			}
 		}
 	}
 	int indexField=-1;

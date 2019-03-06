@@ -28,12 +28,13 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
 		const std::string &source,
 		const std::vector<std::string> &sourceColumns,
+		bool allSourceColumns,
 		bool indexed,
 		const std::string &indexName,		
 		const std::string &writeTo) 
 {
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-		source, sourceColumns, indexed, indexName,
+		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>() };
 	layers.push_back(layer);
 	uint layerNum = layers.size()-1;
@@ -173,9 +174,14 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
 		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
 		vector<string> sourceColumns;
+		bool allSourceColumns = false;
 		if (it->value.HasMember("source_columns")) {
-			for (uint i=0; i<it->value["source_columns"].Size(); i++) {
-				sourceColumns.push_back(it->value["source_columns"][i].GetString());
+			if (it->value["source_columns"].IsTrue()) {
+				allSourceColumns = true;
+			} else {
+				for (uint i=0; i<it->value["source_columns"].Size(); i++) {
+					sourceColumns.push_back(it->value["source_columns"][i].GetString());
+				}
 			}
 		}
 		bool indexed=false; if (it->value.HasMember("index")) {
@@ -185,7 +191,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-				source, sourceColumns, indexed, indexName,
+				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";

@@ -165,8 +165,7 @@ int main(int argc, char* argv[]) {
 	{
 		// External layer sources
 		LayerDef &layer = layers.layers[layerNum];
-		if(layer.indexed)
-			shpMemTiles.CreateNamedLayerIndex(layer.name);
+		if(layer.indexed) { shpMemTiles.CreateNamedLayerIndex(layer.name); }
 
 		if (layer.source.size()>0) {
 			if (!hasClippingBox) {
