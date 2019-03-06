@@ -134,7 +134,9 @@ Example tiled data can be downloaded from: https://archive.org/details/isle-of-w
 
 ### Water shapefile
 
-Water data is usually loaded using shapefiles rather than from pbf data. Download shapefiles from somewhere like http://openstreetmapdata.com/data/water-polygons and specify the path in your config json file.
+Water data is usually loaded using shapefiles rather than from pbf data. Download shapefiles from somewhere like http://openstreetmapdata.com/data/water-polygons and specify the path in your config json file. Shapefiles need to be in WGS-84 (EPSG:4326) projection. Using GDAL/OGR:
+
+    ogr2ogr -t_srs EPSG:4326 Output.shp Input.shp
 
 During processing, the shapefile data is loaded into memory, so generating vector tiles for a large area is memory intensive.
 
