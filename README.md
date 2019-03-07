@@ -105,6 +105,10 @@ The JSON configuration and Lua processing files are specified with --config and 
 
     tilemaker liechtenstein-latest.osm.pbf --config resources/config-openmaptiles.json --process resources/process-openmaptiles.lua --output=tiles/
 
+You can run on the included test data using:
+
+    tilemaker testdata/iow_os_opendata.pbf --config resources/config-testdata.json --process resources/process-openmaptiles.lua --output=tiles/
+
 You can get a run-down of available options with
 
     tilemaker --help
