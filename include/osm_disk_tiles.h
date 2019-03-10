@@ -25,9 +25,8 @@ public:
 
 	virtual uint GetBaseZoom();
 
-	TileIndex tileIndex;
-private:
-	uint baseZoom;
+	class TileIndex tileIndex;
+
 };
 
 /**

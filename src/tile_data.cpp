@@ -5,21 +5,32 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void GenerateTileListFromTileIndex(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
+TileIndex::TileIndex(uint baseZoom):
+	baseZoom(baseZoom)
 {
-	if (destZoom==srcZoom) {
+
+}
+
+TileIndex::~TileIndex()
+{
+
+}
+
+void TileIndex::GenerateTileList(uint destZoom, TileCoordinatesSet &dstCoords) const
+{
+	if (destZoom==this->baseZoom) {
 		// at z14, we can just use tileIndex
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+		for (auto it = this->index.begin(); it!= this->index.end(); ++it) {
 			TileCoordinates index = it->first;
 			dstCoords.insert(index);
 		}
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
-		if(destZoom < srcZoom)
+		if(destZoom < this->baseZoom)
 		{
-			int scale = pow(2, srcZoom-destZoom);
-			for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
+			int scale = pow(2, this->baseZoom-destZoom);
+			for (auto it = this->index.begin(); it!= this->index.end(); ++it) {
 				TileCoordinates index = it->first;
 				TileCoordinate tilex = index.x / scale;
 				TileCoordinate tiley = index.y / scale;
@@ -34,20 +45,20 @@ void GenerateTileListFromTileIndex(uint destZoom, uint srcZoom, const TileIndex 
 	}
 }
 
-void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile)
+void TileIndex::GetTileData(TileCoordinates dstIndex, uint destZoom,
+	std::vector<OutputObjectRef> &dstTile) const
 {
-	if (destZoom==srcZoom) {
+	if (destZoom==this->baseZoom) {
 		// at z14, we can just use tileIndex
-		auto oosetIt = srcTiles.find(dstIndex);
-		if(oosetIt == srcTiles.end()) return;
+		auto oosetIt = this->index.find(dstIndex);
+		if(oosetIt == this->index.end()) return;
 		dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
-		if(destZoom < srcZoom)
+		if(destZoom < this->baseZoom)
 		{
-			int scale = pow(2, srcZoom-destZoom);
+			int scale = pow(2, this->baseZoom-destZoom);
 			TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
 			TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
 
@@ -56,8 +67,8 @@ void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZ
 				for(int y=srcIndex1.y; y<srcIndex2.y; y++)
 				{
 					TileCoordinates srcIndex(x, y);
-					auto oosetIt = srcTiles.find(srcIndex);
-					if(oosetIt == srcTiles.end()) continue;
+					auto oosetIt = this->index.find(srcIndex);
+					if(oosetIt == this->index.end()) continue;
 					dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
 					//cout << oosetIt->second.size() << endl;
 				}
@@ -65,12 +76,68 @@ void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZ
 		}
 		else
 		{
-			int scale = pow(2, destZoom-srcZoom);
+			int scale = pow(2, destZoom-this->baseZoom);
 			TileCoordinates srcIndex(dstIndex.x/scale, dstIndex.y/scale);
-			auto oosetIt = srcTiles.find(srcIndex);
-			if(oosetIt == srcTiles.end()) return;
+			auto oosetIt = this->index.find(srcIndex);
+			if(oosetIt == this->index.end()) return;
 			dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
 		}
+	}
+}
+
+uint TileIndex::GetBaseZoom() const
+{
+	return this->baseZoom;
+}
+
+void TileIndex::Add(TileCoordinates tileIndex, OutputObjectRef oo)
+{
+	this->index[tileIndex].push_back(oo);
+}
+
+void TileIndex::Add(OutputObjectRef &oo, Point pt)
+{
+	uint tilex = 0, tiley = 0;
+	tilex = lon2tilex(pt.x(), baseZoom);
+	tiley = latp2tiley(pt.y(), baseZoom);
+	this->index[TileCoordinates(tilex, tiley)].push_back(oo);
+}
+
+// Add an OutputObject to all tiles between min/max lat/lon
+void TileIndex::AddByBbox(OutputObjectRef &oo,
+                          double minLon, double minLatp, double maxLon, double maxLatp) {
+	uint minTileX =  lon2tilex(minLon, baseZoom);
+	uint maxTileX =  lon2tilex(maxLon, baseZoom);
+	uint minTileY = latp2tiley(minLatp, baseZoom);
+	uint maxTileY = latp2tiley(maxLatp, baseZoom);
+	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
+		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
+			TileCoordinates index(x, y);
+			this->index[index].push_back(oo);
+		}
+	}
+}
+
+// Add an OutputObject to all tiles along a polyline
+void TileIndex::AddByPolyline(OutputObjectRef &oo, Geometry *geom) {
+
+	const Linestring *ls = boost::get<Linestring>(geom);
+	if(ls == nullptr) return;
+	uint lastx = UINT_MAX;
+	uint lasty;
+	for (Linestring::const_iterator jt = ls->begin(); jt != ls->end(); ++jt) {
+		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
+		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
+		if (lastx==UINT_MAX) {
+			this->index[TileCoordinates(tilex, tiley)].push_back(oo);
+		} else if (lastx!=tilex || lasty!=tiley) {
+			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
+				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
+					this->index[TileCoordinates(x, y)].push_back(oo);
+				}
+			}
+		}
+		lastx=tilex; lasty=tiley;
 	}
 }
 

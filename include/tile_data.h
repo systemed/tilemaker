@@ -9,12 +9,31 @@
 #include "output_object.h"
 
 typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
-typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
+typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndexRaw;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
-void GenerateTileListFromTileIndex(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile);
+class TileIndex
+{
+public:
+	TileIndex(uint baseZoom);
+	virtual ~TileIndex();
+
+	void GenerateTileList(uint destZoom, TileCoordinatesSet &dstCoords) const;
+	void GetTileData(TileCoordinates dstIndex, uint destZoom, 
+		std::vector<OutputObjectRef> &dstTile) const;
+
+	uint GetBaseZoom() const;
+
+	void Add(TileCoordinates tileIndex, OutputObjectRef oo);
+	void Add(OutputObjectRef &oo, Point pt);
+	void AddByBbox(OutputObjectRef &oo, 
+		                      double minLon, double minLatp, double maxLon, double maxLatp);
+	void AddByPolyline(OutputObjectRef &oo, Geometry *geom);
+
+private:
+	TileIndexRaw index;
+	const uint baseZoom;
+};
 
 class TileDataSource
 {

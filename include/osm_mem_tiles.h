@@ -34,8 +34,7 @@ public:
 private:
 	//This variables are generally safe for multiple threads to read, but not to write.
 
-	TileIndex tileIndex;
-	uint baseZoom;
+	class TileIndex tileIndex;
 };
 
 #endif //_OSM_MEM_TILES

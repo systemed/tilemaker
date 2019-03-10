@@ -10,7 +10,7 @@ OsmMemTiles::OsmMemTiles(uint baseZoom,
 		const class TileDataSource &shpMemTiles):
 
 	TileDataSource(),
-	baseZoom(baseZoom)
+	tileIndex(baseZoom)
 {
 	class LayerDefinition layersTmp(layers);
 	OsmLuaProcessing osmLuaProcessing(config, layersTmp, luaFile, 
@@ -37,22 +37,22 @@ OsmMemTiles::OsmMemTiles(uint baseZoom,
 
 void OsmMemTiles::GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
 {
-	::GenerateTileListFromTileIndex(zoom, baseZoom, tileIndex, dstCoords);
+	tileIndex.GenerateTileList(zoom, dstCoords);
 }
 
 void OsmMemTiles::GetTileData(TileCoordinates dstIndex, uint zoom, 
 	std::vector<OutputObjectRef> &dstTile)
 {
-	::GetTileDataFromTileIndex(dstIndex, zoom, baseZoom, tileIndex, dstTile);
+	tileIndex.GetTileData(dstIndex, zoom, dstTile);
 }
 
 void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
 {
-	tileIndex[index].push_back(oo);
+	tileIndex.Add(index, oo);
 }
 
 uint OsmMemTiles::GetBaseZoom()
 {
-	return baseZoom;
+	return tileIndex.GetBaseZoom();
 }
 

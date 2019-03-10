@@ -97,19 +97,19 @@ bool CheckAvailableDiskTileExtent(const std::string &basePath,
 
 OsmDiskTmpTiles::OsmDiskTmpTiles(uint baseZoom):
 	TileDataSource(),
-	baseZoom(baseZoom)
+	tileIndex(baseZoom)
 {
 
 }
 
 void OsmDiskTmpTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
 {
-	tileIndex[index].push_back(oo);
+	tileIndex.Add(index, oo);
 }
 
 uint OsmDiskTmpTiles::GetBaseZoom()
 {
-	return baseZoom;
+	return tileIndex.GetBaseZoom();
 }
 
 // ********************************************
@@ -261,7 +261,7 @@ void OsmDiskTiles::GetTileData(TileCoordinates dstIndex, uint zoom,
 
 	}
 
-	::GetTileDataFromTileIndex(dstIndex, zoom, tmpTiles.GetBaseZoom(), tmpTiles.tileIndex, dstTile);
+	tmpTiles.tileIndex.GetTileData(dstIndex, zoom, dstTile);
 
 }
 
