@@ -1,4 +1,5 @@
 #include "write_geometry.h"
+#include "helpers.h"
 using namespace std;
 namespace geom = boost::geometry;
 
@@ -24,10 +25,11 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0)
 	{
-		//geom::simplify is glitchy and sometimes breaks ploygons. For now,
+		//geom::simplify is glitchy and sometimes breaks polygons. For now,
 		//disable polygon simplification. https://github.com/systemed/tilemaker/issues/131
 		//geom::simplify(mp, current, simplifyLevel);
-		current = mp;
+
+		ClipperSimplify(mp, simplifyLevel, current);
 	}
 	else
 		current = mp;

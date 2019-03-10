@@ -34,4 +34,6 @@ void ConvertToClipper(const MultiPolygon &mp, ClipperLib::PolyTree &out);
 void ConvertFromClipper(const ClipperLib::Path &outer, const ClipperLib::Paths &inners, Polygon &p);
 void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp);
 
+void ClipperSimplify(const MultiPolygon &mp, double simplifyLevel, MultiPolygon &out);
+
 #endif //_HELPERS_H

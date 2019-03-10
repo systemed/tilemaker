@@ -296,3 +296,36 @@ void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp)
 	ConvertChildOuterPolyNodesFromClipper(pt, mp);
 }
 
+void ClipperSimplify(const MultiPolygon &mp, double simplifyLevel, MultiPolygon &out)
+{
+	Clipper cl;
+	cl.StrictlySimple(true);
+
+	for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+		Polygon outerRing{geom::exterior_ring(*it)};
+		Polygon outerSimp;
+		geom::simplify(outerRing, outerSimp, simplifyLevel);
+
+		Path outerPath;
+		Paths tmpPaths;
+		ConvertToClipper(outerSimp, outerPath, tmpPaths);		
+		cl.AddPath(outerPath, ptSubject, true);
+
+		InteriorRing interiors = geom::interior_rings(*it);
+		for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
+
+			Polygon innerRing{*ii};
+			Polygon innerSimp;
+			geom::simplify(innerRing, innerSimp, simplifyLevel);
+
+			Path innerPath;
+			ConvertToClipper(innerSimp, innerPath, tmpPaths);		
+			cl.AddPath(innerPath, ptClip, true);
+		}
+	}
+
+	PolyTree result;
+	cl.Execute(ctDifference, result, pftEvenOdd, pftEvenOdd);
+	ConvertFromClipper(result, out);
+}
+
