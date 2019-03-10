@@ -23,7 +23,7 @@ void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum,
 void readShapefile(const Box &clippingBox,
                    class LayerDefinition &layers,
                    uint baseZoom, uint layerNum,
-				   class ShpMemTiles &shpMemTiles);
+				   class TileIndexCached &outObj);
 
 #endif //_READ_SHP_H
 

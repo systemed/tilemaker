@@ -58,7 +58,7 @@ void addShapefileAttributes(
 void readShapefile(const Box &clippingBox, 
 				   class LayerDefinition &layers,
                    uint baseZoom, uint layerNum,
-				   class ShpMemTiles &shpMemTiles) 
+				   class TileIndexCached &outObj) 
 {
 	LayerDef &layer = layers.layers[layerNum];
 	const string &filename = layer.source;
@@ -118,7 +118,7 @@ void readShapefile(const Box &clippingBox,
 				bool hasName = false;
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
+				OutputObjectRef oo = outObj.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 			}
@@ -139,7 +139,7 @@ void readShapefile(const Box &clippingBox,
 					bool hasName = false;
 					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
+					OutputObjectRef oo = outObj.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
 
 					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 				}
@@ -204,7 +204,7 @@ void readShapefile(const Box &clippingBox,
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 				// create OutputObject
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
+				OutputObjectRef oo = outObj.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers);
 			}

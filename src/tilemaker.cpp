@@ -43,6 +43,7 @@ typedef unsigned uint;
 #include "osm_mem_tiles.h"
 #include "osm_disk_tiles.h"
 #include "shp_mem_tiles.h"
+//#include "shp_disk_tiles.h"
 
 // Namespaces
 using namespace std;
@@ -52,7 +53,7 @@ namespace geom = boost::geometry;
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
  *
- * Data is loaded into OsmMemTiles/OsmDiskTiles and ShpMemTiles.
+ * Data is loaded into OsmMemTiles/OsmDiskTiles and ShpMemTiles/ShpDiskTiles.
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
@@ -213,8 +214,8 @@ int main(int argc, char* argv[]) {
 	// ---- Load external shp files
 
 	class LayerDefinition layers(config.layers);
-	class ShpMemTiles shpMemTiles(config.baseZoom);
-	shpMemTiles.Load(layers, hasClippingBox, clippingBox);
+	class ShpMemTiles shpTiles(config.baseZoom);
+	shpTiles.Load(layers, hasClippingBox, clippingBox);
 
 	// For each tile, objects to be used in processing
 
@@ -225,16 +226,16 @@ int main(int argc, char* argv[]) {
 			config,
 			luaFile,
 			layers,	
-			shpMemTiles));
+			shpTiles));
 	else
 		osmTiles.reset(new OsmDiskTiles(inputFiles[0],
 			config,
 			luaFile,
 			layers,	
-			shpMemTiles));
+			shpTiles));
 
 	// ----	Initialise SharedData
-	std::vector<class TileDataSource *> sources = {osmTiles.get(), &shpMemTiles};
+	std::vector<class TileDataSource *> sources = {osmTiles.get(), &shpTiles};
 	class TileData tileData(sources);
 
 	class SharedData sharedData(config, layers, tileData);

@@ -35,6 +35,33 @@ private:
 	const uint baseZoom;
 };
 
+// ***********************************
+
+class TileIndexCached : public TileIndex
+{
+public:
+	TileIndexCached(uint baseZoom);
+	virtual ~TileIndexCached();
+
+	OutputObjectRef AddObject(uint_least8_t layerNum,
+		const std::string &layerName, enum OutputGeometryType geomType,
+		Geometry geometry, bool isIndexed, bool hasName, const std::string &name);
+	
+	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
+	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
+
+	void CreateNamedLayerIndex(const std::string &layerName);
+
+	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
+	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2) const;
+	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids) const;
+
+};
+
+// ***********************************
+
+
 class TileDataSource
 {
 public:
@@ -54,15 +81,6 @@ public:
 	{
 		return false;
 	};
-
-	virtual void CreateNamedLayerIndex(const std::string &name) {};
-
-	// Used in shape file loading
-	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
-		const std::string &layerName, 
-		enum OutputGeometryType geomType,
-		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name) {return OutputObjectRef();};
 
 	//Used in OSM data loading
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
@@ -141,3 +159,4 @@ private:
 };
 
 #endif //_TILE_DATA_H
+

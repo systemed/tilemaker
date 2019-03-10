@@ -25,25 +25,9 @@ public:
 		bool hasClippingBox,
 		const Box &clippingBox);
 
-	// Used in shape file loading
-	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
-		const std::string &layerName, 
-		enum OutputGeometryType geomType,
-		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name);
-
 private:
-	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
-	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2) const;
-	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids) const;
 
-	virtual void CreateNamedLayerIndex(const std::string &layerName);
-
-	uint baseZoom;
-	class TileIndex tileIndex;
-	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
-	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
-	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
+	class TileIndexCached tileIndex;
 };
 
 #endif //_OSM_MEM_TILES
