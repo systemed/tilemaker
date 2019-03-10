@@ -39,7 +39,6 @@ typedef unsigned uint;
 
 #include "shared_data.h"
 #include "read_pbf.h"
-#include "read_shp.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
 #include "osm_disk_tiles.h"
@@ -215,27 +214,7 @@ int main(int argc, char* argv[]) {
 
 	class LayerDefinition layers(config.layers);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
-	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
-	{
-		// External layer sources
-		LayerDef &layer = layers.layers[layerNum];
-		if(layer.indexed)
-			shpMemTiles.CreateNamedLayerIndex(layer.name);
-
-		if (layer.source.size()>0) {
-			if (!hasClippingBox) {
-				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-				exit(EXIT_FAILURE);
-			}
-			Box projClippingBox = Box(geom::make<Point>(clippingBox.min_corner().get<0>(), lat2latp(clippingBox.min_corner().get<1>())),
-			              geom::make<Point>(clippingBox.max_corner().get<0>(), lat2latp(clippingBox.max_corner().get<1>())));
-
-			readShapefile(projClippingBox,
-			              layers,
-			              config.baseZoom, layerNum,
-						  shpMemTiles);
-		}
-	}
+	shpMemTiles.Load(layers, hasClippingBox, clippingBox);
 
 	// For each tile, objects to be used in processing
 

@@ -3,6 +3,7 @@
 #define _SHP_MEM_TILES
 
 #include "tile_data.h"
+#include "shared_data.h"
 
 class ShpMemTiles : public TileDataSource
 {
@@ -27,6 +28,10 @@ public:
 		bool isIndexed, bool hasName, const std::string &name);
 
 	virtual uint GetBaseZoom();
+
+	virtual void Load(class LayerDefinition &layers, 
+		bool hasClippingBox,
+		const Box &clippingBox);
 
 private:
 	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;

@@ -2,6 +2,7 @@
 #include <iostream>
 using namespace std;
 namespace geom = boost::geometry;
+#include "read_shp.h"
 
 ShpMemTiles::ShpMemTiles(uint baseZoom):
 	TileDataSource(),
@@ -122,6 +123,33 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 uint ShpMemTiles::GetBaseZoom()
 {
 	return baseZoom;
+}
+
+void ShpMemTiles::Load(class LayerDefinition &layers, 
+	bool hasClippingBox,
+	const Box &clippingBox)
+{
+	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
+	{
+		// External layer sources
+		const LayerDef &layer = layers.layers[layerNum];
+		if(layer.indexed)
+			this->CreateNamedLayerIndex(layer.name);
+
+		if (layer.source.size()>0) {
+			if (!hasClippingBox) {
+				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+				exit(EXIT_FAILURE);
+			}
+			Box projClippingBox = Box(geom::make<Point>(clippingBox.min_corner().get<0>(), lat2latp(clippingBox.min_corner().get<1>())),
+			              geom::make<Point>(clippingBox.max_corner().get<0>(), lat2latp(clippingBox.max_corner().get<1>())));
+
+			readShapefile(projClippingBox,
+			              layers,
+			              baseZoom, layerNum,
+						  *this);
+		}
+	}
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
