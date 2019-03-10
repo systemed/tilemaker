@@ -23,7 +23,12 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0)
-		geom::simplify(mp, current, simplifyLevel);
+	{
+		//geom::simplify is glitchy and sometimes breaks ploygons. For now,
+		//disable polygon simplification. https://github.com/systemed/tilemaker/issues/131
+		//geom::simplify(mp, current, simplifyLevel);
+		current = mp;
+	}
 	else
 		current = mp;
 
