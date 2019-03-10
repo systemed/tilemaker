@@ -26,8 +26,7 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	if (simplifyLevel>0)
 	{
 		//geom::simplify is glitchy and sometimes breaks polygons. For now,
-		//disable polygon simplification. https://github.com/systemed/tilemaker/issues/131
-		//geom::simplify(mp, current, simplifyLevel);
+		//use clipper to process rings that have been simplified using boost geometry.
 
 		ClipperSimplify(mp, simplifyLevel, current);
 	}
