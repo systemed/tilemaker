@@ -16,9 +16,9 @@ class OsmDiskTmpTiles : public TileDataSource
 public:
 	OsmDiskTmpTiles(uint baseZoom);
 
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {};
+	virtual void GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {};
 
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+	virtual void GetTileData(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile) {};
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
@@ -45,10 +45,10 @@ public:
 		const class TileDataSource &shpData);
 
 	///This must be thread safe!
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
+	virtual void GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
 	///This must be thread safe!
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+	virtual void GetTileData(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile);
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);

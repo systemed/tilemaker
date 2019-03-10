@@ -5,7 +5,7 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void MergeTileCoordsAtZoom(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
+void GenerateTileListFromTileIndex(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
 {
 	if (destZoom==srcZoom) {
 		// at z14, we can just use tileIndex
@@ -34,7 +34,7 @@ void MergeTileCoordsAtZoom(uint destZoom, uint srcZoom, const TileIndex &srcTile
 	}
 }
 
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
+void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
 	std::vector<OutputObjectRef> &dstTile)
 {
 	if (destZoom==srcZoom) {
@@ -103,7 +103,6 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 {
 	if(!ready)
 		RefreshData();
-	TileCoordinatesSet::const_iterator it = *this;
 
 	// compare only by `layer`
 	auto layerComp = [](const OutputObjectRef &x, const OutputObjectRef &y) -> bool { return x->layer < y->layer; };
@@ -155,7 +154,7 @@ void TilesAtZoomIterator::RefreshData()
 	if(it == tileData.tileCoordinates.end()) return;
 
 	for(size_t i=0; i<tileData.sources.size(); i++)
-		tileData.sources[i]->MergeSingleTileDataAtZoom(*it, zoom, data);
+		tileData.sources[i]->GetTileData(*it, zoom, data);
 
 	sort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());
@@ -193,6 +192,6 @@ void TileData::SetZoom(uint zoom)
 	// Create list of tiles
 	tileCoordinates.clear();
 	for(size_t i=0; i<sources.size(); i++)
-		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
+		sources[i]->GenerateTileListAtZoom(zoom, tileCoordinates);
 }
 

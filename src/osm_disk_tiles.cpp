@@ -149,7 +149,7 @@ OsmDiskTiles::OsmDiskTiles(const std::string &basePath,
 	cout << "y " << yMin << "," << yMax << endl;
 }
 
-void OsmDiskTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
+void OsmDiskTiles::GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
 {
 	if (zoom==tilesZoom) {
 		// at native zoom level
@@ -194,7 +194,7 @@ void OsmDiskTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoord
 	}
 }
 
-void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+void OsmDiskTiles::GetTileData(TileCoordinates dstIndex, uint zoom, 
 	std::vector<OutputObjectRef> &dstTile)
 {
 	class LayerDefinition layersTmp(layers);
@@ -261,7 +261,7 @@ void OsmDiskTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom
 
 	}
 
-	::MergeSingleTileDataAtZoom(dstIndex, zoom, tmpTiles.GetBaseZoom(), tmpTiles.tileIndex, dstTile);
+	::GetTileDataFromTileIndex(dstIndex, zoom, tmpTiles.GetBaseZoom(), tmpTiles.tileIndex, dstTile);
 
 }
 

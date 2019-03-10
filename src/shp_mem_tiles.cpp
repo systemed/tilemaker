@@ -11,15 +11,15 @@ ShpMemTiles::ShpMemTiles(uint baseZoom):
 
 }
 
-void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
+void ShpMemTiles::GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
 {
-	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
+	::GenerateTileListFromTileIndex(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+void ShpMemTiles::GetTileData(TileCoordinates dstIndex, uint zoom, 
 	std::vector<OutputObjectRef> &dstTile)
 {
-	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
+	::GetTileDataFromTileIndex(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 
 // Find intersecting shapefile layer

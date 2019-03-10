@@ -12,18 +12,18 @@ typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
-void MergeTileCoordsAtZoom(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
+void GenerateTileListFromTileIndex(uint destZoom, uint srcZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
+void GetTileDataFromTileIndex(TileCoordinates dstIndex, uint destZoom, uint srcZoom, const TileIndex &srcTiles, 
 	std::vector<OutputObjectRef> &dstTile);
 
 class TileDataSource
 {
 public:
 	///This must be thread safe!
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
+	virtual void GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
 
 	///This must be thread safe!
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+	virtual void GetTileData(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile)=0;
 
 	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const

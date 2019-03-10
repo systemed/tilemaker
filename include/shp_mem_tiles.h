@@ -10,15 +10,20 @@ class ShpMemTiles : public TileDataSource
 public:
 	ShpMemTiles(uint baseZoom);
 
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
+	virtual void GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+	virtual void GetTileData(TileCoordinates dstIndex, uint zoom, 
 		std::vector<OutputObjectRef> &dstTile);
 
 	// Find intersecting shapefile layer
 	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const;
 	virtual bool Intersects(const std::string &layerName, Box &box) const;
-	virtual void CreateNamedLayerIndex(const std::string &layerName);
+
+	virtual uint GetBaseZoom();
+
+	virtual void Load(class LayerDefinition &layers, 
+		bool hasClippingBox,
+		const Box &clippingBox);
 
 	// Used in shape file loading
 	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
@@ -26,12 +31,6 @@ public:
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
 		bool isIndexed, bool hasName, const std::string &name);
-
-	virtual uint GetBaseZoom();
-
-	virtual void Load(class LayerDefinition &layers, 
-		bool hasClippingBox,
-		const Box &clippingBox);
 
 private:
 	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
@@ -44,6 +43,8 @@ private:
 
 	/// Add an OutputObject to all tiles along a polyline
 	void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, Geometry *geom);
+
+	virtual void CreateNamedLayerIndex(const std::string &layerName);
 
 	uint baseZoom;
 	TileIndex tileIndex;

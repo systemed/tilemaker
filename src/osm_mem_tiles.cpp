@@ -35,15 +35,15 @@ OsmMemTiles::OsmMemTiles(uint baseZoom,
 	}
 }
 
-void OsmMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
+void OsmMemTiles::GenerateTileListAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
 {
-	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
+	::GenerateTileListFromTileIndex(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
+void OsmMemTiles::GetTileData(TileCoordinates dstIndex, uint zoom, 
 	std::vector<OutputObjectRef> &dstTile)
 {
-	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
+	::GetTileDataFromTileIndex(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 
 void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
