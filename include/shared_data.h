@@ -13,7 +13,9 @@
 #include "tile_data.h"
 
 ///\brief Defines map single layer appearance
-struct LayerDef {
+class LayerDef 
+{
+public:
 	std::string name;
 	uint minzoom;
 	uint maxzoom;
