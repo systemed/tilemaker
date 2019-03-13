@@ -35,21 +35,27 @@ void addShapefileAttributes(
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
 		class LayerDefinition &layers) {
 
+	auto &attributeMap = layers.layers[oo->layer].attributeMap;
 	for (auto it : columnMap) {
 		int pos = it.first;
 		string key = it.second;
 		vector_tile::Tile_Value v;
+		auto iter = attributeMap.find(key);
+		int typeVal = 0;
 		switch (columnTypeMap[pos]) {
 			case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 1;
+			         typeVal = 1;
 			         break;
 			case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 1;
+			         typeVal = 1;
 			         break;
 			default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
-			         layers.layers[oo->layer].attributeMap[key] = 3;
+			         typeVal = 3;
 			         break;
 		}
+		if (iter != attributeMap.end() && iter->second != typeVal)
+			throw runtime_error("Type of column unexpectedly changed while loading shp");
+		attributeMap[key] = typeVal;
 		oo->addAttribute(key, v);
 	}
 }
