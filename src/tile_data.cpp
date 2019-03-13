@@ -161,9 +161,10 @@ OutputObjectRef TileIndexCached::AddObject(uint_least8_t layerNum,
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
 
-	cachedGeometries.push_back(geometry);
+	shared_ptr<Geometry> g = std::make_shared<Geometry>(geometry);
+	cachedGeometries.push_back(g);
+	uint id = cachedGeometries.size() - 1;
 
-	uint id = cachedGeometries.size()-1;
 	if(isIndexed)
 	{
 		indices.at(layerName).insert(std::make_pair(box, id));
@@ -171,7 +172,7 @@ OutputObjectRef TileIndexCached::AddObject(uint_least8_t layerNum,
 			cachedGeometryNames[id]=name;
 	}
 
-	OutputObjectRef oo = std::make_shared<OutputObjectCached>(geomType, layerNum, cachedGeometries.size()-1, cachedGeometries);
+	OutputObjectRef oo = std::make_shared<OutputObjectCached>(geomType, layerNum, cachedGeometries.size()-1, g);
 
 	Point *p = nullptr;
 	switch(geomType)
@@ -215,8 +216,8 @@ vector<uint> TileIndexCached::verifyIntersectResults(vector<IndexValue> &results
 	vector<uint> ids;
 	for (auto it : results) {
 		uint id=it.second;
-		if      (geom::intersects(cachedGeometries.at(id),p1)) { ids.push_back(id); }
-		else if (geom::intersects(cachedGeometries.at(id),p2)) { ids.push_back(id); }
+		if      (geom::intersects(*cachedGeometries.at(id),p1)) { ids.push_back(id); }
+		else if (geom::intersects(*cachedGeometries.at(id),p2)) { ids.push_back(id); }
 	}
 	return ids;
 }

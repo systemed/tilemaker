@@ -47,7 +47,7 @@ public:
 		const std::string &layerName, enum OutputGeometryType geomType,
 		Geometry geometry, bool isIndexed, bool hasName, const std::string &name);
 	
-	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	std::vector<std::shared_ptr<Geometry> > cachedGeometries;   // prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 

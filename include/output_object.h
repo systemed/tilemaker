@@ -101,7 +101,7 @@ class OutputObjectCached : public OutputObject
 {
 public:
 	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
-		const std::vector<Geometry> &cachedGeometries);
+		const std::shared_ptr<Geometry> geometry);
 	virtual ~OutputObjectCached();
 
 	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
@@ -109,7 +109,7 @@ public:
 	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
 
 private:
-	const std::vector<Geometry> &cachedGeometries;
+	const std::shared_ptr<Geometry> geometry;
 };
 
 typedef std::shared_ptr<OutputObject> OutputObjectRef;

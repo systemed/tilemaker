@@ -212,9 +212,9 @@ LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const
 // **********************************************
 
 OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
-	const std::vector<Geometry> &cachedGeometries):
+	const shared_ptr<Geometry> geometry):
 	OutputObject(type, l, id),
-	cachedGeometries(cachedGeometries)
+	geometry(geometry)
 {
 
 }
@@ -230,8 +230,7 @@ Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
 
 	try {
 		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			const Geometry &g = this->cachedGeometries[objectID];
-			return boost::apply_visitor(clip, g);
+			return boost::apply_visitor(clip, *this->geometry);
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in buildWayGeometry: " << err.what() << endl;
