@@ -172,6 +172,7 @@ int main(int argc, char* argv[]) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
+			cout << "Reading " << layer.name << endl;
 			readShapefile(clippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
