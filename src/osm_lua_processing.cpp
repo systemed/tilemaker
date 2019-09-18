@@ -3,6 +3,7 @@
 using namespace std;
 
 kaguya::State *g_luaState = nullptr;
+bool supportsRemappingShapefiles = false;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -46,6 +47,11 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 		.addFunction("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric)
 		.addFunction("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean)
 	);
+	if (luaState["attribute_function"]) {
+		supportsRemappingShapefiles = true;
+	} else {
+		supportsRemappingShapefiles = false;
+	}
 
 	// ---- Call init_function of Lua logic
 
@@ -64,6 +70,19 @@ OsmLuaProcessing::~OsmLuaProcessing()
 // Has this object been assigned to any layers?
 bool OsmLuaProcessing::empty() {
 	return outputs.size()==0;
+}
+
+bool OsmLuaProcessing::canRemapShapefiles() {
+	return supportsRemappingShapefiles;
+}
+
+kaguya::LuaTable OsmLuaProcessing::newTable() {
+	return luaState.newTable();//kaguya::LuaTable(luaState);
+}
+
+kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table) {
+	kaguya::LuaTable out_table = luaState["attribute_function"].call<kaguya::LuaTable>(in_table);
+	return out_table;
 }
 
 // ----	Metadata queries called from Lua
@@ -273,10 +292,27 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 			tmp = mp;
 		}
 
+#if BOOST_VERSION >= 105900
+		if(geom::is_empty(tmp))
+		{
+			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid" << endl;
+			return;
+		}
+#endif
+
 		// write out centroid only
-		Point p;
-		geom::centroid(tmp, p);
-		geom = p;
+		try
+		{
+			Point p;
+			geom::centroid(tmp, p);
+			geom = p;
+		}
+		catch (geom::centroid_exception &err)
+		{
+			cerr << "Problem geom: " << boost::geometry::wkt(tmp) << std::endl;
+			cerr << err.what() << endl;
+			return;
+		}
 
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
