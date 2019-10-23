@@ -45,7 +45,11 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
                    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
 		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/osmformat.proto)
 
-add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc src/tilemaker.cpp)
+file(GLOB tilemaker_src_files
+    "src/*.cpp"
+    "clipper/*.cpp"
+  )
+add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_link_libraries(tilemaker ${Boost_LIBRARIES} ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB})
 
 install(TARGETS tilemaker RUNTIME DESTINATION bin)
