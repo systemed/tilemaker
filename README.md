@@ -70,6 +70,8 @@ To save memory (on any platform), you can choose 32-bit storage for node and way
 
 ### Docker
 
+**The Dockerfile is not formally supported by project maintainers and you are encouraged to send pull requests to fix any issues you encounter.**
+
 Build from project root directory with:
 
 	docker build . -t tilemaker
