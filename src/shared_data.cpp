@@ -118,6 +118,13 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 		exit (EXIT_FAILURE);
 	}
+#ifndef FAT_TILE_INDEX
+	if (endZoom>16) {
+		cerr << "Compile tilemaker with -DFAT_TILE_INDEX to enable tile output at zoom level 17 or greater" << endl;
+		exit (EXIT_FAILURE);
+	}
+#endif
+
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
 	if(jsonConfig["settings"].HasMember("combine"))
 		combineSimilarObjs = jsonConfig["settings"]["combine"].GetBool();

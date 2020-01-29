@@ -28,10 +28,10 @@ typedef uint32_t NodeID;
 #else
 typedef uint64_t NodeID;
 #endif
-#ifdef COMPACT_WAYS
-typedef uint32_t WayID;
-#else
+#ifdef FAT_WAYS
 typedef uint64_t WayID;
+#else
+typedef uint32_t WayID;
 #endif
 #define MAX_WAY_ID std::numeric_limits<WayID>::max()
 typedef std::vector<NodeID> NodeVec;

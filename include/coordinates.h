@@ -6,10 +6,10 @@
 #include <utility>
 #include <unordered_set>
 
-#ifdef COMPACT_TILE_INDEX
-typedef uint16_t TileCoordinate;
-#else
+#ifdef FAT_TILE_INDEX
 typedef uint32_t TileCoordinate;
+#else
+typedef uint16_t TileCoordinate;
 #endif
 class TileCoordinates_
 {

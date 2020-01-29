@@ -63,10 +63,12 @@ or with luajit:
 
 ### Saving memory
 
-To save memory (on any platform), you can choose 32-bit storage for node and way IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
+To save memory (on any platform), you can choose 32-bit storage for node IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
 
-    make CONFIG="-DCOMPACT_NODES -DCOMPACT_WAYS -DCOMPACT_TILE_INDEX"
+    make CONFIG="-DCOMPACT_NODES"
     make install
+
+By default, Tilemaker uses 32-bit storage for way IDs and its internal tile index. This shouldn't cause issues with standard OSM data, but if your data needs it, you can compile with `-DFAT_WAYS` for 64-bit. If you are generating vector tiles at zoom level 17 or greater (the usual limit is 14), then compile with `-DFAT_TILE_INDEX`.
 
 ### Docker
 
