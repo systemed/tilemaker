@@ -28,6 +28,7 @@ It also includes these global settings:
 * `basezoom` - the zoom level for which Tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles
 * `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
+* `combine` - whether to merge adjacent geometries of the same type: reduces output size but takes longer. Default `false`. Can also be specified on the command line with the `--combine` flag.
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
 * `default_view` (optional) - the default location for the client to view, in [lon, lat, zoom] order (MBTiles only)

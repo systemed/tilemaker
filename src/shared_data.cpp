@@ -98,7 +98,7 @@ Config::Config()
 	includeID = false, compress = true, gzip = true;
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
-	combineSimilarObjs = true;
+	combineSimilarObjs = false;
 }
 
 Config::~Config()

@@ -113,13 +113,6 @@ You can get a run-down of available options with
 
 When running, you may see "couldn't find constituent way" messages. This happens when the .pbf file contains a multipolygon relation, but not all the relation's members are present. Typically, this will happen when a multipolygon crosses the border of the extract - for example, a county boundary formed by a river with islands. In this case, the river will simply not be written to the tiles.
 
-### Speed optimization
-
-If you don't mind a larger output file, you can skip merging of similar geometries, which considerably speeds up tilemaker:
-
-    tilemaker --combine 0
-
-
 Rendering
 ---------
 
