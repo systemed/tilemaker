@@ -1,4 +1,5 @@
 #include "osm_lua_processing.h"
+#include "helpers.h"
 #include <iostream>
 using namespace std;
 
@@ -89,7 +90,7 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table) {
 
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
-	return to_string(osmID);
+	return to_string(originalOsmID);
 }
 
 // Check if there's a value for a given key
@@ -230,7 +231,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				}
 				catch(std::out_of_range &err)
 				{
-					cout << "In relation " << osmID << ": " << err.what() << endl;
+					cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 					return;
 				}
 			}
@@ -254,6 +255,11 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
 	}
 
+	geom::correct(geom); // fix wrong orientation
+	geom::validity_failure_type failure;
+	if (isRelation && !geom::is_valid(geom,failure)) { // we don't mind if ways self-intersect, OSM is like that...
+		cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << endl;
+	}
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(geomType,
 					layers.layerMap[layerName],
 					osmID, geom);
@@ -277,7 +283,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 			}
 			catch(std::out_of_range &err)
 			{
-				cout << "In relation " << osmID << ": " << err.what() << endl;
+				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 				return;
 			}
 		}
@@ -369,6 +375,7 @@ void OsmLuaProcessing::everyNode(NodeID id, LatpLon node)
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = id;
+	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
 
@@ -390,6 +397,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::stri
 void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = way->id();
+	originalOsmID = osmID;
 	isWay = true;
 	isRelation = false;
 
@@ -402,7 +410,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
-		ss << "Way " << osmID << " is missing a node";
+		ss << "Way " << originalOsmID << " is missing a node";
 		throw std::out_of_range(ss.str());
 	}
 
@@ -471,6 +479,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 	const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = --newWayID;
+	originalOsmID = relation->id();
 	isWay = true;
 	isRelation = true;
 
@@ -503,7 +512,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 		}
 		catch(std::out_of_range &err)
 		{
-			cout << "In relation " << relID << ": " << err.what() << endl;
+			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
 		}		
 

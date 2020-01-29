@@ -49,6 +49,9 @@ using namespace std;
 namespace po = boost::program_options;
 namespace geom = boost::geometry;
 
+// Global verbose switch
+bool verbose = false;
+
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
  *
@@ -65,16 +68,16 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool verbose = false, sqlite= false, combineSimilarObjs = true;
+	bool _verbose = false, sqlite= false, combineSimilarObjs = true;
 
-	po::options_description desc("tilemaker (c) 2016-2018 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("verbose",po::bool_switch(&verbose),                                    "verbose error output")
+		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 		("combine",po::value< bool >(&combineSimilarObjs)->default_value(true),  "combine similar objects (reduces output size but takes considerably longer)");
 	po::positional_options_description p;
@@ -99,6 +102,7 @@ int main(int argc, char* argv[]) {
 	if (threadNum == 0) {
 		threadNum = max(thread::hardware_concurrency(), 1u);
 	}
+	verbose = _verbose;
 
 	#ifdef COMPACT_NODES
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
@@ -205,7 +209,6 @@ int main(int argc, char* argv[]) {
 	class SharedData sharedData(config, layers, tileData);
 	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
-	sharedData.verbose = verbose;
 	sharedData.sqlite = sqlite;
 
 	// ----	Initialise mbtiles if required

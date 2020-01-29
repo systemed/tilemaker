@@ -105,6 +105,24 @@ std::string decompress_string(const std::string& str) {
     return outstring;
 }
 
+// Parse a Boost error
+std::string boost_validity_error(unsigned failure) {
+	switch (failure) {
+		case 10: return "too few points";
+		case 11: return "wrong topological dimension";
+		case 12: return "spikes (nodes go back on themselves)";
+		case 13: return "consecutive duplicate points";
+		case 20: return "not been closed";
+		case 21: return "self-intersections";
+		case 22: return "the wrong orientation";
+		case 30: return "interior rings outside";
+		case 31: return "nested interior rings";
+		case 32: return "disconnected interior (contains polygons whose interiors are not disjoint)";
+		case 40: return "intersecting interiors";
+		default: return "something mysterious wrong with it, Boost validity_failure_type " + to_string(failure);
+	}
+}
+
 const double CLIPPER_SCALE = 1e8;
 
 void ConvertToClipper(const Polygon &p, Path &outer, Paths &inners)

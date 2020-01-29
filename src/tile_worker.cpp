@@ -6,9 +6,10 @@
 #include "write_geometry.h"
 using namespace ClipperLib;
 using namespace std;
+extern bool verbose;
 
 void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
-	class SharedData *sharedData, const TileBbox &bbox, Geometry &g)
+	const TileBbox &bbox, Geometry &g)
 {
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
@@ -55,7 +56,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			}
 			catch (std::out_of_range &err)
 			{
-				if (sharedData->verbose)
+				if (verbose)
 					cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 		}
@@ -88,7 +89,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			}
 			catch (std::out_of_range &err)
 			{
-				if (sharedData->verbose)
+				if (verbose)
 					cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 			catch (boost::bad_get &err) {
@@ -124,7 +125,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			}
 			catch (std::out_of_range &err)
 			{
-				if (sharedData->verbose)
+				if (verbose)
 					cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
@@ -132,7 +133,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			//This may increment the jt iterator
 			if(sharedData->config.combineSimilarObjs)
 			{
-				CheckNextObjectAndMerge(jt, ooSameLayerEnd, sharedData, bbox, g);
+				CheckNextObjectAndMerge(jt, ooSameLayerEnd, bbox, g);
 				oo = *jt;
 			}
 

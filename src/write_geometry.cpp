@@ -1,6 +1,8 @@
 #include "write_geometry.h"
+#include "helpers.h"
 using namespace std;
 namespace geom = boost::geometry;
+extern bool verbose;
 
 WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
 	bboxPtr = bp;
@@ -26,6 +28,9 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 		geom::simplify(mp, current, simplifyLevel);
 	else
 		current = mp;
+
+	geom::validity_failure_type failure;
+	if (verbose && !geom::is_valid(current, failure)) { cout << "Output multipolygon has " << boost_validity_error(failure) << endl; }
 
 	pair<int,int> lastPos(0,0);
 	for (MultiPolygon::const_iterator it = current.begin(); it != current.end(); ++it) {

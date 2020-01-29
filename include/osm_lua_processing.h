@@ -151,7 +151,8 @@ private:
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
 
-	uint64_t osmID;							///< ID of OSM object
+	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
+	int64_t originalOsmID;					///< Original OSM object ID
 	WayID newWayID = MAX_WAY_ID;			///< Decrementing new ID for relations
 	bool isWay, isRelation;					///< Way, node, relation?
 

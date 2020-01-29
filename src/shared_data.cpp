@@ -13,7 +13,6 @@ SharedData::SharedData(const class Config &configIn, const class LayerDefinition
 	config(configIn)
 {
 	sqlite=false;
-	verbose = false;
 }
 
 SharedData::~SharedData()

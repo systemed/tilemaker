@@ -80,7 +80,6 @@ public:
 	int threadNum;
 	class TileData &tileData;
 	const class LayerDefinition &layers;
-	bool verbose;
 	bool sqlite;
 	MBTiles mbtiles;
 	std::string outputFile;

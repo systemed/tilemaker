@@ -26,6 +26,8 @@ std::string compress_string(const std::string& str,
                             int compressionlevel = Z_DEFAULT_COMPRESSION,
                             bool asGzip = false);
 
+std::string boost_validity_error(unsigned failure);
+
 extern const double CLIPPER_SCALE;
 
 void ConvertToClipper(const Polygon &p, ClipperLib::Path &outer, ClipperLib::Paths &inners);
