@@ -144,8 +144,17 @@ void readShapefile(const Box &clippingBox,
 
 	for (int i=0; i<numEntities; i++) {
 		SHPObject* shape = SHPReadObject(shp, i);
+		if(shape == nullptr) { cerr << "Error loading shape from shapefile" << endl; continue; }
+
 		int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
-	
+
+		// Check shape is in clippingBox
+		Box shapeBox(Point(shape->dfXMin, lat2latp(shape->dfYMin)), Point(shape->dfXMax, lat2latp(shape->dfYMax)));
+		if (shapeBox.min_corner().get<0>() > clippingBox.max_corner().get<0>() ||
+		    shapeBox.max_corner().get<0>() < clippingBox.min_corner().get<0>() ||
+		    shapeBox.min_corner().get<1>() > clippingBox.max_corner().get<1>() ||
+		    shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>()) { continue; }
+
 		if (shapeType==1) {
 			// Points
 			Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
