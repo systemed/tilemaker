@@ -18,7 +18,7 @@ Tilemaker is written in C++11. The chief dependencies are:
 * sqlite3
 * shapelib
 
-rapidjson, sqlite_modern_cpp, clipper and kaguya are bundled in the include/ directory.
+rapidjson, sqlite_modern_cpp, clipper, kaguya and sparse-map are bundled in the include/ directory.
 
 ### OS X
 
@@ -131,7 +131,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 Copyright and contact
 ---------------------
 
-Richard Fairhurst and contributors, 2015-2016. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) libraries are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
+Richard Fairhurst and contributors, 2015-2020. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29), sqlite_modern_cpp (Amin Roosta), and sparse-map (Tessil) libraries are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
 
 If you'd like to sponsor development of Tilemaker, you can contact me at richard@systemeD.net.
 

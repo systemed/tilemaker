@@ -4,10 +4,10 @@
 
 #include <utility>
 #include <vector>
-#include <unordered_map>
 #include <iostream>
 #include "geomtypes.h"
 #include "coordinates.h"
+#include "tsl/sparse_map.h"
 namespace geom = boost::geometry;
 
 //
@@ -38,7 +38,7 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 
 // node store
 class NodeStore {
-	std::unordered_map<NodeID, LatpLon> mLatpLons;
+	tsl::sparse_map<NodeID, LatpLon> mLatpLons;
 
 public:
 	// @brief Lookup a latp/lon pair
@@ -70,7 +70,7 @@ public:
 typedef std::vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	std::unordered_map<WayID, const std::vector<NodeID> > mNodeLists;
+	tsl::sparse_map<WayID, const std::vector<NodeID> > mNodeLists;
 
 public:
 	// @brief Lookup a node list
@@ -107,7 +107,7 @@ public:
 typedef std::vector<WayID>::const_iterator RelationStoreIterator;
 
 class RelationStore {
-	std::unordered_map<WayID, const std::pair<const std::vector<WayID>, const std::vector<WayID> > > mOutInLists;
+	tsl::sparse_map<WayID, const std::pair<const std::vector<WayID>, const std::vector<WayID> > > mOutInLists;
 
 public:
 	// @brief Lookup a way list
