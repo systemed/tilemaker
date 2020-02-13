@@ -1,4 +1,5 @@
 #include "write_geometry.h"
+#include <iostream>
 #include "helpers.h"
 using namespace std;
 namespace geom = boost::geometry;
