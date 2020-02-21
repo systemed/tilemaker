@@ -92,7 +92,7 @@ int main(int argc, char* argv[]) {
     }
 	po::notify(vm);
 	
-	if (vm.count("help")) { cout << desc << endl; return 1; }
+	if (vm.count("help")) { cout << desc << endl; return 0; }
 	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
 	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
 
