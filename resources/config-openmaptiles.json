@@ -10,10 +10,12 @@
 
 		"waterway":         { "minzoom": 8,  "maxzoom": 14 },
 
-		"transportation":             { "minzoom": 8, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003 },
+		"transportation":             { "minzoom": 8,  "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003 },
+		"transportation_main":        { "minzoom": 9,  "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "write_to": "transportation" },
 		"transportation_mid":         { "minzoom": 11, "maxzoom": 14, "write_to": "transportation" },
 		"transportation_detail":      { "minzoom": 13, "maxzoom": 14, "write_to": "transportation" },
-		"transportation_name":        { "minzoom": 8, "maxzoom": 14 },
+		"transportation_name":        { "minzoom": 8,  "maxzoom": 14 },
+		"transportation_name_mid":    { "minzoom": 12, "maxzoom": 14, "write_to": "transportation_name" },
 		"transportation_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "transportation_name" },
 
 		"building":          { "minzoom": 13, "maxzoom": 14 },
