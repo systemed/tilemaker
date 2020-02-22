@@ -124,6 +124,9 @@ end
 
 -- Process way tags
 
+majorRoadValues = Set { "motorway", "trunk", "primary" }
+mainRoadValues  = Set { "secondary", "motorway_link", "trunk_link", "primary_link", "secondary_link" }
+midRoadValues   = Set { "tertiary", "tertiary_link" }
 minorRoadValues = Set { "unclassified", "residential", "road" }
 trackValues     = Set { "cycleway", "byway", "bridleway", "track" }
 pathValues      = Set { "footway", "path" }
@@ -218,11 +221,14 @@ function way_function(way)
 	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if highway~="" then
 		local h = highway
-		local layer = "transportation"
+		local layer = "transportation_detail"
+		if majorRoadValues[highway] then              layer="transportation" end
+		if mainRoadValues[highway]  then              layer="transportation_main" end
+		if midRoadValues[highway]   then              layer="transportation_mid" end
 		if minorRoadValues[highway] then h = "minor"; layer="transportation_mid" end
 		if trackValues[highway]     then h = "track"; layer="transportation_detail" end
 		if pathValues[highway]      then h = "path" ; layer="transportation_detail" end
-		if h=="service" then layer="transportation_detail" end
+		if h=="service"             then              layer="transportation_detail" end
 		way:Layer(layer, false)
 		way:Attribute("class", h)
 		SetBrunnelAttributes(way)
@@ -247,10 +253,12 @@ function way_function(way)
 		end
 
 		-- Write names
-		if h == "minor" or h == "track" or h == "path" or h == "service" then
+		if layer == "motorway" or layer == "trunk" then
+			way:Layer("transportation_name", false)
+		elseif h == "minor" or h == "track" or h == "path" or h == "service" then
 			way:Layer("transportation_name_detail", false)
 		else
-			way:Layer("transportation_name", false)
+			way:Layer("transportation_name_mid", false)
 		end
 		SetNameAttributes(way)
 		way:Attribute("class",h)
