@@ -292,15 +292,19 @@ function way_function(way)
 
 	-- Set 'waterway' and associated
 	if waterway~="" then
-		if     waterway == "riverbank" then way:Layer("water",   isClosed); way:Attribute("class", "river");
+		if     waterway == "riverbank" then way:Layer("water", isClosed); way:Attribute("class", "river");
 		                                    if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent",1) end
-		elseif waterway == "dock"      then way:Layer("water",   isClosed); way:Attribute("class", "lake"); 
+		elseif waterway == "dock"      then way:Layer("water", isClosed); way:Attribute("class", "lake"); 
 		                                    way:LayerAsCentroid("water_name_detail"); SetNameAttributes(way); write_name = true
 		elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 		elseif waterway == "dam"       then way:Layer("building",isClosed)
 		elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 		else
-			way:Layer("waterway",false)
+			if waterway == "river" and way:Holds("name") then
+				way:Layer("waterway",false)
+			else
+				way:Layer("waterway_detail",false)
+			end
 			way:Attribute("class", waterway)
 			SetNameAttributes(way)
 			SetBrunnelAttributes(way)
