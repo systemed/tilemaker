@@ -6,7 +6,6 @@
 --[[
 
 	Specific issues:
-	- aerodrome_label layer is not supported
 	- boundary layer is not supported
 	- render_min_height and render_height in buildings layer are not supported
 
@@ -52,10 +51,27 @@ function Set(list)
 	return set
 end
 
+-- Process node/way tags
+aerodromeValues = Set { "international", "public", "regional", "military", "private" }
+
 -- Process node tags
 
-node_keys = { "amenity", "shop", "sport", "tourism", "place", "office", "natural", "addr:housenumber" }
+node_keys = { "amenity", "shop", "sport", "tourism", "place", "office", "natural", "addr:housenumber", "aeroway" }
 function node_function(node)
+	-- Write 'aerodrome_label'
+	local aeroway = node:Find("aeroway")
+	if aeroway == "aerodrome" then
+		node:Layer("aerodrome_label", false)
+		SetNameAttributes(node)
+		node:Attribute("iata", node:Find("iata"))
+		SetEleAttributes(node)
+		node:Attribute("icao", node:Find("icao"))
+
+		local aerodrome_value = node:Find("aerodrome")
+		local class
+		if aerodromeValues[aerodrome_value] then class = aerodrome_value else class = "other" end
+		node:Attribute("class", aerodrome_label)
+	end
 	-- Write 'housenumber'
 	local housenumber = node:Find("addr:housenumber")
 	if housenumber~="" then
@@ -107,10 +123,7 @@ function node_function(node)
 	local natural = node:Find("natural")
 	if natural == "peak" then
 		node:Layer("mountain_peak", false)
-		local ele = node:Find("ele")
-		if ele ~= "" then
-			node:AttributeNumeric("ele", tonumber(ele) or 0)
-		end
+		SetEleAttributes(node)
 		node:AttributeNumeric("rank", 5)
 		SetNameAttributes(node)
 		return
@@ -288,7 +301,20 @@ function way_function(way)
 		way:Attribute("ref",way:Find("ref"))
 		write_name = true
 	end
-	
+
+	-- 'aerodrome_label'
+	if aeroway=="aerodrome" then
+	 	way:LayerAsCentroid("aerodrome_label")
+	 	SetNameAttributes(way)
+	 	way:Attribute("iata", way:Find("iata"))
+  		SetEleAttributes(way)
+ 	 	way:Attribute("icao", way:Find("icao"))
+ 
+ 	 	local aerodrome = way:Find(aeroway)
+ 	 	local class
+ 	 	if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
+ 	 	way:Attribute("class", class)
+	end
 
 	-- Set 'waterway' and associated
 	if waterway~="" then
@@ -399,6 +425,17 @@ end
 function SetNameAttributes(obj)
 	obj:Attribute("name:latin", obj:Find("name"))
 	-- **** do transliteration
+end
+
+-- Set ele and ele_ft on any object
+function SetEleAttributes(obj)
+    local ele = obj:Find("ele")
+	if ele ~= "" then
+		local meter = tonumber(ele) or 0
+		local feet = math.floor(meter * 3.2808399)
+		obj:AttributeNumeric("ele", meter)
+		obj:AttributeNumeric("ele_ft", feet)
+    end
 end
 
 function SetBrunnelAttributes(obj)
