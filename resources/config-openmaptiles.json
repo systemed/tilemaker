@@ -1,5 +1,7 @@
 {
 	"layers": {
+		"aerodrome_label":            { "minzoom": 10,  "maxzoom": 14 },
+
 		"place":            { "minzoom": 4,  "maxzoom": 14 },
 		"place_detail":     { "minzoom": 14, "maxzoom": 14, "write_to": "place"},
 
