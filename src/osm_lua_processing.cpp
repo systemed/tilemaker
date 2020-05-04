@@ -149,14 +149,31 @@ double OsmLuaProcessing::ScaleToKiloMeter() {
 	return (1/1000.0) * ScaleToMeter();
 }
 
+void reverse_project(DegPoint& p) {
+    geom::set<1>(p, latp2lat(geom::get<1>(p)));
+}
+
 // Returns area
 double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
+
+	std::ostringstream stream;
+	geom::strategy::area::spherical<> sph_strategy(6371008.8);
+
 	if (isRelation) {
-		return geom::area(multiPolygonCached());
+		stream << setprecision(10) << geom::wkt(multiPolygonCached());
+		geom::model::multi_polygon<geom::model::polygon<DegPoint> > geo_poly;
+		geom::read_wkt(stream.str(), geo_poly);
+		geom::for_each_point(geo_poly, reverse_project);
+		return geom::area(geo_poly, sph_strategy);
 	} else if (isWay) {
-		return geom::area(polygonCached());
+		stream << setprecision(10) << geom::wkt(polygonCached());
+		geom::model::polygon<DegPoint> geo_poly;
+		geom::read_wkt(stream.str(), geo_poly);
+		geom::for_each_point(geo_poly, reverse_project);
+		return geom::area(geo_poly, sph_strategy);
 	}
+
 	return 0;
 }
 
