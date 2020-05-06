@@ -70,7 +70,7 @@ function node_function(node)
 		local aerodrome_value = node:Find("aerodrome")
 		local class
 		if aerodromeValues[aerodrome_value] then class = aerodrome_value else class = "other" end
-		node:Attribute("class", aerodrome_label)
+		node:Attribute("class", class)
 	end
 	-- Write 'housenumber'
 	local housenumber = node:Find("addr:housenumber")
