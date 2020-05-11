@@ -1,5 +1,7 @@
-FROM ubuntu:16.04
+FROM ubuntu:20.04
 LABEL Description="Tilemaker" Version="1.4.0"
+
+ARG DEBIAN_FRONTEND=noninteractive
 
 # INSTALL DEPENDENCIES
 RUN apt-get update
