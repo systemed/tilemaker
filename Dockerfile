@@ -1,17 +1,19 @@
-FROM ubuntu:20.04
+FROM debian:buster-slim
 LABEL Description="Tilemaker" Version="1.4.0"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# INSTALL DEPENDENCIES
-RUN apt-get update
-RUN apt-get install -y build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-all-dev
-
-# BUILD
 COPY . /
 WORKDIR /
 
-RUN make
-RUN make install
+# install dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-program-options-dev libboost-filesystem-dev libboost-system-dev && \
+    make && \
+    make install && \
+    # clean up, remove build-time only dependencies
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get purge -y --auto-remove build-essential liblua5.1-0-dev
 
 ENTRYPOINT ["tilemaker"]
