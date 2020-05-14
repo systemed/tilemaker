@@ -1,0 +1,30 @@
+name: "Continuous Integration"
+
+on:
+  push:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    name: Compile, install and build mbtiles
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-program-options-dev libboost-filesystem-dev libboost-system-dev
+
+    - name: Build and install
+      run: |
+        make -j 2
+        sudo make install
+
+    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+      run: |
+        curl http://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf -o liechtenstein.osm.pbf
+        tilemaker liechtenstein.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=liechtenstein.mbtiles --verbose
