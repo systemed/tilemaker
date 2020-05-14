@@ -7,7 +7,7 @@ Vector tiles are used by many in-browser/app renderers, and can also power serve
 
 Tilemaker keeps nodes and ways in RAM. If you're processing a country extract or larger, you'll need a lot of RAM. It's best suited to city and region extracts.
 
-[![Build Status](https://travis-ci.org/systemed/tilemaker.svg?branch=master)](https://travis-ci.org/systemed/tilemaker)
+![Continuous Integration](https://github.com/systemeD/tilemaker/workflows/Continuous%20Integration/badge.svg)
 
 Installing
 ----------
