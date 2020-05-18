@@ -89,13 +89,13 @@ function node_function(node)
 		elseif place == "state"         then rank = 1
 		elseif place == "city"          then rank = 2
 		elseif place == "town"          then rank = 3
-		elseif place == "village"       then rank = 4
+		elseif place == "village"       then rank = 3
 		elseif place == "suburb"        then rank = 3
 		elseif place == "neighbourhood" then rank = 4
-		elseif place == "locality"      then rank = 4 
+		elseif place == "locality"      then rank = 4
 		elseif place == "hamlet"        then rank = 4 end
 
-		if rank <= 3 then
+		if rank <= 4 then
 			node:Layer("place", false)
 		else
 			node:Layer("place_detail", false)
@@ -140,17 +140,17 @@ end
 majorRoadValues = Set { "motorway", "trunk", "primary" }
 mainRoadValues  = Set { "secondary", "motorway_link", "trunk_link", "primary_link", "secondary_link" }
 midRoadValues   = Set { "tertiary", "tertiary_link" }
-minorRoadValues = Set { "unclassified", "residential", "road" }
+minorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 trackValues     = Set { "cycleway", "byway", "bridleway", "track" }
-pathValues      = Set { "footway", "path" }
+pathValues      = Set { "footway", "path", "steps" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
-landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital", 
+landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
                         "railway", "cemetery", "military", "residential", "commercial", "industrial",
                         "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
 landcoverKeys   = { wood="wood", forest="wood",
-                    wetland="wetland", 
+                    wetland="wetland",
                     beach="sand", sand="sand",
                     farmland="farmland", farm="farmland", orchard="farmland", vineyard="farmland", plant_nursery="farmland",
                     glacier="ice", ice_shelf="ice",
@@ -181,10 +181,10 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					university="college", college="college",
 					hotel="lodging", motel="lodging", bed_and_breakfast="lodging", guest_house="lodging", hostel="lodging", chalet="lodging", alpine_hut="lodging", dormitory="lodging",
 					chocolate="ice_cream", confectionery="ice_cream",
-					post_box="post",  post_office="post",  
-					cafe="cafe",  
-					school="school",  kindergarten="school", 
-					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",  
+					post_box="post",  post_office="post",
+					cafe="cafe",
+					school="school",  kindergarten="school",
+					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",
 					bar="bar", nightclub="bar",
 					marina="harbor", dock="harbor",
 					car="car", car_repair="car", taxi="car",
@@ -198,9 +198,9 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
 					castle="castle", ruins="castle" }
-poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6, 
-					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12, 
-					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19, 
+poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6,
+					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
+					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
 poiKeys = { "amenity", "sport", "tourism", "office", "historic", "leisure", "landuse", "information" }
 
@@ -251,7 +251,7 @@ function way_function(way)
 		if highway == "service" and service ~="" then way:Attribute("service", service) end
 
 		-- Links (ramp)
-		if linkValues[highway] then 
+		if linkValues[highway] then
 			splitHighway = split(highway, "_")
 			highway = splitHighway[1]
 			way:AttributeNumeric("ramp",1)
@@ -283,7 +283,7 @@ function way_function(way)
 			way:AttributeNumeric("ref_length",ref:len())
 		end
 	end
-	
+
 	-- Railways ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if railway~="" then
 		way:Layer("transportation", false)
@@ -293,7 +293,7 @@ function way_function(way)
 		SetNameAttributes(way)
 		way:Attribute("class", "rail")
 	end
-	
+
 	-- 'Aeroway'
 	if aeroway~="" then
 		way:Layer("aeroway", isClosed)
@@ -309,7 +309,7 @@ function way_function(way)
 	 	way:Attribute("iata", way:Find("iata"))
   		SetEleAttributes(way)
  	 	way:Attribute("icao", way:Find("icao"))
- 
+
  	 	local aerodrome = way:Find(aeroway)
  	 	local class
  	 	if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
@@ -320,7 +320,7 @@ function way_function(way)
 	if waterway~="" then
 		if     waterway == "riverbank" then way:Layer("water", isClosed); way:Attribute("class", "river");
 		                                    if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent",1) end
-		elseif waterway == "dock"      then way:Layer("water", isClosed); way:Attribute("class", "lake"); 
+		elseif waterway == "dock"      then way:Layer("water", isClosed); way:Attribute("class", "lake");
 		                                    way:LayerAsCentroid("water_name_detail"); SetNameAttributes(way); write_name = true
 		elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 		elseif waterway == "dam"       then way:Layer("building",isClosed)
@@ -345,7 +345,7 @@ function way_function(way)
 		way:LayerAsCentroid("housenumber", false)
 		way:Attribute("housenumber", housenumber)
 	end
-	
+
 	-- Set 'water'
 	if natural=="water" or natural=="bay" or landuse=="reservoir" then
 		if way:Find("covered")=="yes" then return end
@@ -449,7 +449,7 @@ end
 -- returns rank, class, subclass
 function GetPOIRank(obj)
 	local k,list,v,class,rank
-	
+
 	-- Can we find the tag?
 	for k,list in pairs(poiTags) do
 		if list[obj:Find(k)] then
