@@ -280,6 +280,12 @@ int main(int argc, char* argv[]) {
 	}
 	google::protobuf::ShutdownProtobufLibrary();
 
+	if (verbose) {
+		struct rusage r_usage;
+		getrusage(RUSAGE_SELF, &r_usage);
+		cout << "\nMemory used: " << r_usage.ru_maxrss << endl;
+	}
+
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
 
