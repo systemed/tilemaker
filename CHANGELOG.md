@@ -1,5 +1,31 @@
 # Changelog
 
+## [unreleased]
+
+### Added
+- Specify `source_columns: true` for shapefiles to import all attributes
+- Support creating tiles from shapefiles only (i.e. no .osm.pbf)
+- `attribute_function` to rewrite shapefile attributes from Lua
+- Improved diagnostics for invalid multipolygons
+- Output shapefile layer names when reading
+
+### Changed
+- Rewrite OpenMapTiles-compatible processing (@systemed, @sasfeat, @typebrook, @leonardehrenfried)
+- `--combine` flag now off by default
+- 32-bit ways and 16-bit tile index by default, change with `-DFAT_WAYS -DFAT_TILE_INDEX`
+- Use tsl::sparse_map instead of std::unordered_map for ~7% memory saving
+- Speedup for shapefile reading (@TimSC)
+- Move to Github Actions instead of Travis (@leonardehrenfried)
+- Reduce size of Docker image, use Ubuntu 20.04 (@leonardehrenfried)
+- Improve area calculation (@typebrook)
+
+### Fixed
+- CMake build fixed (@ogre)
+- Compatibility with pre-1.59 Boost Geometry
+- Typo fixes (@bezineb5)
+- Fix return value for --help (@typebrook)
+- Use supercover (modified Bresenham) algorithm for which tiles are affected by diagonal lines
+
 ## [1.5.0] - 2018-02-18
 
 ### Added
