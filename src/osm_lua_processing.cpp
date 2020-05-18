@@ -161,11 +161,6 @@ double OsmLuaProcessing::Area() {
 
 #if BOOST_VERSION >= 106700
 	geom::strategy::area::spherical<> sph_strategy(6371008.8);
-#elif BOOST_VERSION >= 106400
-	geom::strategy::area::spherical<> sph_strategy();
-#endif
-
-#if BOOST_VERSION >= 106400
 	if (isRelation) {
 		stream << setprecision(10) << geom::wkt(multiPolygonCached());
 		geom::model::multi_polygon<geom::model::polygon<DegPoint> > geo_poly;
