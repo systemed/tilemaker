@@ -12,6 +12,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/index/rtree.hpp>
 typedef boost::geometry::model::d2::point_xy<double> Point; 
+typedef boost::geometry::model::point<double, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree> > DegPoint;
 typedef boost::geometry::model::linestring<Point> Linestring;
 typedef boost::geometry::model::polygon<Point> Polygon;
 typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
