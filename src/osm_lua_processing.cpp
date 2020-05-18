@@ -158,8 +158,14 @@ double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
 
 	std::ostringstream stream;
-	geom::strategy::area::spherical<> sph_strategy(6371008.8);
 
+#if BOOST_VERSION >= 106700
+	geom::strategy::area::spherical<> sph_strategy(6371008.8);
+#elif BOOST_VERSION >= 106400
+	geom::strategy::area::spherical<> sph_strategy();
+#endif
+
+#if BOOST_VERSION >= 106400
 	if (isRelation) {
 		stream << setprecision(10) << geom::wkt(multiPolygonCached());
 		geom::model::multi_polygon<geom::model::polygon<DegPoint> > geo_poly;
@@ -173,6 +179,13 @@ double OsmLuaProcessing::Area() {
 		geom::for_each_point(geo_poly, reverse_project);
 		return geom::area(geo_poly, sph_strategy);
 	}
+#else
+	if (isRelation) {
+		return geom::area(multiPolygonCached());
+	} else if (isWay) {
+		return geom::area(polygonCached());
+	}
+#endif
 
 	return 0;
 }
@@ -273,10 +286,13 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	}
 
 	geom::correct(geom); // fix wrong orientation
+#if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
 	if (isRelation && !geom::is_valid(geom,failure)) { // we don't mind if ways self-intersect, OSM is like that...
 		cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << endl;
 	}
+#endif
+
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(geomType,
 					layers.layerMap[layerName],
 					osmID, geom);

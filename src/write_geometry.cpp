@@ -30,8 +30,10 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	else
 		current = mp;
 
+#if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
 	if (verbose && !geom::is_valid(current, failure)) { cout << "Output multipolygon has " << boost_validity_error(failure) << endl; }
+#endif
 
 	pair<int,int> lastPos(0,0);
 	for (MultiPolygon::const_iterator it = current.begin(); it != current.end(); ++it) {

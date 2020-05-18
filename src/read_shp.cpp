@@ -229,6 +229,7 @@ void readShapefile(const Box &clippingBox,
 			multi.push_back(poly);
 
 			string reason;
+#if BOOST_VERSION >= 105800
 			if (!geom::is_valid(multi, reason)) {
 				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 				geom::correct(multi);
@@ -240,6 +241,9 @@ void readShapefile(const Box &clippingBox,
 				}
 				cerr << endl;
 			}
+#else
+			if (!geom::is_valid(multi)) { geom::correct(multi); geom::remove_spikes(multi); }
+#endif
 			// clip to bounding box
 			MultiPolygon out;
 			geom::intersection(multi, clippingBox, out);
