@@ -12,6 +12,8 @@
 #include <stdexcept>
 #include <thread>
 #include <mutex>
+#include <sys/resource.h>
+#include <chrono>
 
 // Other utilities
 #include <boost/filesystem.hpp>
@@ -68,13 +70,14 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, combineSimilarObjs = false;
+	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false;
 
 	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
+		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
@@ -112,6 +115,17 @@ int main(int argc, char* argv[]) {
 	
 	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
 	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
+
+	// ---- Remove existing .mbtiles if it exists
+
+	if (sqlite && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
+		cout << "mbtiles file exists, will overwrite (Ctrl-C to abort, rerun with --merge to keep)" << endl;
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+		if (remove(outputFile.c_str()) != 0) {
+			cerr << "Couldn't remove existing file" << endl;
+			return 0;
+		}
+	}
 
 	// ----	Read bounding box from first .pbf (if there is one)
 
