@@ -2,6 +2,7 @@
 #ifndef _COORDINATES_H
 #define _COORDINATES_H
 
+#include <iostream>
 #include "geomtypes.h"
 #include <utility>
 #include <unordered_set>
@@ -93,40 +94,77 @@ template<typename T>
 void insertIntermediateTiles(const T &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet) {
 	Point p2(0, 0);
 	for (auto it = points.begin(); it != points.end(); ++it) {
+		// Line is from p1 to p2
 		Point p1 = p2;
 		p2 = *it;
 
+		// Calculate p2 tile, and mark it
 		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
 		TileCoordinate tileX2 = static_cast<TileCoordinate>(tileXf2), tileY2 = static_cast<TileCoordinate>(tileYf2);
-
-		// insert vertex
 		tileSet.insert(TileCoordinates(tileX2, tileY2));
-		// p1 is not available at the first iteration
-		if (it == points.begin()) continue;
+		if (it == points.begin()) continue;	// first point, so no line
 
+		// Calculate p1 tile
 		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
 		TileCoordinate tileX1 = static_cast<TileCoordinate>(tileXf1), tileY1 = static_cast<TileCoordinate>(tileYf1);
-		double dx = tileXf2 - tileXf1, dy = tileYf2 - tileYf1;
+		tileSet.insert(TileCoordinates(tileX1,tileY1));
 
-		// insert all X border
-		if (tileX1 != tileX2) {
-			double slope = dy / dx;
-			TileCoordinate tileXmin = std::min(tileX1, tileX2);
-			TileCoordinate tileXmax = std::max(tileX1, tileX2);
-			for (TileCoordinate tileXcur = tileXmin+1; tileXcur <= tileXmax; tileXcur++) {
-				TileCoordinate tileYcur = static_cast<TileCoordinate>(tileYf1 + (static_cast<double>(tileXcur) - tileXf1) * slope);
-				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
+		// Supercover line algorithm from http://eugen.dedu.free.fr/projects/bresenham/
+		int i;                       // loop counter
+		int ystep, xstep;            // the step on y and x axis
+		int error;                   // the error accumulated during the increment
+		int errorprev;               // *vision the previous value of the error variable
+		int y = tileY1, x = tileX1;  // the line points
+		int ddy, ddx;                // compulsory variables: the double values of dy and dx
+		int dx = tileX2 - tileX1;
+		int dy = tileY2 - tileY1;
+
+		if (dy < 0) { ystep = -1; dy = -dy; } else { ystep = 1; }
+		if (dx < 0) { xstep = -1; dx = -dx; } else { xstep = 1; }
+
+		ddy = 2 * dy;  // work with double values for full precision
+		ddx = 2 * dx;
+		if (ddx >= ddy) {  // first octant (0 <= slope <= 1)
+			// compulsory initialization (even for errorprev, needed when dx==dy)
+			errorprev = error = dx;  // start in the middle of the square
+			for (i=0 ; i < dx ; i++) {  // do not use the first point (already done)
+				x += xstep;
+				error += ddy;
+				if (error > ddx){  // increment y if AFTER the middle ( > )
+					y += ystep;
+					error -= ddx;
+					// three cases (octant == right->right-top for directions below):
+					if (error + errorprev < ddx)  // bottom square also
+						tileSet.insert(TileCoordinates(x, y-ystep));
+					else if (error + errorprev > ddx)  // left square also
+						tileSet.insert(TileCoordinates(x-xstep, y));
+					else {  // corner: bottom and left squares also
+						tileSet.insert(TileCoordinates(x, y-ystep));
+						tileSet.insert(TileCoordinates(x-xstep, y));
+					}
+				}
+				tileSet.insert(TileCoordinates(x, y));
+				errorprev = error;
 			}
-		}
-
-		// insert all Y border
-		if (tileY1 != tileY2) {
-			double slope = dx / dy;
-			TileCoordinate tileYmin = std::min(tileY1, tileY2);
-			TileCoordinate tileYmax = std::max(tileY1, tileY2);
-			for (TileCoordinate tileYcur = tileYmin+1; tileYcur <= tileYmax; tileYcur++) {
-				TileCoordinate tileXcur = static_cast<TileCoordinate>(tileXf1 + (static_cast<double>(tileYcur) - tileYf1) * slope);
-				tileSet.insert(TileCoordinates(tileXcur, tileYcur));
+		} else {  // the same as above
+			errorprev = error = dy;
+			for (i=0 ; i < dy ; i++){
+				y += ystep;
+				error += ddx;
+				if (error > ddy){
+					x += xstep;
+					error -= ddy;
+					if (error + errorprev < ddy)
+						tileSet.insert(TileCoordinates(x-xstep, y));
+					else if (error + errorprev > ddy)
+						tileSet.insert(TileCoordinates(x, y-ystep));
+					else{
+						tileSet.insert(TileCoordinates(x-xstep, y));
+						tileSet.insert(TileCoordinates(x, y-ystep));
+					}
+				}
+				tileSet.insert(TileCoordinates(x, y));
+				errorprev = error;
 			}
 		}
 	}
