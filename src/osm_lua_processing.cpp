@@ -157,22 +157,26 @@ void reverse_project(DegPoint& p) {
 double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
 
-	std::ostringstream stream;
-
 #if BOOST_VERSION >= 106700
-	geom::strategy::area::spherical<> sph_strategy(6371008.8);
+	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
 	if (isRelation) {
-		stream << setprecision(10) << geom::wkt(multiPolygonCached());
-		geom::model::multi_polygon<geom::model::polygon<DegPoint> > geo_poly;
-		geom::read_wkt(stream.str(), geo_poly);
-		geom::for_each_point(geo_poly, reverse_project);
-		return geom::area(geo_poly, sph_strategy);
+		// Boost won't calculate area of a multipolygon, so we just total up the member polygons
+		double totalArea = 0;
+		MultiPolygon mp = multiPolygonCached();
+		for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+			geom::model::polygon<DegPoint> p;
+			geom::assign(p,*it);
+			geom::for_each_point(p, reverse_project);
+			double area = geom::area(p, sph_strategy);
+			totalArea += area;
+		}
+		return totalArea;
 	} else if (isWay) {
-		stream << setprecision(10) << geom::wkt(polygonCached());
-		geom::model::polygon<DegPoint> geo_poly;
-		geom::read_wkt(stream.str(), geo_poly);
-		geom::for_each_point(geo_poly, reverse_project);
-		return geom::area(geo_poly, sph_strategy);
+		// Reproject back into lat/lon and then run Boo
+		geom::model::polygon<DegPoint> p;
+		geom::assign(p,polygonCached());
+		geom::for_each_point(p, reverse_project);
+		return geom::area(p, sph_strategy);
 	}
 #else
 	if (isRelation) {
