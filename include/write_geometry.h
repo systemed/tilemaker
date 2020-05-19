@@ -38,7 +38,7 @@ public:
 	void operator()(const Linestring &ls) const;
 
 	/// \brief Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
-	void writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, std::pair<int,int> *lastPos, bool closePath) const;
+	bool writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, std::pair<int,int> *lastPos, bool closePath) const;
 };
 
 #endif //_WRITE_GEOMETRY_H

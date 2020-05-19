@@ -43,7 +43,8 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 			pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
 			scaledString.push_back(xy);
 		}
-		writeDeltaString(&scaledString, featurePtr, &lastPos, true);
+		bool success = writeDeltaString(&scaledString, featurePtr, &lastPos, true);
+		if (!success) continue;
 
 		InteriorRing interiors = geom::interior_rings(*it);
 		for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
@@ -98,8 +99,8 @@ void WriteGeometryVisitor::operator()(const Linestring &ls) const {
 }
 
 // Encode a series of pixel co-ordinates into the feature, using delta and zigzag encoding
-void WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, pair<int,int> *lastPos, bool closePath) const {
-	if (scaledString->size()<2) return;
+bool WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile::Tile_Feature *featurePtr, pair<int,int> *lastPos, bool closePath) const {
+	if (scaledString->size()<2) return false;
 	vector<uint32_t> geometry;
 
 	// Start with a moveTo
@@ -114,7 +115,8 @@ void WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile:
 	// Then write out the line for each point
 	uint len=0;
 	geometry.push_back(0);						// this'll be our lineTo opcode, we set it later
-	for (uint i=1; i<scaledString->size(); i++) {
+	uint end=closePath ? scaledString->size()-1 : scaledString->size();
+	for (uint i=1; i<end; i++) {
 		int x = scaledString->at(i).first;
 		int y = scaledString->at(i).second;
 		if (x==lastX && y==lastY) { continue; }
@@ -125,7 +127,8 @@ void WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile:
 		lastX = x; lastY = y;
 		len++;
 	}
-	if (len==0) return;
+	if (closePath && len<3) return false;		// reject ABA polygons
+	if (len==0) return false;
 	geometry[3] = (len << 3) + 2;				// lineTo plus repeat
 	if (closePath) {
 		geometry.push_back(7+8);				// closePath
@@ -135,5 +138,6 @@ void WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile:
 	};
 	lastPos->first  = lastX;
 	lastPos->second = lastY;
+	return true;
 }
 
