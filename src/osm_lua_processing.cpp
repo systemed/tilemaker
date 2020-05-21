@@ -191,11 +191,13 @@ double OsmLuaProcessing::Area() {
 
 // Returns length
 double OsmLuaProcessing::Length() {
-	if (isRelation) {
-		return geom::length(multiPolygonCached());
-	} else if (isWay) {
-		return geom::length(linestringCached());
+	if (isWay) {
+		geom::model::linestring<DegPoint> l;
+		geom::assign(l, linestringCached());
+		geom::for_each_point(l, reverse_project);
+		return geom::length(l, geom::strategy::distance::haversine<float>(RadiusMeter));
 	}
+	// multi_polygon would be calculated as zero
 	return 0;
 }
 
