@@ -1,5 +1,4 @@
-Tilemaker
-=========
+# Tilemaker
 
 Tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf planet extract, as typically downloaded from providers like Geofabrik. It aims to be 'stack-free': you need no database and there is only one executable to install.
 
@@ -9,8 +8,7 @@ Tilemaker keeps nodes and ways in RAM. If you're processing a country extract or
 
 ![Continuous Integration](https://github.com/systemeD/tilemaker/workflows/Continuous%20Integration/badge.svg)
 
-Installing
-----------
+## Installing
 
 Tilemaker is written in C++11. The chief dependencies are:
 
@@ -22,92 +20,47 @@ Tilemaker is written in C++11. The chief dependencies are:
 
 rapidjson, sqlite_modern_cpp, clipper, kaguya and sparse-map are bundled in the include/ directory.
 
-### OS X
-
-Install all dependencies with Homebrew:
-
-	brew install protobuf boost lua51 shapelib
-
-### Ubuntu
-
-Start with:
-
-	sudo apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev
-
-If you're using Ubuntu 16.04, you can install Boost with `sudo apt-get install libboost-all-dev`. For 12.04 or 14.04, you'll need to install a recent Boost from [this PPA](https://launchpad.net/~ostogvin/+archive/ubuntu/tjo-develop):
-
-	sudo add-apt-repository ppa:ostogvin/tjo-develop
-	sudo apt-get update
-	sudo apt-get install libboost1.58-all-dev
-
-Once you've installed those, then `cd` back to your Tilemaker directory and simply:
+You can then simply install with:
 
     make
     sudo make install
+	
+For detailed installation instructions for your operating system, see INSTALL.md.
 
-If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again.
+## Out-of-the-box setup
 
-### Fedora
+Tilemaker comes with configuration files compatible with the popular [OpenMapTiles](https://openmaptiles.org) schema, and a demonstration map server. You'll run tilemaker to make vector tiles from your `.osm.pbf` source data. To create the tiles:
 
-Start with:
+    tilemaker tilemaker --input /path/to/your/input.osm.pbf \
+        --output /path/to/your/output.mbtiles \
+        --config resources/config-openmaptiles.json \
+        --process resources/process-openmaptiles.lua
 
-    dnf install lua-devel luajit-devel sqlite-devel protobuf-devel protobuf-compiler shapelib-devel
+If you want to include sea tiles, then create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
 
-then build either with lua:
+Then, to serve your tiles using the demonstration server:
 
-    make LUA_CFLAGS="$(pkg-config --cflags lua)" LUA_LIBS="$(pkg-config --libs lua)"
-    make install
+    cd server
+    ruby server.rb /path/to/your/output.mbtiles
 
-or with luajit:
+You can now navigate to http://localhost:8080/ and see your map!
 
-    make LUA_CFLAGS="$(pkg-config --cflags luajit)" LUA_LIBS="$(pkg-config --libs luajit)"
-    make install
-
-### Saving memory
-
-To save memory (on any platform), you can choose 32-bit storage for node IDs rather than 64-bit. You will need to run `osmium renumber` or a similar tool over your .osm.pbf first. Then compile Tilemaker with an additional flag:
-
-    make CONFIG="-DCOMPACT_NODES"
-    make install
-
-By default, Tilemaker uses 32-bit storage for way IDs and its internal tile index. This shouldn't cause issues with standard OSM data, but if your data needs it, you can compile with `-DFAT_WAYS` for 64-bit. If you are generating vector tiles at zoom level 17 or greater (the usual limit is 14), then compile with `-DFAT_TILE_INDEX`.
-
-### Docker
-
-**The Dockerfile is not formally supported by project maintainers and you are encouraged to send pull requests to fix any issues you encounter.**
-
-Build from project root directory with:
-
-	docker build . -t tilemaker
-
-The docker container can be run like this:
-
- 	docker run -v /Users/Local/Downloads/:/srv -i -t --rm tilemaker /srv/germany-latest.osm.pbf --output=/srv/germany.mbtiles
-
-Keep in mind to map the volume your .osm.pbf files are in to a path within your docker container, as seen in the example above. 
-
-Configuring
------------
+## Your own configuration
 
 Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers. It's up to you what OSM data goes into each layer. You configure this in Tilemaker with two files:
 
 * a JSON file listing each layer, and the zoom levels at which to apply it
 * a Lua program that looks at each node/way's tags, and places it into layers accordingly
 
-You can read more about these in [CONFIGURATION.md](CONFIGURATION.md). Sample files are provided to work out-of-the-box: you may find more in the `resources` directory.
-
-Running
--------
+You can read more about these in [CONFIGURATION.md](CONFIGURATION.md).
 
 At its simplest, you can create a set of vector tiles from a .pbf with this command:
 
-    tilemaker liechtenstein-latest.osm.pbf --output=tiles/
+    tilemaker liechtenstein-latest.osm.pbf --output=liechtenstein.mbtiles
 
-Output can be as individual files to a directory, or to an MBTiles file aka a SQLite database (with extension .mbtiles or .sqlite).
+Output can be as individual files to a directory, or to an MBTiles file aka a SQLite database (with extension .mbtiles or .sqlite). Any existing MBTiles file will be deleted (if you don't want this, specify `--merge`).
 
-You may load multiple .pbf files in one run (for example, adjoining counties). Tilemaker does not clear the existing contents of MBTiles files, which makes it easy to load two cities into one file. This does mean you should delete any existing file if you want a fresh run.
-
-The JSON configuration and Lua processing files are specified with --config and --process respectively. Defaults are config.json and process.lua in the current directory. If there is no config.json and process.lua in the current directory, and you do not specify --config and --process, an error will result.
+The JSON configuration and Lua processing files are specified with `--config` and `--process` respectively. Defaults are config.json and process.lua in the current directory. If there is no config.json and process.lua in the current directory, and you do not specify `--config` and `--process`, an error will result.
 
 You can get a run-down of available options with
 
@@ -115,23 +68,15 @@ You can get a run-down of available options with
 
 When running, you may see "couldn't find constituent way" messages. This happens when the .pbf file contains a multipolygon relation, but not all the relation's members are present. Typically, this will happen when a multipolygon crosses the border of the extract - for example, a county boundary formed by a river with islands. In this case, the river will simply not be written to the tiles.
 
-Rendering
----------
+See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
 
-That bit's up to you! See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
-
-The [Leaflet.MapboxVectorTile plugin](https://github.com/SpatialServer/Leaflet.MapboxVectorTile) is perhaps the simplest way to test out your new vector tiles.
-
-Contributing
-------------
+## Contributing
 
 Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or http://irc.osm.org, channel #osm-dev) and http://help.osm.org.
 
-Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies.
+Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies or increasing the memory requirement.
 
-
-Copyright and contact
----------------------
+## Copyright and contact
 
 Richard Fairhurst and contributors, 2015-2020. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29), sqlite_modern_cpp (Amin Roosta), and sparse-map (Tessil) libraries are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
 

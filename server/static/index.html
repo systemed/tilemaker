@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Tilemaker example server</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.50.0/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.50.0/mapbox-gl.css' rel='stylesheet' />
+	<script src='http://mapbox-gl-inspect.lukasmartinelli.ch/dist/mapbox-gl-inspect.min.js'></script>
+	<link href='http://mapbox-gl-inspect.lukasmartinelli.ch/dist/mapbox-gl-inspect.css' rel='stylesheet' />
+    <style>
+        body { margin:0; padding:0; }
+        #map { position:absolute; top:0; bottom:0; width:100%; }
+		#refresh { position: absolute; top: 15px; left: 15px; background-color: white; padding: 5px; 
+			border: 1px solid black; font-family: Avenir; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id='map'></div>
+<!-- <div id='refresh' onclick='reload()'>Reload</div> -->
+<script>
+var map;
+
+fetch("/metadata")
+	.then(response => response.json())
+	.then(data => {
+		var styleURL = window.location.protocol+'//'+window.location.host+'/style.json';
+		var bounds = data['bounds'].split(',');
+		map = new mapboxgl.Map({
+		    container: 'map', // container id
+		    style: styleURL, // stylesheet location
+		    center: [(Number(bounds[0])+Number(bounds[2]))/2,
+			         (Number(bounds[1])+Number(bounds[3]))/2], // starting position [lng, lat]
+		    zoom: 13 // starting zoom
+		});
+		map.addControl(new mapboxgl.NavigationControl());
+		map.addControl(new mapboxgl.AttributionControl({ compact: false, customAttribution:
+			"Style © <a href='http://openmaptiles.org/'>OpenMapTiles</a> | "+
+			"Data © <a href='http://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" }));
+
+		// -- Comment the following lines out to remove debug UI --
+		map.showTileBoundaries=true;
+		map.addControl(new MapboxInspect({
+		  showInspectButton: false,
+		  showMapPopup: true
+		}));
+		// -- --
+	}
+)
+</script>
+
+</body>
+</html>

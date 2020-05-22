@@ -1,0 +1,14 @@
+{
+	"tilejson": "2.1.0",
+	"name": "tilemaker_default",
+	"description": "Tiles made with Tilemaker",
+	"version": "1.0.0",
+	"scheme": "xyz",
+	"tiles": [
+        "http://localhost:8080/{z}/{x}/{y}.pbf"
+	],
+	"minzoom": 6,
+	"maxzoom": 14,
+	"bounds": [ -180, -85.05112877980659, 180, 85.0511287798066 ],
+	"center": [ -1.247,51.761,10 ]
+}
