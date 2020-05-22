@@ -403,6 +403,11 @@ function way_function(way)
 	end
 end
 
+-- Remap coastlines
+function attribute_function(attr)
+	return { class="ocean" }
+end
+
 -- ==========================================================
 -- Common functions
 

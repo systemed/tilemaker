@@ -1,7 +1,5 @@
 {
 	"layers": {
-		"aerodrome_label":            { "minzoom": 10,  "maxzoom": 14 },
-
 		"place":            { "minzoom": 4,  "maxzoom": 14 },
 		"place_detail":     { "minzoom": 14, "maxzoom": 14, "write_to": "place"},
 
@@ -26,8 +24,10 @@
 		"water":             { "minzoom": 9,  "maxzoom": 14, "simplify_below": 12, "simplify_length": 1, "simplify_ratio": 2},
 		"water_name":        { "minzoom": 16, "maxzoom": 17 },
 		"water_name_detail": { "minzoom": 16, "maxzoom": 17, "write_to": "water_name" },
+		"ocean":             { "minzoom": 6,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "simplify_below": 13, "simplify_level": 0.0005, "write_to": "water" },
 
 		"aeroway":           { "minzoom": 11, "maxzoom": 14 },
+		"aerodrome_label":   { "minzoom": 10,  "maxzoom": 14 },
 		"park":              { "minzoom": 11, "maxzoom": 14 },
 		"landuse":           { "minzoom": 11, "maxzoom": 14 },
 		"landcover":         { "minzoom": 6, "maxzoom": 14 },
