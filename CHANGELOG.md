@@ -1,6 +1,6 @@
 # Changelog
 
-## [unreleased]
+## [1.6.0] - 2020-05-22
 
 ### Added
 - Specify `source_columns: true` for shapefiles to import all attributes
@@ -8,16 +8,19 @@
 - `attribute_function` to rewrite shapefile attributes from Lua
 - Improved diagnostics for invalid multipolygons
 - Output shapefile layer names when reading
+- Report memory usage in verbose mode
 
 ### Changed
 - Rewrite OpenMapTiles-compatible processing (@systemed, @sasfeat, @typebrook, @leonardehrenfried)
 - `--combine` flag now off by default
 - 32-bit ways and 16-bit tile index by default, change with `-DFAT_WAYS -DFAT_TILE_INDEX`
 - Use tsl::sparse_map instead of std::unordered_map for ~7% memory saving
+- Don't write invalid small polygons
 - Speedup for shapefile reading (@TimSC)
 - Move to Github Actions instead of Travis (@leonardehrenfried)
 - Reduce size of Docker image, use Ubuntu 20.04 (@leonardehrenfried)
-- Improve area calculation (@typebrook)
+- Improve area and length calculation (@typebrook, @systemed)
+- Overwrite existing .mbtiles file by default
 
 ### Fixed
 - CMake build fixed (@ogre)

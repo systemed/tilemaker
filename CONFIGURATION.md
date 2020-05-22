@@ -124,6 +124,7 @@ To do that, you use these methods:
 * `node:Find(key)` or `way:Find(key)`: get the value for a tag, or the empty string if not present. For example, `way:Find("railway")` might return "rail" for a railway, "siding" for a siding, or "" if it isn't a railway at all.
 * `node:Holds(key)` or `way:Holds(key)`: returns true if that key exists, false otherwise.
 * `node:Id()` or `way:Id()`: get the OSM ID of the current object.
+* `way:Length()` and `way:Area()`: return the length (metres)/area (square metres) of the current object. Requires recent Boost.
 * `node:Layer("layer_name", false)` or `way:Layer("layer_name", is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
 * `way:LayerAsCentroid("layer_name")`: write a single centroid point for this way to the named layer (useful for labels and POIs).
 * `node:Attribute(key,value)` or `node:Attribute(key,value)`: add an attribute to the most recently written layer.
