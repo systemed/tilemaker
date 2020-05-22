@@ -9,6 +9,7 @@
 - Improved diagnostics for invalid multipolygons
 - Output shapefile layer names when reading
 - Report memory usage in verbose mode
+- Out-of-the-box test tileserver and OpenMapTiles-compatible resources
 
 ### Changed
 - Rewrite OpenMapTiles-compatible processing (@systemed, @sasfeat, @typebrook, @leonardehrenfried)
