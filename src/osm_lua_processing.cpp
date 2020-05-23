@@ -5,6 +5,7 @@ using namespace std;
 
 kaguya::State *g_luaState = nullptr;
 bool supportsRemappingShapefiles = false;
+extern bool verbose;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -277,10 +278,10 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
 	if (isRelation && !geom::is_valid(geom,failure)) {
-		cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << endl;
+		if (verbose) cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << endl;
 		if (failure==10) return; // too few points
 	} else if (isWay && !geom::is_valid(geom,failure)) {
-		cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << endl;
+		if (verbose) cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << endl;
 		if (failure==10) return; // too few points
 	}
 #endif
