@@ -5,19 +5,13 @@ namespace geom = boost::geometry;
 
 ShpMemTiles::ShpMemTiles(uint baseZoom):
 	TileDataSource(),
-	baseZoom(baseZoom)
-{
+	baseZoom(baseZoom) { }
 
-}
-
-void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
-{
+void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
 	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-	std::vector<OutputObjectRef> &dstTile)
-{
+void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
 	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 
@@ -66,54 +60,49 @@ vector<string> ShpMemTiles::namesOfGeometries(vector<uint> &ids) const {
 	return names;
 }
 
-void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName)
-{
+void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName) {
 	indices[layerName]=RTree();
 }
 
 OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 	const std::string &layerName, enum OutputGeometryType geomType,
-	Geometry geometry, bool isIndexed, bool hasName, const std::string &name)
-{		
+	Geometry geometry, bool isIndexed, bool hasName, const std::string &name) {		
+
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
 
 	cachedGeometries.push_back(geometry);
 
 	uint id = cachedGeometries.size()-1;
-	if(isIndexed)
-	{
+	if (isIndexed) {
 		indices.at(layerName).insert(std::make_pair(box, id));
-		if(hasName)
-			cachedGeometryNames[id]=name;
+		if (hasName) cachedGeometryNames[id]=name;
 	}
 
 	OutputObjectRef oo = std::make_shared<OutputObjectCached>(geomType, layerNum, cachedGeometries.size()-1, cachedGeometries);
 
 	Point *p = nullptr;
 	uint tilex = 0, tiley = 0;
-	switch(geomType)
-	{
-	case CACHED_POINT:
-		p = boost::get<Point>(&geometry);
-		if(p!=nullptr)
-		{
-			tilex =  lon2tilex(p->x(), baseZoom);
-			tiley = latp2tiley(p->y(), baseZoom);
-			tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
-		}
-		break;
-	case CACHED_LINESTRING:
-		addToTileIndexPolyline(oo, tileIndex, &geometry);
-		break;
-	case CACHED_POLYGON:
-		// add to tile index
-		addToTileIndexByBbox(oo, tileIndex, 
-			box.min_corner().get<0>(), box.min_corner().get<1>(), 
-			box.max_corner().get<0>(), box.max_corner().get<1>());
-		break;
-	default:
-		break;
+	switch(geomType) {
+		case CACHED_POINT:
+			p = boost::get<Point>(&geometry);
+			if (p!=nullptr) {
+				tilex =  lon2tilex(p->x(), baseZoom);
+				tiley = latp2tiley(p->y(), baseZoom);
+				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
+			}
+			break;
+		case CACHED_LINESTRING:
+			addToTileIndexPolyline(oo, tileIndex, &geometry);
+			break;
+		case CACHED_POLYGON:
+			// add to tile index
+			addToTileIndexByBbox(oo, tileIndex, 
+				box.min_corner().get<0>(), box.min_corner().get<1>(), 
+				box.max_corner().get<0>(), box.max_corner().get<1>());
+			break;
+		default:
+			break;
 	}
 
 	return oo;

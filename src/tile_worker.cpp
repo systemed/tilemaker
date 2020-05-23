@@ -9,8 +9,8 @@ using namespace std;
 extern bool verbose;
 
 void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
-	const TileBbox &bbox, Geometry &g)
-{
+	const TileBbox &bbox, Geometry &g) {
+
 	// If a object is a polygon or a linestring that is followed by
 	// other objects with the same geometry type and the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
@@ -21,7 +21,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 	auto gTyp = oo->geomType;
 	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
 		MultiPolygon *gAcc = nullptr;
-		try{
+		try {
 			gAcc = &boost::get<MultiPolygon>(g);
 		} catch (boost::bad_get &err) {
 			cerr << "Error: Polygon " << oo->objectID << " has unexpected type" << endl;
@@ -53,20 +53,18 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 				cl.AddPaths(currentPaths, ptSubject, true);
 				cl.AddPaths(newShapePaths, ptClip, true);
 				cl.Execute(ctUnion, current, pftEvenOdd, pftEvenOdd);
-			}
-			catch (std::out_of_range &err)
-			{
-				if (verbose)
-					cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
+			} catch (std::out_of_range &err) {
+				if (verbose) cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			}
 		}
 
 		ConvertFromClipper(current, *gAcc);
 	}
+
 	if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
 		MultiLinestring *gAcc = nullptr;
 		try {
-		gAcc = &boost::get<MultiLinestring>(g);
+			gAcc = &boost::get<MultiLinestring>(g);
 		} catch (boost::bad_get &err) {
 			cerr << "Error: LineString " << oo->objectID << " has unexpected type" << endl;
 			return;
@@ -80,19 +78,14 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 			else ooNext.reset();
 
-			try
-			{
+			try {
 				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
-			}
-			catch (std::out_of_range &err)
-			{
-				if (verbose)
-					cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
-			}
-			catch (boost::bad_get &err) {
+			} catch (std::out_of_range &err) {
+				if (verbose) cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
+			} catch (boost::bad_get &err) {
 				cerr << "Error while processing LINESTRING " << oo->objectID << " has unexpected type" << endl;
 				continue;
 			}
@@ -102,8 +95,8 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 
 void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
-	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList)
-{
+	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
+
 	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectRef oo = *jt;
 
@@ -122,17 +115,13 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			Geometry g;
 			try {
 				g = oo->buildWayGeometry(bbox);
-			}
-			catch (std::out_of_range &err)
-			{
-				if (verbose)
-					cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
+			} catch (std::out_of_range &err) {
+				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
 
 			//This may increment the jt iterator
-			if(sharedData->config.combineSimilarObjs)
-			{
+			if(sharedData->config.combineSimilarObjs) {
 				CheckNextObjectAndMerge(jt, ooSameLayerEnd, bbox, g);
 				oo = *jt;
 			}
@@ -198,8 +187,7 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 	}
 }
 
-int outputProc(uint threadId, class SharedData *sharedData)
-{
+int outputProc(uint threadId, class SharedData *sharedData) {
 
 	// Loop through tiles
 	uint tc = 0;

@@ -29,8 +29,7 @@ extern "C" {
 
 	This class provides a consistent interface for Lua scripts to access.
 */
-class OsmLuaProcessing : public PbfReaderOutput
-{ 
+class OsmLuaProcessing : public PbfReaderOutput { 
 
 public:
 	// ----	initialization routines

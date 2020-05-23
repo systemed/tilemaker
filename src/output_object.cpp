@@ -12,8 +12,7 @@ using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;
 
-ClipGeometryVisitor::ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) 
-{
+ClipGeometryVisitor::ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) {
 	const Point &minc = clippingBox.min_corner();
 	const Point &maxc = clippingBox.max_corner();
 	clippingPath.push_back(IntPoint(std::round(minc.x() * CLIPPER_SCALE), std::round(minc.y() * CLIPPER_SCALE)));	
@@ -81,10 +80,7 @@ OutputObject::OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) 
 	objectID = id;
 }
 
-OutputObject::~OutputObject()
-{
-
-}
+OutputObject::~OutputObject() { }
 
 void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &value) {
 	attributes[key]=value;
@@ -180,29 +176,19 @@ namespace vector_tile {
 OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
 	Geometry geom):
 	OutputObject(type, l, id),
-	geom(geom)
-{
+	geom(geom) { }
 
-}
+OutputObjectOsmStore::~OutputObjectOsmStore() { }
 
-OutputObjectOsmStore::~OutputObjectOsmStore()
-{
-
-}
-
-Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const
-{
+Geometry OutputObjectOsmStore::buildWayGeometry(const TileBbox &bbox) const {
 	ClipGeometryVisitor clip(bbox.clippingBox);
-
 	return boost::apply_visitor(clip, geom);	
 }
 
 // Add a node geometry
-LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const
-{
+LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const {
 	const Point *pt = boost::get<Point>(&geom);
-	if(pt == nullptr)
-		throw runtime_error("Geometry type is not point");
+	if(pt == nullptr) throw runtime_error("Geometry type is not point");
 	LatpLon out;
 	out.latp = pt->y();
 	out.lon = pt->x();
@@ -214,18 +200,11 @@ LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const
 OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
 	const std::vector<Geometry> &cachedGeometries):
 	OutputObject(type, l, id),
-	cachedGeometries(cachedGeometries)
-{
+	cachedGeometries(cachedGeometries) { }
 
-}
+OutputObjectCached::~OutputObjectCached() { }
 
-OutputObjectCached::~OutputObjectCached()
-{
-
-}
-
-Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
-{
+Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const {
 	ClipGeometryVisitor clip(bbox.clippingBox);
 
 	try {
@@ -240,8 +219,7 @@ Geometry OutputObjectCached::buildWayGeometry(const TileBbox &bbox) const
 	return MultiLinestring(); // return a blank geometry
 }
 
-LatpLon OutputObjectCached::buildNodeGeometry(const TileBbox &bbox) const
-{
+LatpLon OutputObjectCached::buildNodeGeometry(const TileBbox &bbox) const {
 	throw runtime_error("Geometry point type not supported");
 	LatpLon out;
 	out.latp = 0;

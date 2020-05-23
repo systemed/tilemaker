@@ -120,13 +120,11 @@ size_t WayStore::size() { return mNodeLists.size(); }
 // @return A way list
 // @exception NotFound
 WayList<RelationStoreIterator> RelationStore::at(WayID i) const {
-	try
-	{
+	try {
 		const auto &outInList = mOutInLists.at(i);
 		return { outInList.first.cbegin(), outInList.first.cend(),
 			outInList.second.cbegin(), outInList.second.cend() };
-	}
-	catch (std::out_of_range &err){
+	} catch (std::out_of_range &err){
 		stringstream ss;
 		ss << "Could not find pseudo OSM ID of polygon " << i;
 		throw std::out_of_range(ss.str());
@@ -167,8 +165,7 @@ void OSMStore::reportSize() {
 	cout << "Stored " << nodes.size() << " nodes, " << ways.size() << " ways, " << relations.size() << " relations" << endl;
 }
 
-void OSMStore::clear()
-{
+void OSMStore::clear() {
 	nodes.clear();
 	ways.clear();
 	relations.clear();
@@ -185,8 +182,7 @@ MultiPolygon OSMStore::wayListMultiPolygon(const WayVec &outerWayVec, const WayV
 
 Linestring OSMStore::wayListLinestring(const WayVec &outerWayVec, const WayVec &innerWayVec) const {
 	MultiPolygon mp = wayListMultiPolygon(makeWayList(outerWayVec, innerWayVec));
-	if(mp.size()>=1)
-	{
+	if(mp.size()>=1) {
 		Linestring out;
 		for(auto pt: mp[0].outer())
 			bg::append(out, pt);

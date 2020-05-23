@@ -23,8 +23,8 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	config(configIn),
-	layers(layers)
-{
+	layers(layers) {
+
 	newWayID = MAX_WAY_ID;
 
 	// ----	Initialise Lua
@@ -60,8 +60,7 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 
 }
 
-OsmLuaProcessing::~OsmLuaProcessing()
-{
+OsmLuaProcessing::~OsmLuaProcessing() {
 	// Call exit_function of Lua logic
 	luaState("if exit_function~=nil then exit_function() end");
 }
@@ -95,13 +94,11 @@ string OsmLuaProcessing::Id() const {
 
 // Check if there's a value for a given key
 bool OsmLuaProcessing::Holds(const string& key) const {
-	
 	return currentTags.find(key) != currentTags.end();
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
 string OsmLuaProcessing::Find(const string& key) const {
-
 	auto it = currentTags.find(key);
 	if(it == currentTags.end()) return "";
 	return it->second;
@@ -110,8 +107,7 @@ string OsmLuaProcessing::Find(const string& key) const {
 // ----	Spatial queries called from Lua
 
 // Find intersecting shapefile layer
-vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) 
-{
+vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
 	// TODO: multipolygon relations not supported, will always return empty vector
 	if(isRelation) return vector<string>();
 	Point p1(lon1/10000000.0,latp1/10000000.0);
@@ -120,8 +116,7 @@ vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName)
 	return shpMemTiles.FindIntersecting(layerName, box);
 }
 
-bool OsmLuaProcessing::Intersects(const string &layerName)
-{
+bool OsmLuaProcessing::Intersects(const string &layerName) {
 	// TODO: multipolygon relations not supported, will always return false
 	if(isRelation) return false;
 	Point p1(lon1/10000000.0,latp1/10000000.0);
@@ -206,14 +201,11 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
 
-		if(isRelation)
-		{
+		if (isRelation) {
 			//A relation is being treated as a linestring, which might be
 			//caused by bug in the Lua script
 			linestringCache = osmStore.wayListLinestring(*outerWayVec, *innerWayVec);
-		}
-		else if(isWay)
-		{
+		} else if (isWay) {
 			linestringCache = osmStore.nodeListLinestring(*nodeVec);
 		}
 	}
@@ -254,20 +246,15 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		else if (geomType==POLYGON) {
 			// polygon
 
-			if(isRelation)
-			{
-				try
-				{
+			if (isRelation) {
+				try {
 					geom = multiPolygonCached();
-				}
-				catch(std::out_of_range &err)
-				{
+				} catch(std::out_of_range &err) {
 					cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 					return;
 				}
 			}
-			else if(isWay)
-			{
+			else if (isWay) {
 				//Is there a more efficient way to do this?
 				Linestring ls = linestringCached();
 				Polygon p;
@@ -313,20 +300,14 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	try {
 
 		Geometry tmp;
-		if(isRelation)
-		{
-			try
-			{
+		if (isRelation) {
+			try {
 				tmp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
-			}
-			catch(std::out_of_range &err)
-			{
+			} catch(std::out_of_range &err) {
 				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 				return;
 			}
-		}
-		else if(isWay)
-		{
+		} else if (isWay) {
 			//Is there a more efficient way to do this?
 			Linestring ls = linestringCached();
 			Polygon p;
@@ -337,22 +318,18 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		}
 
 #if BOOST_VERSION >= 105900
-		if(geom::is_empty(tmp))
-		{
+		if(geom::is_empty(tmp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid" << endl;
 			return;
 		}
 #endif
 
 		// write out centroid only
-		try
-		{
+		try {
 			Point p;
 			geom::centroid(tmp, p);
 			geom = p;
-		}
-		catch (geom::centroid_exception &err)
-		{
+		} catch (geom::centroid_exception &err) {
 			cerr << "Problem geom: " << boost::geometry::wkt(tmp) << std::endl;
 			cerr << err.what() << endl;
 			return;
@@ -399,13 +376,11 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 	layers.layers[layer].attributeMap[key] = type;
 }
 
-void OsmLuaProcessing::startOsmData()
-{
+void OsmLuaProcessing::startOsmData() {
 	osmStore.clear();
 }
 
-void OsmLuaProcessing::everyNode(NodeID id, LatpLon node)
-{
+void OsmLuaProcessing::everyNode(NodeID id, LatpLon node) {
 	osmStore.nodes.insert_back(id, node);
 }
 
@@ -455,8 +430,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	currentTags = tags;
 
 	bool ok = true;
-	if (ok)
-	{
+	if (ok) {
 		luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
 
 		//Start Lua processing for way
@@ -502,12 +476,10 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 					}
 				}
 			}
-		} catch(std::out_of_range &err)
-		{
+		} catch(std::out_of_range &err) {
 			cerr << "Error calculating intermediate tiles: " << err.what() << endl;
 		}
 	}
-
 }
 
 // We are now processing a relation
@@ -529,8 +501,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 	currentTags = tags;
 
 	bool ok = true;
-	if (ok)
-	{
+	if (ok) {
 		//Start Lua processing for relation
 		luaState["way_function"](this);
 	}
@@ -543,13 +514,10 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 		relations.insert_front(relID, *outerWayVec, *innerWayVec);
 
 		MultiPolygon mp;
-		try
-		{
+		try {
 			// for each tile the relation may cover, put the output objects.
 			mp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
-		}
-		catch(std::out_of_range &err)
-		{
+		} catch(std::out_of_range &err) {
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
 		}		
@@ -577,13 +545,11 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 }
 
 
-void OsmLuaProcessing::endOsmData()
-{
+void OsmLuaProcessing::endOsmData() {
 	osmStore.reportSize();
 }
 
-vector<string> OsmLuaProcessing::GetSignificantNodeKeys()
-{
+vector<string> OsmLuaProcessing::GetSignificantNodeKeys() {
 	return luaState["node_keys"];
 }
 

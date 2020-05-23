@@ -30,8 +30,8 @@ struct LayerDef {
 };
 
 ///\brief Defines layers used in map rendering
-class LayerDefinition
-{
+class LayerDefinition {
+
 public:	
 	std::vector<LayerDef> layers;				// List of layers
 	std::map<std::string,uint> layerMap;				// Layer->position map
@@ -51,8 +51,8 @@ public:
 };
 
 ///\brief Config read from JSON to control behavior of program
-class Config
-{
+class Config {
+	
 public:
 	class LayerDefinition layers;
 	uint baseZoom, startZoom, endZoom;
@@ -71,8 +71,8 @@ public:
 };
 
 ///\brief Data used by worker threads ::outputProc to write output
-class SharedData
-{
+class SharedData {
+
 public:
 	uint zoom;
 

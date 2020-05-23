@@ -3,14 +3,12 @@
 using namespace std;
 namespace geom = boost::geometry;
 
-TileCoordinates_::TileCoordinates_()
-{
+TileCoordinates_::TileCoordinates_() {
 	this->x = 0;
 	this->y = 0;
 }
 
-TileCoordinates_::TileCoordinates_(TileCoordinate x, TileCoordinate y)
-{
+TileCoordinates_::TileCoordinates_(TileCoordinate x, TileCoordinate y) {
 	this->x = x;
 	this->y = y;
 }

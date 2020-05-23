@@ -97,8 +97,8 @@ private:
 /**
  * \brief An OutputObject derived class that contains data originally from ShpMemTiles
 */
-class OutputObjectCached : public OutputObject
-{
+class OutputObjectCached : public OutputObject {
+
 public:
 	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
 		const std::vector<Geometry> &cachedGeometries);

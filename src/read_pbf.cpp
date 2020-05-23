@@ -56,8 +56,7 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 	return false;
 }
 
-bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation)
-{
+bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation) {
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
@@ -74,19 +73,15 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 				nodeVec.push_back(static_cast<NodeID>(nodeId));
 			}
 
-			try
-			{
+			try {
 				auto keysPtr = pbfWay.mutable_keys();
 				auto valsPtr = pbfWay.mutable_vals();
 				std::map<std::string, std::string> tags;
 				for (uint n=0; n < pbfWay.keys_size(); n++)
 					tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
+				if(output != nullptr) output->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
 
-				if(output != nullptr)
-					output->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
-			}
-			catch (std::out_of_range &err)
-			{
+			} catch (std::out_of_range &err) {
 				// Way is missing a node?
 				cerr << endl << err.what() << endl;
 			}
@@ -97,8 +92,7 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 	return false;
 }
 
-bool PbfReader::ReadRelations(PrimitiveGroup &pg)
-{
+bool PbfReader::ReadRelations(PrimitiveGroup &pg) {
 	// ----	Read relations
 	//		(just multipolygons for now; we should do routes in time)
 
@@ -126,19 +120,16 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg)
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
 
-				try
-				{
+				try {
 					auto keysPtr = pbfRelation.mutable_keys();
 					auto valsPtr = pbfRelation.mutable_vals();
 					std::map<std::string, std::string> tags;
 					for (uint n=0; n < pbfRelation.keys_size(); n++)
 						tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
 
-					if(output != nullptr)
-						output->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
-				}
-				catch (std::out_of_range &err)
-				{
+					if(output != nullptr) output->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
+
+				} catch (std::out_of_range &err) {
 					// Relation is missing a member?
 					cerr << endl << err.what() << endl;
 				}
@@ -160,8 +151,7 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 	fstream infile(inputFile, ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 
-	if(output != nullptr)
-		output->startOsmData();
+	if (output != nullptr) output->startOsmData();
 
 	HeaderBlock block;
 	readBlock(&block, &infile);

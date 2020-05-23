@@ -16,8 +16,8 @@ void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, 
 void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
 	std::vector<OutputObjectRef> &dstTile);
 
-class TileDataSource
-{
+class TileDataSource {
+
 public:
 	///This must be thread safe!
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
@@ -49,8 +49,8 @@ public:
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
 };
 
-class ObjectsAtSubLayerIterator : public OutputObjectsConstIt
-{
+class ObjectsAtSubLayerIterator : public OutputObjectsConstIt {
+
 public:
 	ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData);
 
@@ -63,8 +63,8 @@ typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAt
 /**
  * Corresponds to a single tile at a single zoom level.
  */
-class TilesAtZoomIterator : public TileCoordinatesSet::const_iterator
-{
+class TilesAtZoomIterator : public TileCoordinatesSet::const_iterator {
+
 public:
 	TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom);
 
@@ -89,8 +89,8 @@ private:
  * This gives us room for future work on getting input data in a lazy fashion (in order to avoid
  * overwhelming memory resources.)
  */
-class TileData
-{
+class TileData {
+
 	friend ObjectsAtSubLayerIterator;
 	friend TilesAtZoomIterator;
 

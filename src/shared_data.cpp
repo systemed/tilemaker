@@ -10,15 +10,12 @@ SharedData::SharedData(const class Config &configIn, const class LayerDefinition
 	class TileData &tileData):
 	tileData(tileData),
 	layers(layers),
-	config(configIn)
-{
+	config(configIn) {
+
 	sqlite=false;
 }
 
-SharedData::~SharedData()
-{
-
-}
+SharedData::~SharedData() { }
 
 // *****************************************************************
 
@@ -30,8 +27,8 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		bool allSourceColumns,
 		bool indexed,
 		const std::string &indexName,		
-		const std::string &writeTo) 
-{
+		const std::string &writeTo)  {
+
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>() };
@@ -93,23 +90,18 @@ std::string LayerDefinition::serialiseToJSON() {
 
 // *****************************************************************
 
-Config::Config()
-{
+Config::Config() {
 	includeID = false, compress = true, gzip = true;
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
 	combineSimilarObjs = false;
 }
 
-Config::~Config()
-{
-
-}
+Config::~Config() { }
 
 // ----	Read all config details from JSON file
 
-void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox) 
-{
+void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox)  {
 	baseZoom       = jsonConfig["settings"]["basezoom"].GetUint();
 	startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 	endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();

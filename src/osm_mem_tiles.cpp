@@ -3,23 +3,16 @@ using namespace std;
 
 OsmMemTiles::OsmMemTiles(uint baseZoom):
 	TileDataSource(),
-	baseZoom(baseZoom)
-{
+	baseZoom(baseZoom) { }
 
-}
-
-void OsmMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)
-{
+void OsmMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
 	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-	std::vector<OutputObjectRef> &dstTile)
-{
+void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom,  std::vector<OutputObjectRef> &dstTile) {
 	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 
-void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo)
-{
+void OsmMemTiles::AddObject(TileCoordinates index, OutputObjectRef oo) {
 	tileIndex[index].push_back(oo);
 }

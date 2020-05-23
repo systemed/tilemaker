@@ -12,8 +12,8 @@
 
 	This class provides a consistent interface for Lua scripts to access.
 */
-class OsmMemTiles : public TileDataSource
-{
+class OsmMemTiles : public TileDataSource {
+
 public:
 	OsmMemTiles(uint baseZoom);
 

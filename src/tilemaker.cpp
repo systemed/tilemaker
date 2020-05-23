@@ -88,8 +88,7 @@ int main(int argc, char* argv[]) {
 	po::variables_map vm;
     try {
         po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
-    }
-    catch (const po::unknown_option& ex) {
+    } catch (const po::unknown_option& ex) {
         cerr << "Unknown option: " << ex.get_option_name() << endl;
         return -1;
     }
@@ -99,12 +98,8 @@ int main(int argc, char* argv[]) {
 	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
 	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
 
-	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) {
-		sqlite=true;
-	}
-	if (threadNum == 0) {
-		threadNum = max(thread::hardware_concurrency(), 1u);
-	}
+	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { sqlite=true; }
+	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
 	verbose = _verbose;
 
 	#ifdef COMPACT_NODES
@@ -170,8 +165,7 @@ int main(int argc, char* argv[]) {
 
 	// ---- Load external shp files
 
-	for(size_t layerNum=0; layerNum<layers.layers.size(); layerNum++)	
-	{
+	for (size_t layerNum=0; layerNum<layers.layers.size(); layerNum++) {
 		// External layer sources
 		LayerDef &layer = layers.layers[layerNum];
 		if(layer.indexed) { shpMemTiles.CreateNamedLayerIndex(layer.name); }
@@ -199,12 +193,9 @@ int main(int argc, char* argv[]) {
 	class PbfReader pbfReader;
 	pbfReader.output = &osmLuaProcessing;
 	for (auto inputFile : inputFiles) {
-	
 		cout << "Reading " << inputFile << endl;
-
 		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
-		if(ret != 0)
-			return ret;
+		if (ret != 0) return ret;
 	}
 
 	// ----	Initialise SharedData
@@ -244,8 +235,7 @@ int main(int argc, char* argv[]) {
 		if(threadNum == 1) {
 			// Single thread (is easier to debug)
 			outputProc(0, &sharedData);
-		}
-		else {
+		} else {
 
 			// Multi thread processing loop
 			vector<thread> worker;

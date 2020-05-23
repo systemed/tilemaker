@@ -25,10 +25,11 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 // Multipolygon
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
-	if (simplifyLevel>0)
+	if (simplifyLevel>0) {
 		geom::simplify(mp, current, simplifyLevel);
-	else
+	} else {
 		current = mp;
+	}
 
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
@@ -63,10 +64,11 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 // Multilinestring
 void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 	MultiLinestring current;
-	if (simplifyLevel>0)
+	if (simplifyLevel>0) {
 		geom::simplify(mls, current, simplifyLevel);
-	else 
+	} else {
 		current = mls;
+	}
 
 	pair<int,int> lastPos(0,0);
 	for (MultiLinestring::const_iterator it = current.begin(); it != current.end(); ++it) {
@@ -83,10 +85,11 @@ void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 // Linestring
 void WriteGeometryVisitor::operator()(const Linestring &ls) const { 
 	Linestring current;
-	if (simplifyLevel>0)
+	if (simplifyLevel>0) {
 		geom::simplify(ls, current, simplifyLevel);
-	else
+	} else {
 		current = ls;
+	}
 
 	pair<int,int> lastPos(0,0);
 	XYString scaledString;

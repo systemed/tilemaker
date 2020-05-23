@@ -10,8 +10,7 @@
 *
 * (note that sqlite_modern_cpp.h is very slightly changed from the original, for blob support and an .init method)
 */
-class MBTiles
-{ 
+class MBTiles { 
 	sqlite::database db;
 	std::mutex m;
 

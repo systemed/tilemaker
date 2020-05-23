@@ -12,8 +12,8 @@ typedef uint32_t TileCoordinate;
 #else
 typedef uint16_t TileCoordinate;
 #endif
-class TileCoordinates_
-{
+class TileCoordinates_ {
+
 public:
 	TileCoordinate x, y;
 
@@ -27,8 +27,7 @@ public:
 		return y == obj.y;
 	}
 };
-struct TileCoordinatesCompare
-{
+struct TileCoordinatesCompare {
     bool operator()(const class TileCoordinates_& a, const class TileCoordinates_& b) const {
 		if(a.x > b.x)
 			return false;
@@ -38,12 +37,9 @@ struct TileCoordinatesCompare
     }
 };
 typedef class TileCoordinates_ TileCoordinates;
-namespace std
-{
-	template<> struct hash<TileCoordinates>
-	{
-		size_t operator()(const TileCoordinates & obj) const
-		{
+namespace std {
+	template<> struct hash<TileCoordinates> {
+		size_t operator()(const TileCoordinates & obj) const {
 			return hash<TileCoordinate>()(obj.x) ^ hash<TileCoordinate>()(obj.y);
 		}
 	};

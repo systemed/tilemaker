@@ -5,8 +5,7 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords)
-{
+void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
 		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
@@ -27,8 +26,7 @@ void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, 
 }
 
 void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile)
-{
+	std::vector<OutputObjectRef> &dstTile) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
 		auto oosetIt = srcTiles.find(dstIndex);
@@ -58,29 +56,24 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoo
 
 ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData):
 	OutputObjectsConstIt(it),
-	tileData(tileData)
-{
-
-}
+	tileData(tileData) { }
 
 // ********************************
 
 TilesAtZoomIterator::TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom):
 	TileCoordinatesSet::const_iterator(it),
 	tileData(tileData),
-	zoom(zoom)
-{
+	zoom(zoom) {
+
 	RefreshData();
 }
 
-TileCoordinates TilesAtZoomIterator::GetCoordinates() const
-{
+TileCoordinates TilesAtZoomIterator::GetCoordinates() const {
 	TileCoordinatesSet::const_iterator it = *this;
 	return *it;
 }
 
-ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const
-{
+ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const {
 	TileCoordinatesSet::const_iterator it = *this;
 
 	// compare only by `layer`
@@ -94,36 +87,31 @@ ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_leas
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }
 
-TilesAtZoomIterator& TilesAtZoomIterator::operator++()
-{
+TilesAtZoomIterator& TilesAtZoomIterator::operator++() {
 	TileCoordinatesSet::const_iterator::operator++();
 	RefreshData();
 	return *this;
 }
 
-TilesAtZoomIterator TilesAtZoomIterator::operator++(int a)
-{
+TilesAtZoomIterator TilesAtZoomIterator::operator++(int a) {
 	TileCoordinatesSet::const_iterator::operator++(a);
 	RefreshData();
 	return *this;
 }
 
-TilesAtZoomIterator& TilesAtZoomIterator::operator--()
-{
+TilesAtZoomIterator& TilesAtZoomIterator::operator--() {
 	TileCoordinatesSet::const_iterator::operator--();
 	RefreshData();
 	return *this;
 }
 
-TilesAtZoomIterator TilesAtZoomIterator::operator--(int a)
-{
+TilesAtZoomIterator TilesAtZoomIterator::operator--(int a) {
 	TileCoordinatesSet::const_iterator::operator--(a);
 	RefreshData();
 	return *this;
 }
 
-void TilesAtZoomIterator::RefreshData()
-{
+void TilesAtZoomIterator::RefreshData() {
 	data.clear();
 	TileCoordinatesSet::const_iterator it = *this;
 	if(it == tileData.tileCoordinates.end()) return;
@@ -138,30 +126,26 @@ void TilesAtZoomIterator::RefreshData()
 // *********************************
 
 TileData::TileData(const std::vector<class TileDataSource *> sources):
-	sources(sources)
-{
+	sources(sources) {
+
 	zoom = 0;
 }
 
-class TilesAtZoomIterator TileData::GetTilesAtZoomBegin()
-{
+class TilesAtZoomIterator TileData::GetTilesAtZoomBegin() {
 	return TilesAtZoomIterator(tileCoordinates.begin(), *this, zoom);
 }
 
-class TilesAtZoomIterator TileData::GetTilesAtZoomEnd()
-{
+class TilesAtZoomIterator TileData::GetTilesAtZoomEnd() {
 	return TilesAtZoomIterator(tileCoordinates.end(), *this, zoom);
 }
 
-size_t TileData::GetTilesAtZoomSize()
-{
+size_t TileData::GetTilesAtZoomSize() {
 	size_t count=0;
 	for(auto it = tileCoordinates.begin(); it != tileCoordinates.end(); it++) count++;
 	return count;
 }
 
-void TileData::SetZoom(uint zoom)
-{
+void TileData::SetZoom(uint zoom) {
 	this->zoom = zoom;
 	// Create list of tiles
 	tileCoordinates.clear();
