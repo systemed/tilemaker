@@ -39,8 +39,6 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
 		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
 		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
-		.addFunction("ScaleToMeter", &OsmLuaProcessing::ScaleToMeter)
-		.addFunction("ScaleToKiloMeter", &OsmLuaProcessing::ScaleToKiloMeter)
 		.addFunction("Area", &OsmLuaProcessing::Area)
 		.addFunction("Length", &OsmLuaProcessing::Length)
 		.addFunction("Layer", &OsmLuaProcessing::Layer)
@@ -134,15 +132,6 @@ bool OsmLuaProcessing::IsClosed() const {
 	} else {
 		return nodeVec->front() == nodeVec->back();
 	}
-}
-
-// Scale to (kilo)meter
-double OsmLuaProcessing::ScaleToMeter() {
-	return degp2meter(1.0, (latp1/2+latp2/2)/10000000.0);
-}
-
-double OsmLuaProcessing::ScaleToKiloMeter() {
-	return (1/1000.0) * ScaleToMeter();
 }
 
 void reverse_project(DegPoint& p) {

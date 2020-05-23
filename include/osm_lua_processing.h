@@ -93,11 +93,6 @@ public:
 	// Returns whether it is closed polygon
 	bool IsClosed() const;
 
-	// Scale to (kilo)meter
-	double ScaleToMeter();
-
-	double ScaleToKiloMeter();
-
 	// Returns area
 	double Area();
 
