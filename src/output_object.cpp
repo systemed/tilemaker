@@ -52,23 +52,7 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	if (geom::within(mp, clippingPolygon)) { return mp; }
 
 	MultiPolygon out;
-	string reason;
-
-	// Convert boost geometries to clipper paths 
-	Paths simplified;
-	ConvertToClipper(mp, simplified);
-
-	// Clip to box
-	PolyTree clipped;
-	Clipper c2;
-	c2.StrictlySimple(true);
-	c2.AddPaths(simplified, ptSubject, true);
-	c2.AddPath(this->clippingPath, ptClip, true);
-	c2.Execute(ctIntersection, clipped, pftEvenOdd, pftEvenOdd);
-
-	// Convert back to boost geometries
-	ConvertFromClipper(clipped, out);
-
+	geom::intersection(mp,clippingBox,out);
 	return out;
 }
 
