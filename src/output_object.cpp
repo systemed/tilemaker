@@ -52,8 +52,13 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	if (geom::within(mp, clippingPolygon)) { return mp; }
 
 	MultiPolygon out;
-	geom::intersection(mp,clippingBox,out);
-	return out;
+	try {
+		geom::intersection(mp,clippingBox,out);
+		return out;
+	} catch (geom::overlay_invalid_input_exception &err) {
+		cout << "Couldn't clip polygon (self-intersection)" << endl;
+		return MultiPolygon(); // blank
+	}
 }
 
 // **********************************************************
