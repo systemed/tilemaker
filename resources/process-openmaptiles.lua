@@ -51,6 +51,17 @@ function Set(list)
 	return set
 end
 
+-- Meters per pixel if tile is 256x256
+ZRES5  = 4891.97
+ZRES6  = 2445.98
+ZRES7  = 1222.99
+ZRES8  = 611.5
+ZRES9  = 305.7
+ZRES10 = 152.9
+ZRES11 = 76.4
+ZRES12 = 38.2
+ZRES13 = 19.1
+
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
 
@@ -346,7 +357,14 @@ function way_function(way)
 	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
 		if way:Find("covered")=="yes" or not isClosed then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
-		way:Layer("water", true)
+		local area=way:Area()
+		if     area>ZRES5^2  then way:Layer("water_z6",  true)
+        elseif area>ZRES6^2  then way:Layer("water_z7",  true)
+        elseif area>ZRES7^2  then way:Layer("water_z8",  true)
+		elseif area>ZRES8^2  then way:Layer("water_z9",  true)
+		elseif area>ZRES9^2  then way:Layer("water_z10", true)
+		elseif area>ZRES10^2 then way:Layer("water_z11", true)
+		else                      way:Layer("water",     true) end
 		way:Attribute("class",class)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
 		if way:Holds("name") then
