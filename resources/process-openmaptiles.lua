@@ -51,6 +51,17 @@ function Set(list)
 	return set
 end
 
+-- Meters per pixel if tile is 256x256
+ZRES5  = 4891.97
+ZRES6  = 2445.98
+ZRES7  = 1222.99
+ZRES8  = 611.5
+ZRES9  = 305.7
+ZRES10 = 152.9
+ZRES11 = 76.4
+ZRES12 = 38.2
+ZRES13 = 19.1
+
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
 
@@ -202,7 +213,9 @@ poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, colleg
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
-poiKeys = { "amenity", "sport", "tourism", "office", "historic", "leisure", "landuse", "information" }
+poiKeys         = { "amenity", "sport", "tourism", "office", "historic", "leisure", "landuse", "information" }
+waterClasses    = { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
+waterwayClasses = { "stream", "river", "canal", "drain", "ditch" }
 
 
 function way_function(way)
@@ -317,24 +330,18 @@ function way_function(way)
 	end
 
 	-- Set 'waterway' and associated
-	if waterway~="" then
-		if     waterway == "riverbank" then way:Layer("water", isClosed); way:Attribute("class", "river");
-		                                    if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent",1) end
-		elseif waterway == "dock"      then way:Layer("water", isClosed); way:Attribute("class", "lake");
-		                                    way:LayerAsCentroid("water_name_detail"); SetNameAttributes(way); write_name = true
-		elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
-		elseif waterway == "dam"       then way:Layer("building",isClosed)
-		elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	if waterwayClasses[waterway] and not isClosed then
+		if waterway == "river" and way:Holds("name") then
+		    way:Layer("waterway",false)
 		else
-			if waterway == "river" and way:Holds("name") then
-				way:Layer("waterway",false)
-			else
-				way:Layer("waterway_detail",false)
-			end
-			way:Attribute("class", waterway)
-			SetNameAttributes(way)
-			SetBrunnelAttributes(way)
+		    way:Layer("waterway_detail",false)
 		end
+		way:Attribute("class", waterway)
+		SetNameAttributes(way)
+		SetBrunnelAttributes(way)
+	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	elseif waterway == "dam"       then way:Layer("building",isClosed)
+	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 	end
 
 	-- Set 'building' and associated
@@ -347,10 +354,17 @@ function way_function(way)
 	end
 
 	-- Set 'water'
-	if natural=="water" or natural=="bay" or landuse=="reservoir" then
-		if way:Find("covered")=="yes" then return end
-		local class="lake"; if natural=="bay" then class="ocean" end
-		way:Layer("water", true)
+	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
+		if way:Find("covered")=="yes" or not isClosed then return end
+		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
+		local area=way:Area()
+		if     area>ZRES5^2  then way:Layer("water_z6",  true)
+        elseif area>ZRES6^2  then way:Layer("water_z7",  true)
+        elseif area>ZRES7^2  then way:Layer("water_z8",  true)
+		elseif area>ZRES8^2  then way:Layer("water_z9",  true)
+		elseif area>ZRES9^2  then way:Layer("water_z10", true)
+		elseif area>ZRES10^2 then way:Layer("water_z11", true)
+		else                      way:Layer("water",     true) end
 		way:Attribute("class",class)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
 		if way:Holds("name") then
