@@ -202,7 +202,9 @@ poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, colleg
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
-poiKeys = { "amenity", "sport", "tourism", "office", "historic", "leisure", "landuse", "information" }
+poiKeys         = { "amenity", "sport", "tourism", "office", "historic", "leisure", "landuse", "information" }
+waterClasses    = { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
+waterwayClasses = { "stream", "river", "canal", "drain", "ditch" }
 
 
 function way_function(way)
@@ -317,24 +319,18 @@ function way_function(way)
 	end
 
 	-- Set 'waterway' and associated
-	if waterway~="" then
-		if     waterway == "riverbank" then way:Layer("water", isClosed); way:Attribute("class", "river");
-		                                    if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent",1) end
-		elseif waterway == "dock"      then way:Layer("water", isClosed); way:Attribute("class", "lake");
-		                                    way:LayerAsCentroid("water_name_detail"); SetNameAttributes(way); write_name = true
-		elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
-		elseif waterway == "dam"       then way:Layer("building",isClosed)
-		elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	if waterwayClasses[waterway] and not isClosed then
+		if waterway == "river" and way:Holds("name") then
+		    way:Layer("waterway",false)
 		else
-			if waterway == "river" and way:Holds("name") then
-				way:Layer("waterway",false)
-			else
-				way:Layer("waterway_detail",false)
-			end
-			way:Attribute("class", waterway)
-			SetNameAttributes(way)
-			SetBrunnelAttributes(way)
+		    way:Layer("waterway_detail",false)
 		end
+		way:Attribute("class", waterway)
+		SetNameAttributes(way)
+		SetBrunnelAttributes(way)
+	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	elseif waterway == "dam"       then way:Layer("building",isClosed)
+	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 	end
 
 	-- Set 'building' and associated
@@ -347,9 +343,9 @@ function way_function(way)
 	end
 
 	-- Set 'water'
-	if natural=="water" or natural=="bay" or landuse=="reservoir" then
-		if way:Find("covered")=="yes" then return end
-		local class="lake"; if natural=="bay" then class="ocean" end
+	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
+		if way:Find("covered")=="yes" or not isClosed then return end
+		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
 		way:Layer("water", true)
 		way:Attribute("class",class)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
