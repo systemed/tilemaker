@@ -357,15 +357,8 @@ function way_function(way)
 	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
 		if way:Find("covered")=="yes" or not isClosed then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
-		local area=way:Area()
 		way:Layer("water",true)
-		if     area>ZRES5^2  then way:MinZoom(6)
-		elseif area>ZRES6^2  then way:MinZoom(7)
-		elseif area>ZRES7^2  then way:MinZoom(8)
-		elseif area>ZRES8^2  then way:MinZoom(9)
-		elseif area>ZRES9^2  then way:MinZoom(10)
-		elseif area>ZRES10^2 then way:MinZoom(11)
-		else                      way:MinZoom(12) end
+		SetMinZoomByArea(way)
 		way:Attribute("class",class)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
 		if way:Holds("name") then
@@ -382,6 +375,7 @@ function way_function(way)
 	if l=="" then l=leisure end
 	if landcoverKeys[l] then
 		way:Layer("landcover", true)
+		SetMinZoomByArea(way)
 		way:Attribute("class", landcoverKeys[l])
 		if l=="wetland" then way:Attribute("subclass", way:Find("wetland"))
 		else way:Attribute("subclass", l) end
@@ -463,6 +457,18 @@ function SetBrunnelAttributes(obj)
 	elseif obj:Find("tunnel") == "yes" then obj:Attribute("brunnel", "tunnel")
 	elseif obj:Find("ford")   == "yes" then obj:Attribute("brunnel", "ford")
 	end
+end
+
+-- Set minimum zoom level by area
+function SetMinZoomByArea(way)
+	local area=way:Area()
+	if     area>ZRES5^2  then way:MinZoom(6)
+	elseif area>ZRES6^2  then way:MinZoom(7)
+	elseif area>ZRES7^2  then way:MinZoom(8)
+	elseif area>ZRES8^2  then way:MinZoom(9)
+	elseif area>ZRES9^2  then way:MinZoom(10)
+	elseif area>ZRES10^2 then way:MinZoom(11)
+	else                      way:MinZoom(12) end
 end
 
 -- Calculate POIs (typically rank 1-4 go to 'poi' z12-14, rank 5+ to 'poi_detail' z14)
