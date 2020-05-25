@@ -46,6 +46,7 @@ OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefi
 		.addFunction("Attribute", &OsmLuaProcessing::Attribute)
 		.addFunction("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric)
 		.addFunction("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean)
+		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 	);
 	if (luaState["attribute_function"]) {
 		supportsRemappingShapefiles = true;
@@ -359,6 +360,12 @@ void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) {
 	v.set_bool_value(val);
 	outputs[outputs.size()-1]->addAttribute(key, v);
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 2);
+}
+
+// Set minimum zoom
+void OsmLuaProcessing::MinZoom(const unsigned z) {
+	if (outputs.size()==0) { cerr << "Can't set minimum zoom if no Layer set" << endl; return; }
+	outputs[outputs.size()-1]->setMinZoom(z);
 }
 
 // Record attribute name/type for vector_layers table

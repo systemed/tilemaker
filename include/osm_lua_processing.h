@@ -109,6 +109,7 @@ public:
 	void Attribute(const std::string &key, const std::string &val);
 	void AttributeNumeric(const std::string &key, const float val);
 	void AttributeBoolean(const std::string &key, const bool val);
+	void MinZoom(const unsigned z);
 
 	// ----	vector_layers metadata entry
 

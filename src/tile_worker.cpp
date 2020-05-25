@@ -94,11 +94,12 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 }
 
 void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
-	class SharedData *sharedData, double simplifyLevel, const TileBbox &bbox,
+	class SharedData *sharedData, double simplifyLevel, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
 	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectRef oo = *jt;
+		if (zoom < oo->minZoom) { continue; }
 
 		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
@@ -167,7 +168,7 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 
 		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
-		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, bbox, vtLayer, keyList, valueList);
+		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags

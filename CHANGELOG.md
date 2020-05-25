@@ -1,5 +1,11 @@
 # Changelog
 
+## [unreleased]
+
+### Added
+
+- `obj:MinZoom(z)` to set the minimum zoom at which a feature will be rendered
+
 ## [1.6.0] - 2020-05-22
 
 ### Added

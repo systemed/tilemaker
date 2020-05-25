@@ -67,9 +67,14 @@ OutputObject::OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) 
 	geomType = type;
 	layer = l;
 	objectID = id;
+	minZoom = 0;
 }
 
 OutputObject::~OutputObject() { }
+
+void OutputObject::setMinZoom(unsigned z) {
+	minZoom = z;
+}
 
 void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &value) {
 	attributes[key]=value;

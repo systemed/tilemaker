@@ -44,13 +44,16 @@ public:
 class OutputObject { 
 
 public:
-	OutputGeometryType geomType;						// point, linestring, polygon...
+	OutputGeometryType geomType : 4;					// point, linestring, polygon...
+	unsigned minZoom : 4;
 	uint_least8_t layer;								// what layer is it in?
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
 	std::map <std::string, vector_tile::Tile_Value> attributes;	// attributes
 
 	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id);
 	virtual ~OutputObject();	
+
+	void setMinZoom(unsigned z);
 
 	void addAttribute(const std::string &key, vector_tile::Tile_Value &value);
 

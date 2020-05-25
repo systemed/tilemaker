@@ -358,13 +358,14 @@ function way_function(way)
 		if way:Find("covered")=="yes" or not isClosed then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
 		local area=way:Area()
-		if     area>ZRES5^2  then way:Layer("water_z6",  true)
-        elseif area>ZRES6^2  then way:Layer("water_z7",  true)
-        elseif area>ZRES7^2  then way:Layer("water_z8",  true)
-		elseif area>ZRES8^2  then way:Layer("water_z9",  true)
-		elseif area>ZRES9^2  then way:Layer("water_z10", true)
-		elseif area>ZRES10^2 then way:Layer("water_z11", true)
-		else                      way:Layer("water",     true) end
+		way:Layer("water",true)
+		if     area>ZRES5^2  then way:MinZoom(6)
+		elseif area>ZRES6^2  then way:MinZoom(7)
+		elseif area>ZRES7^2  then way:MinZoom(8)
+		elseif area>ZRES8^2  then way:MinZoom(9)
+		elseif area>ZRES9^2  then way:MinZoom(10)
+		elseif area>ZRES10^2 then way:MinZoom(11)
+		else                      way:MinZoom(12) end
 		way:Attribute("class",class)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
 		if way:Holds("name") then
