@@ -188,7 +188,7 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 	}
 }
 
-int outputProc(uint threadId, class SharedData *sharedData) {
+int outputProc(uint threadId, class SharedData *sharedData, int srcZ, int srcX, int srcY) {
 
 	// Loop through tiles
 	uint tc = 0;
@@ -201,6 +201,13 @@ int outputProc(uint threadId, class SharedData *sharedData) {
 			cout.flush();
 		}
 		if (tc++ % sharedData->threadNum != threadId) continue;
+
+		// If we're constrained to a source tile, check we're within it
+		if (srcZ>-1) {
+			int x = it.GetCoordinates().x / pow(2, zoom-srcZ);
+			int y = it.GetCoordinates().y / pow(2, zoom-srcZ);
+			if (x!=srcX || y!=srcY) continue;
+		}
 
 		// Create tile
 		vector_tile::Tile tile;
