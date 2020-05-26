@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 
 project(tilemaker)
 
+set(CMAKE_CXX_STANDARD 14)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
@@ -33,7 +35,6 @@ if(MSVC)
   add_definitions(-D_USE_MATH_DEFINES)
   set(THREAD_LIB "")
 else()
-  add_definitions(-std=c++11)
   set(THREAD_LIB pthread)
 endif()
 

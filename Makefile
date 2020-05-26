@@ -1,6 +1,6 @@
 LUA_CFLAGS := -I/usr/local/include/lua5.1 -I/usr/include/lua5.1
 LUA_LIBS := -llua5.1
-CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++11 -pthread $(CONFIG)
+CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread $(CONFIG)
 LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lprotobuf -lshp
 INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
 

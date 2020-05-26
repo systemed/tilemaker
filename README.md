@@ -10,7 +10,7 @@ Tilemaker keeps nodes and ways in RAM. If you're processing a country extract or
 
 ## Installing
 
-Tilemaker is written in C++11. The chief dependencies are:
+Tilemaker is written in C++14. The chief dependencies are:
 
 * Google Protocol Buffers
 * Boost (latest version advised, 1.56 minimum: for boost::geometry, boost::program_options, boost::filesystem, boost::variant)
@@ -24,7 +24,7 @@ You can then simply install with:
 
     make
     sudo make install
-	
+
 For detailed installation instructions for your operating system, see INSTALL.md.
 
 ## Out-of-the-box setup
