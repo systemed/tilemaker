@@ -20,6 +20,14 @@ inline bool ends_with(std::string const & value, std::string const & ending) {
 	return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
+inline std::vector<std::string> split_string(std::string &inputStr, char sep) {
+	std::stringstream ss(inputStr);
+	std::string item;
+	std::vector<std::string> res;
+	while (std::getline(ss, item, sep)) { res.push_back(item); }
+	return res;
+}
+
 std::string decompress_string(const std::string& str);
 
 std::string compress_string(const std::string& str,

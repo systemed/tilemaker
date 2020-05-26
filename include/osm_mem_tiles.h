@@ -24,6 +24,8 @@ public:
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 
+	virtual void Clear();
+
 private:
 	TileIndex tileIndex;
 	uint baseZoom;

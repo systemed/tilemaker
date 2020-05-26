@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false;
+	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false, mapsplit = false;
 
 	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -122,12 +122,22 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	// ----	Read bounding box from first .pbf (if there is one)
+	// ----	Read bounding box from first .pbf (if there is one) or mapsplit file
 
 	bool hasClippingBox = false;
 	Box clippingBox;
-	if (inputFiles.size()>0) {
-		double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	MBTiles mapsplitFile;
+	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
+		mapsplit = true;
+		mapsplitFile.openForReading(&inputFiles[0]);
+		mapsplitFile.readBoundingBox(minLon, maxLon, minLat, maxLat);
+		cout << "Bounding box " << minLon << ", " << maxLon << ", " << minLat << ", " << maxLat << endl;
+		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
+		hasClippingBox = true;
+
+	} else if (inputFiles.size()>0) {
 		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
 		if(hasClippingBox) {
@@ -175,7 +185,7 @@ int main(int argc, char* argv[]) {
 				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 				exit(EXIT_FAILURE);
 			}
-			cout << "Reading " << layer.name << endl;
+			cout << "Reading .shp " << layer.name << endl;
 			readShapefile(clippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
@@ -192,13 +202,16 @@ int main(int argc, char* argv[]) {
 	
 	class PbfReader pbfReader;
 	pbfReader.output = &osmLuaProcessing;
-	for (auto inputFile : inputFiles) {
-		cout << "Reading " << inputFile << endl;
-		int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
-		if (ret != 0) return ret;
+	if (!mapsplit) {
+		for (auto inputFile : inputFiles) {
+			cout << "Reading .pbf " << inputFile << endl;
+			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+			if (ret != 0) return ret;
+		}
 	}
 
 	// ----	Initialise SharedData
+
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
 	class TileData tileData(sources);
 
@@ -212,7 +225,7 @@ int main(int argc, char* argv[]) {
 	if (sharedData.sqlite) {
 		ostringstream bounds;
 		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
-		sharedData.mbtiles.open(&sharedData.outputFile);
+		sharedData.mbtiles.openForWriting(&sharedData.outputFile);
 		sharedData.mbtiles.writeMetadata("name",sharedData.config.projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
 		sharedData.mbtiles.writeMetadata("version",sharedData.config.projectVersion);
@@ -224,25 +237,51 @@ int main(int argc, char* argv[]) {
 		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
 	}
 
-	// ----	Write out each tile
+	// ----	Write out data
 
-	// Loop through zoom levels
-	for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+	// If mapsplit, read list of tiles available
+	unsigned runs=1;
+	vector<tuple<int,int,int>> tileList;
+	if (mapsplit) {
+		mapsplitFile.readTileList(tileList);
+		runs = tileList.size();
+	}
 
-		tileData.SetZoom(zoom);
-		sharedData.zoom = zoom;
+	for (unsigned run=0; run<runs; run++) {
+		// Read mapsplit tile and parse, if applicable
+		int srcZ = -1, srcX = -1, srcY = -1, tmsY = -1;
+		if (mapsplit) {
+			osmMemTiles.Clear();
+			tie(srcZ,srcX,tmsY) = tileList.back();
+			srcY = pow(2,srcZ) - tmsY - 1; // TMS
+			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
+			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
+			// Write to a temp file and read back in - can we do this better via a stringstream or similar?
+			ofstream tempfile;
+			tempfile.open("/tmp/temp.pbf");
+			copy(pbf.cbegin(), pbf.cend(), ostreambuf_iterator<char>(tempfile));
+			tempfile.close();
+			pbfReader.ReadPbfFile("/tmp/temp.pbf", nodeKeys);
+			tileList.pop_back();
+		}
 
-		if(threadNum == 1) {
-			// Single thread (is easier to debug)
-			outputProc(0, &sharedData);
-		} else {
+		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 
-			// Multi thread processing loop
-			vector<thread> worker;
-			for (uint threadId = 0; threadId < threadNum; threadId++)
-				worker.emplace_back(outputProc, threadId, &sharedData);
-			for (auto &t: worker) t.join();
+			tileData.SetZoom(zoom);
+			sharedData.zoom = zoom;
 
+			if(threadNum == 1) {
+				// Single thread (is easier to debug)
+				outputProc(0, &sharedData, srcZ,srcX,srcY);
+			} else {
+
+				// Multi thread processing loop
+				vector<thread> worker;
+				for (uint threadId = 0; threadId < threadNum; threadId++)
+					worker.emplace_back(outputProc, threadId, &sharedData, srcZ,srcX,srcY);
+				for (auto &t: worker) t.join();
+
+			}
 		}
 	}
 
@@ -266,7 +305,7 @@ int main(int argc, char* argv[]) {
 				}
 			}
 		}
-		sharedData.mbtiles.close();
+		sharedData.mbtiles.closeForWriting();
 	}
 	google::protobuf::ShutdownProtobufLibrary();
 
