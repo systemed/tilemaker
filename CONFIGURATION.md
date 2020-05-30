@@ -1,5 +1,4 @@
-Configuring Tilemaker
-=====================
+## Configuring Tilemaker
 
 Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers.
 
@@ -9,15 +8,13 @@ In Tilemaker, you achieve this by writing a short script in the Lua programming 
 
 In addition, you supply Tilemaker with a JSON file which specifies certain global settings for your tileset.
 
-A note on zoom levels
----------------------
+### A note on zoom levels
 
 Because vector tiles are so efficiently encoded, you generally don't need to create tiles above (say) zoom level 14. Instead, your renderer will use the data in the z14 tiles to generate z15, z16 etc. (This is called 'overzooming'.)
 
 So when you set a maximum zoom level of 14 in Tilemaker, this doesn't mean you're restricted to displaying maps at z14. It just means that Tilemaker will create z14 tiles, and it's your renderer's job to use these tiles to draw the most detailed maps.
 
-JSON configuration
-------------------
+### JSON configuration
 
 The JSON config file sets out the layers you'll be using, and which zoom levels they apply to. For example, you might want to include your roads layer in your z12-z14 tiles, but your buildings at z14 only.
 
@@ -100,8 +97,7 @@ For example:
 		}
 	}
 	
-Lua processing
---------------
+### Lua processing
 
 Your Lua file needs to supply 5 things:
 
@@ -146,15 +142,13 @@ Take a look at the supplied process.lua for a full example. You can specify anot
 
 If your Lua file causes an error due to mistaken syntax, you can test it at the command line with `luac -p filename`. Three frequent Lua gotchas: tables (arrays) start at 1, not 0; the "not equal" operator is `~=` (that's the other way round from Perl/Ruby's regex operator); and `if` statements always need a `then`, even when written over several lines.
 
-Relations
----------
+### Relations
 
 Tilemaker handles multipolygon relations natively. The combined geometries are processed as ways (i.e. by `way_function`), so if your function puts buildings in a 'buildings' layer, Tilemaker will cope with this whether the building is mapped as a simple way or a multipolygon. The only difference is that they're given an artificial ID.
 
 Multipolygons are expected to have tags on the relation, not the outer way. The vector tile spec is [slightly vague](https://github.com/mapbox/vector-tile-spec/issues/30) on multipolygon encoding. Tilemaker will enforce correct winding order, but in the case of a multipolygon with multiple outer ways, it assigns all inner ways to the first outer way.
 
-Shapefiles
-----------
+### Shapefiles
 
 Tilemaker chiefly works with OpenStreetMap .osm.pbf data, but you can also bring in shapefiles. These are useful for rarely-changing data such as coastlines and built-up area outlines.
 
@@ -171,7 +165,7 @@ Shapefiles are imported directly in your layer config like this:
       "source_columns": ["SAP_DESCRI"]
     }
 
-You can import attribute columns from a shapefile using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. Lua transformations are not available for shapefiles: it's assumed that you have processed your shapefiles before running Tilemaker.
+You can import attribute columns from a shapefile using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. Very limited Lua transformations are available for shapefiles: you can supply an `attribute_function` which takes a Lua table (hash) of shapefile attributes, and returns a table (hash) of the vector tile attributes to set.
 
 Shapefiles **must** be in WGS84 projection, i.e. pure latitude/longitude. (Use ogr2ogr to reproject them if your source material is in a different projection.) They will be clipped to the bounds of the first .pbf that you import, unless you specify otherwise with a `bounding_box` setting in your JSON file.
 
@@ -199,4 +193,12 @@ To enable these functions, set `index` to true in your shapefile layer definitio
 Note these significant provisos:
 
 * Way queries are performed on the start and end points of ways, not the full way geometry. So if your way starts and ends outside a polygon, `Intersects` will return false, even if the midpoints are within the polygon. This may be changed in a future version.
-* Spatial queries do not work where the OSM object is a multipolygon, and will return false/empty.
+* Spatial queries do not work where the OSM object is a multipolygon, and will return false/empty. This may be changed in a future version.
+
+### Using pre-split data
+
+Tilemaker is able to read pre-split source data, where the original .osm.pbf has already been split into tiles (but not converted any further). By reducing the amount of data tilemaker has to process at any one time, this can greatly reduce memory requirements.
+
+To split an .osm.pbf, use [mapsplit](https://github.com/simonpoole/mapsplit). This will output an .msf file, which is an .mbtiles (SQLite) database containing the original data in tiles. We would recommend that you split the data at a low zoom level, such as 6; tilemaker will not be able to generate vector tiles at a lower zoom level than the one you choose for your .msf file.
+
+You can then run tilemaker exactly as normal, with the `--input` parameter set to your .msf file. Source tiles will be processed one by one.
