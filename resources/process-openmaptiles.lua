@@ -237,6 +237,7 @@ function way_function(way)
 	local isClosed = way:IsClosed()
 	local housenumber = way:Find("addr:housenumber")
 	local write_name = false
+	local construction = way:Find("construction")
 
 	-- Miscellaneous preprocessing
 	if way:Find("disused") == "yes" then return end
