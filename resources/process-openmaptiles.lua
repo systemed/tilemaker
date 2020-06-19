@@ -91,28 +91,29 @@ function node_function(node)
 	end
 
 	-- Write 'place'
+	-- note that OpenMapTiles has a rank for countries (1-3), states (1-6) and cities (1-10+);
+	--   we could potentially approximate it for cities based on the population tag
 	local place = node:Find("place")
 	if place ~= "" then
-		local rank = 5
+		local rank = nil
+		local mz = 13
 
-		if     place == "continent"     then rank = 1
-		elseif place == "country"       then rank = 1
-		elseif place == "state"         then rank = 1
-		elseif place == "city"          then rank = 2
-		elseif place == "town"          then rank = 3
-		elseif place == "village"       then rank = 3
-		elseif place == "suburb"        then rank = 3
-		elseif place == "neighbourhood" then rank = 4
-		elseif place == "locality"      then rank = 4
-		elseif place == "hamlet"        then rank = 4 end
-
-		if rank <= 4 then
-			node:Layer("place", false)
-		else
-			node:Layer("place_detail", false)
+		if     place == "continent"     then mz=2
+		elseif place == "country"       then mz=3; rank=1
+		elseif place == "state"         then mz=4; rank=2
+		elseif place == "city"          then mz=5; rank=3
+		elseif place == "town"          then mz=7
+		elseif place == "village"       then mz=9
+		elseif place == "suburb"        then mz=11
+		elseif place == "hamlet"        then mz=11
+		elseif place == "neighbourhood" then mz=12
+		elseif place == "locality"      then mz=12
 		end
-		node:AttributeNumeric("rank", rank)
+
+		node:Layer("place", false)
 		node:Attribute("class", place)
+		node:MinZoom(mz)
+		if rank then node:AttributeNumeric("rank", rank) end
 		SetNameAttributes(node)
 		return
 	end

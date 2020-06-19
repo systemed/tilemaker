@@ -1,7 +1,6 @@
 {
 	"layers": {
 		"place":            { "minzoom": 4,  "maxzoom": 14 },
-		"place_detail":     { "minzoom": 14, "maxzoom": 14, "write_to": "place"},
 
 		"poi":              { "minzoom": 12, "maxzoom": 14 },
 		"poi_detail":       { "minzoom": 14, "maxzoom": 14, "write_to": "poi"},
