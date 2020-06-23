@@ -348,6 +348,7 @@ function way_function(way)
 		else
 		    way:Layer("waterway_detail",false)
 		end
+		if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent", 1) else way:AttributeNumeric("intermittent", 0) end
 		way:Attribute("class", waterway)
 		SetNameAttributes(way)
 		SetBrunnelAttributes(way)
