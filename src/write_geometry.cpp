@@ -130,7 +130,7 @@ bool WriteGeometryVisitor::writeDeltaString(XYString *scaledString, vector_tile:
 		lastX = x; lastY = y;
 		len++;
 	}
-	if (closePath && len<3) return false;		// reject ABA polygons
+	if (closePath && len<2) return false;		// reject ABA polygons
 	if (len==0) return false;
 	geometry[3] = (len << 3) + 2;				// lineTo plus repeat
 	if (closePath) {
