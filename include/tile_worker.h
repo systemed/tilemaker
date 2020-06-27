@@ -5,6 +5,6 @@
 #include "shared_data.h"
 
 /// Start function for worker threads
-int outputProc(uint threadId, class SharedData *sharedData);
+int outputProc(uint threadId, class SharedData *sharedData, int srcZ, int srcX, int srcY);
 
 #endif //_TILE_WORKER_H
