@@ -254,6 +254,7 @@ int main(int argc, char* argv[]) {
 			osmMemTiles.Clear();
 			tie(srcZ,srcX,tmsY) = tileList.back();
 			srcY = pow(2,srcZ) - tmsY - 1; // TMS
+			if (srcZ > config.baseZoom) { cerr << "Mapsplit tiles (zoom " << srcZ << ") must not be greater than basezoom " << config.baseZoom << endl; return 0; }
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 			// Write to a temp file and read back in - can we do this better via a stringstream or similar?
