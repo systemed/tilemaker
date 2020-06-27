@@ -3,8 +3,21 @@
 ## [unreleased]
 
 ### Added
-
+- Mapsplit (.msf) source data support
 - `obj:MinZoom(z)` to set the minimum zoom at which a feature will be rendered
+- Set minimum zooms for placenames, waterways, and landcover in OpenMapTiles processing (@typebrook, @systemed)
+- Render roads under construction on OpenMapTiles processing (@meromisi, @Beck-berry)
+
+### Changed
+- Remove Lua scale functions now that we return metres
+- Write OpenMapTiles placenames depending on zoom
+- Use boost::geometry::intersection for clipping (faster than clipper)
+- Consistently use 1TBS in source
+- Only output validity errors in verbose mode
+
+### Fixed
+- Fix waterway handling in OpenMapTiles processing (@leonardehrenfried)
+- Don't filter out ABCA areas (@rdsa)
 
 ## [1.6.0] - 2020-05-22
 

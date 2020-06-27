@@ -202,3 +202,5 @@ Tilemaker is able to read pre-split source data, where the original .osm.pbf has
 To split an .osm.pbf, use [mapsplit](https://github.com/simonpoole/mapsplit). This will output an .msf file, which is an .mbtiles (SQLite) database containing the original data in tiles. We would recommend that you split the data at a low zoom level, such as 6; tilemaker will not be able to generate vector tiles at a lower zoom level than the one you choose for your .msf file.
 
 You can then run tilemaker exactly as normal, with the `--input` parameter set to your .msf file. Source tiles will be processed one by one.
+
+Note that there is currently no facility to read split shapefiles. 
