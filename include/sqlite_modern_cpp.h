@@ -48,7 +48,7 @@ namespace sqlite {
 	class database_binder {
 	private:
 		sqlite3 * _db;
-		std::u16string _sql;
+		std::string _sql;
 		sqlite3_stmt* _stmt;
 		int _inx;
 
@@ -80,19 +80,17 @@ namespace sqlite {
 			_stmt = nullptr;
 		}
 		void _prepare() {
-			if (sqlite3_prepare16_v2(_db, _sql.data(), -1, &_stmt, nullptr) != SQLITE_OK)
+			if (sqlite3_prepare_v2(_db, _sql.data(), -1, &_stmt, nullptr) != SQLITE_OK)
 				throw std::runtime_error(sqlite3_errmsg(_db));
 		}
 	protected:
-		database_binder(sqlite3 * db, std::u16string const & sql) :
+		database_binder(sqlite3 * db, std::string const & sql) :
 			_db(db),
 			_sql(sql),
 			_stmt(nullptr),
 			_inx(1) {
 			_prepare();
 		}
-
-		database_binder(sqlite3 * db, std::string const & sql) : database_binder(db, std::u16string(sql.begin(), sql.end())) { }
 
 	public:
 		friend class database;
@@ -145,12 +143,6 @@ namespace sqlite {
 			++_inx;
 			return *this;
 		}
-		database_binder& operator <<(std::u16string const& txt) {
-			if (sqlite3_bind_text16(_stmt, _inx, txt.data(), -1, SQLITE_TRANSIENT) != SQLITE_OK)
-				throw std::runtime_error(sqlite3_errmsg(_db));
-			++_inx;
-			return *this;
-		}
 #pragma endregion
 
 #pragma region get_col_from_db
@@ -177,13 +169,6 @@ namespace sqlite {
 				v = std::vector<char>(p, p+size);
 			}
 		}
-		void get_col_from_db(int inx, std::u16string& w) {
-			if (sqlite3_column_type(_stmt, inx) == SQLITE_NULL) w = std::u16string();
-			else {
-				sqlite3_column_bytes16(_stmt, inx);
-				w = std::u16string((char16_t *)sqlite3_column_text16(_stmt, inx));
-			}
-		}
 		void get_col_from_db(int inx, double& d) {
 			if (sqlite3_column_type(_stmt, inx) == SQLITE_NULL) d = 0;
 			else d = sqlite3_column_double(_stmt, inx);
@@ -202,11 +187,6 @@ namespace sqlite {
 			});
 		}
 		void operator>>(std::string& val) {
-			_extract_single_value([&] {
-				get_col_from_db(0, val);
-			});
-		}
-		void operator>>(std::u16string& val) {
 			_extract_single_value([&] {
 				get_col_from_db(0, val);
 			});
@@ -256,16 +236,14 @@ namespace sqlite {
 		database() {};
 		
 		void init(std::string const & db_name) {
-			std::u16string name(db_name.begin(), db_name.end());
 			_db = nullptr;
 			_ownes_db = false;
-			_connected = sqlite3_open16(name.data(), &_db) == SQLITE_OK;
+			_connected = sqlite3_open(db_name.data(), &_db) == SQLITE_OK;
 		}
 		
-		database(std::u16string const & db_name) : _db(nullptr), _connected(false), _ownes_db(true) {
-			_connected = sqlite3_open16(db_name.data(), &_db) == SQLITE_OK;
+		database(std::string const & db_name) : _db(nullptr), _connected(false), _ownes_db(true) {
+			_connected = sqlite3_open(db_name.data(), &_db) == SQLITE_OK;
 		}
-		database(std::string const & db_name) : database(std::u16string(db_name.begin(), db_name.end())) { }
 
 		database(sqlite3* db) {
 			_db = db;
@@ -283,18 +261,12 @@ namespace sqlite {
 		database_binder operator<<(std::string const& sql) const {
 			return database_binder(_db, sql);
 		}
-		database_binder operator<<(std::u16string const& sql) const {
-			return database_binder(_db, sql);
-		}
 
 		operator bool() const {
 			return _connected;
 		}
 		operator std::string() {
 			return sqlite3_errmsg(_db);
-		}
-		operator std::u16string() {
-			return (char16_t*)sqlite3_errmsg16(_db);
 		}
 	};
 
