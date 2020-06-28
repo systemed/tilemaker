@@ -1,6 +1,7 @@
 #include "attribute_store.h"
 
 #include <iterator>
+#include <algorithm>
 
 // Get the index for a key/value pair, inserting it into the dictionary if it's not already present
 unsigned AttributeStore::indexForPair(const std::string &k, const vector_tile::Tile_Value &v, bool isShapefile) {
