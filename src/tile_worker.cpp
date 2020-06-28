@@ -33,7 +33,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 
 		while (jt+1 != ooSameLayerEnd &&
 				ooNext->geomType == gTyp &&
-				ooNext->attributes == oo->attributes) {
+				ooNext->attributeList == oo->attributeList) {
 			jt++;
 			oo = *jt;
 			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
@@ -72,7 +72,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 
 		while (jt+1 != ooSameLayerEnd &&
 				ooNext->geomType == gTyp &&
-				ooNext->attributes == oo->attributes) {
+				ooNext->attributeList == oo->attributeList) {
 			jt++;
 			oo = *jt;
 			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
@@ -110,7 +110,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, sharedData->attributeStore);
 			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 		} else {
 			Geometry g;
@@ -131,7 +131,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, sharedData->attributeStore);
 			if (sharedData->config.includeID) { featurePtr->set_id(oo->objectID); }
 
 		}
@@ -168,7 +168,8 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 
 		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
-		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
+		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+			simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags

@@ -8,6 +8,7 @@
 #include <memory>
 #include "geomtypes.h"
 #include "coordinates.h"
+#include "attribute_store.h"
 
 #include "clipper.hpp"
 
@@ -44,20 +45,19 @@ public:
 class OutputObject { 
 
 public:
-	OutputGeometryType geomType : 4;					// point, linestring, polygon...
+	OutputGeometryType geomType : 3;					// point, linestring, polygon...
+	bool fromShapefile;									// from shapefile or pbf?
 	unsigned minZoom : 4;
 	uint_least8_t layer;								// what layer is it in?
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	std::map <std::string, vector_tile::Tile_Value> attributes;	// attributes
+	std::vector<unsigned> attributeList;				// ids within attribute_store
 
-	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id);
+	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id);
 	virtual ~OutputObject();	
 
 	void setMinZoom(unsigned z);
 
-	void addAttribute(const std::string &key, vector_tile::Tile_Value &value);
-
-	bool hasAttribute(const std::string &key) const;
+	void addAttribute(unsigned attrIndex);
 
 	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	 * Returns a boost::variant -
@@ -69,7 +69,9 @@ public:
 	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const = 0;
 	
 	//\brief Write attribute key/value pairs (dictionary-encoded)
-	void writeAttributes(std::vector<std::string> *keyList, std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
+	void writeAttributes(std::vector<std::string> *keyList, 
+		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr,
+		const AttributeStore &attributeStore) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary

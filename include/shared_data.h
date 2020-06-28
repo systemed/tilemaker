@@ -44,7 +44,7 @@ public:
 			const std::vector<std::string> &sourceColumns,
 			bool allSourceColumns,
 			bool indexed,
-			const std::string &indexName,	
+			const std::string &indexName,
 			const std::string &writeTo);
 
 	std::string serialiseToJSON();
@@ -85,9 +85,10 @@ public:
 	std::string outputFile;
 
 	const class Config &config;
+	const class AttributeStore &attributeStore;
 
 	SharedData(const class Config &configIn, const class LayerDefinition &layers,
-		class TileData &tileData);
+		class TileData &tileData, const class AttributeStore &attributeStore);
 	virtual ~SharedData();
 };
 

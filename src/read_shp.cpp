@@ -61,10 +61,10 @@ void addShapefileAttributes(
 				v.set_string_value(static_cast<std::string const&>(val));
 				layers.layers[oo->layer].attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
-				v.set_int_value(val);
+				v.set_float_value(val);
 				layers.layers[oo->layer].attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				v.set_double_value(val);
+				v.set_float_value(val);
 				layers.layers[oo->layer].attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
 				v.set_bool_value(val);
@@ -73,7 +73,8 @@ void addShapefileAttributes(
 				// don't even think about trying to write nested tables, thank you
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
-			oo->addAttribute(key, v);
+			unsigned attrIndex = osmLuaProcessing.getAttributeStore().indexForPair(key,v,true);
+			oo->addAttribute(attrIndex);
 		}
 
 	} else {
@@ -92,7 +93,8 @@ void addShapefileAttributes(
 				         layers.layers[oo->layer].attributeMap[key] = 0;
 				         break;
 			}
-			oo->addAttribute(key, v);
+			unsigned attrIndex = osmLuaProcessing.getAttributeStore().indexForPair(key,v,true);
+			oo->addAttribute(attrIndex);
 		}
 	}
 }

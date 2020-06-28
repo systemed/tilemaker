@@ -13,6 +13,7 @@
 #include "read_pbf.h"
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
+#include "attribute_store.h"
 
 // Lua
 extern "C" {
@@ -37,7 +38,8 @@ public:
 	OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
 		const class ShpMemTiles &shpMemTiles, 
-		class OsmMemTiles &osmMemTiles);
+		class OsmMemTiles &osmMemTiles,
+		AttributeStore &attributeStore);
 	virtual ~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
@@ -125,6 +127,8 @@ public:
 
 	const MultiPolygon &multiPolygonCached();
 
+	inline AttributeStore &getAttributeStore() { return attributeStore; }
+
 private:
 	/// Internal: clear current cached state
 	inline void reset() {
@@ -138,13 +142,14 @@ private:
 	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
 		lon1=a; latp1=b; lon2=c; latp2=d;
 	}
-
-	OSMStore osmStore;									// global OSM store
+	
+	OSMStore osmStore;						// global OSM store
 
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
+	AttributeStore &attributeStore;			// key/value store
 
 	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
 	int64_t originalOsmID;					///< Original OSM object ID

@@ -1,8 +1,5 @@
 /*
 	OutputObject - any object (node, linestring, polygon) to be outputted to tiles
-
-	Possible future improvements to save memory:
-	- use a global dictionary for attribute key/values
 */
 
 #include "output_object.h"
@@ -63,8 +60,9 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 
 // **********************************************************
 
-OutputObject::OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id) {
+OutputObject::OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id) {
 	geomType = type;
+	fromShapefile = shp;
 	layer = l;
 	objectID = id;
 	minZoom = 0;
@@ -76,21 +74,22 @@ void OutputObject::setMinZoom(unsigned z) {
 	minZoom = z;
 }
 
-void OutputObject::addAttribute(const string &key, vector_tile::Tile_Value &value) {
-	attributes[key]=value;
-}
-
-bool OutputObject::hasAttribute(const string &key) const {
-	auto it = attributes.find(key);
-	return it != attributes.end();
+void OutputObject::addAttribute(unsigned attrIndex) {
+	attributeList.emplace_back(attrIndex);
 }
 
 // Write attribute key/value pairs (dictionary-encoded)
-void OutputObject::writeAttributes(vector<string> *keyList, vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const {
-	for (auto it = attributes.begin(); it != attributes.end(); ++it) {
+void OutputObject::writeAttributes(
+	vector<string> *keyList, 
+	vector<vector_tile::Tile_Value> *valueList, 
+	vector_tile::Tile_Feature *featurePtr,
+	const AttributeStore &attributeStore) const {
+
+	for (auto it = attributeList.begin(); it != attributeList.end(); ++it) {
+		AttributePair ap = attributeStore.pairAtIndex(*it, fromShapefile);
 
 		// Look for key
-		string key = it->first;
+		string &key = ap.key;
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -102,7 +101,7 @@ void OutputObject::writeAttributes(vector<string> *keyList, vector<vector_tile::
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value value = it->second;
+		vector_tile::Tile_Value &value = ap.value;
 		int subscript = findValue(valueList, &value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
@@ -133,7 +132,7 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
 		x->layer == y->layer &&
 		x->geomType == y->geomType &&
-		x->attributes == y->attributes &&
+		x->attributeList == y->attributeList &&
 		x->objectID == y->objectID;
 }
 
@@ -146,8 +145,8 @@ bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
 	if (x->layer > y->layer) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
-	if (x->attributes < y->attributes) return true;
-	if (x->attributes > y->attributes) return false;
+	if (x->attributeList < y->attributeList) return true;
+	if (x->attributeList > y->attributeList) return false;
 	if (x->objectID < y->objectID) return true;
 	return false;
 }
@@ -169,7 +168,7 @@ namespace vector_tile {
 
 OutputObjectOsmStore::OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
 	Geometry geom):
-	OutputObject(type, l, id),
+	OutputObject(type, false, l, id),
 	geom(geom) { }
 
 OutputObjectOsmStore::~OutputObjectOsmStore() { }
@@ -193,7 +192,7 @@ LatpLon OutputObjectOsmStore::buildNodeGeometry(const TileBbox &bbox) const {
 
 OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
 	const std::vector<Geometry> &cachedGeometries):
-	OutputObject(type, l, id),
+	OutputObject(type, true, l, id),
 	cachedGeometries(cachedGeometries) { }
 
 OutputObjectCached::~OutputObjectCached() { }

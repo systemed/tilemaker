@@ -7,10 +7,11 @@ using namespace std;
 using namespace rapidjson;
 
 SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
-	class TileData &tileData):
+	class TileData &tileData, const class AttributeStore &attributeStore):
 	tileData(tileData),
 	layers(layers),
-	config(configIn) {
+	config(configIn),
+	attributeStore(attributeStore) {
 
 	sqlite=false;
 }
@@ -26,7 +27,7 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		const std::vector<std::string> &sourceColumns,
 		bool allSourceColumns,
 		bool indexed,
-		const std::string &indexName,		
+		const std::string &indexName,
 		const std::string &writeTo)  {
 
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 

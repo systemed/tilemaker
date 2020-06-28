@@ -34,6 +34,7 @@ typedef unsigned uint;
 #include "helpers.h"
 #include "coordinates.h"
 
+#include "attribute_store.h"
 #include "output_object.h"
 #include "osm_lua_processing.h"
 #include "mbtiles.h"
@@ -169,9 +170,9 @@ int main(int argc, char* argv[]) {
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
+	AttributeStore attributeStore;
 	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
-		shpMemTiles, 
-		osmMemTiles);
+		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files
 
@@ -215,7 +216,10 @@ int main(int argc, char* argv[]) {
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
 	class TileData tileData(sources);
 
-	class SharedData sharedData(config, layers, tileData);
+	if (!mapsplit) attributeStore.sortOsmAttributes();
+	attributeStore.sortShpAttributes();
+
+	class SharedData sharedData(config, layers, tileData, attributeStore);
 	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
@@ -252,6 +256,7 @@ int main(int argc, char* argv[]) {
 		int srcZ = -1, srcX = -1, srcY = -1, tmsY = -1;
 		if (mapsplit) {
 			osmMemTiles.Clear();
+			attributeStore.clearOsmAttributes();
 			tie(srcZ,srcX,tmsY) = tileList.back();
 			srcY = pow(2,srcZ) - tmsY - 1; // TMS
 			if (srcZ > config.baseZoom) {
@@ -269,6 +274,7 @@ int main(int argc, char* argv[]) {
 			tempfile.close();
 			pbfReader.ReadPbfFile("/tmp/temp.pbf", nodeKeys);
 			tileList.pop_back();
+			attributeStore.sortOsmAttributes();
 		}
 
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {

@@ -20,9 +20,11 @@ int lua_error_handler(int errCode, const char *errMessage)
 OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
 	const class ShpMemTiles &shpMemTiles, 
-	class OsmMemTiles &osmMemTiles):
+	class OsmMemTiles &osmMemTiles,
+	AttributeStore &attributeStore):
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
+	attributeStore(attributeStore),
 	config(configIn),
 	layers(layers) {
 
@@ -342,7 +344,8 @@ void OsmLuaProcessing::Attribute(const string &key, const string &val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs[outputs.size()-1]->addAttribute(key, v);
+	unsigned attrIndex = attributeStore.indexForPair(key,v,false);
+	outputs[outputs.size()-1]->addAttribute(attrIndex);
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 0);
 }
 
@@ -350,7 +353,8 @@ void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs[outputs.size()-1]->addAttribute(key, v);
+	unsigned attrIndex = attributeStore.indexForPair(key,v,false);
+	outputs[outputs.size()-1]->addAttribute(attrIndex);
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 1);
 }
 
@@ -358,7 +362,8 @@ void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs[outputs.size()-1]->addAttribute(key, v);
+	unsigned attrIndex = attributeStore.indexForPair(key,v,false);
+	outputs[outputs.size()-1]->addAttribute(attrIndex);
 	setVectorLayerMetadata(outputs[outputs.size()-1]->layer, key, 2);
 }
 
