@@ -3,6 +3,7 @@
 #define _ATTRIBUTE_STORE_H
 
 #include "vector_tile.pb.h"
+#include <unordered_set>
 
 /*	AttributePair
 	a key/value combination for an OutputObject */
