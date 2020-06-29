@@ -46,6 +46,7 @@ Geometry ClipGeometryVisitor::operator()(const MultiLinestring &mls) const {
 Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	Polygon clippingPolygon;
 	geom::convert(clippingBox,clippingPolygon);
+	if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
 	if (geom::within(mp, clippingPolygon)) { return mp; }
 
 	MultiPolygon out;

@@ -229,6 +229,7 @@ void readShapefile(const Box &clippingBox,
 			}
 			// All parts read. Add the last polygon.
 			multi.push_back(poly);
+			geom::remove_spikes(multi);
 
 			string reason;
 #if BOOST_VERSION >= 105800
