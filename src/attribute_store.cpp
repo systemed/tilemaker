@@ -1,11 +1,14 @@
 #include "attribute_store.h"
 
+#include <iterator>
+#include <algorithm>
+
 // Get the index for a key/value pair, inserting it into the dictionary if it's not already present
 unsigned AttributeStore::indexForPair(const std::string &k, const vector_tile::Tile_Value &v, bool isShapefile) {
 
 	AttributePair ap(0,k,v);
  	std::unordered_set<AttributePair> &attributes = isShapefile ? shpAttributes : osmAttributes;
-	
+
 	auto it = attributes.find(ap);
 	if (it==attributes.end()) {
 		ap.index = isShapefile ? shpAttributeCount : osmAttributeCount;
@@ -21,8 +24,8 @@ unsigned AttributeStore::indexForPair(const std::string &k, const vector_tile::T
 void AttributeStore::sortOsmAttributes() {
 	sortedOsmAttributes.insert(
 		sortedOsmAttributes.end(),
-		make_move_iterator(osmAttributes.begin()),
-		make_move_iterator(osmAttributes.end())
+		std::make_move_iterator(osmAttributes.begin()),
+		std::make_move_iterator(osmAttributes.end())
 	);
 	osmAttributes = std::unordered_set<AttributePair>(); // clear
 	std::sort(sortedOsmAttributes.begin(), sortedOsmAttributes.end(),
@@ -32,8 +35,8 @@ void AttributeStore::sortOsmAttributes() {
 void AttributeStore::sortShpAttributes() {
 	sortedShpAttributes.insert(
 		sortedShpAttributes.end(),
-		make_move_iterator(shpAttributes.begin()),
-		make_move_iterator(shpAttributes.end())
+		std::make_move_iterator(shpAttributes.begin()),
+		std::make_move_iterator(shpAttributes.end())
 	);
 	shpAttributes = std::unordered_set<AttributePair>(); // clear
 	std::sort(sortedShpAttributes.begin(), sortedShpAttributes.end(),
