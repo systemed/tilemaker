@@ -136,7 +136,7 @@ function node_function(node)
 	if natural == "peak" then
 		node:Layer("mountain_peak", false)
 		SetEleAttributes(node)
-		node:AttributeNumeric("rank", 5)
+		node:AttributeNumeric("rank", 1)
 		SetNameAttributes(node)
 		return
 	end
