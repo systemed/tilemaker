@@ -9,8 +9,32 @@ env:
   AREA: liechtenstein
 
 jobs:
-  generate-tiles:
+  build:
+    name: Compile, install and build mbtiles
     runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-program-options-dev libboost-filesystem-dev libboost-system-dev
+
+    - name: Build and install
+      run: |
+        make -j 2
+        sudo make install
+
+    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+      run: |
+        curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
+        tilemaker ${AREA}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${AREA}.mbtiles --verbose
+
+  Github-Action:
+    name: Generate mbtiles with Github Action
+    runs-on: ubuntu-latest
+
     steps:
     - name: Check out repository
       uses: actions/checkout@v2
