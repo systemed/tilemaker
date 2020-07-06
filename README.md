@@ -31,7 +31,7 @@ For detailed installation instructions for your operating system, see INSTALL.md
 
 Tilemaker comes with configuration files compatible with the popular [OpenMapTiles](https://openmaptiles.org) schema, and a demonstration map server. You'll run tilemaker to make vector tiles from your `.osm.pbf` source data. To create the tiles:
 
-    tilemaker tilemaker --input /path/to/your/input.osm.pbf \
+    tilemaker --input /path/to/your/input.osm.pbf \
         --output /path/to/your/output.mbtiles \
         --config resources/config-openmaptiles.json \
         --process resources/process-openmaptiles.lua
