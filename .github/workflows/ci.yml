@@ -5,9 +5,11 @@ on:
   pull_request:
     branches: [ master ]
 
+env:
+  AREA: liechtenstein
+
 jobs:
   build:
-
     name: Compile, install and build mbtiles
     runs-on: ubuntu-latest
 
@@ -26,5 +28,22 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        curl http://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf -o liechtenstein.osm.pbf
-        tilemaker liechtenstein.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=liechtenstein.mbtiles --verbose
+        curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
+        tilemaker ${AREA}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${AREA}.mbtiles --verbose
+
+  Github-Action:
+    name: Generate mbtiles with Github Action
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: Download PBF file
+      run: curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
+
+    - name: Build openmaptiles-compatible mbtiles files of given area
+      uses: ./
+      with:
+        input: ${{ env.AREA }}.osm.pbf 
+        output: ${{ env.AREA }}.mbtiles

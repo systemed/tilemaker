@@ -70,6 +70,27 @@ When running, you may see "couldn't find constituent way" messages. This happens
 
 See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
 
+## Github Action
+You can integrate tilemaker as Github Action into your [Github Workflow](https://help.github.com/en/actions).  
+Here is the example:
+```yaml
+- uses: systemed/tilemaker@master
+  with:
+    # Required, same to --input
+    input: /path/to/osm.pbf
+    # Required, same to --output. Could be a directory or a .mbtiles files
+    output: /path/to/output
+    # Optional, same to --config
+    # If not being set, default to resources/config-openmaptiles.config
+    config: /path/to/config
+    # Optional, same to --process
+    # If not being set, default to resources/process-openmaptiles.lua
+    process: /path/to/lua
+    # Optional, other arguments
+    # If not being set, default to '--verbose'
+    extra: --threads 0
+```
+
 ## Contributing
 
 Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or http://irc.osm.org, channel #osm-dev) and http://help.osm.org.
