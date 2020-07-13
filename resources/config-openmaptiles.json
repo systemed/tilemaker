@@ -22,8 +22,8 @@
 
 		"water":             { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_length": 1, "simplify_ratio": 2},
 		"ocean":             { "minzoom": 6,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "simplify_below": 13, "simplify_level": 0.0005, "write_to": "water" },
-		"water_name":        { "minzoom": 16, "maxzoom": 17 },
-		"water_name_detail": { "minzoom": 16, "maxzoom": 17, "write_to": "water_name" },
+		"water_name":        { "minzoom": 14, "maxzoom": 14 },
+		"water_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "water_name" },
 
 		"aeroway":           { "minzoom": 11, "maxzoom": 14 },
 		"aerodrome_label":   { "minzoom": 10,  "maxzoom": 14 },
