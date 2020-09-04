@@ -359,7 +359,10 @@ function way_function(way)
 	end
 
 	-- Set 'building' and associated
-	if building~="" then way:Layer("building", true) end
+	if building~="" then 
+		way:Layer("building", true) 
+		SetMinZoomByArea(way)
+	end
 
 	-- Set 'housenumber'
 	if housenumber~="" then
@@ -482,7 +485,9 @@ function SetMinZoomByArea(way)
 	elseif area>ZRES8^2  then way:MinZoom(9)
 	elseif area>ZRES9^2  then way:MinZoom(10)
 	elseif area>ZRES10^2 then way:MinZoom(11)
-	else                      way:MinZoom(12) end
+	elseif area>ZRES11^2 then way:MinZoom(12)
+	elseif area>ZRES12^2 then way:MinZoom(13)
+	else                      way:MinZoom(14) end
 end
 
 -- Calculate POIs (typically rank 1-4 go to 'poi' z12-14, rank 5+ to 'poi_detail' z14)
