@@ -346,7 +346,7 @@ function way_function(way)
 	-- Set 'waterway' and associated
 	if waterwayClasses[waterway] and not isClosed then
 		if waterway == "river" and way:Holds("name") then
-			way:Layer("water_name_detail", false)
+			way:Layer("waterway", false)
 		else
 			way:Layer("waterway_detail", false)
 		end
@@ -357,6 +357,17 @@ function way_function(way)
 	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 	elseif waterway == "dam"       then way:Layer("building",isClosed)
 	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	end
+	-- Set names on rivers
+	if waterwayClasses[waterway] and not isClosed then
+		if waterway == "river" and way:Holds("name") then
+			way:Layer("water_name", false)
+		else
+			way:Layer("water_name_detail", false)
+			way:MinZoom(14)
+		end
+		way:Attribute("class", waterway)
+		SetNameAttributes(way)
 	end
 
 	-- Set 'building' and associated
