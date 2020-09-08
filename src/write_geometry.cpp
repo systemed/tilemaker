@@ -26,7 +26,13 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
+		// Note that Boost simplify can sometimes produce invalid polygons, resulting in broken coastline etc.
+		// In that case, we just revert to the unsimplified version (at the cost of a larger geometry)
+		// See comments in https://github.com/boostorg/geometry/pull/460
+		// When/if dissolve is merged into Boost.Geometry, we can use that to fix the self-intersections
+		bool v = geom::is_valid(mp);
 		geom::simplify(mp, current, simplifyLevel);
+		if (v && !geom::is_valid(current)) { current=mp; }
 	} else {
 		current = mp;
 	}
