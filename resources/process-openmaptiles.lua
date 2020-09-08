@@ -317,6 +317,7 @@ function way_function(way)
 
 		way:Layer("transportation_name", false)
 		SetNameAttributes(way)
+		way:MinZoom(14)
 		way:Attribute("class", "rail")
 	end
 
@@ -345,9 +346,9 @@ function way_function(way)
 	-- Set 'waterway' and associated
 	if waterwayClasses[waterway] and not isClosed then
 		if waterway == "river" and way:Holds("name") then
-		    way:Layer("waterway",false)
+			way:Layer("waterway", false)
 		else
-		    way:Layer("waterway_detail",false)
+			way:Layer("waterway_detail", false)
 		end
 		if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent", 1) else way:AttributeNumeric("intermittent", 0) end
 		way:Attribute("class", waterway)
@@ -357,10 +358,21 @@ function way_function(way)
 	elseif waterway == "dam"       then way:Layer("building",isClosed)
 	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
 	end
+	-- Set names on rivers
+	if waterwayClasses[waterway] and not isClosed then
+		if waterway == "river" and way:Holds("name") then
+			way:Layer("water_name", false)
+		else
+			way:Layer("water_name_detail", false)
+			way:MinZoom(14)
+		end
+		way:Attribute("class", waterway)
+		SetNameAttributes(way)
+	end
 
 	-- Set 'building' and associated
-	if building~="" then 
-		way:Layer("building", true) 
+	if building~="" then
+		way:Layer("building", true)
 		SetMinZoomByArea(way)
 	end
 
@@ -377,12 +389,19 @@ function way_function(way)
 		way:Layer("water",true)
 		SetMinZoomByArea(way)
 		way:Attribute("class",class)
+
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
-		if way:Holds("name") then
+		-- we only want to show the names of actual lakes not every man-made basin that probably doesn't even have a name other than "basin"
+		-- examples for which we don't want to show a name:
+		--  https://www.openstreetmap.org/way/2595868
+		--  https://www.openstreetmap.org/way/27201902
+		if way:Holds("name") and natural=="water" then
 			way:LayerAsCentroid("water_name_detail")
 			SetNameAttributes(way)
+			SetMinZoomByArea(way)
 			way:Attribute("class", class)
 		end
+
 		return -- in case we get any landuse processing
 	end
 
