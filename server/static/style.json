@@ -1728,7 +1728,7 @@
       "source": "openmaptiles",
       "source-layer": "waterway",
       "minzoom": 13,
-      "filter": ["all", ["==", "$type", "LineString"], ["has", "name"]],
+      "filter": ["all", ["==", "$type", "LineString"], ["has", "name:latin"]],
       "layout": {
         "symbol-placement": "line",
         "symbol-spacing": 350,
@@ -1883,7 +1883,7 @@
         "all",
         ["==", "$type", "Point"],
         ["<=", "rank", 14],
-        ["has", "name"],
+        ["has", "name:latin"],
         ["any", ["!has", "level"], ["==", "level", 0]]
       ],
       "layout": {
@@ -1913,7 +1913,7 @@
       "filter": [
         "all",
         ["==", "$type", "Point"],
-        ["has", "name"],
+        ["has", "name:latin"],
         ["==", "class", "railway"],
         ["==", "subclass", "station"]
       ],
