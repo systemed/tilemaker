@@ -7,7 +7,7 @@
 	"tiles": [
         "http://localhost:8080/{z}/{x}/{y}.pbf"
 	],
-	"minzoom": 6,
+	"minzoom": 4,
 	"maxzoom": 14,
 	"bounds": [ -180, -85.05112877980659, 180, 85.0511287798066 ],
 	"center": [ -1.247,51.761,10 ]
