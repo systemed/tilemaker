@@ -97,17 +97,20 @@ function node_function(node)
 	if place ~= "" then
 		local rank = nil
 		local mz = 13
+		local pop = tonumber(node:Find("population")) or 0
 
 		if     place == "continent"     then mz=2
 		elseif place == "country"       then mz=3; rank=1
 		elseif place == "state"         then mz=4; rank=2
 		elseif place == "city"          then mz=5; rank=3
-		elseif place == "town"          then mz=7
-		elseif place == "village"       then mz=9
+		elseif place == "town" and pop>8000 then mz=7
+		elseif place == "town"          then mz=8
+		elseif place == "village" and pop>2000 then mz=9
+		elseif place == "village"       then mz=10
 		elseif place == "suburb"        then mz=11
-		elseif place == "hamlet"        then mz=11
-		elseif place == "neighbourhood" then mz=12
-		elseif place == "locality"      then mz=12
+		elseif place == "hamlet"        then mz=12
+		elseif place == "neighbourhood" then mz=13
+		elseif place == "locality"      then mz=13
 		end
 
 		node:Layer("place", false)
