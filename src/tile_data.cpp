@@ -46,7 +46,11 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoo
 				TileCoordinates srcIndex(x, y);
 				auto oosetIt = srcTiles.find(srcIndex);
 				if(oosetIt == srcTiles.end()) continue;
-				dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+				for (auto it = oosetIt->second.begin(); it != oosetIt->second.end(); ++it) {
+					OutputObjectRef oo = *it;
+					if (oo->minZoom > zoom) continue;
+					dstTile.insert(dstTile.end(), oo);
+				}
 			}
 		}
 	}
