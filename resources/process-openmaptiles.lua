@@ -187,6 +187,7 @@ waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 function way_function(way)
 	local highway  = way:Find("highway")
 	local waterway = way:Find("waterway")
+	local water    = way:Find("water")
 	local building = way:Find("building")
 	local natural  = way:Find("natural")
 	local historic = way:Find("historic")
@@ -356,9 +357,11 @@ function way_function(way)
 		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
 		-- we only want to show the names of actual lakes not every man-made basin that probably doesn't even have a name other than "basin"
 		-- examples for which we don't want to show a name:
-		--  https://www.openstreetmap.org/way/2595868
+		--  https://www.openstreetmap.org/way/25958687
 		--  https://www.openstreetmap.org/way/27201902
-		if way:Holds("name") and natural=="water" then
+		--  https://www.openstreetmap.org/way/25309134
+		--  https://www.openstreetmap.org/way/24579306
+		if way:Holds("name") and natural=="water" and water ~= "basin" and water ~= "wastewater" then
 			way:LayerAsCentroid("water_name_detail")
 			SetNameAttributes(way)
 			SetMinZoomByArea(way)
