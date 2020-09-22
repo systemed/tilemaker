@@ -45,6 +45,11 @@ Then, to serve your tiles using the demonstration server:
 
 You can now navigate to http://localhost:8080/ and see your map!
 
+Notice: you have to install ruby and the mandatory [gems](https://en.wikipedia.org/wiki/RubyGems) before being able to start the server:    
+
+1. `$ sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev`
+2. `$ sudo gem install sqlite3 cgi glug rack`
+
 ## Your own configuration
 
 Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers. It's up to you what OSM data goes into each layer. You configure this in Tilemaker with two files:
