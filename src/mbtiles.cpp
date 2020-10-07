@@ -16,7 +16,11 @@ MBTiles::~MBTiles() {
 void MBTiles::openForWriting(string *filename) {
 	db.init(*filename);
 	db << "PRAGMA synchronous = OFF;";
-	db << "PRAGMA application_id = 0x4d504258;";
+	try {
+		db << "PRAGMA application_id = 0x4d504258;";
+	} catch(runtime_error &e) {
+		cout << "Couldn't write SQLite application_id (not fatal): " << e.what() << endl;
+	}
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
 	db << "BEGIN;"; // begin a transaction
