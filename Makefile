@@ -7,9 +7,9 @@ ifneq ("$(wildcard /usr/local/include/luajit-2.1/lua.h)","")
   LUA_LIBS := -lluajit
   LUAJIT := 1
 
-else ifneq ("$(wildcard /usr/local/luajit-2.1/lua.h)","")
+else ifneq ("$(wildcard /usr/include/luajit-2.1/lua.h)","")
   LUA_VER := LuaJIT 2.1
-  LUA_CFLAGS := -I/usr/local/luajit-2.1
+  LUA_CFLAGS := -I/usr/include/luajit-2.1
   LUA_LIBS := -lluajit
   LUAJIT := 1
 
@@ -19,9 +19,9 @@ else ifneq ("$(wildcard /usr/local/include/luajit-2.0/lua.h)","")
   LUA_LIBS := -lluajit
   LUAJIT := 1
 
-else ifneq ("$(wildcard /usr/local/luajit-2.0/lua.h)","")
+else ifneq ("$(wildcard /usr/include/luajit-2.0/lua.h)","")
   LUA_VER := LuaJIT 2.0
-  LUA_CFLAGS := -I/usr/local/luajit-2.0
+  LUA_CFLAGS := -I/usr/include/luajit-2.0
   LUA_LIBS := -lluajit
   LUAJIT := 1
 
@@ -30,9 +30,9 @@ else ifneq ("$(wildcard /usr/local/include/lua/lua.h)","")
   LUA_CFLAGS := -I/usr/local/include/lua
   LUA_LIBS := -llua
 
-else ifneq ("$(wildcard /usr/local/lua/lua.h)","")
+else ifneq ("$(wildcard /usr/include/lua/lua.h)","")
   LUA_VER := system Lua
-  LUA_CFLAGS := -I/usr/local/lua
+  LUA_CFLAGS := -I/usr/include/lua
   LUA_LIBS := -llua
 
 else ifneq ("$(wildcard /usr/local/include/lua5.1/lua.h)","")
