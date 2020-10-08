@@ -5,19 +5,29 @@
 ### Added
 - Mapsplit (.msf) source data support
 - `obj:MinZoom(z)` to set the minimum zoom at which a feature will be rendered
-- Set minimum zooms for placenames, waterways, and landcover in OpenMapTiles processing (@typebrook, @systemed)
+- Set minimum zooms for placenames, waterways, buildings, and landcover in OpenMapTiles processing (@typebrook, @systemed)
 - Render roads under construction on OpenMapTiles processing (@meromisi, @Beck-berry)
+- Support any (post-5.1) version of Lua
+- Build with Github Action (@typebrook)
+- Use a shared key/value dictionary across OutputObjects to reduce memory usage
 
 ### Changed
 - Remove Lua scale functions now that we return metres
 - Write OpenMapTiles placenames depending on zoom
+- Improve OpenMapTiles water body processing (@leonardehrenfried)
+- Improve OpenMapTiles POI handling
+- Improve OpenMapTiles mountain_peak handling (@typebrook)
+- Change OpenMapTiles minzoom to 4
 - Use boost::geometry::intersection for clipping (faster than clipper)
+- Fallback to valid polygons if simplification produces invalid ones
 - Consistently use 1TBS in source
 - Only output validity errors in verbose mode
+- Various speedups (don't add objects to output list that fail minZoom, optimise clipping)
 
 ### Fixed
 - Fix waterway handling in OpenMapTiles processing (@leonardehrenfried)
 - Don't filter out ABCA areas (@rdsa)
+- Don't break with old versions of sqlite
 
 ## [1.6.0] - 2020-05-22
 
