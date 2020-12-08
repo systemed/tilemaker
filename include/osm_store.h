@@ -178,18 +178,44 @@ public:
 		// - Linestrings are joined to existing linestrings with which they share a start/end
 		// - If no matches can be found, then one linestring is added (to 'attract' others)
 		// - The process is rerun until no ways are left
-		// This process could potentially be reused for inners, too
 		// There's quite a lot of copying going on here - could potentially be addressed
 		std::vector<NodeVec> outers;
-		std::map<WayID,bool> done; // true=this way has already been added to 'outers', don't reconsider
+		std::vector<NodeVec> inners;
+		std::map<WayID,bool> done; // true=this way has already been added to outers/inners, don't reconsider
+
+		// merge constituent ways together
+		mergeMultiPolygonWays(wayList, outers, done, wayList.outerBegin, wayList.outerEnd);
+		mergeMultiPolygonWays(wayList, inners, done, wayList.innerBegin, wayList.innerEnd);
+
+		// add all inners and outers to the multipolygon
+		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
+			Polygon poly;
+			fillPoints(poly.outer(), *ot);
+			for (auto it = inners.begin(); it != inners.end(); ++it) {
+				Ring inner;
+				fillPoints(inner, *it);
+				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
+			}
+			mp.emplace_back(move(poly));
+		}
+
+		// fix winding
+		geom::correct(mp);
+		return mp;
+	}
+
+	template<class WayIt>
+	void mergeMultiPolygonWays(WayList<WayIt> &wayList,
+		std::vector<NodeVec> &results, std::map<WayID,bool> &done, WayIt itBegin, WayIt itEnd) const {
+
 		int added;
 		do {
 			added = 0;
-			for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
+			for (auto it = itBegin; it != itEnd; ++it) {
 				if (done[*it]) { continue; }
 				if (ways.isClosed(*it)) {
 					// if start==end, simply add it to the set
-					outers.emplace_back(ways.nodesFor(*it));
+					results.emplace_back(ways.nodesFor(*it));
 					added++;
 					done[*it] = true;
 				} else {
@@ -198,7 +224,7 @@ public:
 					NodeVec nodes = ways.nodesFor(*it);
 					NodeID jFirst = nodes.front();
 					NodeID jLast  = nodes.back();
-					for (auto ot = outers.begin(); ot != outers.end(); ot++) {
+					for (auto ot = results.begin(); ot != results.end(); ot++) {
 						NodeID oFirst = ot->front();
 						NodeID oLast  = ot->back();
 						if (jFirst==jLast) continue; // don't join to already-closed ways
@@ -228,32 +254,16 @@ public:
 			}
 			// If nothing was added, then 'seed' it with a remaining unallocated way
 			if (added==0) {
-				for (auto it = wayList.outerBegin; it != wayList.outerEnd; ++it) {
+				for (auto it = itBegin; it != itEnd; ++it) {
 					if (done[*it]) { continue; }
-					outers.emplace_back(ways.nodesFor(*it));
+					results.emplace_back(ways.nodesFor(*it));
 					added++;
 					done[*it] = true;
 					break;
 				}
 			}
 		} while (added>0);
-
-		// main outer way and inners
-		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
-			Polygon poly;
-			fillPoints(poly.outer(), *ot);
-			for (auto it = wayList.innerBegin; it != wayList.innerEnd; ++it) {
-				Ring inner;
-				if (ways.count(*it)==1) { fillPoints(inner, ways.at(*it)); }
-				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
-			}
-			mp.emplace_back(move(poly));
-		}
-
-		// fix winding
-		geom::correct(mp);
-		return mp;
-	}
+	};
 
 	MultiPolygon wayListMultiPolygon(WayID relId) const;
 
