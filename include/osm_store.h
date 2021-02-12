@@ -10,6 +10,10 @@
 #include "tsl/sparse_map.h"
 namespace geom = boost::geometry;
 
+#include <boost/interprocess/managed_mapped_file.hpp>
+#include <boost/interprocess/allocators/node_allocator.hpp>
+#include <boost/unordered_map.hpp>
+
 //
 // Views of data structures.
 //
@@ -38,9 +42,33 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 
 // node store
 class NodeStore {
-	tsl::sparse_map<NodeID, LatpLon> mLatpLons;
+	using pair_t = std::pair<NodeID, LatpLon>;
+	using pair_allocator_t = boost::interprocess::allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, pair_allocator_t>;
+	
+	using map_store_t = std::pair<map_t *, std::shared_ptr<boost::interprocess::managed_mapped_file> >;
+
+	inline static char const *osm_store_filename = "osm_store.dat";
+	inline static std::size_t init_map_size = 1000000;
+	std::size_t map_size = init_map_size;
+
+	static map_store_t open_mmap_file()
+	{
+        	auto mmfile = std::make_shared<boost::interprocess::managed_mapped_file>(
+			boost::interprocess::open_or_create, osm_store_filename, init_map_size);
+        	auto map = mmfile->find_or_construct<map_t>("node_store")(mmfile->get_segment_manager());
+        	return std::make_pair(map, mmfile);
+	}
+	
+	map_store_t mLatpLons = open_mmap_file();
 
 public:
+
+	NodeStore()
+	{
+		clear();
+	}
+
 	// @brief Lookup a latp/lon pair
 	// @param i OSM ID of a node
 	// @return Latp/lon pair

@@ -14,6 +14,7 @@
 
 require 'sqlite3'
 require 'cgi'
+require 'passenger'
 begin; require 'glug'	# Optional glug dependency
 rescue LoadError; end 	#  |
 
@@ -37,7 +38,7 @@ class MapServer
 	end
 
 	def self.connect
-		@@db = SQLite3::Database.new(@@mbtiles)
+		# @@db = SQLite3::Database.new(@@mbtiles)
 		Dir.chdir("static") unless Dir.pwd.include?("static")
 		self
 	end

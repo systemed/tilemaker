@@ -33,7 +33,7 @@ if(MSVC)
   add_definitions(-D_USE_MATH_DEFINES)
   set(THREAD_LIB "")
 else()
-  add_definitions(-std=c++11)
+  add_definitions(-std=c++17)
   set(THREAD_LIB pthread)
 endif()
 

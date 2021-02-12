@@ -21,7 +21,7 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 
 LatpLon NodeStore::at(NodeID i) const {
 	try {
-		return mLatpLons.at(i);
+		return mLatpLons.first->at(i);
 	}
 	catch (std::out_of_range &err){
 		stringstream ss;
@@ -35,7 +35,7 @@ LatpLon NodeStore::at(NodeID i) const {
 // @return 1 if found, 0 otherwise
 // @note This function is named as count for consistent naming with stl functions.
 size_t NodeStore::count(NodeID i) const {
-	return mLatpLons.count(i);
+	return mLatpLons.first->count(i);
 }
 
 // @brief Insert a latp/lon pair.
@@ -44,15 +44,31 @@ size_t NodeStore::count(NodeID i) const {
 // @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
 //            (though unnecessarily for current impl, future impl may impose that)
 void NodeStore::insert_back(NodeID i, LatpLon coord) {
-	mLatpLons.emplace(i, coord);
+	//std::cout << "Insert node: " << i << " " << coord.latp << " " << coord.lon << std::endl;
+	while(true) {
+		try {
+			mLatpLons.first->emplace(i, coord);
+			return;
+
+		} catch(std::exception &e) {
+			std::cout << e.what() << std::endl;
+			map_size = map_size * 2;
+			std::cout << "Resizing node store to size: " << map_size << std::endl;
+			mLatpLons.second.reset();
+			boost::interprocess::managed_mapped_file::grow(osm_store_filename, map_size);
+			mLatpLons = open_mmap_file();
+		}
+	}
 }
 
 // @brief Make the store empty
 void NodeStore::clear() {
-	mLatpLons.clear();
+	mLatpLons.first->clear();
 }
 
-size_t NodeStore::size() { return mLatpLons.size(); }
+size_t NodeStore::size() { 
+	return mLatpLons.first->size(); 
+}
 
 
 // way store
