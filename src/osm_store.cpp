@@ -1,11 +1,15 @@
 
 #include "osm_store.h"
 #include <iostream>
+#include <boost/filesystem.hpp>
+
 using namespace std;
 namespace bg = boost::geometry;
 
 // Views of data structures.
 //
+constexpr char const *NodeStore::osm_store_filename;
+constexpr std::size_t NodeStore::init_map_size;
 
 NodeList<NodeVec::const_iterator> makeNodeList(const NodeVec &nodeVec) {
 	return { nodeVec.cbegin(), nodeVec.cend() };
@@ -18,6 +22,10 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 //
 // Internal data structures.
 //
+
+void NodeStore::remove_mmap_file() {
+	boost::filesystem::remove(osm_store_filename);
+}
 
 LatpLon NodeStore::at(NodeID i) const {
 	try {
@@ -87,21 +95,6 @@ NodeList<WayStoreIterator> WayStore::at(WayID i) const {
 		ss << "Could not find way " << i;
 		throw std::out_of_range(ss.str());
 	}
-}
-
-bool WayStore::isClosed(WayID i) const {
-	const auto &way = mNodeLists.at(i);
-	return way.front() == way.back();
-}
-
-NodeVec WayStore::nodesFor(WayID i) const {
-	return mNodeLists.at(i);
-}
-NodeID WayStore::firstNode(WayID i) const {
-	return mNodeLists.at(i).front();
-}
-NodeID WayStore::lastNode(WayID i) const {
-	return mNodeLists.at(i).back();
 }
 
 // @brief Return whether a node list is on the store.

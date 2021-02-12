@@ -26,6 +26,11 @@ struct NodeList {
 
 NodeList<NodeVec::const_iterator> makeNodeList(const NodeVec &nodeVec);
 
+template<class NodeIt>
+static inline bool isClosed(NodeList<NodeIt> const &way) {
+	return *way.begin == *std::prev(way.end);
+}
+
 template<class WayIt>
 struct WayList {
 	WayIt outerBegin;
@@ -43,14 +48,16 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 // node store
 class NodeStore {
 	using pair_t = std::pair<NodeID, LatpLon>;
-	using pair_allocator_t = boost::interprocess::allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
 	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, pair_allocator_t>;
 	
 	using map_store_t = std::pair<map_t *, std::shared_ptr<boost::interprocess::managed_mapped_file> >;
 
-	inline static char const *osm_store_filename = "osm_store.dat";
-	inline static std::size_t init_map_size = 1000000;
+	constexpr static char const *osm_store_filename = "osm_store.dat";
+	constexpr static std::size_t init_map_size = 1000000;
 	std::size_t map_size = init_map_size;
+
+	static void remove_mmap_file();
 
 	static map_store_t open_mmap_file()
 	{
@@ -60,13 +67,19 @@ class NodeStore {
         	return std::make_pair(map, mmfile);
 	}
 	
-	map_store_t mLatpLons = open_mmap_file();
+	map_store_t mLatpLons;
 
 public:
 
 	NodeStore()
 	{
-		clear();
+		remove_mmap_file();
+		mLatpLons = open_mmap_file();
+	}
+
+	~NodeStore()
+	{
+		remove_mmap_file();
 	}
 
 	// @brief Lookup a latp/lon pair
@@ -106,11 +119,6 @@ public:
 	// @return A node list
 	// @exception NotFound
 	NodeList<WayStoreIterator> at(WayID i) const;
-
-	bool isClosed(WayID i) const;
-	NodeVec nodesFor(WayID i) const;
-	NodeID firstNode(WayID i) const;
-	NodeID lastNode(WayID i) const;
 
 	// @brief Return whether a node list is on the store.
 	// @param i Any possible OSM ID
@@ -184,6 +192,12 @@ public:
 */
 class OSMStore
 {
+	template< class Iterator >
+	static std::reverse_iterator<Iterator> make_reverse_iterator(Iterator i)
+	{
+		return std::reverse_iterator<Iterator>(i);
+	}       
+
 
 public:
 	NodeStore nodes;
@@ -218,10 +232,10 @@ public:
 		// add all inners and outers to the multipolygon
 		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 			Polygon poly;
-			fillPoints(poly.outer(), *ot);
+			fillPoints(poly.outer(), ot->begin(), ot->end());
 			for (auto it = inners.begin(); it != inners.end(); ++it) {
 				Ring inner;
-				fillPoints(inner, *it);
+				fillPoints(inner, it->begin(), it->end());
 				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
 			}
 			mp.emplace_back(move(poly));
@@ -241,36 +255,41 @@ public:
 			added = 0;
 			for (auto it = itBegin; it != itEnd; ++it) {
 				if (done[*it]) { continue; }
-				if (ways.isClosed(*it)) {
+				auto way = ways.at(*it);
+				if (isClosed(way)) {
 					// if start==end, simply add it to the set
-					results.emplace_back(ways.nodesFor(*it));
+					results.emplace_back(NodeVec(way.begin, way.end));
 					added++;
 					done[*it] = true;
 				} else {
 					// otherwise, can we find a matching outer to append it to?
 					bool joined = false;
-					NodeVec nodes = ways.nodesFor(*it);
-					NodeID jFirst = nodes.front();
-					NodeID jLast  = nodes.back();
+					auto nodes = ways.at(*it);
+					NodeID jFirst = *nodes.begin;
+					NodeID jLast  = *(std::prev(nodes.end));
 					for (auto ot = results.begin(); ot != results.end(); ot++) {
 						NodeID oFirst = ot->front();
 						NodeID oLast  = ot->back();
 						if (jFirst==jLast) continue; // don't join to already-closed ways
 						else if (oLast==jFirst) {
 							// append to the original
-							ot->insert(ot->end(), nodes.begin(), nodes.end());
+							ot->insert(ot->end(), nodes.begin, nodes.end);
 							joined=true; break;
 						} else if (oLast==jLast) {
 							// append reversed to the original
-							ot->insert(ot->end(), nodes.rbegin(), nodes.rend());
+							ot->insert(ot->end(), 
+								make_reverse_iterator(nodes.end), 
+								make_reverse_iterator(nodes.begin));
 							joined=true; break;
 						} else if (jLast==oFirst) {
 							// prepend to the original
-							ot->insert(ot->begin(), nodes.begin(), nodes.end());
+							ot->insert(ot->begin(), nodes.begin, nodes.end);
 							joined=true; break;
 						} else if (jFirst==oFirst) {
 							// prepend reversed to the original
-							ot->insert(ot->begin(), nodes.rbegin(), nodes.rend());
+							ot->insert(ot->begin(), 
+								make_reverse_iterator(nodes.end), 
+								make_reverse_iterator(nodes.begin));
 							joined=true; break;
 						}
 					}
@@ -284,7 +303,8 @@ public:
 			if (added==0) {
 				for (auto it = itBegin; it != itEnd; ++it) {
 					if (done[*it]) { continue; }
-					results.emplace_back(ways.nodesFor(*it));
+					auto way = ways.at(*it);
+					results.emplace_back(NodeVec(way.begin, way.end));
 					added++;
 					done[*it] = true;
 					break;
@@ -305,7 +325,7 @@ public:
 	template<class NodeIt>
 	Polygon nodeListPolygon(NodeList<NodeIt> nodeList) const {
 		Polygon poly;
-		fillPoints(poly.outer(), nodeList);
+		fillPoints(poly.outer(), nodeList.begin, nodeList.end);
 		geom::correct(poly);
 		return poly;
 	}
@@ -318,7 +338,7 @@ public:
 	template<class NodeIt>
 	Linestring nodeListLinestring(NodeList<NodeIt> nodeList) const{
 		Linestring ls;
-		fillPoints(ls, nodeList);
+		fillPoints(ls, nodeList.begin, nodeList.end);
 		return ls;
 	}
 
@@ -329,17 +349,8 @@ public:
 private:
 	// helper
 	template<class PointRange, class NodeIt>
-	void fillPoints(PointRange &points, NodeList<NodeIt> nodeList) const {
-		for (auto it = nodeList.begin; it != nodeList.end; ++it) {
-			LatpLon ll = nodes.at(*it);
-			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
-		}
-	}
-
-	// fixme - this is duplicate code from above
-	template<class PointRange>
-	void fillPoints(PointRange &points, NodeVec nodeList) const {
-		for (auto it = nodeList.begin(); it != nodeList.end(); ++it) {
+	void fillPoints(PointRange &points, NodeIt begin, NodeIt end) const {
+		for (auto it = begin; it != end; ++it) {
 			LatpLon ll = nodes.at(*it);
 			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
 		}
