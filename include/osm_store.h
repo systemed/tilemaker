@@ -13,6 +13,8 @@ namespace geom = boost::geometry;
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/container/vector.hpp>
+#include <boost/container/scoped_allocator.hpp>
 
 //
 // Views of data structures.
@@ -41,6 +43,8 @@ struct WayList {
 
 WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const WayVec &innerWayVec);
 
+using mmap_file_ptr = std::shared_ptr<boost::interprocess::managed_mapped_file>;
+
 //
 // Internal data structures.
 //
@@ -48,45 +52,23 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 // node store
 class NodeStore {
 	using pair_t = std::pair<NodeID, LatpLon>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager, 131072>;
 	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, pair_allocator_t>;
 	
-	using map_store_t = std::pair<map_t *, std::shared_ptr<boost::interprocess::managed_mapped_file> >;
-
-	constexpr static char const *osm_store_filename = "osm_store.dat";
-	constexpr static std::size_t init_map_size = 1000000;
-	std::size_t map_size = init_map_size;
-
-	static void remove_mmap_file();
-
-	static map_store_t open_mmap_file()
-	{
-        	auto mmfile = std::make_shared<boost::interprocess::managed_mapped_file>(
-			boost::interprocess::open_or_create, osm_store_filename, init_map_size);
-        	auto map = mmfile->find_or_construct<map_t>("node_store")(mmfile->get_segment_manager());
-        	return std::make_pair(map, mmfile);
-	}
-	
-	map_store_t mLatpLons;
+	map_t *mLatpLons;
 
 public:
 
-	NodeStore()
+	void reopen(mmap_file_ptr mmap_file)
 	{
-		remove_mmap_file();
-		mLatpLons = open_mmap_file();
-	}
-
-	~NodeStore()
-	{
-		remove_mmap_file();
+       	mLatpLons = mmap_file->find_or_construct<map_t>("node_store")(mmap_file->get_segment_manager());
 	}
 
 	// @brief Lookup a latp/lon pair
 	// @param i OSM ID of a node
 	// @return Latp/lon pair
 	// @exception NotFound
-	LatpLon at(NodeID i) const;
+	LatpLon const &at(NodeID i) const;
 
 	// @brief Return whether a latp/lon pair is on the store.
 	// @param i Any possible OSM ID
@@ -108,17 +90,33 @@ public:
 };
 
 // way store
-typedef std::vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	tsl::sparse_map<WayID, const std::vector<NodeID> > mNodeLists;
+
+    template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+	using nodeid_allocator_t = boost::interprocess::node_allocator<NodeID, boost::interprocess::managed_mapped_file::segment_manager>;
+    using nodeid_vector_t = boost::container::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
+
+	using pair_t = std::pair<NodeID, nodeid_vector_t>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
+
+	map_t *mNodeLists;
 
 public:
+
+	using const_iterator = nodeid_vector_t::const_iterator;
+
+	void reopen(mmap_file_ptr mmap_file)
+	{
+       	mNodeLists = mmap_file->find_or_construct<map_t>("way_store")(mmap_file->get_segment_manager());
+	}
+
 	// @brief Lookup a node list
 	// @param i OSM ID of a way
 	// @return A node list
 	// @exception NotFound
-	NodeList<WayStoreIterator> at(WayID i) const;
+	NodeList<nodeid_vector_t::const_iterator> at(WayID i) const;
 
 	// @brief Return whether a node list is on the store.
 	// @param i Any possible OSM ID
@@ -131,7 +129,12 @@ public:
 	// @param nodeVec a node vector to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
 	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(WayID i, const NodeVec &nodeVec);
+	template<typename Iterator>           
+	void insert_back(WayID i, Iterator begin, Iterator end) {
+		mNodeLists->emplace(std::piecewise_construct,
+         	std::forward_as_tuple(i),
+	       	std::forward_as_tuple(begin, end)); 
+	}
 
 	// @brief Make the store empty
 	void clear();
@@ -143,6 +146,7 @@ public:
 typedef std::vector<WayID>::const_iterator RelationStoreIterator;
 
 class RelationStore {
+
 	tsl::sparse_map<WayID, const std::pair<const std::vector<WayID>, const std::vector<WayID> > > mOutInLists;
 
 public:
@@ -198,11 +202,96 @@ class OSMStore
 		return std::reverse_iterator<Iterator>(i);
 	}       
 
-
-public:
 	NodeStore nodes;
 	WayStore ways;
 	RelationStore relations;
+
+
+	constexpr static char const *osm_store_filename = "osm_store.dat";
+	constexpr static std::size_t init_map_size = 1000000;
+	std::size_t map_size = init_map_size;
+
+	static void remove_mmap_file();
+
+	static mmap_file_ptr create_mmap_file()
+	{
+		remove_mmap_file();
+      	return std::make_shared<boost::interprocess::managed_mapped_file>(
+			boost::interprocess::create_only, osm_store_filename, init_map_size);
+	}
+
+	static mmap_file_ptr open_mmap_file()
+	{
+      	return std::make_shared<boost::interprocess::managed_mapped_file>(
+			boost::interprocess::open_only, osm_store_filename);
+	}
+
+	mmap_file_ptr mmap_file;
+
+	template<typename Func>
+	void perform_mmap_operation(Func func) {
+		while(true) {
+			try {
+				func();
+				return;
+			} catch(boost::interprocess::bad_alloc &e) {
+				std::cout << e.what() << std::endl;
+
+				map_size = map_size * 2;
+				std::cout << "Resizing osm store to size: " << map_size << std::endl;
+				
+				mmap_file = nullptr;
+
+				boost::interprocess::managed_mapped_file::grow(osm_store_filename, map_size);
+				mmap_file = open_mmap_file();
+
+				nodes.reopen(mmap_file);
+				ways.reopen(mmap_file);
+			}
+		}
+	}
+
+public:
+
+	OSMStore() 
+	{ 
+		mmap_file = create_mmap_file();
+		nodes.reopen(mmap_file);
+		ways.reopen(mmap_file);
+	}
+
+	~OSMStore()
+	{
+		remove_mmap_file();
+	}
+
+	void nodes_insert_back(NodeID i, LatpLon coord) {
+		perform_mmap_operation([&]() {
+			nodes.insert_back(i, coord);
+		});
+	}
+
+	LatpLon const &nodes_at(NodeID i) const {
+		return nodes.at(i);
+	}
+
+	NodeList<WayStore::const_iterator> ways_at(WayID i) const {
+		return ways.at(i);
+	}
+
+	void ways_insert_back(WayID i, const NodeVec &nodeVec) {
+		perform_mmap_operation([&]() {
+			ways.insert_back(i, nodeVec.begin(), nodeVec.end());
+		});
+	}
+
+	WayList<RelationStoreIterator> relations_at(WayID i) const {
+		return relations.at(i);
+	}
+
+	void relations_insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
+		relations.insert_front(i, outerWayVec, innerWayVec);
+	}
 
 	// @brief Make the store empty
 	void clear();

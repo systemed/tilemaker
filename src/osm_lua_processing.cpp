@@ -233,7 +233,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
 	try {
 		if (geomType==POINT) {
-			LatpLon pt = osmStore.nodes.at(osmID);
+			LatpLon pt = osmStore.nodes_at(osmID);
 			geom = Point(pt.lon, pt.latp);
 		}
 		else if (geomType==POLYGON) {
@@ -383,7 +383,7 @@ void OsmLuaProcessing::startOsmData() {
 }
 
 void OsmLuaProcessing::everyNode(NodeID id, LatpLon node) {
-	osmStore.nodes.insert_back(id, node);
+	osmStore.nodes_insert_back(id, node);
 }
 
 // We are now processing a node
@@ -420,8 +420,8 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	innerWayVec = nullptr;
 	nodeVec = nodeVecPtr;
 	try {
-		setLocation(osmStore.nodes.at(nodeVec->front()).lon, osmStore.nodes.at(nodeVec->front()).latp,
-				osmStore.nodes.at(nodeVec->back()).lon, osmStore.nodes.at(nodeVec->back()).latp);
+		setLocation(osmStore.nodes_at(nodeVec->front()).lon, osmStore.nodes_at(nodeVec->front()).latp,
+				osmStore.nodes_at(nodeVec->back()).lon, osmStore.nodes_at(nodeVec->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -443,9 +443,8 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 
 	if (!this->empty() || inRelation) {
 		// Store the way's nodes in the global way store
-		WayStore &ways = osmStore.ways;
 		WayID wayId = static_cast<WayID>(way->id());
-		ways.insert_back(wayId, *nodeVec);
+		osmStore.ways_insert_back(wayId, *nodeVec);
 	}
 
 	if (!this->empty()) {
@@ -512,8 +511,7 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 
 		WayID relID = this->osmID;
 		// Store the relation members in the global relation store
-		RelationStore &relations = osmStore.relations;
-		relations.insert_front(relID, *outerWayVec, *innerWayVec);
+		osmStore.relations_insert_front(relID, *outerWayVec, *innerWayVec);
 
 		MultiPolygon mp;
 		try {
