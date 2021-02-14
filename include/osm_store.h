@@ -12,10 +12,9 @@ namespace geom = boost::geometry;
 
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
-#include <boost/unordered_map.hpp>
 #include <boost/container/vector.hpp>
 #include <boost/container/scoped_allocator.hpp>
-
+#include <boost/unordered_map.hpp>
 //
 // Views of data structures.
 //
@@ -95,9 +94,9 @@ class WayStore {
 
     template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 	using nodeid_allocator_t = boost::interprocess::node_allocator<NodeID, boost::interprocess::managed_mapped_file::segment_manager>;
-    using nodeid_vector_t = boost::container::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
+	using nodeid_vector_t = boost::container::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
 
-	using pair_t = std::pair<NodeID, nodeid_vector_t>;
+	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
 	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
 	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
 
@@ -143,18 +142,46 @@ public:
 };
 
 // relation store
-typedef std::vector<WayID>::const_iterator RelationStoreIterator;
 
 class RelationStore {
 
-	tsl::sparse_map<WayID, const std::pair<const std::vector<WayID>, const std::vector<WayID> > > mOutInLists;
+    template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+
+	using wayid_allocator_t = boost::interprocess::node_allocator<WayID, boost::interprocess::managed_mapped_file::segment_manager>;
+
+	class wayid_vector_t
+		: public  boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>
+	{
+	public:
+			template<typename IteratorTuple, typename Allocator>
+			wayid_vector_t(IteratorTuple init, Allocator &allocator)
+				: boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>(init.first, init.second, allocator) 
+			{ }
+	};
+
+	using relation_entry_t = std::pair<wayid_vector_t, wayid_vector_t>;
+	using relation_allocator_t = boost::interprocess::node_allocator<relation_entry_t, boost::interprocess::managed_mapped_file::segment_manager>;
+
+	using pair_t = std::pair<WayID, relation_entry_t>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using map_t = boost::unordered_map<WayID, relation_entry_t, std::hash<WayID>, std::equal_to<WayID>, scoped_alloc_t<pair_allocator_t>>;
+
+	map_t *mOutInLists;
 
 public:
+
+	using const_iterator = wayid_vector_t::const_iterator;
+
+	void reopen(mmap_file_ptr mmap_file)
+	{
+       	mOutInLists = mmap_file->find_or_construct<map_t>("relation_store")(mmap_file->get_segment_manager());
+	}
+
 	// @brief Lookup a way list
 	// @param i Pseudo OSM ID of a relational way
 	// @return A way list
 	// @exception NotFound
-	WayList<RelationStoreIterator> at(WayID i) const;
+	WayList<const_iterator> at(WayID i) const;
 
 	// @brief Return whether a way list is on the store.
 	// @param i Any possible OSM ID
@@ -168,9 +195,15 @@ public:
 	// @param innerWayVec A inner way vector to be inserted
 	// @invariant The pseudo OSM ID i must be smaller than previously inserted pseudo OSM IDs of relations
 	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec);
+	template<class Iterator>
+	void insert_front(WayID i, Iterator outerWayVec_begin, Iterator outerWayVec_end, Iterator innerWayVec_begin, Iterator innerWayVec_end) {
+		mOutInLists->emplace(std::piecewise_construct,
+         	std::forward_as_tuple(i),
+	       	std::forward_as_tuple(
+				std::make_pair(outerWayVec_begin, outerWayVec_end), 
+				std::make_pair(innerWayVec_begin, innerWayVec_end)));
+	}
 
-	// @brief Make the store empty
 	void clear();
 
 	size_t size();
@@ -243,10 +276,11 @@ class OSMStore
 				mmap_file = nullptr;
 
 				boost::interprocess::managed_mapped_file::grow(osm_store_filename, map_size);
-				mmap_file = open_mmap_file();
 
+				mmap_file = open_mmap_file();
 				nodes.reopen(mmap_file);
 				ways.reopen(mmap_file);
+				relations.reopen(mmap_file);
 			}
 		}
 	}
@@ -258,6 +292,7 @@ public:
 		mmap_file = create_mmap_file();
 		nodes.reopen(mmap_file);
 		ways.reopen(mmap_file);
+		relations.reopen(mmap_file);
 	}
 
 	~OSMStore()
@@ -285,12 +320,12 @@ public:
 		});
 	}
 
-	WayList<RelationStoreIterator> relations_at(WayID i) const {
+	WayList<RelationStore::const_iterator> relations_at(WayID i) const {
 		return relations.at(i);
 	}
 
 	void relations_insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
-		relations.insert_front(i, outerWayVec, innerWayVec);
+		relations.insert_front(i, outerWayVec.begin(), outerWayVec.end(), innerWayVec.begin(), innerWayVec.end());
 	}
 
 	// @brief Make the store empty

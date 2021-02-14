@@ -105,11 +105,10 @@ size_t WayStore::size() { return mNodeLists->size(); }
 // @param i Pseudo OSM ID of a relational way
 // @return A way list
 // @exception NotFound
-WayList<RelationStoreIterator> RelationStore::at(WayID i) const {
+WayList<RelationStore::const_iterator> RelationStore::at(WayID i) const {
 	try {
-		const auto &outInList = mOutInLists.at(i);
-		return { outInList.first.cbegin(), outInList.first.cend(),
-			outInList.second.cbegin(), outInList.second.cend() };
+		const auto &outInList = mOutInLists->at(i);
+		return { outInList.first.cbegin(), outInList.first.cend(), outInList.second.cbegin(), outInList.second.cend() };
 	} catch (std::out_of_range &err){
 		stringstream ss;
 		ss << "Could not find pseudo OSM ID of polygon " << i;
@@ -122,25 +121,18 @@ WayList<RelationStoreIterator> RelationStore::at(WayID i) const {
 // @return 1 if found, 0 otherwise
 // @note This function is named as count for consistent naming with stl functions.
 size_t RelationStore::count(WayID i) const {
-	return mOutInLists.count(i);
-}
-
-// @brief Insert a way list.
-// @param i Pseudo OSM ID of a relation
-// @param outerWayVec A outer way vector to be inserted
-// @param innerWayVec A inner way vector to be inserted
-// @invariant The pseudo OSM ID i must be smaller than previously inserted pseudo OSM IDs of relations
-//            (though unnecessarily for current impl, future impl may impose that)
-void RelationStore::insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
-	mOutInLists.emplace(i, make_pair(outerWayVec, innerWayVec));
+	return mOutInLists->count(i);
 }
 
 // @brief Make the store empty
 void RelationStore::clear() {
-	mOutInLists.clear();
+	mOutInLists->clear();
 }
 
-size_t RelationStore::size() { return mOutInLists.size(); }
+size_t RelationStore::size() { 
+	return mOutInLists->size(); 
+}
+
 
 
 //
