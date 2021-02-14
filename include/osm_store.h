@@ -7,7 +7,6 @@
 #include <iostream>
 #include "geomtypes.h"
 #include "coordinates.h"
-#include "tsl/sparse_map.h"
 namespace geom = boost::geometry;
 
 #include <boost/interprocess/managed_mapped_file.hpp>
@@ -42,7 +41,7 @@ struct WayList {
 
 WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const WayVec &innerWayVec);
 
-using mmap_file_ptr = std::shared_ptr<boost::interprocess::managed_mapped_file>;
+using mmap_file_t = boost::interprocess::managed_mapped_file;
 
 //
 // Internal data structures.
@@ -51,16 +50,16 @@ using mmap_file_ptr = std::shared_ptr<boost::interprocess::managed_mapped_file>;
 // node store
 class NodeStore {
 	using pair_t = std::pair<NodeID, LatpLon>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager, 131072>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
 	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, pair_allocator_t>;
 	
 	map_t *mLatpLons;
 
 public:
 
-	void reopen(mmap_file_ptr mmap_file)
+	void reopen(mmap_file_t &mmap_file)
 	{
-       	mLatpLons = mmap_file->find_or_construct<map_t>("node_store")(mmap_file->get_segment_manager());
+       	mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
 	}
 
 	// @brief Lookup a latp/lon pair
@@ -93,11 +92,11 @@ public:
 class WayStore {
 
     template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
-	using nodeid_allocator_t = boost::interprocess::node_allocator<NodeID, boost::interprocess::managed_mapped_file::segment_manager>;
+	using nodeid_allocator_t = boost::interprocess::node_allocator<NodeID, mmap_file_t::segment_manager>;
 	using nodeid_vector_t = boost::container::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
 
 	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
 	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
 
 	map_t *mNodeLists;
@@ -106,9 +105,9 @@ public:
 
 	using const_iterator = nodeid_vector_t::const_iterator;
 
-	void reopen(mmap_file_ptr mmap_file)
+	void reopen(mmap_file_t &mmap_file)
 	{
-       	mNodeLists = mmap_file->find_or_construct<map_t>("way_store")(mmap_file->get_segment_manager());
+       	mNodeLists = mmap_file.find_or_construct<map_t>("way_store")(mmap_file.get_segment_manager());
 	}
 
 	// @brief Lookup a node list
@@ -147,7 +146,7 @@ class RelationStore {
 
     template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 
-	using wayid_allocator_t = boost::interprocess::node_allocator<WayID, boost::interprocess::managed_mapped_file::segment_manager>;
+	using wayid_allocator_t = boost::interprocess::node_allocator<WayID, mmap_file_t::segment_manager>;
 
 	class wayid_vector_t
 		: public  boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>
@@ -160,10 +159,10 @@ class RelationStore {
 	};
 
 	using relation_entry_t = std::pair<wayid_vector_t, wayid_vector_t>;
-	using relation_allocator_t = boost::interprocess::node_allocator<relation_entry_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using relation_allocator_t = boost::interprocess::node_allocator<relation_entry_t, mmap_file_t::segment_manager>;
 
 	using pair_t = std::pair<WayID, relation_entry_t>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, boost::interprocess::managed_mapped_file::segment_manager>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
 	using map_t = boost::unordered_map<WayID, relation_entry_t, std::hash<WayID>, std::equal_to<WayID>, scoped_alloc_t<pair_allocator_t>>;
 
 	map_t *mOutInLists;
@@ -172,9 +171,9 @@ public:
 
 	using const_iterator = wayid_vector_t::const_iterator;
 
-	void reopen(mmap_file_ptr mmap_file)
+	void reopen(mmap_file_t &mmap_file)
 	{
-       	mOutInLists = mmap_file->find_or_construct<map_t>("relation_store")(mmap_file->get_segment_manager());
+       	mOutInLists = mmap_file.find_or_construct<map_t>("relation_store")(mmap_file.get_segment_manager());
 	}
 
 	// @brief Lookup a way list
@@ -240,26 +239,24 @@ class OSMStore
 	RelationStore relations;
 
 
-	constexpr static char const *osm_store_filename = "osm_store.dat";
+	std::string osm_store_filename;
 	constexpr static std::size_t init_map_size = 1000000;
 	std::size_t map_size = init_map_size;
 
-	static void remove_mmap_file();
+	void remove_mmap_file();
 
-	static mmap_file_ptr create_mmap_file()
+	mmap_file_t create_mmap_file()
 	{
 		remove_mmap_file();
-      	return std::make_shared<boost::interprocess::managed_mapped_file>(
-			boost::interprocess::create_only, osm_store_filename, init_map_size);
+      	return mmap_file_t(boost::interprocess::create_only, osm_store_filename.c_str(), init_map_size);
 	}
 
-	static mmap_file_ptr open_mmap_file()
+	mmap_file_t open_mmap_file()
 	{
-      	return std::make_shared<boost::interprocess::managed_mapped_file>(
-			boost::interprocess::open_only, osm_store_filename);
+      	return mmap_file_t(boost::interprocess::open_only, osm_store_filename.c_str());
 	}
 
-	mmap_file_ptr mmap_file;
+	mmap_file_t mmap_file;
 
 	template<typename Func>
 	void perform_mmap_operation(Func func) {
@@ -268,14 +265,12 @@ class OSMStore
 				func();
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
-				std::cout << e.what() << std::endl;
-
 				map_size = map_size * 2;
 				std::cout << "Resizing osm store to size: " << map_size << std::endl;
 				
-				mmap_file = nullptr;
+				mmap_file = mmap_file_t();
 
-				boost::interprocess::managed_mapped_file::grow(osm_store_filename, map_size);
+				boost::interprocess::managed_mapped_file::grow(osm_store_filename.c_str(), map_size);
 
 				mmap_file = open_mmap_file();
 				nodes.reopen(mmap_file);
@@ -287,7 +282,8 @@ class OSMStore
 
 public:
 
-	OSMStore() 
+	OSMStore(std::string const &osm_store_filename)
+	   : osm_store_filename(osm_store_filename)	
 	{ 
 		mmap_file = create_mmap_file();
 		nodes.reopen(mmap_file);

@@ -138,7 +138,6 @@ size_t RelationStore::size() {
 //
 // OSM store, containing all above.
 //
-constexpr char const *OSMStore::osm_store_filename;
 constexpr std::size_t OSMStore::init_map_size;
 
 void OSMStore::remove_mmap_file() {

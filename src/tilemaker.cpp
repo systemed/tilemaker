@@ -68,6 +68,7 @@ int main(int argc, char* argv[]) {
 	
 	vector<string> inputFiles;
 	string luaFile;
+	string osmStoreFile;
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
@@ -81,6 +82,7 @@ int main(int argc, char* argv[]) {
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
+		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 		("combine",po::bool_switch(&combineSimilarObjs),                         "combine similar objects (reduces output size but takes considerably longer)");
@@ -171,7 +173,7 @@ int main(int argc, char* argv[]) {
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
 	AttributeStore attributeStore;
-	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
+	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, osmStoreFile,
 		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files

@@ -19,9 +19,11 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
+	const string &osmStoreFilename,
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles,
 	AttributeStore &attributeStore):
+	osmStore(osmStoreFilename),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),

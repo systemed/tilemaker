@@ -37,6 +37,7 @@ public:
 
 	OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
+		const std::string &osmStoreFilename,
 		const class ShpMemTiles &shpMemTiles, 
 		class OsmMemTiles &osmMemTiles,
 		AttributeStore &attributeStore);
