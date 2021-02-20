@@ -5,7 +5,6 @@ using namespace std;
 
 kaguya::State *g_luaState = nullptr;
 bool supportsRemappingShapefiles = false;
-extern bool verbose;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -17,13 +16,14 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 // ----	initialization routines
 
-OsmLuaProcessing::OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers,
+OsmLuaProcessing::OsmLuaProcessing(
+    OSMStore &osmStore,
+    const class Config &configIn, class LayerDefinition &layers,
 	const string &luaFile,
-	const string &osmStoreFilename,
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles,
 	AttributeStore &attributeStore):
-	osmStore(osmStoreFilename),
+	osmStore(osmStore),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),
@@ -231,19 +231,28 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	Geometry geom;
 	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
 	try {
 		if (geomType==POINT) {
 			LatpLon pt = osmStore.nodes_at(osmID);
-			geom = Point(pt.lon, pt.latp);
+			Point p = Point(pt.lon, pt.latp);
+
+            CorrectGeometry(p);
+
+        	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(osmStore, geomType,
+	    	    			layers.layerMap[layerName],
+		    	    		osmID, osmStore.store_point(p));
+    	    outputs.push_back(oo);
+            return;
 		}
 		else if (geomType==POLYGON) {
 			// polygon
 
+			MultiPolygon mp;
+
 			if (isRelation) {
 				try {
-					geom = multiPolygonCached();
+					mp = multiPolygonCached();
 				} catch(std::out_of_range &err) {
 					cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 					return;
@@ -254,36 +263,31 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				Linestring ls = linestringCached();
 				Polygon p;
 				geom::assign_points(p, ls);
-				MultiPolygon mp;
+
 				mp.push_back(p);
-				geom = mp;
 			}
 
+            CorrectGeometry(mp);
+
+            OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(osmStore, geomType,
+                            layers.layerMap[layerName],
+                            osmID, osmStore.store_multi_polygon(mp.begin(), mp.end()));
+            outputs.push_back(oo);
 		}
 		else if (geomType==LINESTRING) {
 			// linestring
-			geom = linestringCached();
+			Linestring ls = linestringCached();
+
+            CorrectGeometry(ls);
+
+    	    OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreLinestring>(osmStore, geomType,
+		    			layers.layerMap[layerName],
+			    		osmID, osmStore.store_linestring(ls.begin(), ls.end()));
+	        outputs.push_back(oo);
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
 	}
-
-	geom::correct(geom); // fix wrong orientation
-#if BOOST_VERSION >= 105800
-	geom::validity_failure_type failure;
-	if (isRelation && !geom::is_valid(geom,failure)) {
-		if (verbose) cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << endl;
-		if (failure==10) return; // too few points
-	} else if (isWay && !geom::is_valid(geom,failure)) {
-		if (verbose) cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << endl;
-		if (failure==10) return; // too few points
-	}
-#endif
-
-	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(geomType,
-					layers.layerMap[layerName],
-					osmID, geom);
-	outputs.push_back(oo);
 }
 
 void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
@@ -291,7 +295,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	Geometry geom;
+    Point geomp;
 	try {
 
 		Geometry tmp;
@@ -323,7 +327,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		try {
 			Point p;
 			geom::centroid(tmp, p);
-			geom = p;
+			geomp = p;
 		} catch (geom::centroid_exception &err) {
 			cerr << "Problem geom: " << boost::geometry::wkt(tmp) << std::endl;
 			cerr << err.what() << endl;
@@ -334,9 +338,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
 	}
 
-	OutputObjectRef oo = std::make_shared<OutputObjectOsmStore>(CENTROID,
+	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(osmStore, CENTROID,
 					layers.layerMap[layerName],
-					osmID, geom);
+					osmID, osmStore.store_point(geomp));
 	outputs.push_back(oo);
 }
 

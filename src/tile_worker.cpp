@@ -8,7 +8,7 @@ using namespace ClipperLib;
 using namespace std;
 extern bool verbose;
 
-void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	const TileBbox &bbox, Geometry &g) {
 
 	// If a object is a polygon or a linestring that is followed by
@@ -41,7 +41,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(bbox));
+				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(osmStore, bbox));
 				PolyTree newShapes;
 				ConvertToClipper(gNew, newShapes);
 
@@ -79,7 +79,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 			else ooNext.reset();
 
 			try {
-				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(bbox));
+				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(osmStore, bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -93,7 +93,7 @@ void CheckNextObjectAndMerge(ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLa
 	}
 }
 
-void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	class SharedData *sharedData, double simplifyLevel, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
@@ -103,7 +103,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 
 		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = oo->buildNodeGeometry(bbox);
+			LatpLon pos = oo->buildNodeGeometry(osmStore, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
@@ -115,7 +115,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 		} else {
 			Geometry g;
 			try {
-				g = oo->buildWayGeometry(bbox);
+				g = oo->buildWayGeometry(osmStore, bbox);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
@@ -123,7 +123,7 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 
 			//This may increment the jt iterator
 			if(sharedData->config.combineSimilarObjs) {
-				CheckNextObjectAndMerge(jt, ooSameLayerEnd, bbox, g);
+				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, g);
 				oo = *jt;
 			}
 
@@ -138,7 +138,8 @@ void ProcessObjects(const ObjectsAtSubLayerIterator &ooSameLayerBegin, const Obj
 	}
 }
 
-void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
+void ProcessLayer(OSMStore &osmStore,
+    uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, class SharedData *sharedData)
 {
 	TileCoordinates index = it.GetCoordinates();
@@ -168,7 +169,7 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 
 		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
-		ProcessObjects(ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 			simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
@@ -189,7 +190,7 @@ void ProcessLayer(uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &t
 	}
 }
 
-int outputProc(uint threadId, class SharedData *sharedData, int srcZ, int srcX, int srcY) {
+int outputProc(uint threadId, class SharedData *sharedData, OSMStore *osmStore, int srcZ, int srcX, int srcY) {
 
 	// Loop through tiles
 	uint tc = 0;
@@ -219,7 +220,7 @@ int outputProc(uint threadId, class SharedData *sharedData, int srcZ, int srcX, 
 
 		// Loop through layers
 		for (auto lt = sharedData->layers.layerOrder.begin(); lt != sharedData->layers.layerOrder.end(); ++lt) {
-			ProcessLayer(zoom, it, tile, bbox, *lt, sharedData);
+			ProcessLayer(*osmStore, zoom, it, tile, bbox, *lt, sharedData);
 		}
 
 		// Write to file or sqlite

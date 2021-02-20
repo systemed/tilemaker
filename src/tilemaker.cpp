@@ -169,11 +169,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
+    OSMStore osmStore(osmStoreFile);
+	AttributeStore attributeStore;
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
 	class LayerDefinition layers(config.layers);
-	AttributeStore attributeStore;
-	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, osmStoreFile,
+
+	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files
@@ -286,13 +288,13 @@ int main(int argc, char* argv[]) {
 
 			if(threadNum == 1) {
 				// Single thread (is easier to debug)
-				outputProc(0, &sharedData, srcZ,srcX,srcY);
+				outputProc(0, &sharedData, &osmStore, srcZ,srcX,srcY);
 			} else {
 
 				// Multi thread processing loop
 				vector<thread> worker;
 				for (uint threadId = 0; threadId < threadNum; threadId++)
-					worker.emplace_back(outputProc, threadId, &sharedData, srcZ,srcX,srcY);
+					worker.emplace_back(outputProc, threadId, &sharedData, &osmStore, srcZ,srcX,srcY);
 				for (auto &t: worker) t.join();
 
 			}

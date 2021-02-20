@@ -80,14 +80,18 @@ TileCoordinates TilesAtZoomIterator::GetCoordinates() const {
 ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const {
 	TileCoordinatesSet::const_iterator it = *this;
 
+    struct layerComp
+    {
+        bool operator() ( const OutputObjectRef &x, uint_least8_t layer ) const { return x->layer < layer; }
+        bool operator() ( uint_least8_t layer, const OutputObjectRef &x ) const { return layer < x->layer; }
+    };
+
 	// compare only by `layer`
-	auto layerComp = [](const OutputObjectRef &x, const OutputObjectRef &y) -> bool { return x->layer < y->layer; };
 	// We get the range within ooList, where the layer of each object is `layerNum`.
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	const std::vector<OutputObjectRef> &ooList = data;
-	Geometry geom;
-	OutputObjectRef referenceObj = make_shared<OutputObjectOsmStore>(POINT, layerNum, 0, geom);
-	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), referenceObj, layerComp);
+
+	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), layerNum, layerComp());
 	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }
 
