@@ -3,8 +3,9 @@
 using namespace std;
 namespace geom = boost::geometry;
 
-ShpMemTiles::ShpMemTiles(uint baseZoom):
+ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom):
 	TileDataSource(),
+	osmStore(osmStore),
 	baseZoom(baseZoom) { }
 
 void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
@@ -44,8 +45,8 @@ vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Po
 	vector<uint> ids;
 	for (auto it : results) {
 		uint id=it.second;
-		if      (geom::intersects(cachedGeometries.at(id),p1)) { ids.push_back(id); }
-		else if (geom::intersects(cachedGeometries.at(id),p2)) { ids.push_back(id); }
+		if      (cachedGeometries.at(id)->intersects(osmStore, p1)) { ids.push_back(id); }
+		else if (cachedGeometries.at(id)->intersects(osmStore, p2)) { ids.push_back(id); }
 	}
 	return ids;
 }
@@ -71,36 +72,52 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
 
-	cachedGeometries.push_back(geometry);
-
-	uint id = cachedGeometries.size()-1;
+	uint id = cachedGeometries.size();
 	if (isIndexed) {
 		indices.at(layerName).insert(std::make_pair(box, id));
 		if (hasName) cachedGeometryNames[id]=name;
 	}
 
-	OutputObjectRef oo = std::make_shared<OutputObjectCached>(geomType, layerNum, cachedGeometries.size()-1, cachedGeometries);
 
-	Point *p = nullptr;
+	OutputObjectRef oo;
+
 	uint tilex = 0, tiley = 0;
 	switch(geomType) {
 		case CACHED_POINT:
-			p = boost::get<Point>(&geometry);
-			if (p!=nullptr) {
+		{
+			Point *p = boost::get<Point>(&geometry);
+			if (p != nullptr) {
+				oo = std::make_shared<OutputObjectOsmStorePoint>(
+					geomType, layerNum, id, osmStore.store_point(*p));
+				cachedGeometries.push_back(oo);
+
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
 				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
 			}
-			break;
+		} break;
+
 		case CACHED_LINESTRING:
+		{
+			oo = std::make_shared<OutputObjectOsmStoreLinestring>(
+						geomType, layerNum, id, osmStore.store_linestring(boost::get<Linestring>(geometry)));
+			cachedGeometries.push_back(oo);
+
 			addToTileIndexPolyline(oo, tileIndex, &geometry);
-			break;
+		} break;
+
 		case CACHED_POLYGON:
+		{
+			oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(
+						geomType, layerNum, id, osmStore.store_multi_polygon(boost::get<MultiPolygon>(geometry)));
+			cachedGeometries.push_back(oo);
+			
 			// add to tile index
 			addToTileIndexByBbox(oo, tileIndex, 
 				box.min_corner().get<0>(), box.min_corner().get<1>(), 
 				box.max_corner().get<0>(), box.max_corner().get<1>());
-			break;
+		} break;
+
 		default:
 			break;
 	}

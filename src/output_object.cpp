@@ -164,34 +164,3 @@ namespace vector_tile {
 		return strx < stry;
 	}
 }
-
-// **********************************************
-OutputObjectCached::OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id, 
-	const std::vector<Geometry> &cachedGeometries):
-	OutputObject(type, true, l, id),
-	cachedGeometries(cachedGeometries) { }
-
-OutputObjectCached::~OutputObjectCached() { }
-
-Geometry OutputObjectCached::buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const {
-	ClipGeometryVisitor clip(bbox.clippingBox);
-
-	try {
-		if (geomType==CACHED_LINESTRING || geomType==CACHED_POLYGON || geomType==CACHED_POINT) {
-			const Geometry &g = this->cachedGeometries[objectID];
-			return boost::apply_visitor(clip, g);
-		}
-	} catch (std::invalid_argument &err) {
-		cerr << "Error in buildWayGeometry: " << err.what() << endl;
-	}
-
-	return MultiLinestring(); // return a blank geometry
-} 
-
-LatpLon OutputObjectCached::buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const {
-	throw runtime_error("Geometry point type not supported");
-	LatpLon out;
-	out.latp = 0;
-	out.lon = 0;	
-	return out;
-}

@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
     OSMStore osmStore(osmStoreFile);
 	AttributeStore attributeStore;
 	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(config.baseZoom);
+	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 

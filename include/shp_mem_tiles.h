@@ -7,7 +7,7 @@
 class ShpMemTiles : public TileDataSource
 {
 public:
-	ShpMemTiles(uint baseZoom);
+	ShpMemTiles(OSMStore &osmStore, uint baseZoom);
 
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
@@ -38,9 +38,10 @@ private:
 	/// Add an OutputObject to all tiles along a polyline
 	void addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, Geometry *geom);
 
+	OSMStore &osmStore;
 	uint baseZoom;
 	TileIndex tileIndex;
-	std::vector<Geometry> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
+	std::vector<OutputObjectRef> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 };
