@@ -63,7 +63,7 @@ public:
 
 	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	 * Returns a boost::variant -
-	 *   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+	 *	 POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 	 */
 	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const = 0;
 	
@@ -78,7 +78,7 @@ public:
 	/**
 	 * \brief Find a value in the value dictionary
 	 * (we can't easily use find() because of the different value-type encoding - 
-	 *  should be possible to improve this though)
+	 *	should be possible to improve this though)
 	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
 };
@@ -90,88 +90,88 @@ class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
 	OutputObjectOsmStorePoint(OSMStore &osmStore, OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-        : OutputObject(type, false, l, id), index(index)
-    { }
+		: OutputObject(type, false, l, id), index(index)
+	{ }
 
 	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        auto &p = osmStore.retrieve_point(index);
-        if (geom::within(p, bbox.clippingBox)) {
-            return p;
-        } 
-        return MultiLinestring();
-    }
+	{
+		auto &p = osmStore.retrieve_point(index);
+		if (geom::within(p, bbox.clippingBox)) {
+			return p;
+		} 
+		return MultiLinestring();
+	}
 
 	virtual LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        auto const &pt = osmStore.retrieve_point(index);
-        LatpLon out;
-        out.latp = pt.y();
-        out.lon = pt.x();
-        return out;
-    }
+	{
+		auto const &pt = osmStore.retrieve_point(index);
+		LatpLon out;
+		out.latp = pt.y();
+		out.lon = pt.x();
+		return out;
+	}
 
 private:
-    std::size_t index;
+	std::size_t index;
 }; 
 
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
 	OutputObjectOsmStoreLinestring(OSMStore &osmStore, OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-        : OutputObject(type, false, l, id), index(index)
-    { }
+		: OutputObject(type, false, l, id), index(index)
+	{ }
 
 	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        MultiLinestring out;
-        geom::intersection(osmStore.retrieve_linestring(index), bbox.clippingBox, out);
-        return out;
-    }
+	{
+		MultiLinestring out;
+		geom::intersection(osmStore.retrieve_linestring(index), bbox.clippingBox, out);
+		return out;
+	}
 
 	virtual LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        throw std::runtime_error("Geometry type is not point");
-    }
+	{
+		throw std::runtime_error("Geometry type is not point");
+	}
 
 private:
-    std::size_t index;
+	std::size_t index;
 };
 
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
 	OutputObjectOsmStoreMultiPolygon(OSMStore &osmStore, OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-        : OutputObject(type, false, l, id), index(index)
-    { }
+		: OutputObject(type, false, l, id), index(index)
+	{ }
 
 	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        auto mp = osmStore.retrieve_multi_polygon(index);
+	{
+		auto mp = osmStore.retrieve_multi_polygon(index);
 
-        Polygon clippingPolygon;
+		Polygon clippingPolygon;
 
-        geom::convert(bbox.clippingBox, clippingPolygon);
-        if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
-        if (geom::within(mp, clippingPolygon)) { return mp; }
+		geom::convert(bbox.clippingBox, clippingPolygon);
+		if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
+		if (geom::within(mp, clippingPolygon)) { return mp; }
 
-        try {
-            MultiPolygon out;
-            geom::intersection(mp, clippingPolygon, out);
-            return out;
-        } catch (geom::overlay_invalid_input_exception &err) {
-            std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
-            return MultiPolygon(); // blank
-        }
-    }
+		try {
+			MultiPolygon out;
+			geom::intersection(mp, clippingPolygon, out);
+			return out;
+		} catch (geom::overlay_invalid_input_exception &err) {
+			std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
+			return MultiPolygon(); // blank
+		}
+	}
 
 	virtual LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-    {
-        throw std::runtime_error("Geometry type is not point");
-    }
+	{
+		throw std::runtime_error("Geometry type is not point");
+	}
 
 private:
-    std::size_t index;
+	std::size_t index;
 };
 
 /**

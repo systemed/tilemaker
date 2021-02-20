@@ -43,7 +43,7 @@ size_t NodeStore::count(NodeID i) const {
 // @param i OSM ID of a node
 // @param coord a latp/lon pair to be inserted
 // @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
-//            (though unnecessarily for current impl, future impl may impose that)
+//			  (though unnecessarily for current impl, future impl may impose that)
 void NodeStore::insert_back(NodeID i, LatpLon coord) {
 	//std::cout << "Insert node: " << i << " " << coord.latp << " " << coord.lon << std::endl;
 	mLatpLons->emplace(i, coord);
@@ -89,7 +89,7 @@ size_t WayStore::count(WayID i) const {
 // @param i OSM ID of a way
 // @param nodeVec a node vector to be inserted
 // @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
-//            (though unnecessarily for current impl, future impl may impose that)
+//			  (though unnecessarily for current impl, future impl may impose that)
 
 // @brief Make the store empty
 void WayStore::clear() {
