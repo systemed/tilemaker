@@ -438,13 +438,17 @@ public:
 		mergeMultiPolygonWays(wayList, inners, done, wayList.innerBegin, wayList.innerEnd);
 
 		// add all inners and outers to the multipolygon
+		std::vector<Ring> filledInners;
+		for (auto it = inners.begin(); it != inners.end(); ++it) {
+			Ring inner;
+			fillPoints(inner, it->begin(), it->end());
+			filledInners.emplace_back(inner);
+		}
 		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 			Polygon poly;
 			fillPoints(poly.outer(), ot->begin(), ot->end());
-			for (auto it = inners.begin(); it != inners.end(); ++it) {
-				Ring inner;
-				fillPoints(inner, it->begin(), it->end());
-				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
+			for (auto it = filledInners.begin(); it != filledInners.end(); ++it) {
+				if (geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
 			}
 			mp.emplace_back(move(poly));
 		}
