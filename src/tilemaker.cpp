@@ -68,6 +68,7 @@ int main(int argc, char* argv[]) {
 	
 	vector<string> inputFiles;
 	string luaFile;
+	string osmStoreFile;
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
@@ -81,6 +82,7 @@ int main(int argc, char* argv[]) {
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
+		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 		("combine",po::bool_switch(&combineSimilarObjs),                         "combine similar objects (reduces output size but takes considerably longer)");
@@ -167,11 +169,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(config.baseZoom);
-	class LayerDefinition layers(config.layers);
+    OSMStore osmStore(osmStoreFile);
 	AttributeStore attributeStore;
-	OsmLuaProcessing osmLuaProcessing(config, layers, luaFile, 
+	class OsmMemTiles osmMemTiles(config.baseZoom);
+	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
+	class LayerDefinition layers(config.layers);
+
+	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files
@@ -284,13 +288,13 @@ int main(int argc, char* argv[]) {
 
 			if(threadNum == 1) {
 				// Single thread (is easier to debug)
-				outputProc(0, &sharedData, srcZ,srcX,srcY);
+				outputProc(0, &sharedData, &osmStore, srcZ,srcX,srcY);
 			} else {
 
 				// Multi thread processing loop
 				vector<thread> worker;
 				for (uint threadId = 0; threadId < threadNum; threadId++)
-					worker.emplace_back(outputProc, threadId, &sharedData, srcZ,srcX,srcY);
+					worker.emplace_back(outputProc, threadId, &sharedData, &osmStore, srcZ,srcX,srcY);
 				for (auto &t: worker) t.join();
 
 			}

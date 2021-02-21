@@ -14,6 +14,7 @@
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "attribute_store.h"
+#include "helpers.h"
 
 // Lua
 extern "C" {
@@ -22,6 +23,10 @@ extern "C" {
     #include "lauxlib.h"
 }
 #include "kaguya.hpp"
+
+
+// FIXME: why is this global ?
+extern bool verbose;
 
 /**
 	\brief OsmLuaProcessing - converts OSM objects into OutputObjectOsmStore objects.
@@ -35,7 +40,9 @@ class OsmLuaProcessing : public PbfReaderOutput {
 public:
 	// ----	initialization routines
 
-	OsmLuaProcessing(const class Config &configIn, class LayerDefinition &layers, 
+	OsmLuaProcessing(
+        OSMStore &osmStore,
+        const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
 		const class ShpMemTiles &shpMemTiles, 
 		class OsmMemTiles &osmMemTiles,
@@ -103,6 +110,22 @@ public:
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 
+    template<class GeometryT>
+    void CorrectGeometry(GeometryT &geom)
+    {
+        geom::correct(geom); // fix wrong orientation
+#if BOOST_VERSION >= 105800
+        geom::validity_failure_type failure;
+        if (isRelation && !geom::is_valid(geom,failure)) {
+            if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+            if (failure==10) return; // too few points
+        } else if (isWay && !geom::is_valid(geom,failure)) {
+            if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+            if (failure==10) return; // too few points
+        }
+#endif
+    }
+
 	// Add layer
 	void Layer(const std::string &layerName, bool area);
 	void LayerAsCentroid(const std::string &layerName);
@@ -143,7 +166,7 @@ private:
 		lon1=a; latp1=b; lon2=c; latp2=d;
 	}
 	
-	OSMStore osmStore;						// global OSM store
+	OSMStore &osmStore;						// global OSM store
 
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;

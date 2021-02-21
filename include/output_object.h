@@ -9,12 +9,14 @@
 #include "geomtypes.h"
 #include "coordinates.h"
 #include "attribute_store.h"
+#include "osm_store.h"
 
 #include "clipper.hpp"
 
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
+
 
 ///\brief Specifies geometry type for an OutputObject
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
@@ -61,13 +63,16 @@ public:
 
 	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
 	 * Returns a boost::variant -
-	 *   POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+	 *	 POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
 	 */
-	virtual Geometry buildWayGeometry(const TileBbox &bbox) const = 0;
+	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const = 0;
 	
 	///\brief Add a node geometry
-	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const = 0;
+	virtual LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const = 0;
 	
+	///\brief Check if the object intersects with the given point
+	virtual bool intersects(OSMStore &osmStore, Point const &p) const = 0;
+
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
 		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr,
@@ -76,7 +81,7 @@ public:
 	/**
 	 * \brief Find a value in the value dictionary
 	 * (we can't easily use find() because of the different value-type encoding - 
-	 *  should be possible to improve this though)
+	 *	should be possible to improve this though)
 	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
 };
@@ -84,37 +89,117 @@ public:
 /**
  * \brief An OutputObject derived class that contains data originally from OsmMemTiles
 */
-class OutputObjectOsmStore : public OutputObject
+class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStore(OutputGeometryType type, uint_least8_t l, NodeID id,
-		Geometry geom);
-	virtual ~OutputObjectOsmStore();
+	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
+		: OutputObject(type, false, l, id), index(index)
+	{ 
+		assert(type == POINT || type == CENTROID || type == CACHED_POINT);
+	}
 
-	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
+	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		auto &p = osmStore.retrieve_point(index);
+		if (geom::within(p, bbox.clippingBox)) {
+			return p;
+		} 
+		return MultiLinestring();
+	}
 
-	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
+	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		auto const &pt = osmStore.retrieve_point(index);
+		LatpLon out;
+		out.latp = pt.y();
+		out.lon = pt.x();
+		return out;
+	}
+
+	bool intersects(OSMStore &osmStore, Point const &p) const
+	{
+		return boost::geometry::intersects(osmStore.retrieve_point(index), p);
+	}
 
 private:
-	const Geometry geom;
+	std::size_t index;
+}; 
+
+class OutputObjectOsmStoreLinestring : public OutputObject
+{
+public:
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
+		: OutputObject(type, false, l, id), index(index)
+	{ 
+		assert(type == LINESTRING || type == CACHED_LINESTRING);
+	}
+
+	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		MultiLinestring out;
+		geom::intersection(osmStore.retrieve_linestring(index), bbox.clippingBox, out);
+		return out;
+	}
+
+	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		throw std::runtime_error("Geometry type is not point");
+	}
+
+	bool intersects(OSMStore &osmStore, Point const &p) const 
+	{
+		return boost::geometry::intersects(osmStore.retrieve_linestring(index), p);
+	}
+
+private:
+	std::size_t index;
 };
 
-/**
- * \brief An OutputObject derived class that contains data originally from ShpMemTiles
-*/
-class OutputObjectCached : public OutputObject {
-
+class OutputObjectOsmStoreMultiPolygon : public OutputObject
+{
 public:
-	OutputObjectCached(OutputGeometryType type, uint_least8_t l, NodeID id,
-		const std::vector<Geometry> &cachedGeometries);
-	virtual ~OutputObjectCached();
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
+		: OutputObject(type, false, l, id), index(index)
+	{ 
+		assert(type == POLYGON || type == CACHED_POLYGON);
+	}
 
-	virtual Geometry buildWayGeometry(const TileBbox &bbox) const;
+	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		auto mp = osmStore.retrieve_multi_polygon(index);
 
-	virtual LatpLon buildNodeGeometry(const TileBbox &bbox) const;
+		Polygon clippingPolygon;
+
+		geom::convert(bbox.clippingBox, clippingPolygon);
+		if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
+		if (geom::within(mp, clippingPolygon)) { 
+			MultiPolygon out;
+			boost::geometry::assign(out, mp);
+			return out; 
+		}
+
+		try {
+			MultiPolygon out;
+			geom::intersection(mp, clippingPolygon, out);
+			return out;
+		} catch (geom::overlay_invalid_input_exception &err) {
+			std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
+			return MultiPolygon(); // blank
+		}
+	}
+
+	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
+	{
+		throw std::runtime_error("Geometry type is not point");
+	}
+
+	bool intersects(OSMStore &osmStore, Point const &p) const
+	{
+		return boost::geometry::intersects(osmStore.retrieve_multi_polygon(index), p);
+	}
 
 private:
-	const std::vector<Geometry> &cachedGeometries;
+	std::size_t index;
 };
 
 typedef std::shared_ptr<OutputObject> OutputObjectRef;
