@@ -125,6 +125,7 @@ namespace boost { namespace geometry { namespace traits {
 	        return p.second;
     	}
 	};
+
 }}} 
 
 BOOST_GEOMETRY_REGISTER_LINESTRING(mmap::linestring_t)

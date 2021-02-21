@@ -78,7 +78,6 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		if (hasName) cachedGeometryNames[id]=name;
 	}
 
-
 	OutputObjectRef oo;
 
 	uint tilex = 0, tiley = 0;
@@ -88,7 +87,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			Point *p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
 				oo = std::make_shared<OutputObjectOsmStorePoint>(
-					geomType, layerNum, id, osmStore.store_point(*p));
+					geomType, layerNum, id, osmStore.store_point(osmStore.shp(), *p));
 				cachedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -100,7 +99,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		case CACHED_LINESTRING:
 		{
 			oo = std::make_shared<OutputObjectOsmStoreLinestring>(
-						geomType, layerNum, id, osmStore.store_linestring(boost::get<Linestring>(geometry)));
+						geomType, layerNum, id, osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)));
 			cachedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, tileIndex, &geometry);
@@ -109,7 +108,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		case CACHED_POLYGON:
 		{
 			oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(
-						geomType, layerNum, id, osmStore.store_multi_polygon(boost::get<MultiPolygon>(geometry)));
+						geomType, layerNum, id, osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)));
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index
