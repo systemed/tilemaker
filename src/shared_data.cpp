@@ -7,7 +7,7 @@ using namespace std;
 using namespace rapidjson;
 
 SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
-	class TileData &tileData, const class AttributeStore &attributeStore):
+	std::map<uint, TileData> &tileData, const class AttributeStore &attributeStore):
 	tileData(tileData),
 	layers(layers),
 	config(configIn),

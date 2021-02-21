@@ -47,6 +47,8 @@ typedef unsigned uint;
 #include "osm_mem_tiles.h"
 #include "shp_mem_tiles.h"
 
+#include <boost/asio/post.hpp>
+
 // Namespaces
 using namespace std;
 namespace po = boost::program_options;
@@ -216,15 +218,22 @@ int main(int argc, char* argv[]) {
 	}
 
 	// ----	Initialise SharedData
-
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
-	class TileData tileData(sources);
+
+	std::map<uint, TileData> tileData;
+	std::size_t total_tiles = 0;
+
+	for (uint zoom=config.startZoom; zoom<=config.endZoom; zoom++) {
+		tileData.emplace(std::piecewise_construct,
+				std::forward_as_tuple(zoom), 
+				std::forward_as_tuple(sources, zoom));
+		total_tiles += tileData.at(zoom).GetTilesAtZoomSize();
+	}
 
 	if (!mapsplit) attributeStore.sortOsmAttributes();
 	attributeStore.sortShpAttributes();
 
 	class SharedData sharedData(config, layers, tileData, attributeStore);
-	sharedData.threadNum = threadNum;
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
 
@@ -281,24 +290,43 @@ int main(int argc, char* argv[]) {
 			attributeStore.sortOsmAttributes();
 		}
 
+		// Launch the pool with threadNum threads
+		boost::asio::thread_pool pool(threadNum);
+
+		// Mutex is hold when IO is performed
+		std::mutex io_mutex;
+
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 
-			tileData.SetZoom(zoom);
-			sharedData.zoom = zoom;
+			// Loop through tiles
+			uint tc = 0;
 
-			if(threadNum == 1) {
-				// Single thread (is easier to debug)
-				outputProc(0, &sharedData, &osmStore, srcZ,srcX,srcY);
-			} else {
+			for (TilesAtZoomIterator it = sharedData.tileData.at(zoom).GetTilesAtZoomBegin(); it != sharedData.tileData.at(zoom).GetTilesAtZoomEnd(); ++it) { 
+				// If we're constrained to a source tile, check we're within it
+				if (srcZ>-1) {
+					int x = it.GetCoordinates().x / pow(2, zoom-srcZ);
+					int y = it.GetCoordinates().y / pow(2, zoom-srcZ);
+					if (x!=srcX || y!=srcY) continue;
+				}
 
-				// Multi thread processing loop
-				vector<thread> worker;
-				for (uint threadId = 0; threadId < threadNum; threadId++)
-					worker.emplace_back(outputProc, threadId, &sharedData, &osmStore, srcZ,srcX,srcY);
-				for (auto &t: worker) t.join();
+				// Submit a lambda object to the pool.
+				tc++;
 
+				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
+					outputProc(pool, sharedData, osmStore, it, zoom);
+
+					uint interval = 100;
+					if(tc % interval == 0) { 
+						const std::lock_guard<std::mutex> lock(io_mutex);
+						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r";
+					}
+				});
 			}
+
 		}
+		
+		// Wait for all tasks in the pool to complete.
+		pool.join();
 	}
 
 	// ----	Close tileset

@@ -15,7 +15,7 @@ endif()
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR}) # for generated files
 
-find_package(Boost 1.56 REQUIRED COMPONENTS system filesystem program_options)
+find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 find_package(Protobuf REQUIRED)
