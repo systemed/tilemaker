@@ -51,7 +51,7 @@ public:
 	PbfReader();
 	virtual ~PbfReader();
 
-	int ReadPbfFile(const std::string &inputFile, std::unordered_set<std::string> &nodeKeys);
+	int ReadPbfFile(std::istream &inputFile, std::unordered_set<std::string> &nodeKeys);
 
 	///Pointer to output object. Loaded objects are sent here.
 	PbfReaderOutput * output;

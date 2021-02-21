@@ -48,6 +48,7 @@ typedef unsigned uint;
 #include "shp_mem_tiles.h"
 
 #include <boost/asio/post.hpp>
+#include <boost/interprocess/streams/bufferstream.hpp>
 
 // Namespaces
 using namespace std;
@@ -212,7 +213,11 @@ int main(int argc, char* argv[]) {
 	if (!mapsplit) {
 		for (auto inputFile : inputFiles) {
 			cout << "Reading .pbf " << inputFile << endl;
-			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+			
+			ifstream infile(inputFile, ios::in | ios::binary);
+			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+
+			int ret = pbfReader.ReadPbfFile(infile, nodeKeys);
 			if (ret != 0) return ret;
 		}
 	}
@@ -267,6 +272,7 @@ int main(int argc, char* argv[]) {
 	for (unsigned run=0; run<runs; run++) {
 		// Read mapsplit tile and parse, if applicable
 		int srcZ = -1, srcX = -1, srcY = -1, tmsY = -1;
+
 		if (mapsplit) {
 			osmMemTiles.Clear();
 			attributeStore.clearOsmAttributes();
@@ -278,14 +284,13 @@ int main(int argc, char* argv[]) {
 			} else if (srcZ > config.startZoom) {
 				cout << "Mapsplit tiles (zoom " << srcZ << ") can't write data at zoom level " << config.startZoom << endl;
 			}
+
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
-			// Write to a temp file and read back in - can we do this better via a stringstream or similar?
-			ofstream tempfile;
-			tempfile.open("/tmp/temp.pbf");
-			copy(pbf.cbegin(), pbf.cend(), ostreambuf_iterator<char>(tempfile));
-			tempfile.close();
-			pbfReader.ReadPbfFile("/tmp/temp.pbf", nodeKeys);
+
+			boost::interprocess::bufferstream pbfstream(pbf.data(), pbf.size(),  ios::in | ios::binary);
+			pbfReader.ReadPbfFile(pbfstream, nodeKeys);
+
 			tileList.pop_back();
 			attributeStore.sortOsmAttributes();
 		}
