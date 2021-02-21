@@ -94,7 +94,7 @@ namespace sqlite {
 
 	public:
 		friend class database;
-		~database_binder() {
+		~database_binder() noexcept(false) {
 			/* Will be executed if no >>op is found */
 			if (_stmt) {
 				if (sqlite3_step(_stmt) != SQLITE_DONE) {
