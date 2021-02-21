@@ -7,9 +7,14 @@
 #include <iostream>
 #include "geomtypes.h"
 #include "coordinates.h"
-#include "tsl/sparse_map.h"
 namespace geom = boost::geometry;
 
+#include <boost/geometry/geometries/register/linestring.hpp>
+#include <boost/interprocess/managed_mapped_file.hpp>
+#include <boost/interprocess/allocators/node_allocator.hpp>
+#include <boost/container/vector.hpp>
+#include <boost/container/scoped_allocator.hpp>
+#include <boost/unordered_map.hpp>
 //
 // Views of data structures.
 //
@@ -22,6 +27,11 @@ struct NodeList {
 
 NodeList<NodeVec::const_iterator> makeNodeList(const NodeVec &nodeVec);
 
+template<class NodeIt>
+static inline bool isClosed(NodeList<NodeIt> const &way) {
+	return *way.begin == *std::prev(way.end);
+}
+
 template<class WayIt>
 struct WayList {
 	WayIt outerBegin;
@@ -32,20 +42,33 @@ struct WayList {
 
 WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const WayVec &innerWayVec);
 
+using mmap_file_t = boost::interprocess::managed_mapped_file;
+
 //
 // Internal data structures.
 //
 
 // node store
 class NodeStore {
-	tsl::sparse_map<NodeID, LatpLon> mLatpLons;
+	using pair_t = std::pair<NodeID, LatpLon>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
+	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, pair_allocator_t>;
+	
+	map_t *mLatpLons;
 
 public:
+
+	void reopen(mmap_file_t &mmap_file)
+	{
+		mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
+		mLatpLons->reserve(10000000);
+	}
+
 	// @brief Lookup a latp/lon pair
 	// @param i OSM ID of a node
 	// @return Latp/lon pair
 	// @exception NotFound
-	LatpLon at(NodeID i) const;
+	LatpLon const &at(NodeID i) const;
 
 	// @brief Return whether a latp/lon pair is on the store.
 	// @param i Any possible OSM ID
@@ -57,7 +80,7 @@ public:
 	// @param i OSM ID of a node
 	// @param coord a latp/lon pair to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
-	//            (though unnecessarily for current impl, future impl may impose that)
+	//			  (though unnecessarily for current impl, future impl may impose that)
 	void insert_back(NodeID i, LatpLon coord);
 
 	// @brief Make the store empty
@@ -67,22 +90,33 @@ public:
 };
 
 // way store
-typedef std::vector<NodeID>::const_iterator WayStoreIterator;
 
 class WayStore {
-	tsl::sparse_map<WayID, const std::vector<NodeID> > mNodeLists;
+
+	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+	using nodeid_allocator_t = boost::interprocess::node_allocator<NodeID, mmap_file_t::segment_manager>;
+	using nodeid_vector_t = boost::container::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
+
+	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
+	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
+
+	map_t *mNodeLists;
 
 public:
+
+	using const_iterator = nodeid_vector_t::const_iterator;
+
+	void reopen(mmap_file_t &mmap_file)
+	{
+		mNodeLists = mmap_file.find_or_construct<map_t>("way_store")(mmap_file.get_segment_manager());
+	}
+
 	// @brief Lookup a node list
 	// @param i OSM ID of a way
 	// @return A node list
 	// @exception NotFound
-	NodeList<WayStoreIterator> at(WayID i) const;
-
-	bool isClosed(WayID i) const;
-	NodeVec nodesFor(WayID i) const;
-	NodeID firstNode(WayID i) const;
-	NodeID lastNode(WayID i) const;
+	NodeList<nodeid_vector_t::const_iterator> at(WayID i) const;
 
 	// @brief Return whether a node list is on the store.
 	// @param i Any possible OSM ID
@@ -94,8 +128,13 @@ public:
 	// @param i OSM ID of a way
 	// @param nodeVec a node vector to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
-	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(WayID i, const NodeVec &nodeVec);
+	//			  (though unnecessarily for current impl, future impl may impose that)
+	template<typename Iterator>			  
+	void insert_back(WayID i, Iterator begin, Iterator end) {
+		mNodeLists->emplace(std::piecewise_construct,
+			std::forward_as_tuple(i),
+			std::forward_as_tuple(begin, end)); 
+	}
 
 	// @brief Make the store empty
 	void clear();
@@ -104,17 +143,47 @@ public:
 };
 
 // relation store
-typedef std::vector<WayID>::const_iterator RelationStoreIterator;
 
 class RelationStore {
-	tsl::sparse_map<WayID, const std::pair<const std::vector<WayID>, const std::vector<WayID> > > mOutInLists;
+
+	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+
+	using wayid_allocator_t = boost::interprocess::node_allocator<WayID, mmap_file_t::segment_manager>;
+
+	class wayid_vector_t
+		: public  boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>
+	{
+	public:
+			template<typename IteratorTuple, typename Allocator>
+			wayid_vector_t(IteratorTuple init, Allocator &allocator)
+				: boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>(init.first, init.second, allocator) 
+			{ }
+	};
+
+	using relation_entry_t = std::pair<wayid_vector_t, wayid_vector_t>;
+	using relation_allocator_t = boost::interprocess::node_allocator<relation_entry_t, mmap_file_t::segment_manager>;
+
+	using pair_t = std::pair<WayID, relation_entry_t>;
+	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
+	using map_t = boost::unordered_map<WayID, relation_entry_t, std::hash<WayID>, std::equal_to<WayID>, scoped_alloc_t<pair_allocator_t>>;
+
+	map_t *mOutInLists;
 
 public:
+
+	using const_iterator = wayid_vector_t::const_iterator;
+
+	void reopen(mmap_file_t &mmap_file)
+	{
+		mOutInLists = mmap_file.find_or_construct<map_t>("relation_store")(mmap_file.get_segment_manager());
+		mOutInLists->reserve(1000000);
+	}
+
 	// @brief Lookup a way list
 	// @param i Pseudo OSM ID of a relational way
 	// @return A way list
 	// @exception NotFound
-	WayList<RelationStoreIterator> at(WayID i) const;
+	WayList<const_iterator> at(WayID i) const;
 
 	// @brief Return whether a way list is on the store.
 	// @param i Any possible OSM ID
@@ -127,10 +196,16 @@ public:
 	// @param outerWayVec A outer way vector to be inserted
 	// @param innerWayVec A inner way vector to be inserted
 	// @invariant The pseudo OSM ID i must be smaller than previously inserted pseudo OSM IDs of relations
-	//            (though unnecessarily for current impl, future impl may impose that)
-	void insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec);
+	//			  (though unnecessarily for current impl, future impl may impose that)
+	template<class Iterator>
+	void insert_front(WayID i, Iterator outerWayVec_begin, Iterator outerWayVec_end, Iterator innerWayVec_begin, Iterator innerWayVec_end) {
+		mOutInLists->emplace(std::piecewise_construct,
+			std::forward_as_tuple(i),
+			std::forward_as_tuple(
+				std::make_pair(outerWayVec_begin, outerWayVec_end), 
+				std::make_pair(innerWayVec_begin, innerWayVec_end)));
+	}
 
-	// @brief Make the store empty
 	void clear();
 
 	size_t size();
@@ -156,11 +231,186 @@ public:
 */
 class OSMStore
 {
+	template< class Iterator >
+	static std::reverse_iterator<Iterator> make_reverse_iterator(Iterator i)
+	{
+		return std::reverse_iterator<Iterator>(i);
+	}		
 
-public:
 	NodeStore nodes;
 	WayStore ways;
 	RelationStore relations;
+
+	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+
+	using point_allocator_t = boost::interprocess::node_allocator<Point, mmap_file_t::segment_manager>;
+	using point_store_t = std::deque<Point, point_allocator_t>;
+	point_store_t *generated_points_store;
+
+	using linestring_t = mmap::linestring_t;
+	using linestring_allocator_t = boost::interprocess::node_allocator<linestring_t, mmap_file_t::segment_manager>;
+	using linestring_store_t = std::deque<linestring_t, scoped_alloc_t<linestring_allocator_t>>;
+	linestring_store_t *generated_linestring_store;
+
+	using multi_polygon_store_t = std::deque<mmap::multi_polygon_t, 
+		  scoped_alloc_t<boost::interprocess::node_allocator<mmap::multi_polygon_t, mmap_file_t::segment_manager>>>;
+	multi_polygon_store_t *generated_multi_polygon_store;
+
+	std::string osm_store_filename;
+	constexpr static std::size_t init_map_size = 64000000;
+	std::size_t map_size = init_map_size;
+
+	void remove_mmap_file();
+
+	mmap_file_t create_mmap_file()
+	{
+		remove_mmap_file();
+		return mmap_file_t(boost::interprocess::create_only, osm_store_filename.c_str(), init_map_size);
+	}
+
+	mmap_file_t open_mmap_file()
+	{
+		return mmap_file_t(boost::interprocess::open_only, osm_store_filename.c_str());
+	}
+
+	mmap_file_t mmap_file;
+
+	void reopen() {
+		nodes.reopen(mmap_file);
+		ways.reopen(mmap_file);
+		relations.reopen(mmap_file);
+		
+		generated_points_store = mmap_file.find_or_construct<point_store_t>
+			("point_store")(mmap_file.get_segment_manager());
+		generated_linestring_store = mmap_file.find_or_construct<linestring_store_t>
+			("linestring_store")(mmap_file.get_segment_manager());
+		generated_multi_polygon_store = mmap_file.find_or_construct<multi_polygon_store_t>
+			("multi_polygon_store")(mmap_file.get_segment_manager()); 
+	}
+
+	template<typename Func>
+	void perform_mmap_operation(Func func) {
+		while(true) {
+			try {
+				func();
+				return;
+			} catch(boost::interprocess::bad_alloc &e) {
+				map_size = map_size * 2;
+				std::cout << "Resizing osm store to size: " << map_size << std::endl;
+				
+				mmap_file = mmap_file_t();
+
+				boost::interprocess::managed_mapped_file::grow(osm_store_filename.c_str(), map_size);
+
+				mmap_file = open_mmap_file();
+				reopen();
+			}
+		}
+	}
+
+public:
+
+	OSMStore(std::string const &osm_store_filename)
+	   : osm_store_filename(osm_store_filename) 
+	{ 
+		mmap_file = create_mmap_file();
+		perform_mmap_operation([&]() {
+			reopen();
+		});
+	}
+
+	~OSMStore()
+	{
+		remove_mmap_file();
+	}
+
+	void nodes_insert_back(NodeID i, LatpLon coord) {
+		perform_mmap_operation([&]() {
+			nodes.insert_back(i, coord);
+		});
+	}
+
+	LatpLon const &nodes_at(NodeID i) const {
+		return nodes.at(i);
+	}
+
+	NodeList<WayStore::const_iterator> ways_at(WayID i) const {
+		return ways.at(i);
+	}
+
+	void ways_insert_back(WayID i, const NodeVec &nodeVec) {
+		perform_mmap_operation([&]() {
+			ways.insert_back(i, nodeVec.begin(), nodeVec.end());
+		});
+	}
+
+	WayList<RelationStore::const_iterator> relations_at(WayID i) const {
+		return relations.at(i);
+	}
+
+	void relations_insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
+		relations.insert_front(i, outerWayVec.begin(), outerWayVec.end(), innerWayVec.begin(), innerWayVec.end());
+	}
+
+	template<typename T>
+	std::size_t store_point(T const &input) {
+		perform_mmap_operation([&]() {
+			generated_points_store->emplace_back(input.x(), input.y());		   
+		});
+		return generated_points_store->size() - 1;
+	}
+
+	Point const &retrieve_point(std::size_t index) const {
+		return generated_points_store->at(index);
+	}
+
+	template<typename Input>
+	std::size_t store_linestring(Input const &src)
+	{
+		perform_mmap_operation([&]() {
+			generated_linestring_store->resize(generated_linestring_store->size() + 1);
+			boost::geometry::assign(generated_linestring_store->back(), src);
+		});
+		return generated_linestring_store->size() - 1;
+	}
+
+	mmap::linestring_t retrieve_linestring(std::size_t index) const {
+		return generated_linestring_store->at(index);
+	}
+
+	template<typename Input>
+	std::size_t store_multi_polygon(Input const &src)
+	{
+		 perform_mmap_operation([&]() {
+			 mmap::multi_polygon_t result(generated_multi_polygon_store->get_allocator());
+			 result.reserve(src.size());
+
+			for(auto const &polygon: src) {
+			//for(auto i = src.begin(); i != src.end(); ++i) {
+			//	auto const &polygon = *i;
+				mmap::polygon_t::inners_type inners(polygon.inners().size(), result.get_allocator());
+				mmap::polygon_t::ring_type outer(result.get_allocator());
+
+				// Copy the outer ring
+				boost::geometry::assign(outer, polygon.outer());
+
+				// Store the inner rings
+				for(std::size_t i = 0; i < polygon.inners().size(); ++i) {
+					boost::geometry::assign(inners[i], polygon.inners()[i]);
+				} 
+			
+				result.emplace_back(outer, inners);
+			}
+
+			generated_multi_polygon_store->push_back(result);
+		});
+
+		return generated_multi_polygon_store->size() - 1; 
+	}
+
+	mmap::multi_polygon_t const &retrieve_multi_polygon(std::size_t index) const {
+		return generated_multi_polygon_store->at(index);
+	}
 
 	// @brief Make the store empty
 	void clear();
@@ -190,10 +440,10 @@ public:
 		// add all inners and outers to the multipolygon
 		for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 			Polygon poly;
-			fillPoints(poly.outer(), *ot);
+			fillPoints(poly.outer(), ot->begin(), ot->end());
 			for (auto it = inners.begin(); it != inners.end(); ++it) {
 				Ring inner;
-				fillPoints(inner, *it);
+				fillPoints(inner, it->begin(), it->end());
 				if (geom::within(inner, poly.outer())) { poly.inners().emplace_back(inner); }
 			}
 			mp.emplace_back(move(poly));
@@ -213,36 +463,41 @@ public:
 			added = 0;
 			for (auto it = itBegin; it != itEnd; ++it) {
 				if (done[*it]) { continue; }
-				if (ways.isClosed(*it)) {
+				auto way = ways.at(*it);
+				if (isClosed(way)) {
 					// if start==end, simply add it to the set
-					results.emplace_back(ways.nodesFor(*it));
+					results.emplace_back(NodeVec(way.begin, way.end));
 					added++;
 					done[*it] = true;
 				} else {
 					// otherwise, can we find a matching outer to append it to?
 					bool joined = false;
-					NodeVec nodes = ways.nodesFor(*it);
-					NodeID jFirst = nodes.front();
-					NodeID jLast  = nodes.back();
+					auto nodes = ways.at(*it);
+					NodeID jFirst = *nodes.begin;
+					NodeID jLast  = *(std::prev(nodes.end));
 					for (auto ot = results.begin(); ot != results.end(); ot++) {
 						NodeID oFirst = ot->front();
 						NodeID oLast  = ot->back();
 						if (jFirst==jLast) continue; // don't join to already-closed ways
 						else if (oLast==jFirst) {
 							// append to the original
-							ot->insert(ot->end(), nodes.begin(), nodes.end());
+							ot->insert(ot->end(), nodes.begin, nodes.end);
 							joined=true; break;
 						} else if (oLast==jLast) {
 							// append reversed to the original
-							ot->insert(ot->end(), nodes.rbegin(), nodes.rend());
+							ot->insert(ot->end(), 
+								make_reverse_iterator(nodes.end), 
+								make_reverse_iterator(nodes.begin));
 							joined=true; break;
 						} else if (jLast==oFirst) {
 							// prepend to the original
-							ot->insert(ot->begin(), nodes.begin(), nodes.end());
+							ot->insert(ot->begin(), nodes.begin, nodes.end);
 							joined=true; break;
 						} else if (jFirst==oFirst) {
 							// prepend reversed to the original
-							ot->insert(ot->begin(), nodes.rbegin(), nodes.rend());
+							ot->insert(ot->begin(), 
+								make_reverse_iterator(nodes.end), 
+								make_reverse_iterator(nodes.begin));
 							joined=true; break;
 						}
 					}
@@ -256,7 +511,8 @@ public:
 			if (added==0) {
 				for (auto it = itBegin; it != itEnd; ++it) {
 					if (done[*it]) { continue; }
-					results.emplace_back(ways.nodesFor(*it));
+					auto way = ways.at(*it);
+					results.emplace_back(NodeVec(way.begin, way.end));
 					added++;
 					done[*it] = true;
 					break;
@@ -277,7 +533,7 @@ public:
 	template<class NodeIt>
 	Polygon nodeListPolygon(NodeList<NodeIt> nodeList) const {
 		Polygon poly;
-		fillPoints(poly.outer(), nodeList);
+		fillPoints(poly.outer(), nodeList.begin, nodeList.end);
 		geom::correct(poly);
 		return poly;
 	}
@@ -290,7 +546,7 @@ public:
 	template<class NodeIt>
 	Linestring nodeListLinestring(NodeList<NodeIt> nodeList) const{
 		Linestring ls;
-		fillPoints(ls, nodeList);
+		fillPoints(ls, nodeList.begin, nodeList.end);
 		return ls;
 	}
 
@@ -301,17 +557,8 @@ public:
 private:
 	// helper
 	template<class PointRange, class NodeIt>
-	void fillPoints(PointRange &points, NodeList<NodeIt> nodeList) const {
-		for (auto it = nodeList.begin; it != nodeList.end; ++it) {
-			LatpLon ll = nodes.at(*it);
-			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
-		}
-	}
-
-	// fixme - this is duplicate code from above
-	template<class PointRange>
-	void fillPoints(PointRange &points, NodeVec nodeList) const {
-		for (auto it = nodeList.begin(); it != nodeList.end(); ++it) {
+	void fillPoints(PointRange &points, NodeIt begin, NodeIt end) const {
+		for (auto it = begin; it != end; ++it) {
 			LatpLon ll = nodes.at(*it);
 			geom::range::push_back(points, geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
 		}
