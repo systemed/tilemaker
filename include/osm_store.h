@@ -309,7 +309,7 @@ class OSMStore
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
 				map_size = map_size * 2;
-				std::cout << "Resizing osm store to size: " << map_size << std::endl;
+				std::cout << "Resizing osm store to size: " << (map_size / 1000000) << "M                " << std::endl;
 				
 				mmap_file = mmap_file_t();
 

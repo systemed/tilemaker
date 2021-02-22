@@ -301,10 +301,10 @@ int main(int argc, char* argv[]) {
 		// Mutex is hold when IO is performed
 		std::mutex io_mutex;
 
-		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+		// Loop through tiles
+		uint tc = 0;
 
-			// Loop through tiles
-			uint tc = 0;
+		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 
 			for (TilesAtZoomIterator it = sharedData.tileData.at(zoom).GetTilesAtZoomBegin(); it != sharedData.tileData.at(zoom).GetTilesAtZoomEnd(); ++it) { 
 				// If we're constrained to a source tile, check we're within it
@@ -321,7 +321,7 @@ int main(int argc, char* argv[]) {
 					outputProc(pool, sharedData, osmStore, it, zoom);
 
 					uint interval = 100;
-					if(tc % interval == 0) { 
+					if(tc % interval == 0 || tc == total_tiles) { 
 						const std::lock_guard<std::mutex> lock(io_mutex);
 						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r";
 					}
