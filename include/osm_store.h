@@ -308,12 +308,13 @@ class OSMStore
 				func();
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
-				map_size = map_size * 2;
-				std::cout << "Resizing osm store to size: " << (map_size / 1000000) << "M                " << std::endl;
 				
 				mmap_file = mmap_file_t();
 
+				// Double the size of the mmap size
+				std::cout << "Resizing osm store to size: " << (2 * map_size / 1000000) << "M                " << std::endl;
 				boost::interprocess::managed_mapped_file::grow(osm_store_filename.c_str(), map_size);
+				map_size = map_size * 2;
 
 				mmap_file = open_mmap_file();
 				reopen();
@@ -337,6 +338,7 @@ public:
 		remove_mmap_file();
 	}
 
+	// Store and retrieve ways/nodes and relations in the mmap file
 	void nodes_insert_back(NodeID i, LatpLon coord) {
 		perform_mmap_operation([&]() {
 			nodes.insert_back(i, coord);
@@ -365,8 +367,10 @@ public:
 		relations.insert_front(i, outerWayVec.begin(), outerWayVec.end(), innerWayVec.begin(), innerWayVec.end());
 	}
 
+	// Get the currently allocated memory size in the mmap
 	std::size_t getMemorySize() const { return map_size; }
 
+	// Following methods are to store and retrieve the generated geometries in the mmap file
 	using handle_t = mmap_file_t::handle_t;
 
 	generated &osm() { return osm_generated; }
@@ -406,8 +410,6 @@ public:
 			 result.reserve(src.size());
 
 			for(auto const &polygon: src) {
-			//for(auto i = src.begin(); i != src.end(); ++i) {
-			//	auto const &polygon = *i;
 				mmap::polygon_t::inners_type inners(polygon.inners().size(), result.get_allocator());
 				mmap::polygon_t::ring_type outer(result.get_allocator());
 
