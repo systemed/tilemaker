@@ -61,7 +61,10 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
-		mLatpLons->reserve(10000000);
+	}
+
+	void reserve(uint nodes) {
+		mLatpLons->reserve(nodes);
 	}
 
 	// @brief Lookup a latp/lon pair
@@ -110,7 +113,10 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mNodeLists = mmap_file.find_or_construct<map_t>("way_store")(mmap_file.get_segment_manager());
-		mNodeLists->reserve(1000000);
+	}
+
+	void reserve(uint ways) {
+		mNodeLists->reserve(ways);
 	}
 
 	// @brief Lookup a node list
@@ -263,7 +269,7 @@ class OSMStore
 	generated shp_generated;
 
 	std::string osm_store_filename;
-	constexpr static std::size_t init_map_size = 64000000;
+	constexpr static std::size_t init_map_size = 512000000;
 	std::size_t map_size = init_map_size;
 
 	void remove_mmap_file();
@@ -324,12 +330,15 @@ class OSMStore
 
 public:
 
-	OSMStore(std::string const &osm_store_filename)
+	OSMStore(std::string const &osm_store_filename, uint osm_store_nodes, uint osm_store_ways)
 	   : osm_store_filename(osm_store_filename) 
 	{ 
 		mmap_file = create_mmap_file();
+		reopen();
+
 		perform_mmap_operation([&]() {
-			reopen();
+				nodes.reserve(osm_store_nodes);
+				ways.reserve(osm_store_ways);
 		});
 	}
 

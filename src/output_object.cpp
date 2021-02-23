@@ -61,13 +61,9 @@ Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
 
 // **********************************************************
 
-OutputObject::OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id) {
-	geomType = type;
-	fromShapefile = shp;
-	layer = l;
-	objectID = id;
-	minZoom = 0;
-}
+OutputObject::OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id) 
+	: objectID(id), geomType(type), layer(l), fromShapefile(shp), minZoom(0)
+{ }
 
 OutputObject::~OutputObject() { }
 
@@ -87,7 +83,7 @@ void OutputObject::writeAttributes(
 	const AttributeStore &attributeStore) const {
 
 	for (auto it = attributeList.begin(); it != attributeList.end(); ++it) {
-		AttributePair ap = attributeStore.pairAtIndex(*it, fromShapefile);
+		AttributePair ap = attributeStore.pairAtIndex(*it, false); // fromShapefile);
 
 		// Look for key
 		string &key = ap.key;

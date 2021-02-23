@@ -19,6 +19,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
+#include <boost/algorithm/string.hpp>
+
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
@@ -72,6 +74,7 @@ int main(int argc, char* argv[]) {
 	vector<string> inputFiles;
 	string luaFile;
 	string osmStoreFile;
+	string osmStoreSettings;
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
@@ -86,6 +89,7 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
+		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 		("combine",po::bool_switch(&combineSimilarObjs),                         "combine similar objects (reduces output size but takes considerably longer)");
@@ -171,8 +175,29 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	uint storeNodesSize = 20;
+	uint storeWaysSize = 5;
+
+	try {
+		vector<string> tokens;
+		boost::split(tokens, osmStoreSettings, boost::is_any_of(":"));
+
+		if(tokens.size() != 2) {
+			cerr << "Invalid initial store configuration: " << osmStoreSettings << std::endl;
+			return -1;
+		}
+
+		storeNodesSize = boost::lexical_cast<uint>(tokens[0]);
+		storeWaysSize = boost::lexical_cast<uint>(tokens[1]);
+		std::cout << "Initializing storage to " << storeNodesSize << "M nodes and " << storeWaysSize << "M ways" << std::endl;
+	} catch(std::exception &e)
+	{
+		cerr << "Invalid parameter for store initial settings (" << osmStoreSettings << "): " << e.what() << endl;
+		return -1;
+	}
+
 	// For each tile, objects to be used in processing
-    OSMStore osmStore(osmStoreFile);
+    OSMStore osmStore(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000);
 	AttributeStore attributeStore;
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
@@ -323,7 +348,7 @@ int main(int argc, char* argv[]) {
 					uint interval = 100;
 					if(tc % interval == 0 || tc == total_tiles) { 
 						const std::lock_guard<std::mutex> lock(io_mutex);
-						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r";
+						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r" << std::flush;
 					}
 				});
 			}

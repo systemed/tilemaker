@@ -17,6 +17,7 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+#include <boost/container/small_vector.hpp>
 
 ///\brief Specifies geometry type for an OutputObject
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
@@ -47,12 +48,14 @@ public:
 class OutputObject { 
 
 public:
-	OutputGeometryType geomType : 3;					// point, linestring, polygon...
-	bool fromShapefile;									// from shapefile or pbf?
-	unsigned minZoom : 4;
-	uint_least8_t layer;								// what layer is it in?
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	std::vector<unsigned> attributeList;				// ids within attribute_store
+
+	OutputGeometryType geomType : 3;					// point, linestring, polygon...
+	unsigned minZoom : 4;
+	uint_least8_t layer : 8;							// what layer is it in?
+	bool fromShapefile : 1;
+
+	boost::container::small_vector<unsigned, 3> attributeList;				// ids within attribute_store
 
 	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id);
 	virtual ~OutputObject();	
@@ -95,8 +98,8 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, false, l, id), handle(handle)
+	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
+		: OutputObject(type, shp, l, id), handle(handle)
 	{ 
 		assert(type == POINT || type == CENTROID || type == CACHED_POINT);
 	}
@@ -131,8 +134,8 @@ private:
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, false, l, id), handle(handle)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
+		: OutputObject(type, shp, l, id), handle(handle)
 	{ 
 		assert(type == LINESTRING || type == CACHED_LINESTRING);
 	}
@@ -156,8 +159,8 @@ private:
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, false, l, id), handle(handle)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
+		: OutputObject(type, shp, l, id), handle(handle)
 	{ 
 		assert(type == POLYGON || type == CACHED_POLYGON);
 	}

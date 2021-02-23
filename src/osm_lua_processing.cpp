@@ -239,7 +239,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(p);
 
-        	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(geomType,
+        	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(geomType, false,
 	    	    			layers.layerMap[layerName],
 		    	    		osmID, osmStore.store_point(osmStore.osm(), p));
     	    outputs.push_back(oo);
@@ -269,7 +269,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(mp);
 
-            OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(geomType,
+            OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(geomType, false,
                             layers.layerMap[layerName],
                             osmID, osmStore.store_multi_polygon(osmStore.osm(), mp));
             outputs.push_back(oo);
@@ -280,7 +280,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(ls);
 
-    	    OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreLinestring>(geomType,
+    	    OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreLinestring>(geomType, false,
 		    			layers.layerMap[layerName],
 			    		osmID, osmStore.store_linestring(osmStore.osm(), ls));
 	        outputs.push_back(oo);
@@ -339,7 +339,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(CENTROID,
-					layers.layerMap[layerName],
+					false, layers.layerMap[layerName],
 					osmID, osmStore.store_point(osmStore.osm(), geomp));
 	outputs.push_back(oo);
 }
