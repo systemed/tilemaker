@@ -110,6 +110,7 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mNodeLists = mmap_file.find_or_construct<map_t>("way_store")(mmap_file.get_segment_manager());
+		mNodeLists->reserve(1000000);
 	}
 
 	// @brief Lookup a node list
@@ -176,7 +177,6 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mOutInLists = mmap_file.find_or_construct<map_t>("relation_store")(mmap_file.get_segment_manager());
-		mOutInLists->reserve(1000000);
 	}
 
 	// @brief Lookup a way list
