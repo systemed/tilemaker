@@ -45,8 +45,8 @@ vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Po
 	vector<uint> ids;
 	for (auto it : results) {
 		uint id=it.second;
-		if      (cachedGeometries.at(id)->intersects(osmStore, p1)) { ids.push_back(id); }
-		else if (cachedGeometries.at(id)->intersects(osmStore, p2)) { ids.push_back(id); }
+		if      (intersects(osmStore, *cachedGeometries.at(id), p1)) { ids.push_back(id); }
+		else if (intersects(osmStore, *cachedGeometries.at(id), p2)) { ids.push_back(id); }
 	}
 	return ids;
 }
@@ -86,7 +86,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		{
 			Point *p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
-				oo = std::make_shared<OutputObjectOsmStorePoint>(
+				oo = new OutputObjectOsmStorePoint(
 					geomType, true, layerNum, id, osmStore.store_point(osmStore.shp(), *p));
 				cachedGeometries.push_back(oo);
 
@@ -98,7 +98,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 		case CACHED_LINESTRING:
 		{
-			oo = std::make_shared<OutputObjectOsmStoreLinestring>(
+			oo = new OutputObjectOsmStoreLinestring(
 						geomType, true, layerNum, id, osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)));
 			cachedGeometries.push_back(oo);
 
@@ -107,7 +107,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 		case CACHED_POLYGON:
 		{
-			oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(
+			oo = new OutputObjectOsmStoreMultiPolygon(
 						geomType, true, layerNum, id, osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)));
 			cachedGeometries.push_back(oo);
 			

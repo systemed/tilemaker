@@ -239,9 +239,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(p);
 
-        	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(geomType, false,
+        	OutputObjectRef oo(new OutputObjectOsmStorePoint(geomType, false,
 	    	    			layers.layerMap[layerName],
-		    	    		osmID, osmStore.store_point(osmStore.osm(), p));
+		    	    		osmID, osmStore.store_point(osmStore.osm(), p)));
     	    outputs.push_back(oo);
             return;
 		}
@@ -269,9 +269,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(mp);
 
-            OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreMultiPolygon>(geomType, false,
+            OutputObjectRef oo(new OutputObjectOsmStoreMultiPolygon(geomType, false,
                             layers.layerMap[layerName],
-                            osmID, osmStore.store_multi_polygon(osmStore.osm(), mp));
+                            osmID, osmStore.store_multi_polygon(osmStore.osm(), mp)));
             outputs.push_back(oo);
 		}
 		else if (geomType==LINESTRING) {
@@ -280,9 +280,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             CorrectGeometry(ls);
 
-    	    OutputObjectRef oo = std::make_shared<OutputObjectOsmStoreLinestring>(geomType, false,
+    	    OutputObjectRef oo(new OutputObjectOsmStoreLinestring(geomType, false,
 		    			layers.layerMap[layerName],
-			    		osmID, osmStore.store_linestring(osmStore.osm(), ls));
+			    		osmID, osmStore.store_linestring(osmStore.osm(), ls)));
 	        outputs.push_back(oo);
 		}
 	} catch (std::invalid_argument &err) {
@@ -338,9 +338,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
 	}
 
-	OutputObjectRef oo = std::make_shared<OutputObjectOsmStorePoint>(CENTROID,
+	OutputObjectRef oo(new OutputObjectOsmStorePoint(CENTROID,
 					false, layers.layerMap[layerName],
-					osmID, osmStore.store_point(osmStore.osm(), geomp));
+					osmID, osmStore.store_point(osmStore.osm(), geomp)));
 	outputs.push_back(oo);
 }
 

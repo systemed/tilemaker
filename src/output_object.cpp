@@ -9,71 +9,8 @@ using namespace std;
 using namespace ClipperLib;
 namespace geom = boost::geometry;
 
-ClipGeometryVisitor::ClipGeometryVisitor(const Box &cbox) : clippingBox(cbox) {
-	const Point &minc = clippingBox.min_corner();
-	const Point &maxc = clippingBox.max_corner();
-	clippingPath.push_back(IntPoint(std::round(minc.x() * CLIPPER_SCALE), std::round(minc.y() * CLIPPER_SCALE)));	
-	clippingPath.push_back(IntPoint(std::round(maxc.x() * CLIPPER_SCALE), std::round(minc.y() * CLIPPER_SCALE)));	
-	clippingPath.push_back(IntPoint(std::round(maxc.x() * CLIPPER_SCALE), std::round(maxc.y() * CLIPPER_SCALE)));	
-	clippingPath.push_back(IntPoint(std::round(minc.x() * CLIPPER_SCALE), std::round(maxc.y() * CLIPPER_SCALE)));	
-}
-
-Geometry ClipGeometryVisitor::operator()(const Point &p) const {
-	if (geom::within(p, clippingBox)) {
-		return p;
-	} else {
-		return MultiLinestring(); // return a blank geometry
-	}
-}
-
-Geometry ClipGeometryVisitor::operator()(const Linestring &ls) const {
-	MultiLinestring out;
-	geom::intersection(ls, clippingBox, out);
-	return out;
-}
-
-Geometry ClipGeometryVisitor::operator()(const MultiLinestring &mls) const {
-#if BOOST_VERSION <= 105800
-	// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58
-	return mls;
-#else
-	MultiLinestring out;
-	geom::intersection(mls, clippingBox, out);
-	return out;
-#endif
-}
-
-Geometry ClipGeometryVisitor::operator()(const MultiPolygon &mp) const {
-	Polygon clippingPolygon;
-	geom::convert(clippingBox,clippingPolygon);
-	if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
-	if (geom::within(mp, clippingPolygon)) { return mp; }
-
-	MultiPolygon out;
-	try {
-		geom::intersection(mp,clippingPolygon,out);
-		return out;
-	} catch (geom::overlay_invalid_input_exception &err) {
-		cout << "Couldn't clip polygon (self-intersection)" << endl;
-		return MultiPolygon(); // blank
-	}
-}
-
 // **********************************************************
 
-OutputObject::OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id) 
-	: objectID(id), geomType(type), layer(l), fromShapefile(shp), minZoom(0)
-{ }
-
-OutputObject::~OutputObject() { }
-
-void OutputObject::setMinZoom(unsigned z) {
-	minZoom = z;
-}
-
-void OutputObject::addAttribute(unsigned attrIndex) {
-	attributeList.emplace_back(attrIndex);
-}
 
 // Write attribute key/value pairs (dictionary-encoded)
 void OutputObject::writeAttributes(
@@ -107,6 +44,100 @@ void OutputObject::writeAttributes(
 			valueList->push_back(value);
 			featurePtr->add_tags(subscript);
 		}
+	}
+}
+
+Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox) 
+{
+	switch(oo.geomType) {
+		case POINT:
+		case CACHED_POINT:
+		case CENTROID:
+		{
+			auto const &p = osmStore.retrieve<mmap::point_t>(oo.handle);
+			if (geom::within(p, bbox.clippingBox)) {
+				return p;
+			} 
+			return MultiLinestring();
+		}
+
+		case LINESTRING:
+		case CACHED_LINESTRING:
+		{
+			MultiLinestring out;
+			geom::intersection(osmStore.retrieve<mmap::linestring_t>(oo.handle), bbox.clippingBox, out);
+			return out;
+		}
+
+		case POLYGON:
+		case CACHED_POLYGON:
+		{
+			auto const &mp = osmStore.retrieve<mmap::multi_polygon_t>(oo.handle);
+
+			Polygon clippingPolygon;
+
+			geom::convert(bbox.clippingBox, clippingPolygon);
+			if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
+			if (geom::within(mp, clippingPolygon)) { 
+				MultiPolygon out;
+				boost::geometry::assign(out, mp);
+				return out; 
+			}
+
+			try {
+				MultiPolygon out;
+				geom::intersection(mp, clippingPolygon, out);
+				return out;
+			} catch (geom::overlay_invalid_input_exception &err) {
+				std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
+				return MultiPolygon(); // blank
+			}
+		}
+
+		default:
+			throw std::runtime_error("Invalid output geometry");
+	}
+}
+
+LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox)
+{
+	switch(oo.geomType) {
+		case POINT:
+		case CACHED_POINT:
+		case CENTROID:
+		{
+			auto const &pt = osmStore.retrieve<mmap::point_t>(oo.handle);
+			LatpLon out;
+			out.latp = pt.y();
+			out.lon = pt.x();
+		 	return out;
+		}
+
+		default:	
+			throw std::runtime_error("Geometry type is not point");
+
+	}
+}
+
+bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p)
+{
+	switch(oo.geomType) {
+		case POINT:
+		case CACHED_POINT:
+		case CENTROID:
+			return boost::geometry::intersects(osmStore.retrieve<mmap::point_t>(oo.handle), p);
+
+		case LINESTRING:
+		case CACHED_LINESTRING:
+			return boost::geometry::intersects(osmStore.retrieve<mmap::linestring_t>(oo.handle), p);
+
+
+		case POLYGON:
+		case CACHED_POLYGON:
+			return boost::geometry::intersects(osmStore.retrieve<mmap::multi_polygon_t>(oo.handle), p);
+
+		default:
+			throw std::runtime_error("Invalid output geometry");
 	}
 }
 

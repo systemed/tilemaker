@@ -41,7 +41,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 
 			try {
 
-				MultiPolygon gNew = boost::get<MultiPolygon>(oo->buildWayGeometry(osmStore, bbox));
+				MultiPolygon gNew = boost::get<MultiPolygon>(buildWayGeometry(osmStore, *oo, bbox));
 				PolyTree newShapes;
 				ConvertToClipper(gNew, newShapes);
 
@@ -79,7 +79,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 			else ooNext.reset();
 
 			try {
-				MultiLinestring gNew = boost::get<MultiLinestring>(oo->buildWayGeometry(osmStore, bbox));
+				MultiLinestring gNew = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
 				*gAcc = move(gTmp);
@@ -103,7 +103,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 
 		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = oo->buildNodeGeometry(osmStore, bbox);
+			LatpLon pos = buildNodeGeometry(osmStore, *oo, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
@@ -115,7 +115,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 		} else {
 			Geometry g;
 			try {
-				g = oo->buildWayGeometry(osmStore, bbox);
+				g = buildWayGeometry(osmStore, *oo, bbox);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;

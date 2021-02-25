@@ -112,6 +112,7 @@ int main(int argc, char* argv[]) {
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
 	verbose = _verbose;
 
+	std::cout << "OutputObject size: " << sizeof(OutputObject) << std::endl;
 	#ifdef COMPACT_NODES
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
