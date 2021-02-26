@@ -24,7 +24,7 @@ public:
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name);
+		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes);
 
 private:
 	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;

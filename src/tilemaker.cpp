@@ -112,7 +112,6 @@ int main(int argc, char* argv[]) {
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
 	verbose = _verbose;
 
-	std::cout << "OutputObject size: " << sizeof(OutputObject) << std::endl;
 	#ifdef COMPACT_NODES
 	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
 	#endif
@@ -200,6 +199,7 @@ int main(int argc, char* argv[]) {
 	// For each tile, objects to be used in processing
     OSMStore osmStore(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000);
 	AttributeStore attributeStore;
+
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
@@ -261,10 +261,7 @@ int main(int argc, char* argv[]) {
 		total_tiles += tileData.at(zoom).GetTilesAtZoomSize();
 	}
 
-	if (!mapsplit) attributeStore.sortOsmAttributes();
-	attributeStore.sortShpAttributes();
-
-	class SharedData sharedData(config, layers, tileData, attributeStore);
+	class SharedData sharedData(config, layers, tileData);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
 
@@ -301,7 +298,7 @@ int main(int argc, char* argv[]) {
 
 		if (mapsplit) {
 			osmMemTiles.Clear();
-			attributeStore.clearOsmAttributes();
+
 			tie(srcZ,srcX,tmsY) = tileList.back();
 			srcY = pow(2,srcZ) - tmsY - 1; // TMS
 			if (srcZ > config.baseZoom) {
@@ -318,7 +315,6 @@ int main(int argc, char* argv[]) {
 			pbfReader.ReadPbfFile(pbfstream, nodeKeys);
 
 			tileList.pop_back();
-			attributeStore.sortOsmAttributes();
 		}
 
 		// Launch the pool with threadNum threads

@@ -7,11 +7,10 @@ using namespace std;
 using namespace rapidjson;
 
 SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
-	std::map<uint, TileData> &tileData, const class AttributeStore &attributeStore):
+	std::map<uint, TileData> &tileData):
 	tileData(tileData),
 	layers(layers),
-	config(configIn),
-	attributeStore(attributeStore) {
+	config(configIn) {
 
 	sqlite=false;
 }

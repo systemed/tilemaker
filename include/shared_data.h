@@ -82,10 +82,9 @@ public:
 	std::string outputFile;
 
 	const class Config &config;
-	const class AttributeStore &attributeStore;
 
 	SharedData(const class Config &configIn, const class LayerDefinition &layers,
-		std::map<uint, TileData> &tileData, const class AttributeStore &attributeStore);
+		std::map<uint, TileData> &tileData);
 	virtual ~SharedData();
 };
 

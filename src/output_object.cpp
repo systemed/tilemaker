@@ -16,14 +16,11 @@ namespace geom = boost::geometry;
 void OutputObject::writeAttributes(
 	vector<string> *keyList, 
 	vector<vector_tile::Tile_Value> *valueList, 
-	vector_tile::Tile_Feature *featurePtr,
-	const AttributeStore &attributeStore) const {
+	vector_tile::Tile_Feature *featurePtr) const {
 
-	for (auto it = attributeList.begin(); it != attributeList.end(); ++it) {
-		AttributePair ap = attributeStore.pairAtIndex(*it, false); // fromShapefile);
-
+	for(auto const &it: attributes->entries) {
 		// Look for key
-		string &key = ap.key;
+		std::string const &key = it->first;
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -35,8 +32,8 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value &value = ap.value;
-		int subscript = findValue(valueList, &value);
+		vector_tile::Tile_Value const &value = it->second; 
+		int subscript = findValue(valueList, value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
 		} else {
@@ -44,6 +41,9 @@ void OutputObject::writeAttributes(
 			valueList->push_back(value);
 			featurePtr->add_tags(subscript);
 		}
+
+		//if(value.has_string_value())
+		//	std::cout << "Write attr: " << key << " " << value.string_value() << std::endl;	
 	}
 }
 
@@ -144,12 +144,12 @@ bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p)
 // Find a value in the value dictionary
 // (we can't easily use find() because of the different value-type encoding - 
 //	should be possible to improve this though)
-int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const {
+int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const {
 	for (size_t i=0; i<valueList->size(); i++) {
 		vector_tile::Tile_Value v = valueList->at(i);
-		if (v.has_string_value() && value->has_string_value() && v.string_value()==value->string_value()) { return i; }
-		if (v.has_float_value()  && value->has_float_value()  && v.float_value() ==value->float_value() ) { return i; }
-		if (v.has_bool_value()	 && value->has_bool_value()   && v.bool_value()  ==value->bool_value()	) { return i; }
+		if (v.has_string_value() && value.has_string_value() && v.string_value()==value.string_value()) { return i; }
+		if (v.has_float_value()  && value.has_float_value()  && v.float_value() ==value.float_value() ) { return i; }
+		if (v.has_bool_value()	 && value.has_bool_value()   && v.bool_value()  ==value.bool_value()	) { return i; }
 	}
 	return -1;
 }
@@ -160,7 +160,7 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
 		x->layer == y->layer &&
 		x->geomType == y->geomType &&
-		x->attributeList == y->attributeList &&
+		x->attributes->id == y->attributes->id &&
 		x->objectID == y->objectID;
 }
 
@@ -173,8 +173,8 @@ bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
 	if (x->layer > y->layer) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
-	if (x->attributeList < y->attributeList) return true;
-	if (x->attributeList > y->attributeList) return false;
+	if (x->attributes->id < y->attributes->id) return true;
+	if (x->attributes->id > y->attributes->id) return false;
 	if (x->objectID < y->objectID) return true;
 	return false;
 }

@@ -53,6 +53,9 @@ void addShapefileAttributes(
 		// Call remap function
 		kaguya::LuaTable out_table = osmLuaProcessing.remapAttributes(in_table);
 
+		auto &attributeStore = osmLuaProcessing.getAttributeStore();
+		AttributeStore::key_value_set_entry_t attributes;
+
 		// Write values to vector tiles
 		for (auto key : out_table.keys()) {
 			kaguya::LuaRef val = out_table[key];
@@ -73,11 +76,15 @@ void addShapefileAttributes(
 				// don't even think about trying to write nested tables, thank you
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
-			unsigned attrIndex = osmLuaProcessing.getAttributeStore().indexForPair(key,v,true);
-			oo->addAttribute(attrIndex);
+
+			attributes.push_back(attributeStore.store_key_value(key, v));
 		}
 
+		oo->setAttributeSet(attributeStore.store_set(attributes));		
 	} else {
+		auto &attributeStore = osmLuaProcessing.getAttributeStore();
+		AttributeStore::key_value_set_entry_t attributes;
+
 		for (auto it : columnMap) {
 			int pos = it.first;
 			string key = it.second;
@@ -93,9 +100,11 @@ void addShapefileAttributes(
 				         layers.layers[oo->layer].attributeMap[key] = 0;
 				         break;
 			}
-			unsigned attrIndex = osmLuaProcessing.getAttributeStore().indexForPair(key,v,true);
-			oo->addAttribute(attrIndex);
+			
+			attributes.push_back(attributeStore.store_key_value(key, v));
 		}
+
+		oo->setAttributeSet(attributeStore.store_set(attributes));		
 	}
 }
 
@@ -166,7 +175,8 @@ void readShapefile(const Box &clippingBox,
 				bool hasName = false;
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name);
+				auto &attributeStore = osmLuaProcessing.getAttributeStore();
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POINT, p, isIndexed, hasName, name, attributeStore.empty_set());
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}
@@ -187,7 +197,8 @@ void readShapefile(const Box &clippingBox,
 					bool hasName = false;
 					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
-					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name);
+					auto &attributeStore = osmLuaProcessing.getAttributeStore();
+					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_LINESTRING, *it, isIndexed, hasName, name, attributeStore.empty_set());
 
 					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 				}
@@ -257,7 +268,8 @@ void readShapefile(const Box &clippingBox,
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 				// create OutputObject
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name);
+				auto &attributeStore = osmLuaProcessing.getAttributeStore();
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, CACHED_POLYGON, out, isIndexed, hasName, name, attributeStore.empty_set());
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}

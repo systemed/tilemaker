@@ -17,7 +17,6 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-#include <boost/container/small_vector.hpp>
 #include <boost/intrusive_ptr.hpp>
 #include <atomic>
 
@@ -33,8 +32,8 @@ enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CA
 class OutputObject { 
 
 protected:	
-	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle) 
-		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), minZoom(0), references(0)
+	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
+		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), minZoom(0), references(0), attributes(attributes)
 	{ }
 
 
@@ -49,27 +48,26 @@ public:
 	
 	mutable std::atomic<uint32_t> references;
 
-	boost::container::small_vector<unsigned, 3> attributeList;				// ids within attribute_store
+	AttributeStoreRef attributes;
 
 	void setMinZoom(unsigned z) {
 		minZoom = z;
 	}
 
-	void addAttribute(unsigned attrIndex) {
-		attributeList.emplace_back(attrIndex);
+	void setAttributeSet(AttributeStoreRef attributes) {
+		this->attributes = attributes;
 	}
 
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr,
-		const AttributeStore &attributeStore) const;
+		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary
 	 * (we can't easily use find() because of the different value-type encoding - 
 	 *	should be possible to improve this though)
 	 */
-	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
+	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const;
 };
 
 /**
@@ -78,8 +76,8 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, shp, l, id, handle)
+	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == POINT || type == CENTROID || type == CACHED_POINT);
 	}
@@ -88,8 +86,8 @@ public:
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, shp, l, id, handle)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == LINESTRING || type == CACHED_LINESTRING);
 	}
@@ -98,8 +96,8 @@ public:
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle)
-		: OutputObject(type, shp, l, id, handle)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == POLYGON || type == CACHED_POLYGON);
 	}
@@ -109,7 +107,6 @@ typedef boost::intrusive_ptr<OutputObject> OutputObjectRef;
 
 static inline void intrusive_ptr_add_ref(OutputObject *oo){
 	auto result = oo->references.fetch_add(1, std::memory_order_relaxed);
-	assert(result < std::numeric_limits<decltype(oo->references)>::max());	
 }
 
 static inline void intrusive_ptr_release(OutputObject *oo) {

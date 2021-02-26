@@ -43,7 +43,7 @@ public:
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name) {return OutputObjectRef();};
+		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes) {return OutputObjectRef();};
 
 	//Used in OSM data loading
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
