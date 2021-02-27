@@ -61,7 +61,10 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
-		mLatpLons->reserve(10000000);
+	}
+
+	void reserve(uint nodes) {
+		mLatpLons->reserve(nodes);
 	}
 
 	// @brief Lookup a latp/lon pair
@@ -110,6 +113,10 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mNodeLists = mmap_file.find_or_construct<map_t>("way_store")(mmap_file.get_segment_manager());
+	}
+
+	void reserve(uint ways) {
+		mNodeLists->reserve(ways);
 	}
 
 	// @brief Lookup a node list
@@ -176,7 +183,6 @@ public:
 	void reopen(mmap_file_t &mmap_file)
 	{
 		mOutInLists = mmap_file.find_or_construct<map_t>("relation_store")(mmap_file.get_segment_manager());
-		mOutInLists->reserve(1000000);
 	}
 
 	// @brief Lookup a way list
@@ -245,19 +251,25 @@ class OSMStore
 
 	using point_allocator_t = boost::interprocess::node_allocator<Point, mmap_file_t::segment_manager>;
 	using point_store_t = std::deque<Point, point_allocator_t>;
-	point_store_t *generated_points_store;
 
 	using linestring_t = mmap::linestring_t;
 	using linestring_allocator_t = boost::interprocess::node_allocator<linestring_t, mmap_file_t::segment_manager>;
 	using linestring_store_t = std::deque<linestring_t, scoped_alloc_t<linestring_allocator_t>>;
-	linestring_store_t *generated_linestring_store;
 
 	using multi_polygon_store_t = std::deque<mmap::multi_polygon_t, 
 		  scoped_alloc_t<boost::interprocess::node_allocator<mmap::multi_polygon_t, mmap_file_t::segment_manager>>>;
-	multi_polygon_store_t *generated_multi_polygon_store;
+
+	struct generated {
+		point_store_t *points_store;
+		linestring_store_t *linestring_store;
+		multi_polygon_store_t *multi_polygon_store;
+	};
+
+	generated osm_generated;
+	generated shp_generated;
 
 	std::string osm_store_filename;
-	constexpr static std::size_t init_map_size = 64000000;
+	constexpr static std::size_t init_map_size = 512000000;
 	std::size_t map_size = init_map_size;
 
 	void remove_mmap_file();
@@ -280,12 +292,19 @@ class OSMStore
 		ways.reopen(mmap_file);
 		relations.reopen(mmap_file);
 		
-		generated_points_store = mmap_file.find_or_construct<point_store_t>
-			("point_store")(mmap_file.get_segment_manager());
-		generated_linestring_store = mmap_file.find_or_construct<linestring_store_t>
-			("linestring_store")(mmap_file.get_segment_manager());
-		generated_multi_polygon_store = mmap_file.find_or_construct<multi_polygon_store_t>
-			("multi_polygon_store")(mmap_file.get_segment_manager()); 
+		osm_generated.points_store = mmap_file.find_or_construct<point_store_t>
+			("osm_point_store")(mmap_file.get_segment_manager());
+		osm_generated.linestring_store = mmap_file.find_or_construct<linestring_store_t>
+			("osm_linestring_store")(mmap_file.get_segment_manager());
+		osm_generated.multi_polygon_store = mmap_file.find_or_construct<multi_polygon_store_t>
+			("osm_multi_polygon_store")(mmap_file.get_segment_manager()); 
+
+		shp_generated.points_store = mmap_file.find_or_construct<point_store_t>
+			("shp_point_store")(mmap_file.get_segment_manager());
+		shp_generated.linestring_store = mmap_file.find_or_construct<linestring_store_t>
+			("shp_linestring_store")(mmap_file.get_segment_manager());
+		shp_generated.multi_polygon_store = mmap_file.find_or_construct<multi_polygon_store_t>
+			("shp_multi_polygon_store")(mmap_file.get_segment_manager());  
 	}
 
 	template<typename Func>
@@ -295,12 +314,13 @@ class OSMStore
 				func();
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
-				map_size = map_size * 2;
-				std::cout << "Resizing osm store to size: " << map_size << std::endl;
 				
 				mmap_file = mmap_file_t();
 
+				// Double the size of the mmap size
+				std::cout << "Resizing osm store to size: " << (2 * map_size / 1000000) << "M                " << std::endl;
 				boost::interprocess::managed_mapped_file::grow(osm_store_filename.c_str(), map_size);
+				map_size = map_size * 2;
 
 				mmap_file = open_mmap_file();
 				reopen();
@@ -310,12 +330,15 @@ class OSMStore
 
 public:
 
-	OSMStore(std::string const &osm_store_filename)
+	OSMStore(std::string const &osm_store_filename, uint osm_store_nodes, uint osm_store_ways)
 	   : osm_store_filename(osm_store_filename) 
 	{ 
 		mmap_file = create_mmap_file();
+		reopen();
+
 		perform_mmap_operation([&]() {
-			reopen();
+				nodes.reserve(osm_store_nodes);
+				ways.reserve(osm_store_ways);
 		});
 	}
 
@@ -324,6 +347,7 @@ public:
 		remove_mmap_file();
 	}
 
+	// Store and retrieve ways/nodes and relations in the mmap file
 	void nodes_insert_back(NodeID i, LatpLon coord) {
 		perform_mmap_operation([&]() {
 			nodes.insert_back(i, coord);
@@ -352,42 +376,49 @@ public:
 		relations.insert_front(i, outerWayVec.begin(), outerWayVec.end(), innerWayVec.begin(), innerWayVec.end());
 	}
 
-	template<typename T>
-	std::size_t store_point(T const &input) {
-		perform_mmap_operation([&]() {
-			generated_points_store->emplace_back(input.x(), input.y());		   
-		});
-		return generated_points_store->size() - 1;
+	// Get the currently allocated memory size in the mmap
+	std::size_t getMemorySize() const { return map_size; }
+
+	// Following methods are to store and retrieve the generated geometries in the mmap file
+	using handle_t = mmap_file_t::handle_t;
+
+	generated &osm() { return osm_generated; }
+	generated &shp() { return shp_generated; }
+
+	template<class T>
+	T const &retrieve(handle_t handle) const {
+		return *(static_cast<T const *>(mmap_file.get_address_from_handle(handle)));
 	}
 
-	Point const &retrieve_point(std::size_t index) const {
-		return generated_points_store->at(index);
+	template<typename T>
+	handle_t store_point(generated &store, T const &input) {
+		perform_mmap_operation([&]() {
+			store.points_store->emplace_back(input.x(), input.y());		   
+		});
+
+		return mmap_file.get_handle_from_address(&store.points_store->back());
 	}
+
 
 	template<typename Input>
-	std::size_t store_linestring(Input const &src)
+	handle_t store_linestring(generated &store, Input const &src)
 	{
 		perform_mmap_operation([&]() {
-			generated_linestring_store->resize(generated_linestring_store->size() + 1);
-			boost::geometry::assign(generated_linestring_store->back(), src);
+			store.linestring_store->resize(store.linestring_store->size() + 1);
+			boost::geometry::assign(store.linestring_store->back(), src);
 		});
-		return generated_linestring_store->size() - 1;
-	}
 
-	mmap::linestring_t retrieve_linestring(std::size_t index) const {
-		return generated_linestring_store->at(index);
+		return mmap_file.get_handle_from_address(&store.linestring_store->back());
 	}
 
 	template<typename Input>
-	std::size_t store_multi_polygon(Input const &src)
+	handle_t store_multi_polygon(generated &store, Input const &src)
 	{
 		 perform_mmap_operation([&]() {
-			 mmap::multi_polygon_t result(generated_multi_polygon_store->get_allocator());
+			 mmap::multi_polygon_t result(store.multi_polygon_store->get_allocator());
 			 result.reserve(src.size());
 
 			for(auto const &polygon: src) {
-			//for(auto i = src.begin(); i != src.end(); ++i) {
-			//	auto const &polygon = *i;
 				mmap::polygon_t::inners_type inners(polygon.inners().size(), result.get_allocator());
 				mmap::polygon_t::ring_type outer(result.get_allocator());
 
@@ -402,14 +433,10 @@ public:
 				result.emplace_back(outer, inners);
 			}
 
-			generated_multi_polygon_store->push_back(result);
+			store.multi_polygon_store->push_back(result);
 		});
 
-		return generated_multi_polygon_store->size() - 1; 
-	}
-
-	mmap::multi_polygon_t const &retrieve_multi_polygon(std::size_t index) const {
-		return generated_multi_polygon_store->at(index);
+		return mmap_file.get_handle_from_address(&store.multi_polygon_store->back());
 	}
 
 	// @brief Make the store empty

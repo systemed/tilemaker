@@ -8,35 +8,35 @@ using namespace std;
    ------------------- */
 
 // Read and parse a protobuf message
-void readMessage(google::protobuf::Message *message, fstream *input, unsigned int size) {
+void readMessage(google::protobuf::Message *message, istream &input, unsigned int size) {
 	vector<char> buffer(size);
-	input->read(&buffer.front(), size);
+	input.read(&buffer.front(), size);
 	message->ParseFromArray(&buffer.front(), size);
 }
 
 // Read an osm.pbf sequence of header length -> BlobHeader -> Blob
 // and parse the unzipped contents into a message
-void readBlock(google::protobuf::Message *messagePtr, fstream *inputPtr) {
+void readBlock(google::protobuf::Message *messagePtr, istream &input) {
 	// read the header length
 	unsigned int size;
-	inputPtr->read((char*)&size, sizeof(size));
-	if (inputPtr->eof()) { return; }
+	input.read((char*)&size, sizeof(size));
+	if (input.eof()) { return; }
 	endian_swap(size);
 
 	// get BlobHeader and parse
 	BlobHeader bh;
-	readMessage(&bh, inputPtr, size);
+	readMessage(&bh, input, size);
 
 	// get Blob and parse
 	Blob blob;
-	readMessage(&blob, inputPtr, bh.datasize());
+	readMessage(&blob, input, bh.datasize());
 
 	// Unzip the gzipped content
 	string contents = decompress_string(blob.zlib_data());
 	messagePtr->ParseFromString(contents);
 }
 
-void writeBlock(google::protobuf::Message *messagePtr, fstream *outputPtr, string headerType) {
+void writeBlock(google::protobuf::Message *messagePtr, ostream &output, string headerType) {
 	// encode the message
 	string serialised;
 	messagePtr->SerializeToString(&serialised);
@@ -59,9 +59,9 @@ void writeBlock(google::protobuf::Message *messagePtr, fstream *outputPtr, strin
 	// write out
 	uint bhLength=header_encoded.length();
 	endian_swap(bhLength);
-	outputPtr->write(reinterpret_cast<const char *>(&bhLength), 4);
-	outputPtr->write(header_encoded.c_str(), header_encoded.length() );
-	outputPtr->write(blob_encoded.c_str(), blob_encoded.length() );
+	output.write(reinterpret_cast<const char *>(&bhLength), 4);
+	output.write(header_encoded.c_str(), header_encoded.length() );
+	output.write(blob_encoded.c_str(), blob_encoded.length() );
 }
 
 /* -------------------

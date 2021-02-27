@@ -17,26 +17,11 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+#include <boost/intrusive_ptr.hpp>
+#include <atomic>
 
 ///\brief Specifies geometry type for an OutputObject
 enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
-
-class ClipGeometryVisitor : public boost::static_visitor<Geometry> {
-
-	const Box &clippingBox; //for boost ggl
-	ClipperLib::Path clippingPath; //for clipper library
-
-public:
-	ClipGeometryVisitor(const Box &cbox);
-
-	Geometry operator()(const Point &p) const;
-
-	Geometry operator()(const Linestring &ls) const;
-
-	Geometry operator()(const MultiLinestring &mls) const;
-
-	Geometry operator()(const MultiPolygon &mp) const;
-};
 
 /**
  * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
@@ -46,44 +31,43 @@ public:
 */
 class OutputObject { 
 
+protected:	
+	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
+		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), minZoom(0), references(0), attributes(attributes)
+	{ }
+
+
 public:
-	OutputGeometryType geomType : 3;					// point, linestring, polygon...
-	bool fromShapefile;									// from shapefile or pbf?
-	unsigned minZoom : 4;
-	uint_least8_t layer;								// what layer is it in?
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	std::vector<unsigned> attributeList;				// ids within attribute_store
+	OSMStore::handle_t handle;							// Handle within global store of geometries
 
-	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id);
-	virtual ~OutputObject();	
-
-	void setMinZoom(unsigned z);
-
-	void addAttribute(unsigned attrIndex);
-
-	/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
-	 * Returns a boost::variant -
-	 *	 POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
-	 */
-	virtual Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const = 0;
+	OutputGeometryType geomType : 3;					// point, linestring, polygon...
+	bool fromShapefile 			: 1;
+	unsigned minZoom 			: 4;
+	uint_least8_t layer 		: 8;					// what layer is it in?
 	
-	///\brief Add a node geometry
-	virtual LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const = 0;
-	
-	///\brief Check if the object intersects with the given point
-	virtual bool intersects(OSMStore &osmStore, Point const &p) const = 0;
+	mutable std::atomic<uint32_t> references;
+
+	AttributeStoreRef attributes;
+
+	void setMinZoom(unsigned z) {
+		minZoom = z;
+	}
+
+	void setAttributeSet(AttributeStoreRef attributes) {
+		this->attributes = attributes;
+	}
 
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr,
-		const AttributeStore &attributeStore) const;
+		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary
 	 * (we can't easily use find() because of the different value-type encoding - 
 	 *	should be possible to improve this though)
 	 */
-	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value *value) const;
+	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const;
 };
 
 /**
@@ -92,117 +76,57 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-		: OutputObject(type, false, l, id), index(index)
+	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == POINT || type == CENTROID || type == CACHED_POINT);
 	}
-
-	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		auto &p = osmStore.retrieve_point(index);
-		if (geom::within(p, bbox.clippingBox)) {
-			return p;
-		} 
-		return MultiLinestring();
-	}
-
-	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		auto const &pt = osmStore.retrieve_point(index);
-		LatpLon out;
-		out.latp = pt.y();
-		out.lon = pt.x();
-		return out;
-	}
-
-	bool intersects(OSMStore &osmStore, Point const &p) const
-	{
-		return boost::geometry::intersects(osmStore.retrieve_point(index), p);
-	}
-
-private:
-	std::size_t index;
 }; 
 
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-		: OutputObject(type, false, l, id), index(index)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == LINESTRING || type == CACHED_LINESTRING);
 	}
-
-	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		MultiLinestring out;
-		geom::intersection(osmStore.retrieve_linestring(index), bbox.clippingBox, out);
-		return out;
-	}
-
-	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		throw std::runtime_error("Geometry type is not point");
-	}
-
-	bool intersects(OSMStore &osmStore, Point const &p) const 
-	{
-		return boost::geometry::intersects(osmStore.retrieve_linestring(index), p);
-	}
-
-private:
-	std::size_t index;
 };
 
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, std::size_t index)
-		: OutputObject(type, false, l, id), index(index)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
+		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
 		assert(type == POLYGON || type == CACHED_POLYGON);
 	}
-
-	Geometry buildWayGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		auto mp = osmStore.retrieve_multi_polygon(index);
-
-		Polygon clippingPolygon;
-
-		geom::convert(bbox.clippingBox, clippingPolygon);
-		if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
-		if (geom::within(mp, clippingPolygon)) { 
-			MultiPolygon out;
-			boost::geometry::assign(out, mp);
-			return out; 
-		}
-
-		try {
-			MultiPolygon out;
-			geom::intersection(mp, clippingPolygon, out);
-			return out;
-		} catch (geom::overlay_invalid_input_exception &err) {
-			std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
-			return MultiPolygon(); // blank
-		}
-	}
-
-	LatpLon buildNodeGeometry(OSMStore &osmStore, const TileBbox &bbox) const
-	{
-		throw std::runtime_error("Geometry type is not point");
-	}
-
-	bool intersects(OSMStore &osmStore, Point const &p) const
-	{
-		return boost::geometry::intersects(osmStore.retrieve_multi_polygon(index), p);
-	}
-
-private:
-	std::size_t index;
 };
 
-typedef std::shared_ptr<OutputObject> OutputObjectRef;
+typedef boost::intrusive_ptr<OutputObject> OutputObjectRef;
+
+static inline void intrusive_ptr_add_ref(OutputObject *oo){
+	auto result = oo->references.fetch_add(1, std::memory_order_relaxed);
+}
+
+static inline void intrusive_ptr_release(OutputObject *oo) {
+	if (oo->references.fetch_sub(1, std::memory_order_release) == 1) {
+      std::atomic_thread_fence(std::memory_order_acquire);
+      delete oo;
+    }
+}
+
+/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
+ * Returns a boost::variant -
+ *	 POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
+ */
+Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox);
+
+//\brief Build a node geometry
+LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox);
+
+///\brief Check if the object intersects with the given point
+bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p);
 
 // Comparison functions
 

@@ -133,10 +133,14 @@ void TilesAtZoomIterator::RefreshData() {
 
 // *********************************
 
-TileData::TileData(const std::vector<class TileDataSource *> sources):
-	sources(sources) {
+TileData::TileData(std::vector<class TileDataSource *> const &sources, uint zoom):
+	sources(sources),
+	zoom(zoom) {
 
-	zoom = 0;
+	// Create list of tiles
+	tileCoordinates.clear();
+	for(size_t i=0; i<sources.size(); i++)
+		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
 }
 
 class TilesAtZoomIterator TileData::GetTilesAtZoomBegin() {
@@ -147,17 +151,8 @@ class TilesAtZoomIterator TileData::GetTilesAtZoomEnd() {
 	return TilesAtZoomIterator(tileCoordinates.end(), *this, zoom);
 }
 
-size_t TileData::GetTilesAtZoomSize() {
-	size_t count=0;
-	for(auto it = tileCoordinates.begin(); it != tileCoordinates.end(); it++) count++;
-	return count;
+size_t TileData::GetTilesAtZoomSize() const {
+	return tileCoordinates.size();
 }
 
-void TileData::SetZoom(uint zoom) {
-	this->zoom = zoom;
-	// Create list of tiles
-	tileCoordinates.clear();
-	for(size_t i=0; i<sources.size(); i++)
-		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
-}
 

@@ -3,8 +3,9 @@
 #define _TILE_WORKER_H
 
 #include "shared_data.h"
+#include <boost/asio/thread_pool.hpp>
 
 /// Start function for worker threads
-int outputProc(uint threadId, class SharedData *sharedData, OSMStore *osmStore, int srcZ, int srcX, int srcY);
+bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, TilesAtZoomIterator const &it, uint zoom);
 
 #endif //_TILE_WORKER_H

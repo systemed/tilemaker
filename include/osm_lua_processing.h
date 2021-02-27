@@ -193,7 +193,7 @@ private:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	std::vector<OutputObjectRef> outputs;			///< All output objects that have been created
+	std::deque<std::pair<OutputObjectRef, AttributeStore::key_value_set_entry_t> > outputs;			///< All output objects that have been created
 	std::map<std::string, std::string> currentTags;
 
 };

@@ -43,7 +43,7 @@ public:
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name) {return OutputObjectRef();};
+		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes) {return OutputObjectRef();};
 
 	//Used in OSM data loading
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
@@ -95,16 +95,14 @@ class TileData {
 	friend TilesAtZoomIterator;
 
 public:
-	TileData(const std::vector<class TileDataSource *> sources);
+	TileData(std::vector<class TileDataSource *> const &sources, uint zoom);
 
 	class TilesAtZoomIterator GetTilesAtZoomBegin();
 	class TilesAtZoomIterator GetTilesAtZoomEnd();
-	size_t GetTilesAtZoomSize();
-
-	void SetZoom(uint zoom);
+	size_t GetTilesAtZoomSize() const;
 
 private:
-	const std::vector<class TileDataSource *> sources;
+	std::vector<class TileDataSource *> const &sources;
 	TileCoordinatesSet tileCoordinates;
 	uint zoom;
 };

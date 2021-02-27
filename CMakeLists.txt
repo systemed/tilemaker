@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 2.8)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
 project(tilemaker)
+
+OPTION(TILEMAKER_USE_STATIC_BOOST "Statically link with boost libraries" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -15,7 +17,19 @@ endif()
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR}) # for generated files
 
-find_package(Boost 1.56 REQUIRED COMPONENTS system filesystem program_options)
+IF (TILEMAKER_USE_STATIC_BOOST)
+    MESSAGE (STATUS "Staticly linking with Boost")
+    SET (Boost_USE_STATIC_LIBS TRUE)
+ELSE ()
+    MESSAGE (STATUS "Dynamically linking with Boost")
+    SET (Boost_USE_STATIC_LIBS FALSE)
+ENDIF ()
+
+IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
+ENDIF ()
+
+find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 find_package(Protobuf REQUIRED)
@@ -34,7 +48,6 @@ find_package(ZLIB REQUIRED)
 include_directories(${ZLIB_INCLUDE_DIR})
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 if(MSVC)
   add_definitions(-D_USE_MATH_DEFINES)
@@ -56,6 +69,7 @@ file(GLOB tilemaker_src_files
     "clipper/*.cpp"
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
-target_link_libraries(tilemaker ${Boost_LIBRARIES} ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB})
+target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
+	Boost::system Boost::filesystem Boost::program_options)
 
 install(TARGETS tilemaker RUNTIME DESTINATION bin)

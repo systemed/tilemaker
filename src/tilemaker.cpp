@@ -19,6 +19,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
+#include <boost/algorithm/string.hpp>
+
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
@@ -47,6 +49,9 @@ typedef unsigned uint;
 #include "osm_mem_tiles.h"
 #include "shp_mem_tiles.h"
 
+#include <boost/asio/post.hpp>
+#include <boost/interprocess/streams/bufferstream.hpp>
+
 // Namespaces
 using namespace std;
 namespace po = boost::program_options;
@@ -69,6 +74,7 @@ int main(int argc, char* argv[]) {
 	vector<string> inputFiles;
 	string luaFile;
 	string osmStoreFile;
+	string osmStoreSettings;
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
@@ -83,6 +89,7 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
+		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 		("combine",po::bool_switch(&combineSimilarObjs),                         "combine similar objects (reduces output size but takes considerably longer)");
@@ -168,9 +175,31 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	uint storeNodesSize = 20;
+	uint storeWaysSize = 5;
+
+	try {
+		vector<string> tokens;
+		boost::split(tokens, osmStoreSettings, boost::is_any_of(":"));
+
+		if(tokens.size() != 2) {
+			cerr << "Invalid initial store configuration: " << osmStoreSettings << std::endl;
+			return -1;
+		}
+
+		storeNodesSize = boost::lexical_cast<uint>(tokens[0]);
+		storeWaysSize = boost::lexical_cast<uint>(tokens[1]);
+		std::cout << "Initializing storage to " << storeNodesSize << "M nodes and " << storeWaysSize << "M ways" << std::endl;
+	} catch(std::exception &e)
+	{
+		cerr << "Invalid parameter for store initial settings (" << osmStoreSettings << "): " << e.what() << endl;
+		return -1;
+	}
+
 	// For each tile, objects to be used in processing
-    OSMStore osmStore(osmStoreFile);
+    OSMStore osmStore(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000);
 	AttributeStore attributeStore;
+
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
@@ -210,21 +239,29 @@ int main(int argc, char* argv[]) {
 	if (!mapsplit) {
 		for (auto inputFile : inputFiles) {
 			cout << "Reading .pbf " << inputFile << endl;
-			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys);
+			
+			ifstream infile(inputFile, ios::in | ios::binary);
+			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+
+			int ret = pbfReader.ReadPbfFile(infile, nodeKeys);
 			if (ret != 0) return ret;
 		}
 	}
 
 	// ----	Initialise SharedData
-
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
-	class TileData tileData(sources);
 
-	if (!mapsplit) attributeStore.sortOsmAttributes();
-	attributeStore.sortShpAttributes();
+	std::map<uint, TileData> tileData;
+	std::size_t total_tiles = 0;
 
-	class SharedData sharedData(config, layers, tileData, attributeStore);
-	sharedData.threadNum = threadNum;
+	for (uint zoom=config.startZoom; zoom<=config.endZoom; zoom++) {
+		tileData.emplace(std::piecewise_construct,
+				std::forward_as_tuple(zoom), 
+				std::forward_as_tuple(sources, zoom));
+		total_tiles += tileData.at(zoom).GetTilesAtZoomSize();
+	}
+
+	class SharedData sharedData(config, layers, tileData);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
 
@@ -258,9 +295,10 @@ int main(int argc, char* argv[]) {
 	for (unsigned run=0; run<runs; run++) {
 		// Read mapsplit tile and parse, if applicable
 		int srcZ = -1, srcX = -1, srcY = -1, tmsY = -1;
+
 		if (mapsplit) {
 			osmMemTiles.Clear();
-			attributeStore.clearOsmAttributes();
+
 			tie(srcZ,srcX,tmsY) = tileList.back();
 			srcY = pow(2,srcZ) - tmsY - 1; // TMS
 			if (srcZ > config.baseZoom) {
@@ -269,36 +307,53 @@ int main(int argc, char* argv[]) {
 			} else if (srcZ > config.startZoom) {
 				cout << "Mapsplit tiles (zoom " << srcZ << ") can't write data at zoom level " << config.startZoom << endl;
 			}
+
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
-			// Write to a temp file and read back in - can we do this better via a stringstream or similar?
-			ofstream tempfile;
-			tempfile.open("/tmp/temp.pbf");
-			copy(pbf.cbegin(), pbf.cend(), ostreambuf_iterator<char>(tempfile));
-			tempfile.close();
-			pbfReader.ReadPbfFile("/tmp/temp.pbf", nodeKeys);
+
+			boost::interprocess::bufferstream pbfstream(pbf.data(), pbf.size(),  ios::in | ios::binary);
+			pbfReader.ReadPbfFile(pbfstream, nodeKeys);
+
 			tileList.pop_back();
-			attributeStore.sortOsmAttributes();
 		}
+
+		// Launch the pool with threadNum threads
+		boost::asio::thread_pool pool(threadNum);
+
+		// Mutex is hold when IO is performed
+		std::mutex io_mutex;
+
+		// Loop through tiles
+		uint tc = 0;
 
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 
-			tileData.SetZoom(zoom);
-			sharedData.zoom = zoom;
+			for (TilesAtZoomIterator it = sharedData.tileData.at(zoom).GetTilesAtZoomBegin(); it != sharedData.tileData.at(zoom).GetTilesAtZoomEnd(); ++it) { 
+				// If we're constrained to a source tile, check we're within it
+				if (srcZ>-1) {
+					int x = it.GetCoordinates().x / pow(2, zoom-srcZ);
+					int y = it.GetCoordinates().y / pow(2, zoom-srcZ);
+					if (x!=srcX || y!=srcY) continue;
+				}
 
-			if(threadNum == 1) {
-				// Single thread (is easier to debug)
-				outputProc(0, &sharedData, &osmStore, srcZ,srcX,srcY);
-			} else {
+				// Submit a lambda object to the pool.
+				tc++;
 
-				// Multi thread processing loop
-				vector<thread> worker;
-				for (uint threadId = 0; threadId < threadNum; threadId++)
-					worker.emplace_back(outputProc, threadId, &sharedData, &osmStore, srcZ,srcX,srcY);
-				for (auto &t: worker) t.join();
+				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
+					outputProc(pool, sharedData, osmStore, it, zoom);
 
+					uint interval = 100;
+					if(tc % interval == 0 || tc == total_tiles) { 
+						const std::lock_guard<std::mutex> lock(io_mutex);
+						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r" << std::flush;
+					}
+				});
 			}
+
 		}
+		
+		// Wait for all tasks in the pool to complete.
+		pool.join();
 	}
 
 	// ----	Close tileset

@@ -15,21 +15,34 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-program-options-dev libboost-filesystem-dev libboost-system-dev
+        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev 
 
     - name: Build and install
+      env:
+        S_CFLAGS: -flto -ffunction-sections -fdata-sections
+        S_CXXFLAGS: -flto -ffunction-sections -fdata-sections
+        S_LDFLAGS: -Wl,-gc-sections
       run: |
-        make -j 2
+        mkdir build
+        cd build  
+        export CFLAGS=${S_CFLAGS} && export CXXFLAGS=${S_CXXFLAGS} && export LDFLAGS=${S_LDFLAGS}
+        BOOST_ROOT=$BOOST_ROOT_1_72_0 cmake -DTILEMAKER_USE_STATIC_BOOST=true ..
+        make -j 
         sudo make install
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
         curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
         tilemaker ${AREA}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${AREA}.mbtiles --verbose
+
+    - name: 'Upload compiled executable'
+      uses: actions/upload-artifact@v2
+      with:
+        name: tilemaker
+        path: build/tilemaker
 
   Github-Action:
     name: Generate mbtiles with Github Action

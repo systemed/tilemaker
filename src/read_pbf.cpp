@@ -1,6 +1,9 @@
 #include <iostream>
 #include "read_pbf.h"
 #include "pbf_blocks.h"
+
+#include <boost/interprocess/streams/bufferstream.hpp>
+
 using namespace std;
 
 PbfReader::PbfReader()
@@ -141,20 +144,18 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg) {
 	return false;
 }
 
-int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeKeys)
+int PbfReader::ReadPbfFile(std::istream &infile, unordered_set<string> &nodeKeys)
 {
 	// ----	Read PBF
 	// note that the order of reading and processing is:
 	//  1) output nodes -> (remember current position for rewinding to ways) (skip ways) -> (just remember all ways in any relation),
 	//  2) output ways, and also construct nodeId list for each way in relation -> output relations
 
-	fstream infile(inputFile, ios::in | ios::binary);
-	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 
 	if (output != nullptr) output->startOsmData();
 
 	HeaderBlock block;
-	readBlock(&block, &infile);
+	readBlock(&block, infile);
 
 	PrimitiveBlock pb;
 	PrimitiveGroup pg;
@@ -166,7 +167,7 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 
 	while (true) {
 		long long blockStart = infile.tellg();
-		readBlock(&pb, &infile);
+		readBlock(&pb, infile);
 		if (infile.eof()) {
 			if (!checkedRelations) {
 				checkedRelations = true;
@@ -239,7 +240,6 @@ int PbfReader::ReadPbfFile(const string &inputFile, unordered_set<string> &nodeK
 		ct++;
 	}
 	cout << endl;
-	infile.close();
 
 	if(output != nullptr)
 		output->endOsmData();
@@ -280,7 +280,7 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 	fstream infile(inputFile, ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 	HeaderBlock block;
-	readBlock(&block, &infile);
+	readBlock(&block, infile);
 	if (block.has_bbox()) {
 		hasClippingBox = true;		
 		minLon = block.bbox().left()  /1000000000.0;
