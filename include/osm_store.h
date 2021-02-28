@@ -13,9 +13,167 @@ namespace geom = boost::geometry;
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
 #include <boost/container/vector.hpp>
+#include <boost/container/small_vector.hpp>
 #include <boost/container/scoped_allocator.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/filesystem.hpp>
+
+#include <iterator> 
+#include <cstddef>  
+#include <type_traits>
+
+template<typename T, typename A>
+struct VarIntIterator
+{
+	using iterator_category = std::bidirectional_iterator_tag;
+	using difference_type   = std::ptrdiff_t;
+	using value_type        = T;
+	using pointer           = value_type const*;  // or also value_type*
+	using reference         = value_type const&;  // or also value_type&
+	using unsigned_value_type  = typename std::make_unsigned<T>::type;
+
+	using vector_type = boost::container::small_vector<uint8_t, 15, A>;
+	using const_iterator = typename vector_type::const_iterator;
+
+	VarIntIterator(const_iterator ptr, value_type value = 0)
+		: value(value), begin_ptr(ptr), m_ptr(ptr)
+	{ }
+
+	value_type operator*() const {
+		return value + decode(varint_read(m_ptr));
+	}
+
+	VarIntIterator& operator--() {
+		--m_ptr;
+		while(m_ptr != begin_ptr && (*(m_ptr - 1) & 0x80))
+			--m_ptr;
+
+		value -= decode(varint_read(m_ptr));
+		return *this;
+	}
+
+	VarIntIterator operator--(int) {
+		VarIntIterator tmp = *this;
+		--(*this);
+		return tmp;
+	}
+
+	VarIntIterator& operator++() {
+		value += decode(varint_read(m_ptr));
+		while((*m_ptr & 0x80) != 0)
+			++m_ptr;
+		++m_ptr;
+		return *this;
+	}
+
+	VarIntIterator operator++(int) {
+		VarIntIterator tmp = *this;
+		++(*this);
+		return tmp;
+	}
+
+	friend bool operator== (const VarIntIterator& a, const VarIntIterator& b) { return a.m_ptr == b.m_ptr; };
+	friend bool operator!= (const VarIntIterator& a, const VarIntIterator& b) { return a.m_ptr != b.m_ptr; };
+
+	const_iterator ptr() const { return m_ptr; }
+
+protected:
+    static inline value_type decode(unsigned_value_type value) {
+    	return static_cast<value_type>((value >> 1) ^ -(value & 1));
+    }
+
+	template<class FwdIt>
+	static inline value_type varint_read(FwdIt first)
+	{
+		value_type value = 0;
+		value_type factor = 1;
+		while((*first & 0x80) != 0)
+		{
+			value += (*first++ & 0x7f) * factor;
+			factor *= 128;
+		}
+		value += *first++ * factor;
+		return value;
+	}
+
+	value_type value;
+	const_iterator begin_ptr;
+	const_iterator m_ptr;
+};
+
+/** Storage for delta-encoded compressed node lists */
+template<typename T, typename A>
+class VarIntVector
+{
+public:
+
+	using value_type = T;
+	using signed_value_type = typename std::make_signed<T>::type;
+	using const_iterator = VarIntIterator<signed_value_type, A>;
+	using allocator_type = A;
+
+	using vector_type = boost::container::small_vector<uint8_t, 15, A>;
+
+	VarIntVector(A alloc = A())
+		: values(0, typename vector_type::allocator_type(alloc))
+	{ }
+
+	template<typename InputIt>
+	VarIntVector(InputIt begin, InputIt end, A const &alloc = A())
+		: values(0, typename vector_type::allocator_type(alloc))
+	{ 
+		values.reserve(std::distance(begin, end));
+		last_value = 0;
+		while(begin != end) { 
+			value_type value = *begin;
+        	push_value(encode(value - last_value));
+	        last_value = value;
+			++begin;
+		}
+	}
+
+    VarIntIterator<signed_value_type, A> cbegin() const { 
+		return VarIntIterator<signed_value_type, A>(values.cbegin()); 
+	}
+    VarIntIterator<signed_value_type, A> cend() const {
+        return VarIntIterator<signed_value_type, A>(values.cend(), last_value);
+        /* auto result = VarIntIterator<signed_value_type, A>(values.cbegin());
+        while(result.ptr() != values.cend())
+            result++;
+        return result;  */
+    }
+
+    void push_back(value_type value)
+    {
+		//auto last_value = *std::prev(cend());
+        push_value(encode(value - last_value));
+        last_value = value;
+    }
+
+    std::size_t size() const { return values.size(); }
+	bool empty() const { return values.empty(); }
+
+	value_type front() const { return *cbegin(); }
+	value_type back() const { return last_value; }
+
+private:
+	value_type encode(signed_value_type value) {
+        return (value << 1) ^ (value >> (std::numeric_limits<value_type>::digits - 1));
+    }
+
+    void push_value(value_type value)
+    {
+        while(value > 127)
+        {
+            values.push_back(static_cast<uint8_t>(0x80 | value));
+            value /= 128;
+        }
+        values.push_back(static_cast<uint8_t>(value));
+    }
+
+	vector_type values;
+	value_type last_value;
+};
 
 //
 // Views of data structures.
@@ -49,10 +207,12 @@ using mmap_file_t = boost::interprocess::managed_mapped_file;
 //
 // Internal data structures.
 //
-
-// node store
-template<class map_t>
-class NodeStoreBase {
+class NodeStore
+{
+	using nodestore_pair_t = std::pair<NodeID, LatpLon>;
+	using nodestore_pair_allocator_t = boost::interprocess::node_allocator<nodestore_pair_t, mmap_file_t::segment_manager>;
+	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, nodestore_pair_allocator_t>;
+	map_t *mLatpLons;
 
 public:
 
@@ -62,45 +222,21 @@ public:
 		mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
 	}
 
+	// @brief prereserve the specified number of items
+	void reserve(uint nodes) {
+		mLatpLons->reserve(nodes);
+	}
+
 	// @brief Lookup a latp/lon pair
 	// @param i OSM ID of a node
 	// @return Latp/lon pair
 	// @exception NotFound
 	LatpLon const &at(NodeID i) const {
-		try {
-			return mLatpLons->at(i);
-		}
-		catch (std::out_of_range &err) {
-			throw std::out_of_range("Could not find node " + std::to_string(i));
-		}
-	}
-
-	// @brief Return whether a latp/lon pair is on the store.
-	// @param i Any possible OSM ID
-	// @return 1 if found, 0 otherwise
-	// @note This function is named as count for consistent naming with stl functions.
-	size_t count(NodeID i) const {
-		return mLatpLons->count(i);
+		return mLatpLons->at(i);
 	}
 
 	// @brief Return the number of stored items
 	size_t size() const { return mLatpLons->size(); }
-
-protected:
-	map_t *mLatpLons;
-};
-
-using nodestore_pair_t = std::pair<NodeID, LatpLon>;
-using nodestore_pair_allocator_t = boost::interprocess::node_allocator<nodestore_pair_t, mmap_file_t::segment_manager>;
-
-class NodeStore
-	: public NodeStoreBase< boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, nodestore_pair_allocator_t> >
-{
-public:
-	// @brief prereserve the specified number of items
-	void reserve(uint nodes) {
-		mLatpLons->reserve(nodes);
-	}
 
 	// @brief Insert a latp/lon pair.
 	// @param i OSM ID of a node
@@ -113,7 +249,6 @@ public:
 
 	// @brief Make the store empty
 	void clear() { mLatpLons->clear(); } 
-
 };
 
 
@@ -135,10 +270,6 @@ public:
 	// @return Latp/lon pair
 	// @exception NotFound
 	LatpLon const &at(NodeID i) const {
-		if(i >= mLatpLons->size()) {
-			throw std::out_of_range("Could not find node " + std::to_string(i));
-		}
-
 		return mLatpLons->at(i);
 	}
 
@@ -149,7 +280,7 @@ public:
 		}
 
 		std::cout << "Resize node store: " << nodes << ", max size: " << mLatpLons->max_size() << std::endl;
-		mLatpLons->resize(nodes);
+		mLatpLons->reserve(nodes);
 	}
 
 	// @brief Insert a latp/lon pair.
@@ -158,10 +289,11 @@ public:
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	void insert_back(NodeID i, LatpLon coord) {
-		if(i >= mLatpLons->size()) {
+		if(i >= mLatpLons->capacity()) {
 			throw std::out_of_range("Failed to store node " + std::to_string(i) + ", index out of range");
 		}
 
+		mLatpLons->resize(std::max(i + 1, mLatpLons->size()));
 		(*mLatpLons)[i] = coord;
 	}
 
@@ -170,22 +302,22 @@ public:
 
 	// @brief Make the store empty
 	void clear() { 
-		std::fill(mLatpLons->begin(), mLatpLons->end(), LatpLon());
+		//std::fill(mLatpLons->begin(), mLatpLons->end(), LatpLon());
+		mLatpLons->resize(0);
 	} 
 };
 
 // way store
-template<class nodeid_t>
 class WayStore {
 
 public:
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
-	using nodeid_allocator_t = boost::interprocess::node_allocator<nodeid_t, mmap_file_t::segment_manager>;
-	using nodeid_vector_t = boost::container::vector<nodeid_t, scoped_alloc_t<nodeid_allocator_t>>;
+	using nodeid_allocator_t = boost::interprocess::node_allocator<uint8_t, mmap_file_t::segment_manager>;
+	using nodeid_vector_t = VarIntVector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
 
-	using pair_t = std::pair<const nodeid_t, nodeid_vector_t>;
+	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
 	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
-	using map_t = boost::unordered_map<nodeid_t, nodeid_vector_t, std::hash<nodeid_t>, std::equal_to<nodeid_t>, scoped_alloc_t<pair_allocator_t>>;
+	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
 
 	using const_iterator = typename nodeid_vector_t::const_iterator;
 
@@ -249,15 +381,16 @@ class RelationStore {
 public:	
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 
-	using wayid_allocator_t = boost::interprocess::node_allocator<WayID, mmap_file_t::segment_manager>;
+	//using wayid_allocator_t = boost::interprocess::node_allocator<WayID, mmap_file_t::segment_manager>;
+	using wayid_allocator_t = boost::interprocess::node_allocator<uint8_t, mmap_file_t::segment_manager>;
 
 	class wayid_vector_t
-		: public  boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>
+		: public VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>
 	{
 	public:
 			template<typename IteratorTuple, typename Allocator>
 			wayid_vector_t(IteratorTuple init, Allocator &allocator)
-				: boost::container::vector<WayID, scoped_alloc_t<wayid_allocator_t>>(init.first, init.second, allocator) 
+				: VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>(init.first, init.second, allocator) 
 			{ }
 	};
 
@@ -338,7 +471,7 @@ protected:
 		return std::reverse_iterator<Iterator>(i);
 	}		
 
-	WayStore<NodeID> ways;
+	WayStore ways;
 	RelationStore relations;
 
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
@@ -424,7 +557,7 @@ protected:
 		}
 	}
 
-	NodeList<WayStore<NodeID>::const_iterator> ways_at(WayID i) const {
+	NodeList<WayStore::const_iterator> ways_at(WayID i) const {
 		return ways.at(i);
 	}
 
@@ -478,25 +611,25 @@ public:
 	}
 
 	Polygon nodeListPolygon(handle_t handle) {
-		auto const &way = retrieve<WayStore<NodeID>::nodeid_vector_t>(handle);
+		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
 
 		Polygon poly;
-		fillPoints(poly.outer(), way.begin(), way.end());
+		fillPoints(poly.outer(), way.cbegin(), way.cend());
 		geom::correct(poly);
 		return poly;
 	}
 
 	// Way -> Linestring
 	Linestring nodeListLinestring(handle_t handle) const {
-		auto const &way = retrieve<WayStore<NodeID>::nodeid_vector_t>(handle);
+		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
 
 		Linestring ls;
-		fillPoints(ls, way.begin(), way.end());
+		fillPoints(ls, way.cbegin(), way.cend());
 		return ls;
 	}
 
 	bool wayIsClosed(handle_t handle) {
-		auto const &way = retrieve<WayStore<NodeID>::nodeid_vector_t>(handle);
+		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
 		return way.empty() || (way.front() == way.back());
 	}
 
@@ -644,19 +777,20 @@ public:
 							joined=true; break;
 						} else if (oLast==jLast) {
 							// append reversed to the original
-							ot->insert(ot->end(), 
-								make_reverse_iterator(nodes.end), 
-								make_reverse_iterator(nodes.begin));
+							NodeVec tmp(nodes.begin, nodes.end);
+                            ot->insert(ot->end(),
+                            	make_reverse_iterator(tmp.end()),
+                                make_reverse_iterator(tmp.begin()));
 							joined=true; break;
 						} else if (jLast==oFirst) {
 							// prepend to the original
 							ot->insert(ot->begin(), nodes.begin, nodes.end);
 							joined=true; break;
 						} else if (jFirst==oFirst) {
-							// prepend reversed to the original
-							ot->insert(ot->begin(), 
-								make_reverse_iterator(nodes.end), 
-								make_reverse_iterator(nodes.begin));
+							NodeVec tmp(nodes.begin, nodes.end);
+                            ot->insert(ot->begin(),
+                            	make_reverse_iterator(tmp.end()),
+                                make_reverse_iterator(tmp.begin()));
 							joined=true; break;
 						}
 					}
@@ -716,7 +850,12 @@ class OSMStoreImpl
 	};
 
 	LatpLon const &impl_nodes_at(NodeID i) const override {
-		return nodes.at(i);
+		try {
+			return nodes.at(i);
+		}
+		catch (std::out_of_range &err) {
+			throw std::out_of_range("Could not find node " + std::to_string(i));
+		}
 	};
 
 	void impl_reopen(mmap_file_t &mmap_file) override {

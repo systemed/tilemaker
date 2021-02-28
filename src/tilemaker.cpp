@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
 	// For each tile, objects to be used in processing
 	std::unique_ptr<OSMStore> osmStore;
 	if(osmStoreCompact) {
-		std:: cout << "\nImportant: Tilemaker running with 32-bit node support.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
+		std:: cout << "\nImportant: Tilemaker running in compact mode.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
    		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000));
 	} else {
    		osmStore.reset(new OSMStoreImpl<NodeStore>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000));
