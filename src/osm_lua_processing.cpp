@@ -135,7 +135,7 @@ bool OsmLuaProcessing::IsClosed() const {
 	if (isRelation) {
 		return true; // TODO: check it when non-multipolygon are supported
 	} else {
-		return nodeVec->front() == nodeVec->back();
+		return osmStore.wayIsClosed(nodeVec);
 	}
 }
 
@@ -199,9 +199,9 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 		if (isRelation) {
 			//A relation is being treated as a linestring, which might be
 			//caused by bug in the Lua script
-			linestringCache = osmStore.wayListLinestring(*outerWayVec, *innerWayVec);
+			linestringCache = OSMStore::wayListLinestring(osmStore.wayListMultiPolygon(outerWayVec->begin(), outerWayVec->end(), innerWayVec->begin(), innerWayVec->end()));
 		} else if (isWay) {
-			linestringCache = osmStore.nodeListLinestring(*nodeVec);
+			linestringCache = osmStore.nodeListLinestring(nodeVec);
 		}
 	}
 	return linestringCache;
@@ -210,7 +210,7 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 const Polygon &OsmLuaProcessing::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
-		polygonCache = osmStore.nodeListPolygon(*nodeVec);
+		polygonCache = osmStore.nodeListPolygon(nodeVec);
 	}
 	return polygonCache;
 }
@@ -218,7 +218,7 @@ const Polygon &OsmLuaProcessing::polygonCached() {
 const MultiPolygon &OsmLuaProcessing::multiPolygonCached() {
 	if (!multiPolygonInited) {
 		multiPolygonInited = true;
-		multiPolygonCache = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+		multiPolygonCache = osmStore.wayListMultiPolygon(outerWayVec->begin(), outerWayVec->end(), innerWayVec->begin(), innerWayVec->end());
 	}
 	return multiPolygonCache;
 }
@@ -301,7 +301,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		Geometry tmp;
 		if (isRelation) {
 			try {
-				tmp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+				tmp = osmStore.wayListMultiPolygon(outerWayVec->begin(), outerWayVec->end(), innerWayVec->begin(), innerWayVec->end());
 			} catch(std::out_of_range &err) {
 				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 				return;
@@ -423,13 +423,12 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	originalOsmID = osmID;
 	isWay = true;
 	isRelation = false;
-
 	outerWayVec = nullptr;
 	innerWayVec = nullptr;
-	nodeVec = nodeVecPtr;
+
 	try {
-		setLocation(osmStore.nodes_at(nodeVec->front()).lon, osmStore.nodes_at(nodeVec->front()).latp,
-				osmStore.nodes_at(nodeVec->back()).lon, osmStore.nodes_at(nodeVec->back()).latp);
+		setLocation(osmStore.nodes_at(nodeVecPtr->front()).lon, osmStore.nodes_at(nodeVecPtr->front()).latp,
+				osmStore.nodes_at(nodeVecPtr->back()).lon, osmStore.nodes_at(nodeVecPtr->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -452,14 +451,14 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 	if (!this->empty() || inRelation) {
 		// Store the way's nodes in the global way store
 		WayID wayId = static_cast<WayID>(way->id());
-		osmStore.ways_insert_back(wayId, *nodeVec);
+		nodeVec = osmStore.ways_insert_back(wayId, *nodeVecPtr);
 	}
 
 	if (!this->empty()) {
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(*nodeVec), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -510,9 +509,9 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 	isWay = true;
 	isRelation = true;
 
+	nodeVec = OSMStore::handle_t();
 	outerWayVec = outerWayVecPtr;
 	innerWayVec = innerWayVecPtr;
-	nodeVec = nullptr;
 	//setLocation(...); TODO
 
 	currentTags = tags;
@@ -527,12 +526,12 @@ void OsmLuaProcessing::setRelation(Relation *relation, WayVec *outerWayVecPtr, W
 		WayID relID = this->osmID;
 
 		// Store the relation members in the global relation store
-		osmStore.relations_insert_front(relID, *outerWayVec, *innerWayVec);
+		osmStore.relations_insert_front(relID, *outerWayVecPtr, *innerWayVecPtr);
 
 		MultiPolygon mp;
 		try {
 			// for each tile the relation may cover, put the output objects.
-			mp = osmStore.wayListMultiPolygon(*outerWayVec, *innerWayVec);
+			mp = osmStore.wayListMultiPolygon(outerWayVec->begin(), outerWayVec->end(), innerWayVec->begin(), innerWayVec->end());
 		} catch(std::out_of_range &err) {
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
