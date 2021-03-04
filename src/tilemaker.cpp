@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false, mapsplit = false;
+	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
 
 	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -89,6 +89,7 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
+		("compact",  po::bool_switch(&osmStoreCompact),  "Use 32bits NodeIDs and reduce overall memory usage (compact mode).\nThis requires the input to be renumbered and the init-store to be configured")
 		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
@@ -111,10 +112,6 @@ int main(int argc, char* argv[]) {
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { sqlite=true; }
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
 	verbose = _verbose;
-
-	#ifdef COMPACT_NODES
-	cout << "tilemaker compiled without 64-bit node support, use 'osmium renumber' first if working with OpenStreetMap-sourced data" << endl;
-	#endif
 
 	// ---- Check config
 	
@@ -197,14 +194,21 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-    OSMStore osmStore(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000);
+	std::unique_ptr<OSMStore> osmStore;
+	if(osmStoreCompact) {
+		std:: cout << "\nImportant: Tilemaker running with 32-bit node support.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
+   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000));
+	} else {
+   		osmStore.reset(new OSMStoreImpl<NodeStore>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000));
+	}
+
 	AttributeStore attributeStore;
 
 	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
+	class ShpMemTiles shpMemTiles(*osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
 
-	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
+	OsmLuaProcessing osmLuaProcessing(*osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files
@@ -340,7 +344,7 @@ int main(int argc, char* argv[]) {
 				tc++;
 
 				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
-					outputProc(pool, sharedData, osmStore, it, zoom);
+					outputProc(pool, sharedData, *osmStore, it, zoom);
 
 					uint interval = 100;
 					if(tc % interval == 0 || tc == total_tiles) { 
