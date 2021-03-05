@@ -132,16 +132,9 @@ BOOST_GEOMETRY_REGISTER_LINESTRING(mmap::linestring_t)
 BOOST_GEOMETRY_REGISTER_RING(mmap::ring_t)
 BOOST_GEOMETRY_REGISTER_MULTI_POLYGON(mmap::multi_polygon_t)
 
-#ifdef COMPACT_NODES
-typedef uint32_t NodeID;
-#else
 typedef uint64_t NodeID;
-#endif
-#ifdef FAT_WAYS
 typedef uint64_t WayID;
-#else
-typedef uint32_t WayID;
-#endif
+
 #define MAX_WAY_ID std::numeric_limits<WayID>::max()
 typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;

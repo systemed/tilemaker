@@ -180,8 +180,8 @@ private:
 	bool isWay, isRelation;					///< Way, node, relation?
 
 	int32_t lon1,latp1,lon2,latp2;			///< Start/end co-ordinates of OSM object
-	NodeVec *nodeVec;						///< node vector
-	WayVec *outerWayVec, *innerWayVec;		///< way vectors
+	OSMStore::handle_t nodeVec;				///< node vector
+  	WayVec *outerWayVec, *innerWayVec;      ///< way vectors
 
 	Linestring linestringCache;
 	bool linestringInited;
