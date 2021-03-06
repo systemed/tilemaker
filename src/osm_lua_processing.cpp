@@ -132,11 +132,8 @@ bool OsmLuaProcessing::Intersects(const string &layerName) {
 // Returns whether it is closed polygon
 bool OsmLuaProcessing::IsClosed() const {
 	if (!isWay) return false; // nonsense: it isn't a way
-	if (isRelation) {
-		return true; // TODO: check it when non-multipolygon are supported
-	} else {
-		return osmStore.wayIsClosed(nodeVec);
-	}
+	if (isRelation) return true; // TODO: check it when non-multipolygon are supported
+	return isClosed;
 }
 
 void reverse_project(DegPoint& p) {
@@ -195,6 +192,7 @@ double OsmLuaProcessing::Length() {
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
+		if (!polygonInited) nodeVec = osmStore.ways_insert_back(osmID, *nodeVecPtr);
 
 		if (isRelation) {
 			//A relation is being treated as a linestring, which might be
@@ -210,6 +208,7 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 const Polygon &OsmLuaProcessing::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
+		if (!linestringInited) nodeVec = osmStore.ways_insert_back(osmID, *nodeVecPtr);
 		polygonCache = osmStore.nodeListPolygon(nodeVec);
 	}
 	return polygonCache;
@@ -417,14 +416,17 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const std::map<std::stri
 }
 
 // We are now processing a way
-void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {
+void OsmLuaProcessing::setWay(Way *way, NodeVec *nvp, bool inRelation, const std::map<std::string, std::string> &tags) {
 	reset();
 	osmID = way->id();
 	originalOsmID = osmID;
 	isWay = true;
 	isRelation = false;
+	nodeVecPtr = nvp;
+	isClosed = nodeVecPtr->front()==nodeVecPtr->back();
 	outerWayVec = nullptr;
 	innerWayVec = nullptr;
+	linestringInited = polygonInited = multiPolygonInited = false;
 
 	try {
 		setLocation(osmStore.nodes_at(nodeVecPtr->front()).lon, osmStore.nodes_at(nodeVecPtr->front()).latp,
@@ -448,7 +450,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, co
 		assert(!ret);
 	}
 
-	if (!this->empty() || inRelation) {
+	if (!linestringInited && !polygonInited && (!this->empty() || inRelation)) {
 		// Store the way's nodes in the global way store
 		WayID wayId = static_cast<WayID>(way->id());
 		nodeVec = osmStore.ways_insert_back(wayId, *nodeVecPtr);
