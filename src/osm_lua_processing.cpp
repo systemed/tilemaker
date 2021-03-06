@@ -192,14 +192,13 @@ double OsmLuaProcessing::Length() {
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
-		if (!polygonInited) nodeVec = osmStore.ways_insert_back(osmID, *nodeVecPtr);
 
 		if (isRelation) {
 			//A relation is being treated as a linestring, which might be
 			//caused by bug in the Lua script
 			linestringCache = OSMStore::wayListLinestring(osmStore.wayListMultiPolygon(outerWayVec->begin(), outerWayVec->end(), innerWayVec->begin(), innerWayVec->end()));
 		} else if (isWay) {
-			linestringCache = osmStore.nodeListLinestring(nodeVec);
+			linestringCache = osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend());
 		}
 	}
 	return linestringCache;
@@ -208,8 +207,7 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 const Polygon &OsmLuaProcessing::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
-		if (!linestringInited) nodeVec = osmStore.ways_insert_back(osmID, *nodeVecPtr);
-		polygonCache = osmStore.nodeListPolygon(nodeVec);
+		polygonCache = osmStore.nodeListPolygon(nodeVecPtr->cbegin(), nodeVecPtr->cend());
 	}
 	return polygonCache;
 }
@@ -450,7 +448,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nvp, bool inRelation, const std
 		assert(!ret);
 	}
 
-	if (!linestringInited && !polygonInited && (!this->empty() || inRelation)) {
+	if (!this->empty() || inRelation) {
 		// Store the way's nodes in the global way store
 		WayID wayId = static_cast<WayID>(way->id());
 		nodeVec = osmStore.ways_insert_back(wayId, *nodeVecPtr);
@@ -460,7 +458,7 @@ void OsmLuaProcessing::setWay(Way *way, NodeVec *nvp, bool inRelation, const std
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;

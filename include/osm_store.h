@@ -610,21 +610,19 @@ public:
 		return result;
 	}
 
-	Polygon nodeListPolygon(handle_t handle) {
-		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
-
+	template<class WayIt>
+	Polygon nodeListPolygon(WayIt begin, WayIt end) {
 		Polygon poly;
-		fillPoints(poly.outer(), way.cbegin(), way.cend());
+		fillPoints(poly.outer(), begin, end);
 		geom::correct(poly);
 		return poly;
 	}
 
 	// Way -> Linestring
-	Linestring nodeListLinestring(handle_t handle) const {
-		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
-
+	template<class WayIt>
+	Linestring nodeListLinestring(WayIt begin, WayIt end) const {
 		Linestring ls;
-		fillPoints(ls, way.cbegin(), way.cend());
+		fillPoints(ls, begin, end);
 		return ls;
 	}
 
