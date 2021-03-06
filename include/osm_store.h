@@ -293,7 +293,7 @@ public:
 			throw std::out_of_range("Failed to store node " + std::to_string(i) + ", index out of range");
 		}
 
-		mLatpLons->resize(std::max(i + 1, mLatpLons->size()));
+		mLatpLons->resize(std::max<size_t>(i + 1, mLatpLons->size()));
 		(*mLatpLons)[i] = coord;
 	}
 
@@ -663,7 +663,7 @@ public:
 	handle_t store_linestring(generated &store, Input const &src)
 	{
 		perform_mmap_operation([&]() {
-			store.linestring_store->resize(store.linestring_store->size() + 1);
+			store.linestring_store->emplace_back();
 			boost::geometry::assign(store.linestring_store->back(), src);
 		});
 
