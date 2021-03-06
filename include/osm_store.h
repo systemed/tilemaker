@@ -628,11 +628,6 @@ public:
 		return ls;
 	}
 
-	bool wayIsClosed(handle_t handle) {
-		auto const &way = retrieve<WayStore::nodeid_vector_t>(handle);
-		return way.empty() || (way.front() == way.back());
-	}
-
 	handle_t relations_insert_front(WayID i, const WayVec &outerWayVec, const WayVec &innerWayVec) {
 		handle_t result;
 		perform_mmap_operation([&]() {
