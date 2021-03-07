@@ -11,14 +11,14 @@ env:
 jobs:
   build:
     name: Compile, install and build mbtiles
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-16.04
 
     steps:
     - uses: actions/checkout@v2
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev libboost-all-dev
+        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev 
 
     - name: Build and install
       env:
@@ -29,7 +29,7 @@ jobs:
         mkdir build
         cd build  
         export CFLAGS=${S_CFLAGS} && export CXXFLAGS=${S_CXXFLAGS} && export LDFLAGS=${S_LDFLAGS}
-        cmake -DTILEMAKER_USE_STATIC_BOOST=true ..
+        BOOST_ROOT=$BOOST_ROOT_1_72_0 cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release ..
         make -j 
         sudo make install
 
@@ -46,7 +46,7 @@ jobs:
 
   Github-Action:
     name: Generate mbtiles with Github Action
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - name: Check out repository
