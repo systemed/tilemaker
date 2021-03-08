@@ -311,14 +311,15 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 			MultiPolygon mp;
 			mp.push_back(p);	
 			tmp = mp;
+		} else {
+			LatpLon pt = osmStore.nodes_at(osmID);
+			tmp = Point(pt.lon, pt.latp);
 		}
 
-#if BOOST_VERSION >= 105900
 		if(geom::is_empty(tmp)) {
-			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid" << endl;
+			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
 		}
-#endif
 
 		// write out centroid only
 		try {
