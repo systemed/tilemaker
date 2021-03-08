@@ -6,7 +6,7 @@ endif()
 
 project(tilemaker)
 
-OPTION(TILEMAKER_USE_STATIC_BOOST "Statically link with boost libraries" OFF)
+OPTION(TILEMAKER_BUILD_STATIC "Attempt to link dependencies static" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -17,9 +17,10 @@ endif()
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR}) # for generated files
 
-IF (TILEMAKER_USE_STATIC_BOOST)
+IF (TILEMAKER_BUILD_STATIC)
     MESSAGE (STATUS "Staticly linking with Boost")
     SET (Boost_USE_STATIC_LIBS TRUE)
+	SET (CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_STATIC_LIBRARY_SUFFIX})
 ELSE ()
     MESSAGE (STATUS "Dynamically linking with Boost")
     SET (Boost_USE_STATIC_LIBS FALSE)
