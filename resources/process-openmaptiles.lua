@@ -223,9 +223,20 @@ function way_function(way)
 		if trackValues[highway]     then h = "track"; layer="transportation_detail" end
 		if pathValues[highway]      then h = "path" ; layer="transportation_detail" end
 		if h=="service"             then              layer="transportation_detail" end
+
+		-- Links (ramp)
+		local ramp=false
+		if linkValues[highway] then
+			splitHighway = split(highway, "_")
+			highway = splitHighway[1]; h = highway
+			ramp = true
+		end
+
+		-- Write to layer
 		way:Layer(layer, false)
 		way:Attribute("class", h)
 		SetBrunnelAttributes(way)
+		if ramp then way:AttributeNumeric("ramp",1) end
 
 		-- Construction
 		if highway == "construction" then
@@ -239,13 +250,6 @@ function way_function(way)
 		-- Service
 		local service = way:Find("service")
 		if highway == "service" and service ~="" then way:Attribute("service", service) end
-
-		-- Links (ramp)
-		if linkValues[highway] then
-			splitHighway = split(highway, "_")
-			highway = splitHighway[1]
-			way:AttributeNumeric("ramp",1)
-		end
 
 		local oneway = way:Find("oneway")
 		if oneway == "yes" or oneway == "1" then
