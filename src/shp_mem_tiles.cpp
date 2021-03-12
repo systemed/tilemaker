@@ -82,7 +82,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 	uint tilex = 0, tiley = 0;
 	switch(geomType) {
-		case CACHED_POINT:
+		case OutputGeometryType::POINT:
 		{
 			Point *p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
@@ -96,7 +96,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			}
 		} break;
 
-		case CACHED_LINESTRING:
+		case OutputGeometryType::LINESTRING:
 		{
 			oo = new OutputObjectOsmStoreLinestring(
 						geomType, true, layerNum, id, osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)), attributes);
@@ -105,7 +105,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			addToTileIndexPolyline(oo, tileIndex, &geometry);
 		} break;
 
-		case CACHED_POLYGON:
+		case OutputGeometryType::POLYGON:
 		{
 			oo = new OutputObjectOsmStoreMultiPolygon(
 						geomType, true, layerNum, id, osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)), attributes);

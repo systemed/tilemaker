@@ -232,9 +232,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
+	OutputGeometryType geomType = isWay ? (area ? OutputGeometryType::POLYGON : OutputGeometryType::LINESTRING) : OutputGeometryType::POINT;
 	try {
-		if (geomType==POINT) {
+		if (geomType==OutputGeometryType::POINT) {
 			LatpLon pt = indexStore->nodes_at(osmID);
 			Point p = Point(pt.lon, pt.latp);
 
@@ -246,7 +246,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
     	    outputs.push_back(std::make_pair(oo, AttributeStore::key_value_set_entry_t()));
             return;
 		}
-		else if (geomType==POLYGON) {
+		else if (geomType==OutputGeometryType::POLYGON) {
 			// polygon
 
 			MultiPolygon mp;
@@ -275,7 +275,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
                             osmID, osmStore.store_multi_polygon(osmStore.osm(), mp), attributeStore.empty_set()));
     	    outputs.push_back(std::make_pair(oo, AttributeStore::key_value_set_entry_t()));
 		}
-		else if (geomType==LINESTRING) {
+		else if (geomType==OutputGeometryType::LINESTRING) {
 			// linestring
 			Linestring ls = linestringCached();
 
@@ -341,7 +341,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
 	}
 
-	OutputObjectRef oo(new OutputObjectOsmStorePoint(CENTROID,
+	OutputObjectRef oo(new OutputObjectOsmStorePoint(OutputGeometryType::POINT,
 					false, layers.layerMap[layerName],
 					osmID, osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
     outputs.push_back(std::make_pair(oo, AttributeStore::key_value_set_entry_t()));
@@ -469,7 +469,7 @@ void OsmLuaProcessing::setWay(WayID wayId, OSMStore::handle_t handle, const tag_
 					// Store the attributes of the generated geometry
 					jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 
-					if (jt->first->geomType == POLYGON) {
+					if (jt->first->geomType == OutputGeometryType::POLYGON) {
 						polygonExists = true;
 						continue;
 					}
@@ -487,7 +487,7 @@ void OsmLuaProcessing::setWay(WayID wayId, OSMStore::handle_t handle, const tag_
 						// Store the attributes of the generated geometry
 						jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 
-						if (jt->first->geomType != POLYGON) continue;
+						if (jt->first->geomType != OutputGeometryType::POLYGON) continue;
 						osmMemTiles.AddObject(index, jt->first);
 					}
 				}

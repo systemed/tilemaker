@@ -57,7 +57,7 @@ void writeBlock(google::protobuf::Message *messagePtr, ostream &output, string h
 	bh.SerializeToString(&header_encoded);
 	
 	// write out
-	uint bhLength=header_encoded.length();
+	unsigned int bhLength=header_encoded.length();
 	endian_swap(bhLength);
 	output.write(reinterpret_cast<const char *>(&bhLength), 4);
 	output.write(header_encoded.c_str(), header_encoded.length() );
@@ -94,17 +94,17 @@ map<string, string> getTags(vector<string> *strPtr, Way *wayPtr) {
 }
 
 // Find the index of a string in the StringTable, adding it if it's not there
-uint findStringInTable(string *strPtr, map<string, int> *mapPtr, PrimitiveBlock *pbPtr) {
+unsigned int findStringInTable(string *strPtr, map<string, int> *mapPtr, PrimitiveBlock *pbPtr) {
 	if (mapPtr->find(*strPtr) == mapPtr->end()) {
 		pbPtr->mutable_stringtable()->add_s(*strPtr);
-		uint ix = pbPtr->stringtable().s_size()-1;
+		unsigned int ix = pbPtr->stringtable().s_size()-1;
 		mapPtr->insert(pair<string, int> (*strPtr, ix));
 	}
 	return mapPtr->at(*strPtr);
 }
 
 // Set a tag for a way to a new value
-void setTag(Way *wayPtr, uint keyIndex, uint valueIndex) {
+void setTag(Way *wayPtr, unsigned int keyIndex, unsigned int valueIndex) {
 	for (int i=0; i<wayPtr->keys_size(); i++) {
 		if (wayPtr->keys(i)==keyIndex) {
 			wayPtr->mutable_vals()->Set(i,valueIndex);

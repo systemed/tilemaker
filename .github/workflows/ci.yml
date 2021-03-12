@@ -9,40 +9,96 @@ env:
   AREA: liechtenstein
 
 jobs:
-  build:
-    name: Compile, install and build mbtiles
-    runs-on: ubuntu-16.04
+
+  Windows-Build:
+    name: Windows build
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v2
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev 
 
-    - name: Build and install
-      env:
-        S_CFLAGS: -flto -ffunction-sections -fdata-sections
-        S_CXXFLAGS: -flto -ffunction-sections -fdata-sections
-        S_LDFLAGS: -Wl,-gc-sections
+    - name: Enable vcpkg cache
+      uses: actions/cache@v2
+      with:
+        path: c:\vcpkg\installed
+        key: windows-vcpkg-x64-0 # Increase the number whenever dependencies are modified
+        restore-keys: windows-vcpkg-x64
+
+    - name: Build dependencies
       run: |
-        mkdir build
-        cd build  
-        export CFLAGS=${S_CFLAGS} && export CXXFLAGS=${S_CXXFLAGS} && export LDFLAGS=${S_LDFLAGS}
-        BOOST_ROOT=$BOOST_ROOT_1_72_0 cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release ..
-        make -j 
-        sudo make install
+        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess 
+
+    - name: Build tilemaker
+      run: |
+        mkdir ${{ github.workspace }}\build        
+        cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
+        cd ${{ github.workspace }}\build && cmake --build . --config Release
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
-        tilemaker ${AREA}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${AREA}.mbtiles --verbose
+        Invoke-WebRequest -Uri http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf
+        ${{ github.workspace }}\build\Release\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
 
     - name: 'Upload compiled executable'
       uses: actions/upload-artifact@v2
       with:
-        name: tilemaker
-        path: build/tilemaker
+        name: tilemaker-windows
+        path: |
+          ${{ github.workspace }}\resources
+          ${{ github.workspace }}\build\Release\tilemaker.exe
+
+  unix-build:  
+    strategy:  
+      matrix: 
+        include:
+          - os: ubuntu-16.04
+            triplet: x64-linux
+            executable: tilemaker
+            path: /usr/local/share/vcpkg/installed
+            toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
+          - os: macos-10.15
+            triplet: x64-osx
+            executable: tilemaker
+            path: /usr/local/share/vcpkg/installed
+            toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+    name: ${{ matrix.os }} build
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Enable vcpkg cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ matrix.path }}
+        key: vcpkg-${{ matrix.triplet }}-0 # Increase the number whenever dependencies are modified
+        restore-keys: vcpkg-${{ matrix.triplet }}
+
+    - name: Build dependencies
+      run: |
+        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess 
+
+    - name: Build tilemaker
+      run: |
+        mkdir build        
+        cd build        
+        cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
+        cmake --build . 
+        strip tilemaker
+
+    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+      run: |
+        curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
+        ${{ github.workspace }}/build/${{ matrix.executable }} ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
+
+    - name: 'Upload compiled executable'
+      uses: actions/upload-artifact@v2
+      with:
+        name: tilemaker-${{ matrix.os }}
+        path: |
+          ${{ github.workspace }}/resources
+          ${{ github.workspace }}/build/${{ matrix.executable }}
 
   Github-Action:
     name: Generate mbtiles with Github Action
