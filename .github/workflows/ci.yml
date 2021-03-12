@@ -18,7 +18,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev 
+        sudo apt-get install -y --no-install-recommends build-essential libluajit-5.1-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev 
 
     - name: Build and install
       env:

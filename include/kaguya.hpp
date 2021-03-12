@@ -5124,7 +5124,7 @@ namespace kaguya
 		static get_type get(lua_State* l, int index)
 		{
 			int isnum=0;
-			get_type num = static_cast<T>(lua_tonumberx(l,index,&isnum));
+			get_type num = static_cast<T>(kaguya::lua_tonumberx(l,index,&isnum));
 			if (!isnum) {
 				throw LuaTypeMismatch();
 			}
