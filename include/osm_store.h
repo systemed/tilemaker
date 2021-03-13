@@ -10,11 +10,14 @@
 namespace geom = boost::geometry;
 
 #include <boost/geometry/geometries/register/linestring.hpp>
+#include <boost/interprocess/detail/move.hpp>
 #include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
+#include <boost/interprocess/containers/string.hpp>
 #include <boost/container/vector.hpp>
 #include <boost/container/small_vector.hpp>
 #include <boost/container/scoped_allocator.hpp>
+#include <boost/container/flat_map.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/filesystem.hpp>
 
@@ -204,6 +207,8 @@ WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const Wa
 
 using mmap_file_t = boost::interprocess::managed_mapped_file;
 
+enum NodeStoreType { NodeStoreType_Compact, NodeStoreType_Normal };
+
 //
 // Internal data structures.
 //
@@ -212,13 +217,21 @@ class NodeStore
 	using nodestore_pair_t = std::pair<NodeID, LatpLon>;
 	using nodestore_pair_allocator_t = boost::interprocess::node_allocator<nodestore_pair_t, mmap_file_t::segment_manager>;
 	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, nodestore_pair_allocator_t>;
+
 	map_t *mLatpLons;
 
 public:
 
+	NodeStore()
+	{ }
+
 	// @brief reopen the datastructure after size of mmap file has changed
 	void reopen(mmap_file_t &mmap_file)
 	{
+		if(*mmap_file.get_segment_manager()->find_or_construct<NodeStoreType>("node_store_type")(NodeStoreType_Normal) != NodeStoreType_Normal) {
+			throw std::runtime_error("Nodestore generated as compact");
+		}
+		
 		mLatpLons = mmap_file.find_or_construct<map_t>("node_store")(mmap_file.get_segment_manager());
 	}
 
@@ -256,12 +269,21 @@ class NodeStoreCompact
 {
 	using nodestore_allocator_t = boost::interprocess::node_allocator<LatpLon, mmap_file_t::segment_manager>;
 	using vector_t = std::vector<LatpLon, nodestore_allocator_t>;
+
 	vector_t *mLatpLons;
 
 public:
+
+	NodeStoreCompact() 
+	{ }
+
 	// @brief reopen the datastructure after size of mmap file has changed
 	void reopen(mmap_file_t &mmap_file)
 	{
+		if(*mmap_file.get_segment_manager()->find_or_construct<NodeStoreType>("node_store_type")(NodeStoreType_Compact) != NodeStoreType_Compact) {
+			throw std::runtime_error("Nodestore not generated as compact");
+		}
+		
 		mLatpLons = mmap_file.find_or_construct<vector_t>("node_store")(mmap_file.get_segment_manager());
 	}
 
@@ -304,7 +326,7 @@ public:
 	void clear() { 
 		//std::fill(mLatpLons->begin(), mLatpLons->end(), LatpLon());
 		mLatpLons->resize(0);
-	} 
+	}
 };
 
 // way store
@@ -464,6 +486,14 @@ private:
 */
 class OSMStore
 {
+public:	
+	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+	using string_allocator_t = boost::interprocess::node_allocator<char, mmap_file_t::segment_manager>;
+	using mmap_string_t = boost::interprocess::basic_string<char, std::char_traits<char>, string_allocator_t>;
+
+	using tag_allocator_t = boost::interprocess::node_allocator<std::pair<mmap_string_t, mmap_string_t>, mmap_file_t::segment_manager>;
+	using tag_map_t = boost::container::flat_map<mmap_string_t, mmap_string_t, std::less<mmap_string_t>, scoped_alloc_t<tag_allocator_t> >;
+
 protected:	
 	template< class Iterator >
 	static std::reverse_iterator<Iterator> make_reverse_iterator(Iterator i)
@@ -474,7 +504,50 @@ protected:
 	WayStore ways;
 	RelationStore relations;
 
-	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
+	struct PbfNodeEntry {
+		NodeID nodeId;
+		LatpLon node;
+		tag_map_t tags;
+
+		template<class Alloc>
+		PbfNodeEntry(NodeID nodeId, LatpLon node, tag_map_t tags, Alloc alloc = Alloc())
+			: nodeId(nodeId), node(node), tags(tags, alloc) 
+		{ }
+	};
+
+	struct PbfWayEntry {
+		WayID wayId;
+		mmap_file_t::handle_t nodeVecHandle;
+		tag_map_t tags;
+
+		template<class Alloc>
+		PbfWayEntry(WayID wayId, mmap_file_t::handle_t nodeVecHandle, tag_map_t tags, Alloc alloc = Alloc())
+			: wayId(wayId), nodeVecHandle(nodeVecHandle), tags(tags, alloc) 
+		{ }
+	};
+
+	struct PbfRelationEntry {
+		int64_t relationId;
+		mmap_file_t::handle_t relationHandle;
+		tag_map_t tags;
+		
+		template<class Alloc>
+		PbfRelationEntry(int64_t relationId, mmap_file_t::handle_t relationHandle, tag_map_t tags, Alloc alloc = Alloc())
+			: relationId(relationId), relationHandle(relationHandle), tags(tags, alloc) 
+		{ }
+	};
+
+	using pbf_node_allocator_t = boost::interprocess::node_allocator<PbfNodeEntry, mmap_file_t::segment_manager>;
+	using pbf_node_entries_t = std::deque< PbfNodeEntry, pbf_node_allocator_t>;
+	pbf_node_entries_t *node_entries;
+
+	using pbf_way_allocator_t = boost::interprocess::node_allocator<PbfWayEntry, mmap_file_t::segment_manager>;
+	using pbf_way_entries_t = std::deque< PbfWayEntry, pbf_way_allocator_t>;
+   	pbf_way_entries_t *way_entries;
+
+	using pbf_relation_allocator_t = boost::interprocess::node_allocator<PbfRelationEntry, mmap_file_t::segment_manager>;
+	using pbf_relation_entries_t = std::deque< PbfRelationEntry, pbf_relation_allocator_t>;
+   	pbf_relation_entries_t *relation_entries;
 
 	using point_allocator_t = boost::interprocess::node_allocator<Point, mmap_file_t::segment_manager>;
 	using point_store_t = std::deque<Point, point_allocator_t>;
@@ -503,10 +576,13 @@ protected:
 		boost::filesystem::remove(osm_store_filename);
 	}
 
-	mmap_file_t create_mmap_file()
+	mmap_file_t create_mmap_file(bool erase)
 	{
-		remove_mmap_file();
-		return mmap_file_t(boost::interprocess::create_only, osm_store_filename.c_str(), init_map_size);
+		if(erase) {
+			remove_mmap_file();
+			return mmap_file_t(boost::interprocess::create_only, osm_store_filename.c_str(), init_map_size);
+		}
+		return open_mmap_file();
 	}
 
 	mmap_file_t open_mmap_file()
@@ -515,12 +591,20 @@ protected:
 	}
 
 	mmap_file_t mmap_file;
+	bool erase;						// Erase mmap file at startup/exit ?
 
 	void reopen() {
 		impl_reopen(mmap_file);
 		ways.reopen(mmap_file);
 		relations.reopen(mmap_file);
 		
+		node_entries = mmap_file.find_or_construct<pbf_node_entries_t>
+			("pbf_node_entries")(mmap_file.get_segment_manager());
+		way_entries = mmap_file.find_or_construct<pbf_way_entries_t>
+			("pbf_way_entries")(mmap_file.get_segment_manager());
+		relation_entries = mmap_file.find_or_construct<pbf_relation_entries_t>
+			("pbf_relation_entries")(mmap_file.get_segment_manager());
+
 		osm_generated.points_store = mmap_file.find_or_construct<point_store_t>
 			("osm_point_store")(mmap_file.get_segment_manager());
 		osm_generated.linestring_store = mmap_file.find_or_construct<linestring_store_t>
@@ -572,14 +656,22 @@ protected:
 
 public:
 
-	OSMStore(std::string const &osm_store_filename)
+	OSMStore(std::string const &osm_store_filename, bool erase = true)
 		: osm_store_filename(osm_store_filename) 
-		, mmap_file(create_mmap_file())
+		, mmap_file(create_mmap_file(erase)), erase(erase)
 	{ }
 
 	virtual ~OSMStore()
 	{
-		remove_mmap_file();
+		if(erase) 
+			remove_mmap_file();
+	}
+
+	void save(std::string const &filename) { 
+		mmap_file = mmap_file_t();
+		
+		boost::filesystem::rename(osm_store_filename, filename);
+		boost::interprocess::managed_mapped_file::shrink_to_fit(filename.c_str());
 	}
 
 	// Following methods are to store and retrieve the generated geometries in the mmap file
@@ -611,7 +703,7 @@ public:
 	}
 
 	template<class WayIt>
-	Polygon nodeListPolygon(WayIt begin, WayIt end) {
+	Polygon nodeListPolygon(WayIt begin, WayIt end) const {
 		Polygon poly;
 		fillPoints(poly.outer(), begin, end);
 		geom::correct(poly);
@@ -633,6 +725,58 @@ public:
 			result = mmap_file.get_handle_from_address(&relation);
 		});
 		return result;
+	}
+
+	// Store and retrieve pbf entries
+	std::size_t total_pbf_node_entries() const { return node_entries->size(); };
+	PbfNodeEntry const &pbf_node_entry(std::size_t i) const { return node_entries->at(i); }
+
+	template<class T>
+	void pbf_store_node_entry(NodeID nodeId, LatpLon node, T const &tags) {
+		perform_mmap_operation([&]() {
+			tag_map_t store_tags(node_entries->get_allocator());
+			for(auto const &i: tags) {
+				store_tags.emplace(
+					std::piecewise_construct,
+					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
+					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+			} 
+			node_entries->emplace_back(nodeId, node, boost::interprocess::move(store_tags), node_entries->get_allocator());
+		});
+	}
+
+	std::size_t total_pbf_way_entries() const { return way_entries->size(); };
+	PbfWayEntry const &pbf_way_entry(std::size_t i) const { return way_entries->at(i); }
+
+	template<class T>
+	void pbf_store_way_entry(WayID wayId, handle_t handle, T const &tags) {
+		perform_mmap_operation([&]() {
+			tag_map_t store_tags(way_entries->get_allocator());
+			for(auto const &i: tags) {
+				store_tags.emplace(
+					std::piecewise_construct,
+					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
+					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+			}
+			way_entries->emplace_back(wayId, handle, boost::interprocess::move(store_tags), way_entries->get_allocator());
+		});
+	}
+
+	std::size_t total_pbf_relation_entries() const { return relation_entries->size(); };
+	PbfRelationEntry const &pbf_relation_entry(std::size_t i) const { return relation_entries->at(i); }
+
+	template<class T>
+	void pbf_store_relation_entry(int64_t relationId, handle_t handle, T const &tags) {
+		perform_mmap_operation([&]() {
+			tag_map_t store_tags(relation_entries->get_allocator());
+			for(auto const &i: tags) {
+				store_tags.emplace(
+					std::piecewise_construct,
+					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
+					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+			}
+			relation_entries->emplace_back(relationId, handle, boost::interprocess::move(store_tags), way_entries->get_allocator());
+		});
 	}
 
 	// Get the currently allocated memory size in the mmap
@@ -856,8 +1000,8 @@ class OSMStoreImpl
 	}
 
 public:
-	OSMStoreImpl(std::string const &osm_store_filename, uint osm_store_nodes, uint osm_store_ways)
-	   : OSMStore(osm_store_filename) 
+	OSMStoreImpl(std::string const &osm_store_filename, uint osm_store_nodes, uint osm_store_ways, bool erase_at_startup)
+	   : OSMStore(osm_store_filename, erase_at_startup) 
 	{
 		reopen();
 
@@ -879,6 +1023,5 @@ public:
 		std::cout << "Generated points: " << osm_generated.points_store->size() << ", lines: " << osm_generated.linestring_store->size() << ", polygons: " << osm_generated.multi_polygon_store->size() << std::endl;
 	}
 };
-
 
 #endif //_OSM_STORE_H

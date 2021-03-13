@@ -12,34 +12,50 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
+#include <boost/container/flat_map.hpp>
+
+
 ///\brief Specifies callbacks used while loading data using PbfReader
 class PbfReaderOutput
 {
 public:
-	///\brief Called when data loading is starting
-	virtual void startOsmData() {};
-
-	///\brief Called for every node in input, not just significant nodes
-	virtual void everyNode(NodeID id, LatpLon node) {};
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 
 	///\brief We are now processing a node
-	virtual void setNode(NodeID id, LatpLon node, const std::map<std::string, std::string> &tags) {};
+	virtual void setNode(NodeID id, LatpLon node, const tag_map_t &tags) {};
 
 	///\brief We are now processing a way
-	virtual void setWay(Way *way, NodeVec *nodeVecPtr, bool inRelation, const std::map<std::string, std::string> &tags) {};
+	virtual void setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) {};
 
 	/** 
 	 * \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
 	 * we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	virtual void setRelation(Relation *relation, WayVec *outerWayVecPtr, WayVec *innerWayVecPtr,
-		const std::map<std::string, std::string> &tags) {};
-
-	///\brief Called when data loading for a single file is done
-	virtual void endOsmData() {};
+	virtual void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags) {};
 };
 
+///\brief Class to write data to an index file
+class PbfIndexWriter
+	: public PbfReaderOutput
+{
+public:
+	PbfIndexWriter(OSMStore &osmStore)
+		: osmStore(osmStore)
+	{ } 
+
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+
+	void setNode(NodeID id, LatpLon node, const tag_map_t &tags) override;
+	void setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) override;
+	void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags) override;
+
+	void save(std::string const &filename);
+
+private:
+
+	OSMStore &osmStore;
+};
 /**
  *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from PbfReaderOutput
  *
@@ -48,8 +64,7 @@ public:
 class PbfReader
 {
 public:
-	PbfReader();
-	virtual ~PbfReader();
+	PbfReader(OSMStore &osmStore);
 
 	int ReadPbfFile(std::istream &inputFile, std::unordered_set<std::string> &nodeKeys);
 
@@ -57,20 +72,40 @@ public:
 	PbfReaderOutput * output;
 
 private:
-	bool ReadNodes(PrimitiveGroup &pg, const std::unordered_set<int> &nodeKeyPositions);
+	bool ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
-	bool ReadWays(PrimitiveGroup &pg, std::unordered_set<WayID> &waysInRelation);
+	bool ReadWays(PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
-	bool ReadRelations(PrimitiveGroup &pg);
-
-	void readStringTable(PrimitiveBlock *pbPtr);
+	bool ReadRelations(PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
 	/// Find a string in the dictionary
-	int findStringPosition(std::string str);
+	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
 
-	// Common tag storage
-	std::vector<std::string> stringTable;				// Tag table from the current PrimitiveGroup
-	std::map<std::string, uint> tagMap;				// String->position map
+	using tag_map_t = PbfReaderOutput::tag_map_t;
+
+	struct PbfNodeEntry {
+        NodeID nodeId;
+        LatpLon node;
+        tag_map_t tags;
+    };
+
+    struct PbfWayEntry {
+        WayID wayId;
+        mmap_file_t::handle_t nodeVecHandle;
+        tag_map_t tags;
+    };
+
+    struct PbfRelationEntry {
+        int64_t relationId;
+        mmap_file_t::handle_t relationHandle;
+        tag_map_t tags;
+    };
+
+	std::deque<PbfNodeEntry> node_entries;
+	std::deque<PbfWayEntry> way_entries;
+	std::deque<PbfRelationEntry> relation_entries;
+
+	OSMStore &osmStore;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

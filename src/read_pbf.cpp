@@ -6,17 +6,13 @@
 
 using namespace std;
 
-PbfReader::PbfReader()
+PbfReader::PbfReader(OSMStore &osmStore)
+	: osmStore(osmStore)
 {
 	output = nullptr;
 }
 
-PbfReader::~PbfReader()
-{
-
-}
-
-bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyPositions)
+bool PbfReader::ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
 {
 	// ----	Read nodes
 
@@ -31,8 +27,9 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 			lon    += dense.lon(j);
 			lat    += dense.lat(j);
 			LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
-			if(output != nullptr)
-				output->everyNode(nodeId, node);
+
+			osmStore.nodes_insert_back(nodeId, node);
+
 			bool significant = false;
 			int kvStart = kvPos;
 			if (dense.keys_vals_size()>0) {
@@ -46,12 +43,12 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 			}
 			// For tagged nodes, call Lua, then save the OutputObject
 			if (significant) {
-				std::map<std::string, std::string> tags;
-				for (uint n=kvStart; n<kvPos-1; n+=2)
-					tags[stringTable[dense.keys_vals(n)]] = stringTable[dense.keys_vals(n+1)];
+				boost::container::flat_map<std::string, std::string> tags;
+				for (uint n=kvStart; n<kvPos-1; n+=2) {
+					tags[pb.stringtable().s(dense.keys_vals(n))] = pb.stringtable().s(dense.keys_vals(n+1));
+				}
 
-				if(output != nullptr)
-					output->setNode(nodeId, node, tags);
+				output->setNode(static_cast<NodeID>(nodeId), node, tags);
 			}
 		}
 		return true;
@@ -59,7 +56,7 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, const unordered_set<int> &nodeKeyP
 	return false;
 }
 
-bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelation) {
+bool PbfReader::ReadWays(PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
@@ -79,10 +76,14 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 			try {
 				auto keysPtr = pbfWay.mutable_keys();
 				auto valsPtr = pbfWay.mutable_vals();
-				std::map<std::string, std::string> tags;
-				for (uint n=0; n < pbfWay.keys_size(); n++)
-					tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
-				if(output != nullptr) output->setWay(&pbfWay, &nodeVec, waysInRelation.count(wayId), tags);
+				boost::container::flat_map<std::string, std::string> tags;
+				for (uint n=0; n < pbfWay.keys_size(); n++) {
+					tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
+				}
+
+				// Store the way's nodes in the global way store
+				OSMStore::handle_t handle = osmStore.ways_insert_back(static_cast<WayID>(pbfWay.id()), nodeVec);
+				output->setWay(static_cast<WayID>(pbfWay.id()), handle, tags);
 
 			} catch (std::out_of_range &err) {
 				// Way is missing a node?
@@ -95,15 +96,15 @@ bool PbfReader::ReadWays(PrimitiveGroup &pg, unordered_set<WayID> &waysInRelatio
 	return false;
 }
 
-bool PbfReader::ReadRelations(PrimitiveGroup &pg) {
+bool PbfReader::ReadRelations(PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// ----	Read relations
 	//		(just multipolygons for now; we should do routes in time)
 
 	if (pg.relations_size() > 0) {
-		int typeKey = this->findStringPosition("type");
-		int mpKey   = this->findStringPosition("multipolygon");
-		int innerKey= this->findStringPosition("inner");
-		//int outerKey= this->findStringPosition("outer");
+		int typeKey = findStringPosition(pb, "type");
+		int mpKey   = findStringPosition(pb, "multipolygon");
+		int innerKey= findStringPosition(pb, "inner");
+		//int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
@@ -126,11 +127,15 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg) {
 				try {
 					auto keysPtr = pbfRelation.mutable_keys();
 					auto valsPtr = pbfRelation.mutable_vals();
-					std::map<std::string, std::string> tags;
-					for (uint n=0; n < pbfRelation.keys_size(); n++)
-						tags[stringTable[keysPtr->Get(n)]] = stringTable[valsPtr->Get(n)];
+					boost::container::flat_map<std::string, std::string> tags;
+					for (uint n=0; n < pbfRelation.keys_size(); n++) {
+						tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
 
-					if(output != nullptr) output->setRelation(&pbfRelation, &outerWayVec, &innerWayVec, tags);
+					}
+
+					// Store the relation members in the global relation store
+	 				OSMStore::handle_t handle = osmStore.relations_insert_front(pbfRelation.id(), outerWayVec, innerWayVec);
+					output->setRelation(pbfRelation.id(), handle, tags);
 
 				} catch (std::out_of_range &err) {
 					// Relation is missing a member?
@@ -147,129 +152,57 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg) {
 int PbfReader::ReadPbfFile(std::istream &infile, unordered_set<string> &nodeKeys)
 {
 	// ----	Read PBF
-	// note that the order of reading and processing is:
-	//  1) output nodes -> (remember current position for rewinding to ways) (skip ways) -> (just remember all ways in any relation),
-	//  2) output ways, and also construct nodeId list for each way in relation -> output relations
-
-
-	if (output != nullptr) output->startOsmData();
+	osmStore.clear();
 
 	HeaderBlock block;
 	readBlock(&block, infile);
 
-	PrimitiveBlock pb;
-	PrimitiveGroup pg;
-	vector<string> strings(0);
 	uint ct=0;
-	bool checkedRelations = false;
-	long long wayPosition = -1;
-	unordered_set<WayID> waysInRelation;
 
 	while (true) {
-		long long blockStart = infile.tellg();
+		PrimitiveBlock pb;
 		readBlock(&pb, infile);
 		if (infile.eof()) {
-			if (!checkedRelations) {
-				checkedRelations = true;
-			} else {
-				break;
-			}
-		    if (wayPosition==-1) {
-				cout << ".pbf does not contain any ways" << endl;
-				break;
-			}
-			infile.clear();
-			infile.seekg(wayPosition);
-			continue;
+			break;
 		}
 
 		// Read the string table, and pre-calculate the positions of valid node keys
-		this->readStringTable(&pb);
 		unordered_set<int> nodeKeyPositions;
 		for (auto it : nodeKeys) {
-			nodeKeyPositions.insert(this->findStringPosition(it));
+			nodeKeyPositions.insert(findStringPosition(pb, it.c_str()));
 		}
 
 		for (int i=0; i<pb.primitivegroup_size(); i++) {
+			PrimitiveGroup pg;
 			pg = pb.primitivegroup(i);
 			cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 			cout.flush();
 
-			bool done = ReadNodes(pg, nodeKeyPositions);
+			bool done = ReadNodes(pg, pb, nodeKeyPositions);
 			if(done) continue;
 
-			// ----	Remember the position and skip ways
-
-			if (!checkedRelations && pg.ways_size() > 0) {
-				if (wayPosition == -1) {
-					wayPosition = blockStart;
-				}
-				continue;
-			}
-
-			// ----	Remember all ways in any relation
-
-			if (!checkedRelations && pg.relations_size() > 0) {
-				for (int j=0; j<pg.relations_size(); j++) {
-					Relation pbfRelation = pg.relations(j);
-					int64_t lastID = 0;
-					for (int n = 0; n < pbfRelation.memids_size(); n++) {
-						lastID += pbfRelation.memids(n);
-						if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-						WayID wayId = static_cast<WayID>(lastID);
-						waysInRelation.insert(wayId);
-					}
-				}
-				continue;
-			}
-
-			if (!checkedRelations) {
-				// Nothing to do
-				break;
-			}
-
-			done = ReadWays(pg, waysInRelation);
+			done = ReadWays(pg, pb);
 			if(done) continue;
 
-			done = ReadRelations(pg);
+			done = ReadRelations(pg, pb);
 			if(done) continue;
-
-			// Everything should be ended
-			break;
 		}
 		ct++;
 	}
 	cout << endl;
 
-	if(output != nullptr)
-		output->endOsmData();
-
+	osmStore.reportSize();
 	return 0;
 }
 
-// Read string dictionary from the .pbf
-void PbfReader::readStringTable(PrimitiveBlock *pbPtr) {
-	// Populate the string table
-	stringTable.clear();
-	stringTable.resize(pbPtr->stringtable().s_size());
-	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
-		stringTable[i] = pbPtr->stringtable().s(i);
-	}
-	// Create a string->position map
-	tagMap.clear();
-	for (int i=0; i<pbPtr->stringtable().s_size(); i++) {
-		tagMap.insert(pair<string, int> (pbPtr->stringtable().s(i), i));
-	}
-}
 
 // Find a string in the dictionary
-int PbfReader::findStringPosition(string str) {
-	auto p = find(stringTable.begin(), stringTable.end(), str);
-	if (p == stringTable.end()) {
-		return -1;
-	} else {
-		return distance(stringTable.begin(), p);
+int PbfReader::findStringPosition(PrimitiveBlock const &pb, char const *str) {
+	for (int i=0; i<pb.stringtable().s_size(); i++) {
+		if(pb.stringtable().s(i) == str)
+			return i;
 	}
+	return -1;
 }
 
 // *************************************************
@@ -292,3 +225,22 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 	return 0;
 }
 
+void PbfIndexWriter::setNode(NodeID id, LatpLon node, const tag_map_t &tags)
+{
+	osmStore.pbf_store_node_entry(id, node, tags);
+}
+
+void PbfIndexWriter::setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) 
+{
+	osmStore.pbf_store_way_entry(wayId, nodeVecHandle, tags);
+}
+
+void PbfIndexWriter::setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags)
+{
+	osmStore.pbf_store_relation_entry(relationId, relationHandle, tags);
+}
+
+void PbfIndexWriter::save(std::string const &filename)
+{
+	osmStore.save(filename);
+}
