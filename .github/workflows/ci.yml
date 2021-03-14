@@ -60,3 +60,19 @@ jobs:
       with:
         input: ${{ env.AREA }}.osm.pbf 
         output: ${{ env.AREA }}.mbtiles
+
+jobs:
+  build:
+    name: Compile, install and build mbtiles
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies
+      run: |
+        mkdir ${{ runner.temp }}\protobuf
+        cd ${{ runner.temp }}\openssl && Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v3.15.6/protobuf-cpp-3.15.6.tar.gz" -OutFile "protobuf.tar.gz"
+        cd ${{ runner.temp }}\protobuf && tar xzf protobuf.tar.gz
+        cd ${{ runner.temp }}\protobuf\cmake && cmake -DCMAKE_BUILD_TYPE=Release .
+        cd ${{ runner.temp }}\protobuf\cmake && cmake -DCMAKE_BUILD_TYPE=Release --build .
+
