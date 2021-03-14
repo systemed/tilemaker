@@ -92,7 +92,7 @@ jobs:
         cd ${{ runner.temp }}\protobuf && Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v3.15.6/protobuf-cpp-3.15.6.tar.gz" -OutFile "protobuf.tar.gz"
         cd ${{ runner.temp }}\protobuf && tar xvzf protobuf.tar.gz
         cd ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake && cmake -DZLIB_ROOT=${{ runner.temp }}\zlib-ng .
-        cd ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake && cmake --build --config Release .
+        cd ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake && cmake --build . --config Release 
         dir ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake\Release
        
         $env:CXXFLAGS="/GL /D_WIN32_WINNT#0x0601 /DBOOST_THREAD_VERSION#3 /DBOOST_ALLOW_DEPRECATED_HEADERS /DBOOST_ASIO_NO_DEPRECATED"
