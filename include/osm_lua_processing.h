@@ -131,8 +131,6 @@ public:
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 
-	std::vector<std::string> GetSignificantNodeKeys();
-
 	// ---- Cached geometries creation
 
 	const Linestring &linestringCached();

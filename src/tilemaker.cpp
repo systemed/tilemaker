@@ -293,11 +293,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	// ----	Read significant node tags
-
-	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
-	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
-
 	// ----	Read all PBFs
 	
 	PbfReader pbfReader(*osmStore);
@@ -331,7 +326,7 @@ int main(int argc, char* argv[]) {
 				ifstream infile(inputFile, ios::in | ios::binary);
 				if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 
-				int ret = pbfReader.ReadPbfFile(infile, nodeKeys);
+				int ret = pbfReader.ReadPbfFile(infile);
 				if (ret != 0) return ret;
 			} 
 		}
@@ -409,7 +404,7 @@ int main(int argc, char* argv[]) {
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
 			boost::interprocess::bufferstream pbfstream(pbf.data(), pbf.size(),  ios::in | ios::binary);
-			pbfReader.ReadPbfFile(pbfstream, nodeKeys);
+			pbfReader.ReadPbfFile(pbfstream);
 
 			tileList.pop_back();
 		}

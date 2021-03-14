@@ -561,7 +561,3 @@ void OsmLuaProcessing::setRelation(int64_t relationId, OSMStore::handle_t relati
 	}
 }
 
-vector<string> OsmLuaProcessing::GetSignificantNodeKeys() {
-	return luaState["node_keys"];
-}
-
