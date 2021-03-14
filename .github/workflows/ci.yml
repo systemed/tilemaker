@@ -61,18 +61,48 @@ jobs:
         input: ${{ env.AREA }}.osm.pbf 
         output: ${{ env.AREA }}.mbtiles
 
-jobs:
-  build:
-    name: Compile, install and build mbtiles
+  Windows-Build:
+    name: Windows build
     runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v2
+    - uses: ilammy/msvc-dev-cmd@v1
     - name: Install dependencies
       run: |
+        mkdir ${{ runner.temp }}\lua
+        cd ${{ runner.temp }}\lua && Invoke-WebRequest -Uri "https://www.lua.org/ftp/lua-5.3.6.tar.gz " -OutFile "lua.tar.gz"
+        cd ${{ runner.temp }}\lua && tar xvzf lua.tar.gz
+        git clone https://github.com/alain-riedinger/lua53.git ${{ runner.temp }}\luabuild
+        Copy-Item -Path "${{ runner.temp }}\luabuild\src\*" -Destination "${{ runner.temp }}\lua\lua-5.3.6\src" -Verbose
+        dir ${{ runner.temp }}\lua\lua-5.3.6\src
+        cd ${{ runner.temp }}\lua\lua-5.3.6\src && .\Build-lua.cmd x64
+
+        git clone https://github.com/OSGeo/shapelib ${{ runner.temp }}\shapelib
+        cd ${{ runner.temp }}\shapelib && nmake /f makefile.vc shapelib.lib
+                     
+        git clone https://github.com/sqlite/sqlite ${{ runner.temp }}\sqlite
+        cd ${{ runner.temp }}\sqlite && nmake /f Makefile.msc libsqlite3.lib
+
+        git clone https://github.com/zlib-ng/zlib-ng ${{ runner.temp }}\zlib-ng     
+        cd ${{ runner.temp }}\zlib-ng && cmake -DZLIB_COMPAT=ON .
+        cd ${{ runner.temp }}\zlib-ng && cmake --build . --config Release --target zlibstatic
+        copy ${{ runner.temp }}\zlib-ng\Release\zlib.lib ${{ runner.temp }}\zlib-ng
+
         mkdir ${{ runner.temp }}\protobuf
-        cd ${{ runner.temp }}\openssl && Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v3.15.6/protobuf-cpp-3.15.6.tar.gz" -OutFile "protobuf.tar.gz"
-        cd ${{ runner.temp }}\protobuf && tar xzf protobuf.tar.gz
-        cd ${{ runner.temp }}\protobuf\cmake && cmake -DCMAKE_BUILD_TYPE=Release .
-        cd ${{ runner.temp }}\protobuf\cmake && cmake -DCMAKE_BUILD_TYPE=Release --build .
+        cd ${{ runner.temp }}\protobuf && Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v3.15.6/protobuf-cpp-3.15.6.tar.gz" -OutFile "protobuf.tar.gz"
+        cd ${{ runner.temp }}\protobuf && tar xvzf protobuf.tar.gz
+        cd ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake && cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_ROOT=${{ runner.temp }}\zlib-ng .
+        cd ${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake && cmake -DCMAKE_BUILD_TYPE=Release --build .
+       
+        $env:CXXFLAGS="/GL /D_WIN32_WINNT#0x0601 /DBOOST_THREAD_VERSION#3 /DBOOST_ALLOW_DEPRECATED_HEADERS /DBOOST_ASIO_NO_DEPRECATED"
+        $env:LDFLAGS="/LTCG"
+        $env:BOOST_ROOT=$env:BOOST_ROOT_1_72_0
+        $env:PKG_CONFIG_PATH="${{ runner.temp }}\sqlite"
+
+        dir  ${{ runner.temp }}\sqlite 
+        mkdir ${{ github.workspace }}\build
+        cd ${{ github.workspace }}\build && cmake -DProtobuf_SRC_ROOT_FOLDER=${{ runner.temp }}\protobuf\protobuf-3.15.6 -DCMAKE_BUILD_TYPE=Release -DProtobuf_LIBRARIES=${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake\Release\libprotobuf_lite.lib -DPKG_CONFIG_PATH=${{ runner.temp }}\sqlite -DLIBSHP_INCLUDE_DIR=${{ runner.temp }}\shapelib -DLIBSHP_LIBRARIES=${{ runner.temp }}\shapelib\shapelib.lib -DSQLITE3_INCLUDE_DIRS=${{ runner.temp }}\sqlite -DSQLITE3_LIBRARIES=${{ runner.temp }}\sqlite\libsqlite3.lib -DLUA_INCLUDE_DIR=${{ runner.temp }}\lua\include -DLUA_LIBRARIES=${{ runner.temp }}\lua\lib\lua53-static.lib ..
+        cd ${{ github.workspace }}\build && cmake --build .
+
 
