@@ -12,7 +12,7 @@ PbfReader::PbfReader(OSMStore &osmStore)
 	output = nullptr;
 }
 
-bool PbfReader::ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
+bool PbfReader::ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb)
 {
 	// ----	Read nodes
 
@@ -30,25 +30,16 @@ bool PbfReader::ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const un
 
 			osmStore.nodes_insert_back(nodeId, node);
 
-			bool significant = false;
-			int kvStart = kvPos;
+			boost::container::flat_map<std::string, std::string> tags;
 			if (dense.keys_vals_size()>0) {
-				while (dense.keys_vals(kvPos)>0) {
-					if (nodeKeyPositions.find(dense.keys_vals(kvPos)) != nodeKeyPositions.end()) {
-						significant = true;
-					}
-					kvPos+=2;
-				}
-				kvPos++;
-			}
-			// For tagged nodes, call Lua, then save the OutputObject
-			if (significant) {
-				boost::container::flat_map<std::string, std::string> tags;
-				for (uint n=kvStart; n<kvPos-1; n+=2) {
-					tags[pb.stringtable().s(dense.keys_vals(n))] = pb.stringtable().s(dense.keys_vals(n+1));
+				for (int kvStart = kvPos; dense.keys_vals(kvPos)>0; kvPos+=2) {
+					tags[pb.stringtable().s(dense.keys_vals(kvPos))] = pb.stringtable().s(dense.keys_vals(kvPos+1));
 				}
 
-				output->setNode(static_cast<NodeID>(nodeId), node, tags);
+				// For tagged nodes, call Lua, then save the OutputObject
+				if(!tags.empty()) {
+					output->setNode(static_cast<NodeID>(nodeId), node, tags);
+				}
 			}
 		}
 		return true;
@@ -149,7 +140,7 @@ bool PbfReader::ReadRelations(PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	return false;
 }
 
-int PbfReader::ReadPbfFile(std::istream &infile, unordered_set<string> &nodeKeys)
+int PbfReader::ReadPbfFile(std::istream &infile)
 {
 	// ----	Read PBF
 	osmStore.clear();
@@ -166,19 +157,13 @@ int PbfReader::ReadPbfFile(std::istream &infile, unordered_set<string> &nodeKeys
 			break;
 		}
 
-		// Read the string table, and pre-calculate the positions of valid node keys
-		unordered_set<int> nodeKeyPositions;
-		for (auto it : nodeKeys) {
-			nodeKeyPositions.insert(findStringPosition(pb, it.c_str()));
-		}
-
 		for (int i=0; i<pb.primitivegroup_size(); i++) {
 			PrimitiveGroup pg;
 			pg = pb.primitivegroup(i);
 			cout << "Block " << ct << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 			cout.flush();
 
-			bool done = ReadNodes(pg, pb, nodeKeyPositions);
+			bool done = ReadNodes(pg, pb);
 			if(done) continue;
 
 			done = ReadWays(pg, pb);

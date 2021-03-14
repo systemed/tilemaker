@@ -66,13 +66,13 @@ class PbfReader
 public:
 	PbfReader(OSMStore &osmStore);
 
-	int ReadPbfFile(std::istream &inputFile, std::unordered_set<std::string> &nodeKeys);
+	int ReadPbfFile(std::istream &inputFile);
 
 	///Pointer to output object. Loaded objects are sent here.
 	PbfReaderOutput * output;
 
 private:
-	bool ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
+	bool ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
 	bool ReadWays(PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
