@@ -102,7 +102,7 @@ jobs:
 
         dir  ${{ runner.temp }}\sqlite 
         mkdir ${{ github.workspace }}\build
-        cd ${{ github.workspace }}\build && cmake -DProtobuf_SRC_ROOT_FOLDER=${{ runner.temp }}\protobuf\protobuf-3.15.6 -DCMAKE_BUILD_TYPE=Release -DProtobuf_LIBRARIES=${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake\Release\libprotobuf_lite.lib -DPKG_CONFIG_PATH=${{ runner.temp }}\sqlite -DLIBSHP_INCLUDE_DIR=${{ runner.temp }}\shapelib -DLIBSHP_LIBRARIES=${{ runner.temp }}\shapelib\shapelib.lib -DSQLITE3_INCLUDE_DIRS=${{ runner.temp }}\sqlite -DSQLITE3_LIBRARIES=${{ runner.temp }}\sqlite\libsqlite3.lib -DLUA_INCLUDE_DIR=${{ runner.temp }}\lua\x64\include -DLUA_LIBRARIES=${{ runner.temp }}\lua\x64\lib\lua53-static.lib ..
+        cd ${{ github.workspace }}\build && cmake -DProtobuf_SRC_ROOT_FOLDER=${{ runner.temp }}\protobuf\protobuf-3.15.6 -DZLIB_ROOT=${{ runner.temp }}\zlib-ng -DCMAKE_BUILD_TYPE=Release -DProtobuf_LIBRARIES=${{ runner.temp }}\protobuf\protobuf-3.15.6\cmake\Release\libprotobuf_lite.lib -DPKG_CONFIG_PATH=${{ runner.temp }}\sqlite -DLIBSHP_INCLUDE_DIR=${{ runner.temp }}\shapelib -DLIBSHP_LIBRARIES=${{ runner.temp }}\shapelib\shapelib.lib -DSQLITE3_INCLUDE_DIRS=${{ runner.temp }}\sqlite -DSQLITE3_LIBRARIES=${{ runner.temp }}\sqlite\libsqlite3.lib -DLUA_INCLUDE_DIR=${{ runner.temp }}\lua\include -DLUA_LIBRARIES=${{ runner.temp }}\lua\lib\lua53-static.lib ..
         cd ${{ github.workspace }}\build && cmake --build .
 
 
