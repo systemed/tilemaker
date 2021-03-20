@@ -2,6 +2,10 @@
 #ifndef _GEOM_TYPES_H
 #define _GEOM_TYPES_H
 
+#ifdef _MSC_VER
+using uint = unsigned int;
+#endif
+
 #include <vector>
 #include <limits>
 

@@ -12,7 +12,6 @@
 #include <stdexcept>
 #include <thread>
 #include <mutex>
-#include <sys/resource.h>
 #include <chrono>
 
 // Other utilities
@@ -26,8 +25,8 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
-#ifdef _MSC_VER
-typedef unsigned uint;
+#ifndef _MSC_VER
+#include <sys/resource.h>
 #endif
 
 #include "geomtypes.h"
@@ -129,7 +128,6 @@ void generate_from_index(OSMStore &osmStore, PbfReaderOutput *output)
 int main(int argc, char* argv[]) {
 
 	// ----	Read command-line options
-	
 	vector<string> inputFiles;
 	string luaFile;
 	string osmStoreFile;
@@ -477,11 +475,13 @@ int main(int argc, char* argv[]) {
 	}
 	google::protobuf::ShutdownProtobufLibrary();
 
+#ifndef _MSC_VER
 	if (verbose) {
 		struct rusage r_usage;
 		getrusage(RUSAGE_SELF, &r_usage);
 		cout << "\nMemory used: " << r_usage.ru_maxrss << endl;
 	}
+#endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }

@@ -20,8 +20,10 @@
 #include <boost/intrusive_ptr.hpp>
 #include <atomic>
 
-///\brief Specifies geometry type for an OutputObject
-enum OutputGeometryType { POINT, LINESTRING, POLYGON, CENTROID, CACHED_POINT, CACHED_LINESTRING, CACHED_POLYGON };
+enum class OutputGeometryType : uint8_t { POINT, LINESTRING, POLYGON };
+
+//\brief Display the geometry type
+std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
 /**
  * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
@@ -41,10 +43,10 @@ public:
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
 	OSMStore::handle_t handle;							// Handle within global store of geometries
 
-	OutputGeometryType geomType : 3;					// point, linestring, polygon...
+	OutputGeometryType geomType : 8;					// point, linestring, polygon...
+	uint_least8_t layer 		: 8;					// what layer is it in?
 	bool fromShapefile 			: 1;
 	unsigned minZoom 			: 4;
-	uint_least8_t layer 		: 8;					// what layer is it in?
 	
 	mutable std::atomic<uint32_t> references;
 
@@ -79,7 +81,7 @@ public:
 	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == POINT || type == CENTROID || type == CACHED_POINT);
+		assert(type == OutputGeometryType::POINT);
 	}
 }; 
 
@@ -89,7 +91,7 @@ public:
 	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == LINESTRING || type == CACHED_LINESTRING);
+		assert(type == OutputGeometryType::LINESTRING);
 	}
 };
 
@@ -99,7 +101,7 @@ public:
 	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == POLYGON || type == CACHED_POLYGON);
+		assert(type == OutputGeometryType::POLYGON);
 	}
 };
 

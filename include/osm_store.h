@@ -9,6 +9,8 @@
 #include "coordinates.h"
 namespace geom = boost::geometry;
 
+#define BOOST_UNORDERED_USE_ALLOCATOR_TRAITS 1
+#define BOOST_UNORDERED_CXX11_CONSTRUCTION 1
 #include <boost/geometry/geometries/register/linestring.hpp>
 #include <boost/interprocess/detail/move.hpp>
 #include <boost/interprocess/managed_mapped_file.hpp>
@@ -24,6 +26,13 @@ namespace geom = boost::geometry;
 #include <iterator> 
 #include <cstddef>  
 #include <type_traits>
+
+#if BOOST_UNORDERED_CXX11_CONSTRUCTION == 0
+#warning "No unorderd cxx 11 constructor"
+#endif
+#if BOOST_UNORDERED_USE_ALLOCATOR_TRAITS == 0
+#warning "Boost unordered not using allocator traits"
+#endif
 
 template<typename T, typename A>
 struct VarIntIterator
@@ -122,8 +131,7 @@ public:
 	{ }
 
 	template<typename InputIt>
-	VarIntVector(InputIt begin, InputIt end, A const &alloc = A())
-		: values(0, typename vector_type::allocator_type(alloc))
+	void init(InputIt begin, InputIt end)
 	{ 
 		values.reserve(std::distance(begin, end));
 		last_value = 0;
@@ -140,10 +148,6 @@ public:
 	}
     VarIntIterator<signed_value_type, A> cend() const {
         return VarIntIterator<signed_value_type, A>(values.cend(), last_value);
-        /* auto result = VarIntIterator<signed_value_type, A>(values.cbegin());
-        while(result.ptr() != values.cend())
-            result++;
-        return result;  */
     }
 
     void push_back(value_type value)
@@ -214,9 +218,9 @@ enum NodeStoreType { NodeStoreType_Compact, NodeStoreType_Normal };
 //
 class NodeStore
 {
-	using nodestore_pair_t = std::pair<NodeID, LatpLon>;
+	using nodestore_pair_t = std::pair<const NodeID, LatpLon>;
 	using nodestore_pair_allocator_t = boost::interprocess::node_allocator<nodestore_pair_t, mmap_file_t::segment_manager>;
-	using map_t = boost::unordered_map<NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, nodestore_pair_allocator_t>;
+	using map_t = boost::unordered_map<const NodeID, LatpLon, std::hash<NodeID>, std::equal_to<NodeID>, nodestore_pair_allocator_t>;
 
 	map_t *mLatpLons;
 
@@ -334,12 +338,12 @@ class WayStore {
 
 public:
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
-	using nodeid_allocator_t = boost::interprocess::node_allocator<uint8_t, mmap_file_t::segment_manager>;
+	using nodeid_allocator_t = boost::interprocess::allocator<uint8_t, mmap_file_t::segment_manager>;
 	using nodeid_vector_t = VarIntVector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
 
 	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
-	using map_t = boost::unordered_map<NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
+	using pair_allocator_t = boost::interprocess::allocator<pair_t, mmap_file_t::segment_manager>;
+	using map_t = boost::unordered_map<const NodeID, nodeid_vector_t, std::hash<NodeID>, std::equal_to<NodeID>, scoped_alloc_t<pair_allocator_t>>;
 
 	using const_iterator = typename nodeid_vector_t::const_iterator;
 
@@ -349,21 +353,19 @@ public:
 	}
 
 	void reserve(uint ways) {
-		mNodeLists->reserve(ways);
+		//mNodeLists->reserve(ways);
 	}
 
 	// @brief Lookup a node list
 	// @param i OSM ID of a way
 	// @return A node list
 	// @exception NotFound
-	NodeList<const_iterator> at(WayID i) const {
-		try {
-			const auto &way = mNodeLists->at(i);
-			return { way.cbegin(), way.cend() };
+	NodeList<const_iterator> at(WayID wayid) const {
+		auto i = mNodeLists->find(wayid);
+		if(i == mNodeLists->end()) {
+			throw std::out_of_range(std::string("Could not find way ") + std::to_string(wayid));
 		}
-		catch (std::out_of_range &err){
-			throw std::out_of_range(std::string("Could not find way ") + std::to_string(i));
-		}
+		return { i->second.cbegin(), i->second.cend() };
 	}
 
 	// @brief Return whether a node list is on the store.
@@ -381,10 +383,9 @@ public:
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	template<typename Iterator>			  
 	nodeid_vector_t const &insert_back(WayID i, Iterator begin, Iterator end) {
-		auto result = mNodeLists->emplace(std::piecewise_construct,
-			std::forward_as_tuple(i),
-			std::forward_as_tuple(begin, end));
-		return result.first->second;
+		auto &result = mNodeLists->emplace(std::piecewise_construct, std::forward_as_tuple(i), std::forward_as_tuple()).first->second;
+		result.init(begin, end);
+		return result;
 	}
 
 	// @brief Make the store empty
@@ -403,44 +404,36 @@ class RelationStore {
 public:	
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 
-	//using wayid_allocator_t = boost::interprocess::node_allocator<WayID, mmap_file_t::segment_manager>;
 	using wayid_allocator_t = boost::interprocess::node_allocator<uint8_t, mmap_file_t::segment_manager>;
+	using wayid_vector_t = VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>;
 
-	class wayid_vector_t
-		: public VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>
-	{
-	public:
-			template<typename IteratorTuple, typename Allocator>
-			wayid_vector_t(IteratorTuple init, Allocator &allocator)
-				: VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>(init.first, init.second, allocator) 
-			{ }
+	template<typename A>
+	struct relation_store_t {
+		using allocator_type = A;
+
+		WayID wayid;
+		wayid_vector_t first;
+		wayid_vector_t second;
+
+		template<class Alloc, class Iterator>
+		relation_store_t(WayID wayid, Iterator outerWayVec_begin, Iterator outerWayVec_end, Iterator innerWayVec_begin, Iterator innerWayVec_end, Alloc const &alloc)
+			: wayid(wayid), first(alloc), second(alloc)
+		{ 
+			first.init(outerWayVec_begin, outerWayVec_end);
+			second.init(innerWayVec_begin, innerWayVec_end);
+		}
 	};
 
-	using relation_entry_t = std::pair<wayid_vector_t, wayid_vector_t>;
+	using relation_entry_t = relation_store_t<boost::interprocess::node_allocator<wayid_vector_t, mmap_file_t::segment_manager>>;
 	using relation_allocator_t = boost::interprocess::node_allocator<relation_entry_t, mmap_file_t::segment_manager>;
-
-	using pair_t = std::pair<WayID, relation_entry_t>;
-	using pair_allocator_t = boost::interprocess::node_allocator<pair_t, mmap_file_t::segment_manager>;
-	using map_t = boost::unordered_map<WayID, relation_entry_t, std::hash<WayID>, std::equal_to<WayID>, scoped_alloc_t<pair_allocator_t>>;
+	using list_t = std::deque<relation_entry_t, scoped_alloc_t<relation_allocator_t>>;
 
 	using const_iterator = wayid_vector_t::const_iterator;
 
 	void reopen(mmap_file_t &mmap_file)
 	{
-		mOutInLists = mmap_file.find_or_construct<map_t>("relation_store")(mmap_file.get_segment_manager());
+		mOutInLists = mmap_file.find_or_construct<list_t>("relation_store")(mmap_file.get_segment_manager());
 	}
-
-	// @brief Lookup a way list
-	// @param i Pseudo OSM ID of a relational way
-	// @return A way list
-	// @exception NotFound
-	WayList<const_iterator> at(WayID i) const;
-
-	// @brief Return whether a way list is on the store.
-	// @param i Any possible OSM ID
-	// @return 1 if found, 0 otherwise
-	// @note This function is named as count for consistent naming with stl functions.
-	size_t count(WayID i) const;
 
 	// @brief Insert a way list.
 	// @param i Pseudo OSM ID of a relation
@@ -450,20 +443,21 @@ public:
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	template<class Iterator>
 	relation_entry_t const &insert_front(WayID i, Iterator outerWayVec_begin, Iterator outerWayVec_end, Iterator innerWayVec_begin, Iterator innerWayVec_end) {
-		auto result = mOutInLists->emplace(std::piecewise_construct,
-			std::forward_as_tuple(i),
-			std::forward_as_tuple(
-				std::make_pair(outerWayVec_begin, outerWayVec_end), 
-				std::make_pair(innerWayVec_begin, innerWayVec_end)));
-		return result.first->second;
+		mOutInLists->emplace_back(i, outerWayVec_begin, outerWayVec_end, innerWayVec_begin, innerWayVec_end);
+		return mOutInLists->back();
 	}
 
-	void clear();
+	// @brief Make the store empty
+	void clear() {
+		mOutInLists->clear();
+	}
 
-	size_t size() const;
+	std::size_t size() const {
+		return mOutInLists->size(); 
+	}
 
 private: 	
-	map_t *mOutInLists;
+	list_t *mOutInLists;
 };
 
 /**
@@ -645,10 +639,6 @@ protected:
 		return ways.at(i);
 	}
 
-	WayList<RelationStore::const_iterator> relations_at(WayID i) const {
-		return relations.at(i);
-	}
-
 	// Implementation of serveral functions
 	virtual void impl_nodes_insert_back(NodeID i, LatpLon coord) = 0;
 	virtual LatpLon const &impl_nodes_at(NodeID i) const = 0;
@@ -738,8 +728,8 @@ public:
 			for(auto const &i: tags) {
 				store_tags.emplace(
 					std::piecewise_construct,
-					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
-					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+					std::forward_as_tuple(i.first.begin(), i.first.end()), 
+					std::forward_as_tuple(i.second.begin(), i.second.end())); 
 			} 
 			node_entries->emplace_back(nodeId, node, boost::interprocess::move(store_tags), node_entries->get_allocator());
 		});
@@ -755,8 +745,8 @@ public:
 			for(auto const &i: tags) {
 				store_tags.emplace(
 					std::piecewise_construct,
-					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
-					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+					std::forward_as_tuple(i.first.begin(), i.first.end()), 
+					std::forward_as_tuple(i.second.begin(), i.second.end())); 
 			}
 			way_entries->emplace_back(wayId, handle, boost::interprocess::move(store_tags), way_entries->get_allocator());
 		});
@@ -772,8 +762,8 @@ public:
 			for(auto const &i: tags) {
 				store_tags.emplace(
 					std::piecewise_construct,
-					std::forward_as_tuple(mmap_string_t(i.first.begin(), i.first.end(), node_entries->get_allocator())), 
-					std::forward_as_tuple(mmap_string_t(i.second.begin(), i.second.end(), node_entries->get_allocator()))); 
+					std::forward_as_tuple(i.first.begin(), i.first.end()), 
+					std::forward_as_tuple(i.second.begin(), i.second.end())); 
 			}
 			relation_entries->emplace_back(relationId, handle, boost::interprocess::move(store_tags), way_entries->get_allocator());
 		});

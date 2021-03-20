@@ -11,7 +11,6 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-
 /* -------------------
    Protobuf handling
    ------------------- */
@@ -39,10 +38,10 @@ void readStringMap(std::map<std::string, int> *mapPtr, PrimitiveBlock *pbPtr);
 std::map<std::string, std::string> getTags(std::vector<std::string> *strPtr, Way *wayPtr);
 
 /// Find the index of a string in the StringTable, adding it if it's not there
-uint findStringInTable(std::string *strPtr, std::map<std::string, int> *mapPtr, PrimitiveBlock *pbPtr);
+unsigned int findStringInTable(std::string *strPtr, std::map<std::string, int> *mapPtr, PrimitiveBlock *pbPtr);
 
 /// Set a tag for a way to a new value
-void setTag(Way *wayPtr, uint keyIndex, uint valueIndex);
+void setTag(Way *wayPtr, unsigned int keyIndex, unsigned int valueIndex);
 
 #endif //_PBF_BLOCKS_H
 

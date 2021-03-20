@@ -19,7 +19,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
 	auto gTyp = oo->geomType;
-	if (gTyp == POLYGON || gTyp == CACHED_POLYGON) {
+	if (gTyp == OutputGeometryType::POLYGON) {
 		MultiPolygon *gAcc = nullptr;
 		try {
 			gAcc = &boost::get<MultiPolygon>(g);
@@ -61,7 +61,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 		ConvertFromClipper(current, *gAcc);
 	}
 
-	if (gTyp == LINESTRING || gTyp == CACHED_LINESTRING) {
+	if (gTyp == OutputGeometryType::LINESTRING) {
 		MultiLinestring *gAcc = nullptr;
 		try {
 			gAcc = &boost::get<MultiLinestring>(g);
@@ -101,7 +101,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
-		if (oo->geomType == POINT) {
+		if (oo->geomType == OutputGeometryType::POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			LatpLon pos = buildNodeGeometry(osmStore, *oo, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1

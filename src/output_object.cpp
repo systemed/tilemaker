@@ -11,6 +11,23 @@ namespace geom = boost::geometry;
 
 // **********************************************************
 
+std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
+{
+	switch(geomType) {
+		case OutputGeometryType::POINT:
+			os << "OutputGeometryType::POINT";
+			break;
+		case OutputGeometryType::LINESTRING:
+			os << "OutputGeometryType::LINESTRING";
+			break;
+		case OutputGeometryType::POLYGON:
+			os << "OutputGeometryType::POLYGON";
+			break;
+	}
+
+	return os;
+}
+
 
 // Write attribute key/value pairs (dictionary-encoded)
 void OutputObject::writeAttributes(
@@ -50,9 +67,7 @@ void OutputObject::writeAttributes(
 Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox) 
 {
 	switch(oo.geomType) {
-		case POINT:
-		case CACHED_POINT:
-		case CENTROID:
+		case OutputGeometryType::POINT:
 		{
 			auto const &p = osmStore.retrieve<mmap::point_t>(oo.handle);
 			if (geom::within(p, bbox.clippingBox)) {
@@ -61,16 +76,14 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			return MultiLinestring();
 		}
 
-		case LINESTRING:
-		case CACHED_LINESTRING:
+		case OutputGeometryType::LINESTRING:
 		{
 			MultiLinestring out;
 			geom::intersection(osmStore.retrieve<mmap::linestring_t>(oo.handle), bbox.clippingBox, out);
 			return out;
 		}
 
-		case POLYGON:
-		case CACHED_POLYGON:
+		case OutputGeometryType::POLYGON:
 		{
 			auto const &mp = osmStore.retrieve<mmap::multi_polygon_t>(oo.handle);
 
@@ -102,9 +115,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox)
 {
 	switch(oo.geomType) {
-		case POINT:
-		case CACHED_POINT:
-		case CENTROID:
+		case OutputGeometryType::POINT:
 		{
 			auto const &pt = osmStore.retrieve<mmap::point_t>(oo.handle);
 			LatpLon out;
@@ -113,27 +124,24 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 		 	return out;
 		}
 
-		default:	
-			throw std::runtime_error("Geometry type is not point");
-
+		default:
+			break;
 	}
+
+	throw std::runtime_error("Geometry type is not point");			
 }
 
 bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p)
 {
 	switch(oo.geomType) {
-		case POINT:
-		case CACHED_POINT:
-		case CENTROID:
+		case OutputGeometryType::POINT:
 			return boost::geometry::intersects(osmStore.retrieve<mmap::point_t>(oo.handle), p);
 
-		case LINESTRING:
-		case CACHED_LINESTRING:
+		case OutputGeometryType::LINESTRING:
 			return boost::geometry::intersects(osmStore.retrieve<mmap::linestring_t>(oo.handle), p);
 
 
-		case POLYGON:
-		case CACHED_POLYGON:
+		case OutputGeometryType::POLYGON:
 			return boost::geometry::intersects(osmStore.retrieve<mmap::multi_polygon_t>(oo.handle), p);
 
 		default:

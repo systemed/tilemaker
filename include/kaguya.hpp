@@ -633,6 +633,13 @@ namespace kaguya
 	//for lua version compatibility
 	namespace compat
 	{
+#if LUA_VERSION_NUM >= 504
+		inline int lua_resume(lua_State *L, lua_State* from, int nargs)
+		{
+			int nres;
+			return ::lua_resume(L, from, nargs, &nres);
+		}
+#endif		
 #if LUA_VERSION_NUM >= 503
 		inline int lua_rawgetp_rtype(lua_State *L, int idx, const void* ptr)
 		{
@@ -5124,7 +5131,11 @@ namespace kaguya
 		static get_type get(lua_State* l, int index)
 		{
 			int isnum=0;
+#ifdef LUAJIT
+			get_type num = static_cast<T>(kaguya::lua_tonumberx(l,index,&isnum));
+#else			
 			get_type num = static_cast<T>(lua_tonumberx(l,index,&isnum));
+#endif		
 			if (!isnum) {
 				throw LuaTypeMismatch();
 			}
@@ -5712,8 +5723,10 @@ namespace kaguya
 			case LUA_ERRERR:
 				throw LuaErrorRunningError(status, message ? std::string(message) : "unknown error running error");
 #if LUA_VERSION_NUM >= 502
+#if LUA_VERSION_NUM < 504
 			case LUA_ERRGCMM:
 				throw LuaGCError(status, message ? std::string(message) : "unknown gc error");
+#endif
 #endif
 			default:
 				throw LuaUnknownError(status, message ? std::string(message) : "lua unknown error");
