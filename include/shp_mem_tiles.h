@@ -12,7 +12,7 @@ public:
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
 	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-		std::vector<OutputObjectRef> &dstTile);
+		 OutputObjectsPerLayer &dstTile);
 
 	// Find intersecting shapefile layer
 	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const;

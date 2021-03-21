@@ -19,8 +19,7 @@ public:
 
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-		std::vector<OutputObjectRef> &dstTile);
+	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, OutputObjectsPerLayer &dstTile);
 
 	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
 

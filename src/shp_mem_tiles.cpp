@@ -12,7 +12,7 @@ void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords
 	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, OutputObjectsPerLayer &dstTile) {
 	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 

@@ -6,15 +6,17 @@
 #include <set>
 #include <vector>
 #include <memory>
+#include <unordered_set>
 #include "output_object.h"
 
-typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
+typedef std::unordered_set<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
+using OutputObjectsPerLayer = std::vector< std::unordered_set<OutputObjectRef> >;
+
 void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile);
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, OutputObjectsPerLayer &dstTile);
 
 class TileDataSource {
 
@@ -23,8 +25,7 @@ public:
 	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
 
 	///This must be thread safe!
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-		std::vector<OutputObjectRef> &dstTile)=0;
+	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, OutputObjectsPerLayer &dstTile)=0;
 
 	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box)
 	{
@@ -49,27 +50,28 @@ public:
 	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
 };
 
-class ObjectsAtSubLayerIterator : public OutputObjectsConstIt {
-
-public:
-	ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData);
-
-private:
-	const class TileData &tileData;
-};
-
-typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAtSubLayerConstItPair;
+using ObjectsAtSubLayerIterator = OutputObjectsConstIt;
+using ObjectsAtSubLayerConstItPair = std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator>;
 
 /**
  * Corresponds to a single tile at a single zoom level.
  */
 class TilesAtZoomIterator : public TileCoordinatesSet::const_iterator {
 
+	// Reserve the number of output objects
+	enum { reserve_output_objects = 10000 };
+
 public:
 	TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom);
 
 	TileCoordinates GetCoordinates() const;
-	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
+	bool HasObjectsAtSubLayer(uint_least8_t layer) const {
+		return (layer < data.size()) && !data.at(layer).empty();
+	}
+
+	std::unordered_set<OutputObjectRef> const &GetObjectsAtSubLayer(uint_least8_t layer) const {
+		return data.at(layer);
+	}
 
 	TilesAtZoomIterator& operator++();
 	TilesAtZoomIterator operator++(int a);
@@ -80,7 +82,7 @@ private:
 	void RefreshData();
 
 	class TileData &tileData;
-	std::vector<OutputObjectRef> data;
+	OutputObjectsPerLayer data;
 	uint zoom;
 };
 

@@ -9,7 +9,7 @@ void OsmMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords
 	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 }
 
-void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom,  std::vector<OutputObjectRef> &dstTile) {
+void OsmMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, OutputObjectsPerLayer &dstTile) {
 	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 }
 

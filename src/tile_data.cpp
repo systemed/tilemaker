@@ -25,13 +25,16 @@ void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, 
 	}
 }
 
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile) {
+void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, OutputObjectsPerLayer &dstTile) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
 		auto oosetIt = srcTiles.find(dstIndex);
 		if(oosetIt == srcTiles.end()) return;
-		dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+		for (auto it = oosetIt->second.begin(); it != oosetIt->second.end(); ++it) {
+			OutputObjectRef oo = *it;
+			dstTile.resize(std::max<std::size_t>(dstTile.size(), oo->layer + 1));	
+			dstTile[oo->layer].insert(oo);
+		}
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
@@ -49,18 +52,13 @@ void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoo
 				for (auto it = oosetIt->second.begin(); it != oosetIt->second.end(); ++it) {
 					OutputObjectRef oo = *it;
 					if (oo->minZoom > zoom) continue;
-					dstTile.insert(dstTile.end(), oo);
+					dstTile.resize(std::max<std::size_t>(dstTile.size(), oo->layer + 1));	
+					dstTile[oo->layer].insert(oo);
 				}
 			}
 		}
 	}
 }
-
-// *********************************
-
-ObjectsAtSubLayerIterator::ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData):
-	OutputObjectsConstIt(it),
-	tileData(tileData) { }
 
 // ********************************
 
@@ -75,24 +73,6 @@ TilesAtZoomIterator::TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, 
 TileCoordinates TilesAtZoomIterator::GetCoordinates() const {
 	TileCoordinatesSet::const_iterator it = *this;
 	return *it;
-}
-
-ObjectsAtSubLayerConstItPair TilesAtZoomIterator::GetObjectsAtSubLayer(uint_least8_t layerNum) const {
-	TileCoordinatesSet::const_iterator it = *this;
-
-    struct layerComp
-    {
-        bool operator() ( const OutputObjectRef &x, uint_least8_t layer ) const { return x->layer < layer; }
-        bool operator() ( uint_least8_t layer, const OutputObjectRef &x ) const { return layer < x->layer; }
-    };
-
-	// compare only by `layer`
-	// We get the range within ooList, where the layer of each object is `layerNum`.
-	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-	const std::vector<OutputObjectRef> &ooList = data;
-
-	OutputObjectsConstItPair ooListSameLayer = equal_range(ooList.begin(), ooList.end(), layerNum, layerComp());
-	return ObjectsAtSubLayerConstItPair(ObjectsAtSubLayerIterator(ooListSameLayer.first, tileData), ObjectsAtSubLayerIterator(ooListSameLayer.second, tileData));
 }
 
 TilesAtZoomIterator& TilesAtZoomIterator::operator++() {
@@ -121,14 +101,13 @@ TilesAtZoomIterator TilesAtZoomIterator::operator--(int a) {
 
 void TilesAtZoomIterator::RefreshData() {
 	data.clear();
+	data.reserve(reserve_output_objects);
+
 	TileCoordinatesSet::const_iterator it = *this;
 	if(it == tileData.tileCoordinates.end()) return;
 
 	for(size_t i=0; i<tileData.sources.size(); i++)
 		tileData.sources[i]->MergeSingleTileDataAtZoom(*it, zoom, data);
-
-	sort(data.begin(), data.end());
-	data.erase(unique(data.begin(), data.end()), data.end());
 }
 
 // *********************************

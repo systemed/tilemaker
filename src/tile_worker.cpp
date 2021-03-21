@@ -16,7 +16,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 	// the following objects are merged into the first object, by taking union of geometries.
 	OutputObjectRef oo = *jt;
 	OutputObjectRef ooNext;
-	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+	if(std::next(jt) != ooSameLayerEnd) ooNext = *(std::next(jt));
 
 	auto gTyp = oo->geomType;
 	if (gTyp == OutputGeometryType::POLYGON) {
@@ -31,12 +31,12 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 		PolyTree current;
 		ConvertToClipper(*gAcc, current);
 
-		while (jt+1 != ooSameLayerEnd &&
+		while (std::next(jt) != ooSameLayerEnd &&
 				ooNext->geomType == gTyp &&
 				ooNext->attributes == oo->attributes) {
 			jt++;
 			oo = *jt;
-			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			if(std::next(jt) != ooSameLayerEnd) ooNext = *(std::next(jt));
 			else ooNext.reset();
 
 			try {
@@ -70,12 +70,12 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 			return;
 		}
 
-		while (jt+1 != ooSameLayerEnd &&
+		while (std::next(jt) != ooSameLayerEnd &&
 				ooNext->geomType == gTyp &&
 				ooNext->attributes == oo->attributes) {
 			jt++;
 			oo = *jt;
-			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+			if(std::next(jt) != ooSameLayerEnd) ooNext = *(std::next(jt));
 			else ooNext.reset();
 
 			try {
@@ -167,10 +167,12 @@ void ProcessLayer(OSMStore &osmStore,
 			simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 		}
 
-		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
-		// Loop through output objects
-		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
+		if(it.HasObjectsAtSubLayer(layerNum)) {
+			auto const &objects = it.GetObjectsAtSubLayer(layerNum);
+			// Loop through output objects
+			ProcessObjects(osmStore, objects.cbegin(), objects.cend(), sharedData, 
+				simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
+		}
 	}
 
 	// If there are any objects, then add tags
