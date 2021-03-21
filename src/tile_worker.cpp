@@ -60,7 +60,7 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
-void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox &bbox, Geometry &g) {
 
 	// If a object is a polygon or a linestring that is followed by
@@ -108,11 +108,11 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 	}
 }
 
-void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
+void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
 	class SharedData &sharedData, double simplifyLevel, double filterArea, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
-	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
+	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
@@ -157,11 +157,9 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 }
 
 void ProcessLayer(OSMStore &osmStore,
-    uint zoom, const TilesAtZoomIterator &it, vector_tile::Tile &tile, 
+    TileCoordinates index, uint zoom, std::vector<OutputObjectRef> const &data, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData)
 {
-	TileCoordinates index = it.GetCoordinates();
-
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
@@ -190,7 +188,7 @@ void ProcessLayer(OSMStore &osmStore,
 			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
 		}
 
-		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
+		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 			simplifyLevel, filterArea, zoom, bbox, vtLayer, keyList, valueList);
@@ -213,27 +211,27 @@ void ProcessLayer(OSMStore &osmStore,
 	}
 }
 
-bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, TilesAtZoomIterator const &it, uint zoom) {
-
+bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
+{
 	// Create tile
 	vector_tile::Tile tile;
-	TileBbox bbox(it.GetCoordinates(), zoom);
+	TileBbox bbox(coordinates, zoom);
 	if (sharedData.config.clippingBoxFromJSON && (sharedData.config.maxLon<=bbox.minLon 
 		|| sharedData.config.minLon>=bbox.maxLon || sharedData.config.maxLat<=bbox.minLat 
 		|| sharedData.config.minLat>=bbox.maxLat)) { return true; }
 
 	// Loop through layers
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
-		ProcessLayer(osmStore, zoom, it, tile, bbox, *lt, sharedData);
+		ProcessLayer(osmStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
 	}
 
 	// Write to file or sqlite
-	string data, compressed;
+	string outputdata, compressed;
 	if (sharedData.sqlite) {
 		// Write to sqlite
-		tile.SerializeToString(&data);
-		if (sharedData.config.compress) { compressed = compress_string(data, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
-		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &data);
+		tile.SerializeToString(&outputdata);
+		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
+		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata);
 
 	} else {
 		// Write to file
@@ -243,8 +241,8 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 		boost::filesystem::create_directories(dirname.str());
 		fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 		if (sharedData.config.compress) {
-			tile.SerializeToString(&data);
-			outfile << compress_string(data, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
+			tile.SerializeToString(&outputdata);
+			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
 		} else {
 			if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return false; }
 		}

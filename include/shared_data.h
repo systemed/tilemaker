@@ -78,8 +78,6 @@ public:
 class SharedData {
 
 public:
-	///Number of worker threads to create
-	std::map<uint, TileData> &tileData;
 	const class LayerDefinition &layers;
 	bool sqlite;
 	MBTiles mbtiles;
@@ -87,8 +85,7 @@ public:
 
 	const class Config &config;
 
-	SharedData(const class Config &configIn, const class LayerDefinition &layers,
-		std::map<uint, TileData> &tileData);
+	SharedData(const class Config &configIn, const class LayerDefinition &layers);
 	virtual ~SharedData();
 };
 

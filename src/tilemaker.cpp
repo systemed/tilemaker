@@ -410,17 +410,7 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise SharedData
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
 
-	std::map<uint, TileData> tileData;
-	std::size_t total_tiles = 0;
-
-	for (uint zoom=config.startZoom; zoom<=config.endZoom; zoom++) {
-		tileData.emplace(std::piecewise_construct,
-				std::forward_as_tuple(zoom), 
-				std::forward_as_tuple(sources, zoom));
-		total_tiles += tileData.at(zoom).GetTilesAtZoomSize();
-	}
-
-	class SharedData sharedData(config, layers, tileData);
+	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
 
@@ -485,13 +475,21 @@ int main(int argc, char* argv[]) {
 		// Loop through tiles
 		uint tc = 0;
 
+		std::size_t total_tiles = 0;
+		std::map<unsigned int, TileCoordinatesSet> tile_coordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+			tile_coordinates[zoom] = GetTileCoordinates(sources, zoom);
+			total_tiles += tile_coordinates[zoom].size();
+		}
 
-			for (TilesAtZoomIterator it = sharedData.tileData.at(zoom).GetTilesAtZoomBegin(); it != sharedData.tileData.at(zoom).GetTilesAtZoomEnd(); ++it) { 
+		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+			TileCoordinatesSet const &coordinates = tile_coordinates[zoom];
+
+			for (auto it: coordinates) {
 				// If we're constrained to a source tile, check we're within it
 				if (srcZ>-1) {
-					int x = it.GetCoordinates().x / pow(2, zoom-srcZ);
-					int y = it.GetCoordinates().y / pow(2, zoom-srcZ);
+					int x = it.x / pow(2, zoom-srcZ);
+					int y = it.y / pow(2, zoom-srcZ);
 					if (x!=srcX || y!=srcY) continue;
 				}
 
@@ -499,7 +497,7 @@ int main(int argc, char* argv[]) {
 				tc++;
 
 				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
-					outputProc(pool, sharedData, *osmStore, it, zoom);
+					outputProc(pool, sharedData, *osmStore, GetTileData(sources, it, zoom), it, zoom);
 
 					uint interval = 100;
 					if(tc % interval == 0 || tc == total_tiles) { 

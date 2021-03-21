@@ -9,102 +9,74 @@
 #include "output_object.h"
 
 typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
+typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare > TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
-void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, 
-	std::vector<OutputObjectRef> &dstTile);
-
 class TileDataSource {
 
+protected:	
+	TileIndex tileIndex;
+	unsigned int baseZoom;
+
 public:
+	TileDataSource(unsigned int baseZoom) 
+		: baseZoom(baseZoom) 
+	{ }
+
 	///This must be thread safe!
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords)=0;
+	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
+		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
+	}
 
 	///This must be thread safe!
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-		std::vector<OutputObjectRef> &dstTile)=0;
+	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
+	}
 
-	virtual std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box)
-	{
-		return std::vector<std::string>();
-	};
+	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
+		tileIndex[index].push_back(oo);
+	}
 
-	virtual bool Intersects(const std::string &layerName, Box &box)
-	{
-		return false;
-	};
+private:	
+	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
+	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
 
-	virtual void CreateNamedLayerIndex(const std::string &name) {};
-
-	// Used in shape file loading
-	virtual OutputObjectRef AddObject(uint_least8_t layerNum,
-		const std::string &layerName, 
-		enum OutputGeometryType geomType,
-		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes) {return OutputObjectRef();};
-
-	//Used in OSM data loading
-	virtual void AddObject(TileCoordinates tileIndex, OutputObjectRef oo) {};
 };
 
-class ObjectsAtSubLayerIterator : public OutputObjectsConstIt {
-
-public:
-	ObjectsAtSubLayerIterator(OutputObjectsConstIt it, const class TileData &tileData);
-
-private:
-	const class TileData &tileData;
-};
-
-typedef std::pair<ObjectsAtSubLayerIterator,ObjectsAtSubLayerIterator> ObjectsAtSubLayerConstItPair;
-
-/**
- * Corresponds to a single tile at a single zoom level.
- */
-class TilesAtZoomIterator : public TileCoordinatesSet::const_iterator {
-
-public:
-	TilesAtZoomIterator(TileCoordinatesSet::const_iterator it, class TileData &tileData, uint zoom);
-
-	TileCoordinates GetCoordinates() const;
-	ObjectsAtSubLayerConstItPair GetObjectsAtSubLayer(uint_least8_t layer) const;
-
-	TilesAtZoomIterator& operator++();
-	TilesAtZoomIterator operator++(int a);
-	TilesAtZoomIterator& operator--();
-	TilesAtZoomIterator operator--(int a);
-
-private:
-	void RefreshData();
-
-	class TileData &tileData;
-	std::vector<OutputObjectRef> data;
-	uint zoom;
-};
-
-/**
- * The tile worker process should access all map data through this class and its associated iterators.
- * This gives us room for future work on getting input data in a lazy fashion (in order to avoid
- * overwhelming memory resources.)
- */
-class TileData {
-
-	friend ObjectsAtSubLayerIterator;
-	friend TilesAtZoomIterator;
-
-public:
-	TileData(std::vector<class TileDataSource *> const &sources, uint zoom);
-
-	class TilesAtZoomIterator GetTilesAtZoomBegin();
-	class TilesAtZoomIterator GetTilesAtZoomEnd();
-	size_t GetTilesAtZoomSize() const;
-
-private:
-	std::vector<class TileDataSource *> const &sources;
+static inline TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
 	TileCoordinatesSet tileCoordinates;
-	uint zoom;
-};
+
+	// Create list of tiles
+	tileCoordinates.clear();
+	for(size_t i=0; i<sources.size(); i++)
+		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
+
+	return tileCoordinates;
+}
+
+static inline std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom)
+{
+	std::vector<OutputObjectRef> data;
+	for(size_t i=0; i<sources.size(); i++)
+		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
+
+	sort(data.begin(), data.end());
+	data.erase(unique(data.begin(), data.end()), data.end());
+	return data;
+}
+
+static inline OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum) {
+    struct layerComp
+    {
+        bool operator() ( const OutputObjectRef &x, uint_least8_t layer ) const { return x->layer < layer; }
+        bool operator() ( uint_least8_t layer, const OutputObjectRef &x ) const { return layer < x->layer; }
+    };
+
+	// compare only by `layer`
+	// We get the range within ooList, where the layer of each object is `layerNum`.
+	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+	return equal_range(data.begin(), data.end(), layerNum, layerComp());
+}
 
 #endif //_TILE_DATA_H

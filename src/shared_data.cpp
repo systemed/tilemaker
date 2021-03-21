@@ -6,12 +6,8 @@
 using namespace std;
 using namespace rapidjson;
 
-SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers,
-	std::map<uint, TileData> &tileData):
-	tileData(tileData),
-	layers(layers),
-	config(configIn) {
-
+SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers)
+	: layers(layers), config(configIn) {
 	sqlite=false;
 }
 
