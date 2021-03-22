@@ -64,10 +64,13 @@ function node_function(node)
 		local mz = 13
 		local pop = tonumber(node:Find("population")) or 0
 
-		if     place == "continent"     then mz=2
-		elseif place == "country"       then mz=3; rank=1
-		elseif place == "state"         then mz=4; rank=2
-		elseif place == "city"          then mz=5; rank=3
+		if     place == "continent"     then mz=0
+		elseif place == "country"       then
+			if     pop>50000000 then rank=1; mz=1
+			elseif pop>20000000 then rank=2; mz=2
+			else                     rank=3; mz=3 end
+		elseif place == "state"         then mz=4
+		elseif place == "city"          then mz=5
 		elseif place == "town" and pop>8000 then mz=7
 		elseif place == "town"          then mz=8
 		elseif place == "village" and pop>2000 then mz=9
@@ -82,6 +85,7 @@ function node_function(node)
 		node:Attribute("class", place)
 		node:MinZoom(mz)
 		if rank then node:AttributeNumeric("rank", rank) end
+		if place=="country" then node:Attribute("iso_a2", node:Find("ISO3166-1:alpha2")) end
 		SetNameAttributes(node)
 		return
 	end
@@ -196,10 +200,12 @@ function way_function(way)
 	local amenity  = way:Find("amenity")
 	local aeroway  = way:Find("aeroway")
 	local railway  = way:Find("railway")
+	local service  = way:Find("service")
 	local sport    = way:Find("sport")
 	local shop     = way:Find("shop")
 	local tourism  = way:Find("tourism")
 	local man_made = way:Find("man_made")
+	local boundary = way:Find("boundary")
 	local isClosed = way:IsClosed()
 	local housenumber = way:Find("addr:housenumber")
 	local write_name = false
@@ -211,6 +217,27 @@ function way_function(way)
 	if aerowayBuildings[aeroway] then building="yes"; aeroway="" end
 	if landuse == "field" then landuse = "farmland" end
 	if landuse == "meadow" and way:Find("meadow")=="agricultural" then landuse="farmland" end
+
+	-- Boundaries
+	if boundary~="" then
+		local admin_level = tonumber(way:Find("admin_level")) or 11
+		local mz = 0
+		if     admin_level>=3 and admin_level<5 then mz=4
+		elseif admin_level>=5 and admin_level<7 then mz=8
+		elseif admin_level==7 then mz=10
+		elseif admin_level>=8 then mz=12
+		end
+		if boundary~="" and way:Find("disputed")=="yes" then
+			-- disputed boundaries
+			way:Layer("boundary",false)
+			way:AttributeNumeric("disputed", 1)
+		elseif boundary=="administrative" and not (way:Find("maritime")=="yes") then
+			-- administrative boundaries
+			way:Layer("boundary",false)
+			way:AttributeNumeric("admin_level", admin_level)
+			way:MinZoom(mz)
+		end
+	end
 
 	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if highway~="" then
@@ -237,6 +264,10 @@ function way_function(way)
 		way:Attribute("class", h)
 		SetBrunnelAttributes(way)
 		if ramp then way:AttributeNumeric("ramp",1) end
+		if layer=="transportation" then
+			if highway=="motorway" then way:MinZoom(4)
+			else way:MinZoom(7) end
+		end
 
 		-- Construction
 		if highway == "construction" then
@@ -248,7 +279,6 @@ function way_function(way)
 		end
 
 		-- Service
-		local service = way:Find("service")
 		if highway == "service" and service ~="" then way:Attribute("service", service) end
 
 		local oneway = way:Find("oneway")
@@ -269,7 +299,7 @@ function way_function(way)
 		end
 		SetNameAttributes(way)
 		way:Attribute("class",h)
-		way:Attribute("network","road") -- **** needs fixing
+		way:Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
 		if h~=highway then way:Attribute("subclass",highway) end
 		local ref = way:Find("ref")
 		if ref~="" then
@@ -282,6 +312,13 @@ function way_function(way)
 	if railway~="" then
 		way:Layer("transportation", false)
 		way:Attribute("class", railway)
+		SetBrunnelAttributes(way)
+		if service~="" then
+			way:Attribute("service", service)
+			way:MinZoom(12)
+		else
+			way:MinZoom(9)
+		end
 
 		way:Layer("transportation_name", false)
 		SetNameAttributes(way)
@@ -322,9 +359,9 @@ function way_function(way)
 		way:Attribute("class", waterway)
 		SetNameAttributes(way)
 		SetBrunnelAttributes(way)
-	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial"); way:MinZoom(12)
 	elseif waterway == "dam"       then way:Layer("building",isClosed)
-	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial"); way:MinZoom(14)
 	end
 	-- Set names on rivers
 	if waterwayClasses[waterway] and not isClosed then
@@ -395,6 +432,10 @@ function way_function(way)
 		if landuseKeys[l] then
 			way:Layer("landuse", true)
 			way:Attribute("class", l)
+			if l=="residential" then
+				if way:Area()<ZRES8^2 then way:MinZoom(8)
+				else SetMinZoomByArea(way) end
+			else way:MinZoom(11) end
 			write_name = true
 		end
 	end
@@ -419,7 +460,15 @@ end
 
 -- Remap coastlines
 function attribute_function(attr)
-	return { class="ocean" }
+	if attr["featurecla"]=="Glaciated areas" then
+		return { subclass="glacier" }
+	elseif attr["featurecla"]=="Antarctic Ice Shelf" then
+		return { subclass="ice_shelf" }
+	elseif attr["featurecla"]=="Urban area" then
+		return { class="residential" }
+	else
+		return { class="ocean" }
+	end
 end
 
 -- ==========================================================
