@@ -296,49 +296,39 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-    Point geomp;
+    Point centroid, geomp;
 	try {
 
-		Geometry tmp;
 		if (isRelation) {
-			try {
-				auto const &relation = indexStore->retrieve<RelationStore::relation_entry_t>(relationHandle);	
-				tmp = indexStore->wayListMultiPolygon(relation.first.cbegin(), relation.first.cend(), relation.second.cbegin(), relation.second.cend());
-			} catch(std::out_of_range &err) {
-				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
-				return;
-			}
+			Geometry tmp;
+			auto const &relation = indexStore->retrieve<RelationStore::relation_entry_t>(relationHandle);
+			tmp = indexStore->wayListMultiPolygon(relation.first.cbegin(), relation.first.cend(), relation.second.cbegin(), relation.second.cend());
+			geom::centroid(tmp, centroid);
+			geomp = Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 		} else if (isWay) {
-			//Is there a more efficient way to do this?
-			Linestring ls = linestringCached();
 			Polygon p;
-			geom::assign_points(p, ls);
-			MultiPolygon mp;
-			mp.push_back(p);	
-			tmp = mp;
+			geom::assign_points(p, linestringCached());
+			geom::centroid(p, centroid);
+			geomp = Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 		} else {
 			LatpLon pt = indexStore->nodes_at(osmID);
-			tmp = Point(pt.lon, pt.latp);
+			geomp = Point(pt.lon, pt.latp);
 		}
 
-		if(geom::is_empty(tmp)) {
+		if(geom::is_empty(geomp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
 		}
 
-		// write out centroid only
-		try {
-			Point p;
-			geom::centroid(tmp, p);
-			geomp = p;
-		} catch (geom::centroid_exception &err) {
-			cerr << "Problem geom: " << boost::geometry::wkt(tmp) << std::endl;
-			cerr << err.what() << endl;
-			return;
-		}
-
+	} catch(std::out_of_range &err) {
+		cout << "Couldn't find " << (isRelation ? "relation " : isWay ? "way " : "node " ) << originalOsmID << ": " << err.what() << endl;
+		return;
+	} catch (geom::centroid_exception &err) {
+		cerr << "Problem geometry " << (isRelation ? "relation " : isWay ? "way " : "node " ) << originalOsmID << ": " << err.what() << endl;
+		return;
 	} catch (std::invalid_argument &err) {
-		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
+		cerr << "Error in OutputObjectOsmStore constructor for " << (isRelation ? "relation " : isWay ? "way " : "node " ) << originalOsmID << ": " << err.what() << endl;
+		return;
 	}
 
 	OutputObjectRef oo(new OutputObjectOsmStorePoint(OutputGeometryType::POINT,
