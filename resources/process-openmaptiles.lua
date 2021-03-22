@@ -213,6 +213,7 @@ function way_function(way)
 
 	-- Miscellaneous preprocessing
 	if way:Find("disused") == "yes" then return end
+	if boundary~="" and way:Find("protection_title")=="National Forest" and way:Find("operator")=="United States Forest Service" then return end
 	if highway == "proposed" then return end
 	if aerowayBuildings[aeroway] then building="yes"; aeroway="" end
 	if landuse == "field" then landuse = "farmland" end
