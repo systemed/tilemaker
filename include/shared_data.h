@@ -47,7 +47,8 @@ public:
 			const std::string &indexName,
 			const std::string &writeTo);
 
-	std::string serialiseToJSON();
+	rapidjson::Value serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const;
+	std::string serialiseToJSON() const;
 };
 
 ///\brief Config read from JSON to control behavior of program

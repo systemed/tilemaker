@@ -44,7 +44,14 @@
 		"name": "Tilemaker to OpenMapTiles schema",
 		"version": "3.0",
 		"description": "Tile config based on OpenMapTiles schema",
-		"compress": "gzip"
+		"compress": "gzip",
+		"filemetadata": {
+			"tilejson": "2.0.0", 
+			"scheme": "xyz", 
+			"type": "baselayer", 
+			"format": "pbf", 
+            "tiles": ["https://example.com/liechtenstein/{z}/{x}/{y}.pbf"]
+		}
 	}
 }
 

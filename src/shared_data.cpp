@@ -53,11 +53,8 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 	return layerNum;
 }
 
-std::string LayerDefinition::serialiseToJSON() {
-	Document document;
-	document.SetObject();
-	Document::AllocatorType& allocator = document.GetAllocator();
 
+Value LayerDefinition::serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const {
 	Value layerArray(kArrayType);
 	for (auto it = layers.begin(); it != layers.end(); ++it) {
 		Value fieldObj(kObjectType);
@@ -78,7 +75,15 @@ std::string LayerDefinition::serialiseToJSON() {
 		layerArray.PushBack(layerObj, allocator);
 	}
 
-	document.AddMember("vector_layers", layerArray, allocator);
+	return layerArray;
+}
+
+std::string LayerDefinition::serialiseToJSON() const {
+	Document document;
+	document.SetObject();
+	Document::AllocatorType& allocator = document.GetAllocator();
+
+	document.AddMember("vector_layers", serialiseToJSONValue(allocator), allocator);
 
 	StringBuffer buffer;
 	Writer<StringBuffer> writer(buffer);
