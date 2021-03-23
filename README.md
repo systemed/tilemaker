@@ -73,7 +73,8 @@ You can get a run-down of available options with
 
 When running, you may see "couldn't find constituent way" messages. This happens when the .pbf file contains a multipolygon relation, but not all the relation's members are present. Typically, this will happen when a multipolygon crosses the border of the extract - for example, a county boundary formed by a river with islands. In this case, the river will simply not be written to the tiles.
 
-See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
+* See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
+* See also another workflow for "Generating self-hosted maps using tilemaker" at https://blog.kleunen.nl/blog/tilemaker-generate-map.
 
 ## Github Action
 You can integrate tilemaker as Github Action into your [Github Workflow](https://help.github.com/en/actions).  
