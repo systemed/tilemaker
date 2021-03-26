@@ -801,8 +801,27 @@ public:
 	handle_t store_multi_polygon(generated &store, Input const &src)
 	{
 		 perform_mmap_operation([&]() {
-			store.multi_polygon_store->emplace_back();
-			boost::geometry::assign(store.multi_polygon_store->back(), src);
+			 mmap::multi_polygon_t result(store.multi_polygon_store->get_allocator());
+			 result.reserve(src.size());
+
+			for(auto const &polygon: src) {
+				mmap::polygon_t::inners_type inners(result.get_allocator());
+				inners.resize(polygon.inners().size());
+
+				mmap::polygon_t::ring_type outer(result.get_allocator());
+
+				// Copy the outer ring
+				boost::geometry::assign(outer, polygon.outer());
+
+				// Store the inner rings
+				for(std::size_t i = 0; i < polygon.inners().size(); ++i) {
+					boost::geometry::assign(inners[i], polygon.inners()[i]);
+				} 
+			
+				result.emplace_back(outer, inners);
+			}
+
+			store.multi_polygon_store->push_back(result);
 		});
 
 		return mmap_file.get_handle_from_address(&store.multi_polygon_store->back());
