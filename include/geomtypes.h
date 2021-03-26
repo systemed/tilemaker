@@ -76,22 +76,24 @@ struct mmap {
 
 	using linestring_t = linestring_base_t<point_t, vector_t, bi_alloc_t<point_t>>;
 
-    struct polygon_data_t
-    {
-		using inners_type = vector_t<ring_t, scoped_alloc_t<bi_alloc_t<ring_t>>>;
-	    using ring_type = ring_t;
-    };
-
-    using polygon_parent_t = std::pair<polygon_data_t::ring_type, polygon_data_t::inners_type>;
-
-	struct polygon_t 
-		: polygon_parent_t
+	using polygon_base_inners_type = vector_t<ring_t, scoped_alloc_t<bi_alloc_t<ring_t>>>;
+	template<class A>
+	struct polygon_base_t
 	{
-		using polygon_parent_t::polygon_parent_t;
-		using inners_type = polygon_data_t::inners_type;
-		using ring_type = polygon_data_t::ring_type;
+		using inners_type = polygon_base_inners_type;
+	    using ring_type = ring_t;
+
+		ring_type outer;
+		inners_type inners;
+
+		template<class Alloc>
+		polygon_base_t(Alloc const &alloc = Alloc()) noexcept
+			: outer(alloc)
+			, inners(alloc)
+		{ }
 	};
 
+	using polygon_t = polygon_base_t<scoped_alloc_t<polygon_base_inners_type>>;
 	using multi_polygon_t = vector_t<mmap::polygon_t, mmap::bi_alloc_t<mmap::polygon_t>>;
 };
 
@@ -111,22 +113,22 @@ namespace boost { namespace geometry { namespace traits {
 	template<> struct exterior_ring<mmap::polygon_t>
 	{ 
 		static mmap::polygon_t::ring_type& get(mmap::polygon_t& p){
-	        return p.first;
+	        return p.outer;
     	}
 
     	static mmap::polygon_t::ring_type const& get(mmap::polygon_t const& p) {
-	        return p.first;
+	        return p.outer;
     	}
 	};	
 
 	template<> struct interior_rings<mmap::polygon_t>
 	{
     	static mmap::polygon_t::inners_type& get(mmap::polygon_t& p) {
-	        return p.second;
+	        return p.inners;
     	}
 
     	static mmap::polygon_t::inners_type const& get(mmap::polygon_t const& p) {
-	        return p.second;
+	        return p.inners;
     	}
 	};
 
