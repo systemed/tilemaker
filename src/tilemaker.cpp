@@ -24,6 +24,7 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
+#include "rapidjson/filewritestream.h"
 
 #ifndef _MSC_VER
 #include <sys/resource.h>
@@ -58,6 +59,65 @@ namespace geom = boost::geometry;
 
 // Global verbose switch
 bool verbose = false;
+
+void WriteSqliteMetadata(rapidjson::Document const &jsonConfig, SharedData &sharedData, LayerDefinition const &layers)
+{
+	// Write mbtiles 1.3+ json object
+	sharedData.mbtiles.writeMetadata("json", layers.serialiseToJSON());
+
+	// Write user-defined metadata
+	if (jsonConfig["settings"].HasMember("metadata")) {
+		const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
+		for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
+			if (it->value.IsString()) {
+				sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
+			} else {
+				rapidjson::StringBuffer strbuf;
+				rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+				it->value.Accept(writer);
+				sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
+			}
+		}
+	}
+	sharedData.mbtiles.closeForWriting();
+}
+
+void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &sharedData, LayerDefinition const &layers)
+{
+	if(sharedData.config.compress) 
+		std::cout << "When serving compressed tiles, make sure to include 'Content-Encoding: gzip' in your webserver configuration for serving pbf files"  << std::endl;
+
+	rapidjson::Document document;
+	document.SetObject();
+
+	if (jsonConfig["settings"].HasMember("filemetadata")) {
+		const rapidjson::Value &md = jsonConfig["settings"]["filemetadata"];
+		document.CopyFrom(md, document.GetAllocator());
+	}
+
+	rapidjson::Value boundsArray(rapidjson::kArrayType);
+	boundsArray.PushBack(rapidjson::Value(sharedData.config.minLon), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(sharedData.config.minLat), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(sharedData.config.maxLon), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(sharedData.config.maxLat), document.GetAllocator());
+	document.AddMember("bounds", boundsArray, document.GetAllocator());
+
+	document.AddMember("name", rapidjson::Value().SetString(sharedData.config.projectName.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("version", rapidjson::Value().SetString(sharedData.config.projectVersion.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("description", rapidjson::Value().SetString(sharedData.config.projectDesc.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("minzoom", rapidjson::Value(sharedData.config.startZoom), document.GetAllocator());
+	document.AddMember("maxzoom", rapidjson::Value(sharedData.config.endZoom), document.GetAllocator());
+	document.AddMember("vector_layers", layers.serialiseToJSONValue(document.GetAllocator()), document.GetAllocator());
+
+	auto fp = std::fopen((sharedData.outputFile + "/metadata.json").c_str(), "w");
+
+	char writeBuffer[65536];
+	rapidjson::FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
+	rapidjson::Writer<rapidjson::FileWriteStream> writer(os);
+	document.Accept(writer);
+
+	fclose(fp);
+}
 
 void generate_from_index(OSMStore &osmStore, PbfReaderOutput *output)
 {
@@ -143,7 +203,7 @@ int main(int argc, char* argv[]) {
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
-		("index", po::bool_switch(&index),                                       "generate an index file from the specified input file")
+		("index",  po::bool_switch(&index),                                      "generate an index file from the specified input file")
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
@@ -453,26 +513,11 @@ int main(int argc, char* argv[]) {
 
 	// ----	Close tileset
 
-	if (sqlite) {
-		// Write mbtiles 1.3+ json object
-		sharedData.mbtiles.writeMetadata("json", layers.serialiseToJSON());
+	if (sqlite)
+		WriteSqliteMetadata(jsonConfig, sharedData, layers);
+	else 
+		WriteFileMetadata(jsonConfig, sharedData, layers);
 
-		// Write user-defined metadata
-		if (jsonConfig["settings"].HasMember("metadata")) {
-			const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
-			for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
-				if (it->value.IsString()) {
-					sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
-				} else {
-					rapidjson::StringBuffer strbuf;
-					rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-					it->value.Accept(writer);
-					sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
-				}
-			}
-		}
-		sharedData.mbtiles.closeForWriting();
-	}
 	google::protobuf::ShutdownProtobufLibrary();
 
 #ifndef _MSC_VER
