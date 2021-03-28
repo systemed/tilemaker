@@ -801,8 +801,14 @@ public:
 	handle_t store_multi_polygon(generated &store, Input const &src)
 	{
 		 perform_mmap_operation([&]() {
-			store.multi_polygon_store->emplace_back();
-			boost::geometry::assign(store.multi_polygon_store->back(), src);
+			 store.multi_polygon_store->emplace_back();
+			 mmap::multi_polygon_t &result = store.multi_polygon_store->back();
+			 result.reserve(src.size());
+
+			for(auto const &polygon: src) {
+				result.emplace_back(result.get_allocator());
+				boost::geometry::assign(result.back(), polygon);
+			}
 		});
 
 		return mmap_file.get_handle_from_address(&store.multi_polygon_store->back());

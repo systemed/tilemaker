@@ -78,35 +78,23 @@ struct mmap {
 
 	using polygon_base_inners_type = vector_t<ring_t, scoped_alloc_t<bi_alloc_t<ring_t>>>;
 	template<class A>
-	struct polygon_base_t 
+	struct polygon_base_t
 	{
-		using allocator_type = A;
-
 		using inners_type = polygon_base_inners_type;
 	    using ring_type = ring_t;
-		
+
 		ring_type outer;
 		inners_type inners;
 
 		template<class Alloc>
-		polygon_base_t(polygon_base_t<A>&& other, Alloc const &alloc = Alloc()) noexcept
-			: outer(other.outer)
-			, inners(other.inners)
-		{ } 
-		template<class Alloc>
-		polygon_base_t(polygon_base_t<A>const &other, Alloc const &alloc = Alloc()) noexcept
-			: outer(other.outer)
-			, inners(other.inners)
-		{ } 
-		template<class Alloc>
-		polygon_base_t(std::allocator_arg_t, Alloc const &alloc = Alloc()) noexcept
+		polygon_base_t(Alloc const &alloc = Alloc()) noexcept
 			: outer(alloc)
 			, inners(alloc)
-		{ } 
+		{ }
 	};
 
 	using polygon_t = polygon_base_t<scoped_alloc_t<polygon_base_inners_type>>;
-	using multi_polygon_t = vector_t<mmap::polygon_t, scoped_alloc_t<mmap::bi_alloc_t<mmap::polygon_t>>>;
+	using multi_polygon_t = vector_t<mmap::polygon_t, mmap::bi_alloc_t<mmap::polygon_t>>;
 };
 
 namespace boost { namespace geometry { namespace traits {  
