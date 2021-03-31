@@ -94,7 +94,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 }
 
 void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameLayerBegin, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
-	class SharedData &sharedData, double simplifyLevel, unsigned zoom, const TileBbox &bbox,
+	class SharedData &sharedData, double simplifyLevel, double filterArea, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
 	for (ObjectsAtSubLayerIterator jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
@@ -119,6 +119,9 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
+			}
+			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
+				if (geom::area(g)<filterArea) continue;
 			}
 
 			//This may increment the jt iterator
@@ -156,21 +159,26 @@ void ProcessLayer(OSMStore &osmStore,
 		uint layerNum = *mt;
 		const LayerDef &ld = sharedData.layers.layers[layerNum];
 		if (zoom<ld.minzoom || zoom>ld.maxzoom) { continue; }
-		double simplifyLevel = 0.0;
+		double simplifyLevel = 0.0, filterArea = 0.0, latp = 0.0;
+		if (zoom < ld.simplifyBelow || zoom < ld.filterBelow) {
+			latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
+		}
 		if (zoom < ld.simplifyBelow) {
 			if (ld.simplifyLength > 0) {
-				double latp = (tiley2latp(tileY, zoom) + tiley2latp(tileY+1, zoom)) / 2;
 				simplifyLevel = meter2degp(ld.simplifyLength, latp);
 			} else {
 				simplifyLevel = ld.simplifyLevel;
 			}
 			simplifyLevel *= pow(ld.simplifyRatio, (ld.simplifyBelow-1) - zoom);
 		}
+		if (zoom < ld.filterBelow) { 
+			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
+		}
 
 		ObjectsAtSubLayerConstItPair ooListSameLayer = it.GetObjectsAtSubLayer(layerNum);
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, zoom, bbox, vtLayer, keyList, valueList);
+			simplifyLevel, filterArea, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags
