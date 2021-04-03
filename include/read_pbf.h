@@ -50,8 +50,6 @@ public:
 	void setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) override;
 	void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags) override;
 
-	void save(std::string const &filename);
-
 private:
 
 	OSMStore &osmStore;

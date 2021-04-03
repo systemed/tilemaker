@@ -21,7 +21,7 @@ using uint = unsigned int;
 #include <boost/geometry/geometries/register/multi_polygon.hpp>
 #include <boost/container/scoped_allocator.hpp>
 
-#include <boost/interprocess/managed_mapped_file.hpp>
+#include <boost/interprocess/managed_external_buffer.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
 
 namespace bi = boost::interprocess;
@@ -45,7 +45,7 @@ struct mmap {
 
 	template<typename T, typename A> using vector_t = std::vector<T, A>;
 
-    template<typename T> using bi_alloc_t = bi::node_allocator<T, bi::managed_mapped_file::segment_manager>;
+    template<typename T> using bi_alloc_t = bi::node_allocator<T, bi::managed_external_buffer::segment_manager>;
     template<typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 
 	template<

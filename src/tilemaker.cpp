@@ -207,7 +207,7 @@ int main(int argc, char* argv[]) {
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("store",  po::value< string >(&osmStoreFile)->default_value("osm_store.dat"),  "temporary storage for node/ways/relations data")
+		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",  po::bool_switch(&osmStoreCompact),  "Use 32bits NodeIDs and reduce overall memory usage (compact mode).\nThis requires the input to be renumbered and the init-store to be configured")
 		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
@@ -317,9 +317,18 @@ int main(int argc, char* argv[]) {
 	std::unique_ptr<OSMStore> osmStore;
 	if(osmStoreCompact) {
 		std:: cout << "\nImportant: Tilemaker running in compact mode.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
-   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000, true));
+   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
 	} else {
-   		osmStore.reset(new OSMStoreImpl<NodeStore>(osmStoreFile, storeNodesSize * 1000000, storeWaysSize * 1000000, true));
+   		osmStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+	}
+
+	std::string indexfilename = inputFiles[0] + ".idx";
+	if(index) { 
+		std::cout << "Writing index to file: " << indexfilename << std::endl;
+		osmStore->open(indexfilename, true);
+	} else if(!osmStoreFile.empty()) {
+		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
+		osmStore->open(osmStoreFile, true);
 	}
 
 	AttributeStore attributeStore;
@@ -363,7 +372,6 @@ int main(int argc, char* argv[]) {
 
 	std::unique_ptr<PbfIndexWriter> indexWriter;
 
-	std::string indexfilename = inputFiles[0] + ".idx";
 	if(index) {
 		std::cout << "Generating index file " << std::endl;
 		indexWriter.reset(new PbfIndexWriter(*osmStore));
@@ -374,11 +382,12 @@ int main(int argc, char* argv[]) {
 		if(!index && boost::filesystem::exists(indexfilename)) {
 			std::unique_ptr<OSMStore> indexStore;
 			if(osmStoreCompact)
-	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>(indexfilename, storeNodesSize * 1000000, storeWaysSize * 1000000, false));
+	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
 			else
-   				indexStore.reset(new OSMStoreImpl<NodeStore>(indexfilename, storeNodesSize * 1000000, storeWaysSize * 1000000, false));
+   				indexStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
 	
 			std::cout << "Using index to generate tiles: " << indexfilename << std::endl;
+			indexStore->open(indexfilename, false);
 			osmLuaProcessing.setIndexStore(indexStore.get());
 			generate_from_index(*indexStore, &osmLuaProcessing);
 		} else {
@@ -397,11 +406,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	if(index) {
-		std::cout << "Writing index to file: " << indexfilename << std::endl;
-		indexWriter->save(indexfilename);
 		return 0;
 	}
-
 
 	// ----	Initialise SharedData
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};

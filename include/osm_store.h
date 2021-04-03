@@ -13,7 +13,6 @@ namespace geom = boost::geometry;
 #define BOOST_UNORDERED_CXX11_CONSTRUCTION 1
 #include <boost/geometry/geometries/register/linestring.hpp>
 #include <boost/interprocess/detail/move.hpp>
-#include <boost/interprocess/managed_mapped_file.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
 #include <boost/interprocess/containers/string.hpp>
 #include <boost/container/vector.hpp>
@@ -23,6 +22,11 @@ namespace geom = boost::geometry;
 #include <boost/unordered_map.hpp>
 #include <boost/filesystem.hpp>
 
+#include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/managed_external_buffer.hpp>
+#include <boost/interprocess/file_mapping.hpp>
+
+#include <boost/filesystem.hpp>
 #include <iterator> 
 #include <cstddef>  
 #include <type_traits>
@@ -209,7 +213,7 @@ struct WayList {
 
 WayList<WayVec::const_iterator> makeWayList( const WayVec &outerWayVec, const WayVec &innerWayVec);
 
-using mmap_file_t = boost::interprocess::managed_mapped_file;
+using mmap_file_t = boost::interprocess::managed_external_buffer;
 
 enum NodeStoreType { NodeStoreType_Compact, NodeStoreType_Normal };
 
@@ -563,25 +567,38 @@ protected:
 	generated shp_generated;
 
 	std::string osm_store_filename;
-	enum { init_map_size = 1024000000 };
-	std::size_t map_size = init_map_size;
+	enum { init_mmap_size = 1024000000 };
+	std::size_t mmap_file_size = init_mmap_size;
+
+  	std::vector<uint8_t> shm_region;  
+	boost::interprocess::file_mapping osm_store_mapping;
+	boost::interprocess::mapped_region osm_store_region;
 
 	void remove_mmap_file() {
 		boost::filesystem::remove(osm_store_filename);
 	}
 
-	mmap_file_t create_mmap_file(bool erase)
+	mmap_file_t create_mmap_shm() 
 	{
-		if(erase) {
-			remove_mmap_file();
-			return mmap_file_t(boost::interprocess::create_only, osm_store_filename.c_str(), init_map_size);
-		}
-		return open_mmap_file();
+		shm_region.resize(mmap_file_size);
+  		return bi::managed_external_buffer(bi::create_only, shm_region.data(), shm_region.size());
 	}
 
-	mmap_file_t open_mmap_file()
+	mmap_file_t create_mmap_file(bool erase)
 	{
-		return mmap_file_t(boost::interprocess::open_only, osm_store_filename.c_str());
+		shm_region.resize(0);
+		shm_region.shrink_to_fit();
+
+		if(erase) {
+  			std::filebuf().open(osm_store_filename.c_str(), std::ios_base::in | std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+  			boost::filesystem::resize_file(osm_store_filename.c_str(), mmap_file_size);
+  
+ 		 	osm_store_mapping = boost::interprocess::file_mapping(osm_store_filename.c_str(), boost::interprocess::read_write);
+ 			osm_store_region = boost::interprocess::mapped_region(osm_store_mapping, boost::interprocess::read_write);
+  			return boost::interprocess::managed_external_buffer(boost::interprocess::create_only, osm_store_region.get_address(), osm_store_region.get_size());
+		} else {
+			return boost::interprocess::managed_external_buffer(boost::interprocess::open_only, osm_store_region.get_address(), osm_store_region.get_size());      
+		}
 	}
 
 	mmap_file_t mmap_file;
@@ -621,16 +638,25 @@ protected:
 				func();
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
-				
-				mmap_file = mmap_file_t();
+				std::cout << "Resizing osm store to size: " << (2 * mmap_file_size / 1000000) << "M                " << std::endl;
 
-				// Double the size of the mmap size
-				std::cout << "Resizing osm store to size: " << (2 * map_size / 1000000) << "M                " << std::endl;
-				boost::interprocess::managed_mapped_file::grow(osm_store_filename.c_str(), map_size);
-				map_size = map_size * 2;
+				if(osm_store_filename.empty()) {
+      				shm_region.resize(shm_region.size() + mmap_file_size);
+	      			mmap_file = bi::managed_external_buffer(bi::open_only, shm_region.data(), shm_region.size());      
+    	  			mmap_file.grow(mmap_file_size);
+				} else
+				{
+  					boost::filesystem::resize_file(osm_store_filename.c_str(), 2 * mmap_file_size);
+    
+ 		 			osm_store_mapping = boost::interprocess::file_mapping(osm_store_filename.c_str(), boost::interprocess::read_write);
+			     	osm_store_region = boost::interprocess::mapped_region(osm_store_mapping, boost::interprocess::read_write);
+      
+				    mmap_file = boost::interprocess::managed_external_buffer(boost::interprocess::open_only, osm_store_region.get_address(), osm_store_region.get_size());      
+			      	mmap_file.grow(mmap_file_size);
+				}
 
-				mmap_file = open_mmap_file();
-				reopen();
+				mmap_file_size = mmap_file_size * 2; 
+				reopen(); 
 			}
 		}
 	}
@@ -643,25 +669,24 @@ protected:
 	virtual void impl_nodes_insert_back(NodeID i, LatpLon coord) = 0;
 	virtual LatpLon const &impl_nodes_at(NodeID i) const = 0;
 	virtual void impl_reopen(mmap_file_t &mmap_file) = 0;
+	virtual void impl_open(std::string const &osm_store_filename, bool erase = true) = 0;
 
 public:
 
-	OSMStore(std::string const &osm_store_filename, bool erase = true)
-		: osm_store_filename(osm_store_filename) 
-		, mmap_file(create_mmap_file(erase)), erase(erase)
+	OSMStore()
+		: mmap_file(create_mmap_shm())
 	{ }
+
+	void open(std::string const &osm_store_filename, bool erase = true)
+	{
+		this->osm_store_filename = osm_store_filename;
+		impl_open(osm_store_filename, erase);
+	}
 
 	virtual ~OSMStore()
 	{
 		if(erase) 
 			remove_mmap_file();
-	}
-
-	void save(std::string const &filename) { 
-		mmap_file = mmap_file_t();
-		
-		boost::filesystem::rename(osm_store_filename, filename);
-		boost::interprocess::managed_mapped_file::shrink_to_fit(filename.c_str());
 	}
 
 	// Following methods are to store and retrieve the generated geometries in the mmap file
@@ -770,7 +795,7 @@ public:
 	}
 
 	// Get the currently allocated memory size in the mmap
-	std::size_t getMemorySize() const { return map_size; }
+	std::size_t getMemorySize() const { return mmap_file_size; }
 
 	generated &osm() { return osm_generated; }
 	generated &shp() { return shp_generated; }
@@ -963,6 +988,10 @@ class OSMStoreImpl
 		nodes.insert_back(i, coord);
 	};
 
+	unsigned int impl_nodes_size() const {
+		return nodes.size(); 
+	}
+
 	LatpLon const &impl_nodes_at(NodeID i) const override {
 		try {
 			return nodes.at(i);
@@ -976,10 +1005,25 @@ class OSMStoreImpl
 		nodes.reopen(mmap_file);
 	}
 
+	unsigned int osm_store_nodes;
+   	unsigned int osm_store_ways;
+
 public:
-	OSMStoreImpl(std::string const &osm_store_filename, uint osm_store_nodes, uint osm_store_ways, bool erase_at_startup)
-	   : OSMStore(osm_store_filename, erase_at_startup) 
+	OSMStoreImpl(unsigned int osm_store_nodes, unsigned int osm_store_ways)
+		: osm_store_nodes(osm_store_nodes), osm_store_ways(osm_store_ways)
 	{
+		reopen();
+
+		perform_mmap_operation([&]() {
+			nodes.reserve(osm_store_nodes);
+			ways.reserve(osm_store_ways);
+		});
+	}
+
+	void impl_open(std::string const &osm_store_filename, bool erase = true) override
+	{
+		mmap_file = create_mmap_file(erase);
+		
 		reopen();
 
 		perform_mmap_operation([&]() {
