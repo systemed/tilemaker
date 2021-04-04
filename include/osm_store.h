@@ -15,8 +15,6 @@ namespace geom = boost::geometry;
 #include <boost/interprocess/detail/move.hpp>
 #include <boost/interprocess/allocators/node_allocator.hpp>
 #include <boost/interprocess/containers/string.hpp>
-#include <boost/container/vector.hpp>
-#include <boost/container/small_vector.hpp>
 #include <boost/container/scoped_allocator.hpp>
 #include <boost/container/flat_map.hpp>
 #include <boost/unordered_map.hpp>
@@ -32,159 +30,11 @@ namespace geom = boost::geometry;
 #include <type_traits>
 
 #if BOOST_UNORDERED_CXX11_CONSTRUCTION == 0
-#warning "No unorderd cxx 11 constructor"
+#warning "No unordered cxx 11 constructor"
 #endif
 #if BOOST_UNORDERED_USE_ALLOCATOR_TRAITS == 0
 #warning "Boost unordered not using allocator traits"
 #endif
-
-template<typename T, typename A>
-struct VarIntIterator
-{
-	using iterator_category = std::bidirectional_iterator_tag;
-	using difference_type   = std::ptrdiff_t;
-	using value_type        = T;
-	using pointer           = value_type const*;  // or also value_type*
-	using reference         = value_type const&;  // or also value_type&
-	using unsigned_value_type  = typename std::make_unsigned<T>::type;
-
-	using vector_type = boost::container::small_vector<uint8_t, 15, A>;
-	using const_iterator = typename vector_type::const_iterator;
-
-	VarIntIterator(const_iterator ptr, value_type value = 0)
-		: value(value), begin_ptr(ptr), m_ptr(ptr)
-	{ }
-
-	value_type operator*() const {
-		return value + decode(varint_read(m_ptr));
-	}
-
-	VarIntIterator& operator--() {
-		--m_ptr;
-		while(m_ptr != begin_ptr && (*(m_ptr - 1) & 0x80))
-			--m_ptr;
-
-		value -= decode(varint_read(m_ptr));
-		return *this;
-	}
-
-	VarIntIterator operator--(int) {
-		VarIntIterator tmp = *this;
-		--(*this);
-		return tmp;
-	}
-
-	VarIntIterator& operator++() {
-		value += decode(varint_read(m_ptr));
-		while((*m_ptr & 0x80) != 0)
-			++m_ptr;
-		++m_ptr;
-		return *this;
-	}
-
-	VarIntIterator operator++(int) {
-		VarIntIterator tmp = *this;
-		++(*this);
-		return tmp;
-	}
-
-	friend bool operator== (const VarIntIterator& a, const VarIntIterator& b) { return a.m_ptr == b.m_ptr; };
-	friend bool operator!= (const VarIntIterator& a, const VarIntIterator& b) { return a.m_ptr != b.m_ptr; };
-
-	const_iterator ptr() const { return m_ptr; }
-
-protected:
-    static inline value_type decode(unsigned_value_type value) {
-    	return static_cast<value_type>((value >> 1) ^ -(value & 1));
-    }
-
-	template<class FwdIt>
-	static inline value_type varint_read(FwdIt first)
-	{
-		value_type value = 0;
-		value_type factor = 1;
-		while((*first & 0x80) != 0)
-		{
-			value += (*first++ & 0x7f) * factor;
-			factor *= 128;
-		}
-		value += *first++ * factor;
-		return value;
-	}
-
-	value_type value;
-	const_iterator begin_ptr;
-	const_iterator m_ptr;
-};
-
-/** Storage for delta-encoded compressed node lists */
-template<typename T, typename A>
-class VarIntVector
-{
-public:
-
-	using value_type = T;
-	using signed_value_type = typename std::make_signed<T>::type;
-	using const_iterator = VarIntIterator<signed_value_type, A>;
-	using allocator_type = A;
-
-	using vector_type = boost::container::small_vector<uint8_t, 15, A>;
-
-	VarIntVector(A alloc = A())
-		: values(0, typename vector_type::allocator_type(alloc))
-	{ }
-
-	template<typename InputIt>
-	void init(InputIt begin, InputIt end)
-	{ 
-		values.reserve(std::distance(begin, end));
-		last_value = 0;
-		while(begin != end) { 
-			value_type value = *begin;
-        	push_value(encode(value - last_value));
-	        last_value = value;
-			++begin;
-		}
-	}
-
-    VarIntIterator<signed_value_type, A> cbegin() const { 
-		return VarIntIterator<signed_value_type, A>(values.cbegin()); 
-	}
-    VarIntIterator<signed_value_type, A> cend() const {
-        return VarIntIterator<signed_value_type, A>(values.cend(), last_value);
-    }
-
-    void push_back(value_type value)
-    {
-		//auto last_value = *std::prev(cend());
-        push_value(encode(value - last_value));
-        last_value = value;
-    }
-
-    std::size_t size() const { return values.size(); }
-	bool empty() const { return values.empty(); }
-
-	value_type front() const { return *cbegin(); }
-	value_type back() const { return last_value; }
-
-private:
-	value_type encode(signed_value_type value) {
-        return (value << 1) ^ (value >> (std::numeric_limits<value_type>::digits - 1));
-    }
-
-    void push_value(value_type value)
-    {
-        while(value > 127)
-        {
-            values.push_back(static_cast<uint8_t>(0x80 | value));
-            value /= 128;
-        }
-        values.push_back(static_cast<uint8_t>(value));
-    }
-
-	vector_type values;
-	value_type last_value;
-};
 
 //
 // Views of data structures.
@@ -342,8 +192,8 @@ class WayStore {
 
 public:
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
-	using nodeid_allocator_t = boost::interprocess::allocator<uint8_t, mmap_file_t::segment_manager>;
-	using nodeid_vector_t = VarIntVector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
+	using nodeid_allocator_t = boost::interprocess::allocator<NodeID, mmap_file_t::segment_manager>;
+	using nodeid_vector_t = std::vector<NodeID, scoped_alloc_t<nodeid_allocator_t>>;
 
 	using pair_t = std::pair<const NodeID, nodeid_vector_t>;
 	using pair_allocator_t = boost::interprocess::allocator<pair_t, mmap_file_t::segment_manager>;
@@ -387,9 +237,9 @@ public:
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	template<typename Iterator>			  
 	nodeid_vector_t const &insert_back(WayID i, Iterator begin, Iterator end) {
-		auto &result = mNodeLists->emplace(std::piecewise_construct, std::forward_as_tuple(i), std::forward_as_tuple()).first->second;
-		result.init(begin, end);
-		return result;
+		return mNodeLists->emplace(std::piecewise_construct, 
+				std::forward_as_tuple(i), 
+				std::forward_as_tuple(begin, end)).first->second;
 	}
 
 	// @brief Make the store empty
@@ -408,8 +258,8 @@ class RelationStore {
 public:	
 	template <typename T> using scoped_alloc_t = boost::container::scoped_allocator_adaptor<T>;
 
-	using wayid_allocator_t = boost::interprocess::node_allocator<uint8_t, mmap_file_t::segment_manager>;
-	using wayid_vector_t = VarIntVector<WayID, scoped_alloc_t<wayid_allocator_t>>;
+	using wayid_allocator_t = boost::interprocess::node_allocator<NodeID, mmap_file_t::segment_manager>;
+	using wayid_vector_t = std::vector<WayID, scoped_alloc_t<wayid_allocator_t>>;
 
 	template<typename A>
 	struct relation_store_t {
@@ -421,11 +271,8 @@ public:
 
 		template<class Alloc, class Iterator>
 		relation_store_t(WayID wayid, Iterator outerWayVec_begin, Iterator outerWayVec_end, Iterator innerWayVec_begin, Iterator innerWayVec_end, Alloc const &alloc)
-			: wayid(wayid), first(alloc), second(alloc)
-		{ 
-			first.init(outerWayVec_begin, outerWayVec_end);
-			second.init(innerWayVec_begin, innerWayVec_end);
-		}
+			: wayid(wayid), first(outerWayVec_begin, outerWayVec_end, alloc), second(innerWayVec_begin, innerWayVec_end, alloc)
+		{ }
 	};
 
 	using relation_entry_t = relation_store_t<boost::interprocess::node_allocator<wayid_vector_t, mmap_file_t::segment_manager>>;
