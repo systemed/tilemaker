@@ -20,7 +20,12 @@
 
 struct AttributeStore
 {
-    using key_value_t = std::pair<std::string, vector_tile::Tile_Value>;    
+	struct kv_with_minzoom {
+		std::string key;
+		vector_tile::Tile_Value value;
+		char minzoom;
+	};
+
 	enum class Index { BOOL, FLOAT, STRING };
 
 	static Index type_index(vector_tile::Tile_Value const &v)
@@ -56,18 +61,22 @@ struct AttributeStore
 
     
     struct key_value_less {
-        bool operator()(key_value_t const &lhs, key_value_t const& rhs) const {            
-            return (lhs.first == rhs.first) ? compare(lhs.second, rhs.second) : (lhs.first < rhs.first);
+        bool operator()(kv_with_minzoom const &lhs, kv_with_minzoom const& rhs) const {            
+			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
+			     : (lhs.key != rhs.key) ? (lhs.key < rhs.key)
+			     : compare(lhs.value, rhs.value);
         }
     }; 
     
-    using key_value_store_t = std::set<key_value_t, key_value_less>;
+    using key_value_store_t = std::set<kv_with_minzoom, key_value_less>;
     using key_value_store_iter_t = key_value_store_t::const_iterator;
     key_value_store_t key_values;
         
     struct key_value_store_less {
         bool operator()(key_value_store_iter_t lhs, key_value_store_iter_t rhs) const {            
-            return (lhs->first == rhs->first) ? compare(lhs->second, rhs->second) : (lhs->first < rhs->first);
+			return (lhs->minzoom != rhs->minzoom) ? (lhs->minzoom < rhs->minzoom)
+			     : (lhs->key != rhs->key) ? (lhs->key < rhs->key)
+			     : compare(lhs->value, rhs->value);
         }
     }; 
     
@@ -104,8 +113,8 @@ struct AttributeStore
 		, next_set_id(0) 
     { }
             
-    key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value) {
-        return key_values.insert(std::make_pair(key, value)).first;              
+    key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value, char const minZoom) {
+        return key_values.insert({ key, value, minZoom }).first;              
     }
     
     key_value_set_iter_t store_set(key_value_set_entry_t set) {

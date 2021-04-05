@@ -62,7 +62,7 @@ public:
 
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr) const;
+		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr, char zoom) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary

@@ -47,9 +47,9 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("Length", &OsmLuaProcessing::Length)
 		.addFunction("Layer", &OsmLuaProcessing::Layer)
 		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
-		.addFunction("Attribute", &OsmLuaProcessing::Attribute)
-		.addFunction("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric)
-		.addFunction("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean)
+		.addOverloadedFunctions("Attribute", &OsmLuaProcessing::Attribute, &OsmLuaProcessing::AttributeWithMinZoom)
+		.addOverloadedFunctions("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric, &OsmLuaProcessing::AttributeNumericWithMinZoom)
+		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 	);
 	if (luaState["attribute_function"]) {
@@ -338,28 +338,31 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 }
 
 // Set attributes in a vector tile's Attributes table
-void OsmLuaProcessing::Attribute(const string &key, const string &val) {
+void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
+void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val, const char minzoom) {
 	if (val.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs.back().second.push_back(attributeStore.store_key_value(key, v));
+	outputs.back().second.push_back(attributeStore.store_key_value(key, v, minzoom));
 	setVectorLayerMetadata(outputs.back().first->layer, key, 0);
 }
 
-void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) {
+void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
+void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const float val, const char minzoom) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs.back().second.push_back(attributeStore.store_key_value(key, v));
+	outputs.back().second.push_back(attributeStore.store_key_value(key, v, minzoom));
 	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
 }
 
-void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) {
+void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
+void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool val, const char minzoom) {
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs.back().second.push_back(attributeStore.store_key_value(key, v));
+	outputs.back().second.push_back(attributeStore.store_key_value(key, v, minzoom));
 	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 
