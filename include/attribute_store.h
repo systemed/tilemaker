@@ -20,7 +20,12 @@
 
 struct AttributeStore
 {
-    using key_value_t = std::tuple<std::string, vector_tile::Tile_Value, char>;
+	struct kv_with_minzoom {
+		std::string key;
+		vector_tile::Tile_Value value;
+		char minzoom;
+	};
+
 	enum class Index { BOOL, FLOAT, STRING };
 
 	static Index type_index(vector_tile::Tile_Value const &v)
@@ -56,26 +61,22 @@ struct AttributeStore
 
     
     struct key_value_less {
-        bool operator()(key_value_t const &lhs, key_value_t const& rhs) const {            
-			return std::get<2>(lhs) != std::get<2>(rhs) ?
-				std::get<2>(lhs) < std::get<2>(rhs) :
-				(std::get<0>(lhs) == std::get<0>(rhs)) ?
-				compare(std::get<1>(lhs), std::get<1>(rhs)) :
-				(std::get<0>(lhs) < std::get<0>(rhs));
+        bool operator()(kv_with_minzoom const &lhs, kv_with_minzoom const& rhs) const {            
+			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
+			     : (lhs.key != rhs.key) ? (lhs.key < rhs.key)
+			     : compare(lhs.value, rhs.value);
         }
     }; 
     
-    using key_value_store_t = std::set<key_value_t, key_value_less>;
+    using key_value_store_t = std::set<kv_with_minzoom, key_value_less>;
     using key_value_store_iter_t = key_value_store_t::const_iterator;
     key_value_store_t key_values;
         
     struct key_value_store_less {
         bool operator()(key_value_store_iter_t lhs, key_value_store_iter_t rhs) const {            
-			return std::get<2>(*lhs) != std::get<2>(*rhs) ?
-				std::get<2>(*lhs) < std::get<2>(*rhs) :
-				(std::get<0>(*lhs) == std::get<0>(*rhs)) ?
-				compare(std::get<1>(*lhs), std::get<1>(*rhs)) :
-				(std::get<0>(*lhs) < std::get<0>(*rhs));
+			return (lhs->minzoom != rhs->minzoom) ? (lhs->minzoom < rhs->minzoom)
+			     : (lhs->key != rhs->key) ? (lhs->key < rhs->key)
+			     : compare(lhs->value, rhs->value);
         }
     }; 
     
@@ -113,7 +114,7 @@ struct AttributeStore
     { }
             
     key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value, char const minZoom) {
-        return key_values.insert(std::make_tuple(key, value, minZoom)).first;              
+        return key_values.insert({ key, value, minZoom }).first;              
     }
     
     key_value_set_iter_t store_set(key_value_set_entry_t set) {

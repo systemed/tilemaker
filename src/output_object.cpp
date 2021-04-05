@@ -37,11 +37,10 @@ void OutputObject::writeAttributes(
 	char zoom) const {
 
 	for(auto const &it: attributes->entries) {
-		char minZoom = std::get<2>(*it);
-		if (minZoom > zoom) continue;
+		if (it->minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = std::get<0>(*it);
+		std::string const &key = it->key;
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -53,7 +52,7 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value const &value = std::get<1>(*it);
+		vector_tile::Tile_Value const &value = it->value;
 		int subscript = findValue(valueList, value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
