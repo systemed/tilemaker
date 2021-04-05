@@ -240,7 +240,3 @@ void PbfIndexWriter::setRelation(int64_t relationId, OSMStore::handle_t relation
 	osmStore.pbf_store_relation_entry(relationId, relationHandle, tags);
 }
 
-void PbfIndexWriter::save(std::string const &filename)
-{
-	osmStore.save(filename);
-}
