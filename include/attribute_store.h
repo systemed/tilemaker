@@ -20,7 +20,7 @@
 
 struct AttributeStore
 {
-    using key_value_t = std::pair<std::string, vector_tile::Tile_Value>;    
+    using key_value_t = std::tuple<std::string, vector_tile::Tile_Value, char>;
 	enum class Index { BOOL, FLOAT, STRING };
 
 	static Index type_index(vector_tile::Tile_Value const &v)
@@ -57,7 +57,11 @@ struct AttributeStore
     
     struct key_value_less {
         bool operator()(key_value_t const &lhs, key_value_t const& rhs) const {            
-            return (lhs.first == rhs.first) ? compare(lhs.second, rhs.second) : (lhs.first < rhs.first);
+			return std::get<2>(lhs) != std::get<2>(rhs) ?
+				std::get<2>(lhs) < std::get<2>(rhs) :
+				(std::get<0>(lhs) == std::get<0>(rhs)) ?
+				compare(std::get<1>(lhs), std::get<1>(rhs)) :
+				(std::get<0>(lhs) < std::get<0>(rhs));
         }
     }; 
     
@@ -67,7 +71,11 @@ struct AttributeStore
         
     struct key_value_store_less {
         bool operator()(key_value_store_iter_t lhs, key_value_store_iter_t rhs) const {            
-            return (lhs->first == rhs->first) ? compare(lhs->second, rhs->second) : (lhs->first < rhs->first);
+			return std::get<2>(*lhs) != std::get<2>(*rhs) ?
+				std::get<2>(*lhs) < std::get<2>(*rhs) :
+				(std::get<0>(*lhs) == std::get<0>(*rhs)) ?
+				compare(std::get<1>(*lhs), std::get<1>(*rhs)) :
+				(std::get<0>(*lhs) < std::get<0>(*rhs));
         }
     }; 
     
@@ -104,8 +112,8 @@ struct AttributeStore
 		, next_set_id(0) 
     { }
             
-    key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value) {
-        return key_values.insert(std::make_pair(key, value)).first;              
+    key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value, char const minZoom) {
+        return key_values.insert(std::make_tuple(key, value, minZoom)).first;              
     }
     
     key_value_set_iter_t store_set(key_value_set_entry_t set) {

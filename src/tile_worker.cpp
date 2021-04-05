@@ -110,7 +110,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID); }
 		} else {
 			Geometry g;
@@ -134,7 +134,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo->writeAttributes(&keyList, &valueList, featurePtr);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID); }
 
 		}

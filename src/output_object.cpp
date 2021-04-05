@@ -33,11 +33,15 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 void OutputObject::writeAttributes(
 	vector<string> *keyList, 
 	vector<vector_tile::Tile_Value> *valueList, 
-	vector_tile::Tile_Feature *featurePtr) const {
+	vector_tile::Tile_Feature *featurePtr,
+	char zoom) const {
 
 	for(auto const &it: attributes->entries) {
+		char minZoom = std::get<2>(*it);
+		if (minZoom > zoom) continue;
+
 		// Look for key
-		std::string const &key = it->first;
+		std::string const &key = std::get<0>(*it);
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -49,7 +53,7 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value const &value = it->second; 
+		vector_tile::Tile_Value const &value = std::get<1>(*it);
 		int subscript = findValue(valueList, value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);

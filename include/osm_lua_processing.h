@@ -124,8 +124,11 @@ public:
 	
 	// Set attributes in a vector tile's Attributes table
 	void Attribute(const std::string &key, const std::string &val);
+	void AttributeWithMinZoom(const std::string &key, const std::string &val, const char minzoom);
 	void AttributeNumeric(const std::string &key, const float val);
+	void AttributeNumericWithMinZoom(const std::string &key, const float val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val);
+	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const unsigned z);
 
 	// ----	vector_layers metadata entry
