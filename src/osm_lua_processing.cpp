@@ -353,7 +353,7 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs.back().second.push_back(attributeStore.store_key_value(key, v, 0));
+	outputs.back().second.push_back(attributeStore.store_key_value(key, v, minzoom));
 	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
 }
 
@@ -362,7 +362,7 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs.back().second.push_back(attributeStore.store_key_value(key, v, 0));
+	outputs.back().second.push_back(attributeStore.store_key_value(key, v, minzoom));
 	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 
