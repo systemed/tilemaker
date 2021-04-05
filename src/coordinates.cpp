@@ -77,8 +77,10 @@ TileBbox::TileBbox(TileCoordinates i, uint z) {
 	maxLat = tiley2lat(i.y  ,zoom);
 	minLatp = lat2latp(minLat);
 	maxLatp = lat2latp(maxLat);
-	xmargin = (maxLon -minLon )/200.0;
-	ymargin = (maxLatp-minLatp)/200.0;
+	//xmargin = (maxLon -minLon )/200.0;
+	//ymargin = (maxLatp-minLatp)/200.0;
+	xmargin = 0;
+	ymargin = 0;
 	xscale  = (maxLon -minLon )/4096.0;
 	yscale  = (maxLatp-minLatp)/4096.0;
 	clippingBox = Box(geom::make<Point>(minLon-xmargin, minLatp-ymargin),
