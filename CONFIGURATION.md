@@ -165,7 +165,11 @@ Shapefiles are imported directly in your layer config like this:
       "source_columns": ["SAP_DESCRI"]
     }
 
-You can import attribute columns from a shapefile using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. Very limited Lua transformations are available for shapefiles: you can supply an `attribute_function` which takes a Lua table (hash) of shapefile attributes, and returns a table (hash) of the vector tile attributes to set.
+You can specify attribute columns to import using the `source_columns` parameter, and they'll be available within your vector tiles just as any OSM tags that you import would be. To import all columns, use `"source_columns": true`.
+
+Limited Lua transformations are available for shapefiles. You can supply an `attribute_function(attr,layer)` which takes a Lua table (hash) of shapefile attributes, as already filtered by `source_columns`, and the layer name. It must return a table (hash) of the vector tile attributes to set.
+
+To set the minimum zoom level at which an individual feature is rendered, use `attribute_function` to set a `_minzoom` value in your return table.
 
 Shapefiles **must** be in WGS84 projection, i.e. pure latitude/longitude. (Use ogr2ogr to reproject them if your source material is in a different projection.) They will be clipped to the bounds of the first .pbf that you import, unless you specify otherwise with a `bounding_box` setting in your JSON file.
 

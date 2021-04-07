@@ -84,8 +84,8 @@ kaguya::LuaTable OsmLuaProcessing::newTable() {
 	return luaState.newTable();//kaguya::LuaTable(luaState);
 }
 
-kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table) {
-	kaguya::LuaTable out_table = luaState["attribute_function"].call<kaguya::LuaTable>(in_table);
+kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, const std::string &layerName) {
+	kaguya::LuaTable out_table = luaState["attribute_function"].call<kaguya::LuaTable>(in_table, layerName);
 	return out_table;
 }
 

@@ -460,7 +460,7 @@ function way_function(way)
 end
 
 -- Remap coastlines
-function attribute_function(attr)
+function attribute_function(attr,layer)
 	if attr["featurecla"]=="Glaciated areas" then
 		return { subclass="glacier" }
 	elseif attr["featurecla"]=="Antarctic Ice Shelf" then

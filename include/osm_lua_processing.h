@@ -58,7 +58,7 @@ public:
 	// Shapefile tag remapping
 	bool canRemapShapefiles();
 	kaguya::LuaTable newTable();
-	virtual kaguya::LuaTable remapAttributes(kaguya::LuaTable& in_table);
+	virtual kaguya::LuaTable remapAttributes(kaguya::LuaTable& in_table, const std::string &layerName);
 
 	// ----	Data loading methods
 

@@ -51,7 +51,7 @@ void addShapefileAttributes(
 		}
 
 		// Call remap function
-		kaguya::LuaTable out_table = osmLuaProcessing.remapAttributes(in_table);
+		kaguya::LuaTable out_table = osmLuaProcessing.remapAttributes(in_table, layers.layers[oo->layer].name);
 
 		auto &attributeStore = osmLuaProcessing.getAttributeStore();
 		AttributeStore::key_value_set_entry_t attributes;
@@ -64,6 +64,7 @@ void addShapefileAttributes(
 				v.set_string_value(static_cast<std::string const&>(val));
 				layers.layers[oo->layer].attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
+				if (key=="_minzoom") { oo->setMinZoom(val); continue; }
 				v.set_float_value(val);
 				layers.layers[oo->layer].attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
