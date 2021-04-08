@@ -315,9 +315,9 @@ int main(int argc, char* argv[]) {
 	std::unique_ptr<OSMStore> osmStore;
 	if(osmStoreCompact) {
 		std:: cout << "\nImportant: Tilemaker running in compact mode.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
-   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>());
 	} else {
-   		osmStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   		osmStore.reset(new OSMStoreImpl<NodeStore>());
 	}
 
 	std::string indexfilename = inputFiles[0] + ".idx";
@@ -328,6 +328,8 @@ int main(int argc, char* argv[]) {
 		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
 		osmStore->open(osmStoreFile, true);
 	}
+
+   	osmStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
 
 	AttributeStore attributeStore;
 
@@ -380,9 +382,10 @@ int main(int argc, char* argv[]) {
 		if(!index && boost::filesystem::exists(indexfilename)) {
 			std::unique_ptr<OSMStore> indexStore;
 			if(osmStoreCompact)
-	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>());
 			else
-   				indexStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   				indexStore.reset(new OSMStoreImpl<NodeStore>());
+	   		indexStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
 	
 			std::cout << "Using index to generate tiles: " << indexfilename << std::endl;
 			indexStore->open(indexfilename, false);

@@ -493,6 +493,10 @@ protected:
     	  			mmap_file.grow(mmap_file_size);
 				} else
 				{
+					mmap_file =  boost::interprocess::managed_external_buffer();
+                	osm_store_region =  boost::interprocess::mapped_region();
+                	osm_store_mapping = boost::interprocess::file_mapping();
+
   					boost::filesystem::resize_file(osm_store_filename.c_str(), 2 * mmap_file_size);
     
  		 			osm_store_mapping = boost::interprocess::file_mapping(osm_store_filename.c_str(), boost::interprocess::read_write);
@@ -515,6 +519,7 @@ protected:
 	// Implementation of serveral functions
 	virtual void impl_nodes_insert_back(NodeID i, LatpLon coord) = 0;
 	virtual LatpLon const &impl_nodes_at(NodeID i) const = 0;
+	virtual void impl_nodes_reserve(unsigned int osm_store_nodes) = 0;
 	virtual void impl_reopen(mmap_file_t &mmap_file) = 0;
 	virtual void impl_open(std::string const &osm_store_filename, bool erase = true) = 0;
 
@@ -528,6 +533,14 @@ public:
 	{
 		this->osm_store_filename = osm_store_filename;
 		impl_open(osm_store_filename, erase);
+	}
+
+	void reserve(unsigned int osm_store_nodes, unsigned int osm_store_ways)
+	{
+		perform_mmap_operation([&]() {
+			impl_nodes_reserve(osm_store_nodes);
+			ways.reserve(osm_store_ways);
+		});
 	}
 
 	virtual ~OSMStore()
@@ -852,31 +865,21 @@ class OSMStoreImpl
 		nodes.reopen(mmap_file);
 	}
 
-	unsigned int osm_store_nodes;
-   	unsigned int osm_store_ways;
-
 public:
-	OSMStoreImpl(unsigned int osm_store_nodes, unsigned int osm_store_ways)
-		: osm_store_nodes(osm_store_nodes), osm_store_ways(osm_store_ways)
+	OSMStoreImpl()
 	{
 		reopen();
+	}
 
-		perform_mmap_operation([&]() {
-			nodes.reserve(osm_store_nodes);
-			ways.reserve(osm_store_ways);
-		});
+	void impl_nodes_reserve(unsigned int osm_store_nodes) override
+	{
+		nodes.reserve(osm_store_nodes);
 	}
 
 	void impl_open(std::string const &osm_store_filename, bool erase = true) override
 	{
 		mmap_file = create_mmap_file(erase);
-		
 		reopen();
-
-		perform_mmap_operation([&]() {
-			nodes.reserve(osm_store_nodes);
-			ways.reserve(osm_store_ways);
-		});
 	}
 
 	void clear() override {
