@@ -242,6 +242,9 @@ function way_function(way)
 
 	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if highway~="" then
+		local access = way:Find("access")
+		if access=="private" or access=="no" then return end
+
 		local h = highway
 		local layer = "transportation_detail"
 		if majorRoadValues[highway] then              layer="transportation" end
