@@ -195,7 +195,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, combineSimilarObjs = false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
 	bool index;
 
 	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
@@ -211,8 +211,7 @@ int main(int argc, char* argv[]) {
 		("compact",  po::bool_switch(&osmStoreCompact),  "Use 32bits NodeIDs and reduce overall memory usage (compact mode).\nThis requires the input to be renumbered and the init-store to be configured")
 		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
-		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
-		("combine",po::bool_switch(&combineSimilarObjs),                         "combine similar objects (reduces output size but takes considerably longer)");
+		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
@@ -286,7 +285,6 @@ int main(int argc, char* argv[]) {
 		fclose(fp);
 
 		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
-		config.combineSimilarObjs = combineSimilarObjs;
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;

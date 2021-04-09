@@ -4,7 +4,6 @@
 #include <boost/filesystem.hpp>
 #include "helpers.h"
 #include "write_geometry.h"
-using namespace ClipperLib;
 using namespace std;
 extern bool verbose;
 
@@ -19,47 +18,6 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
 	auto gTyp = oo->geomType;
-	if (gTyp == OutputGeometryType::POLYGON) {
-		MultiPolygon *gAcc = nullptr;
-		try {
-			gAcc = &boost::get<MultiPolygon>(g);
-		} catch (boost::bad_get &err) {
-			cerr << "Error: Polygon " << oo->objectID << " has unexpected type" << endl;
-			return;
-		}
-	
-		PolyTree current;
-		ConvertToClipper(*gAcc, current);
-
-		while (jt+1 != ooSameLayerEnd &&
-				ooNext->geomType == gTyp &&
-				ooNext->attributes == oo->attributes) {
-			jt++;
-			oo = *jt;
-			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
-			else ooNext.reset();
-
-			try {
-
-				MultiPolygon gNew = boost::get<MultiPolygon>(buildWayGeometry(osmStore, *oo, bbox));
-				PolyTree newShapes;
-				ConvertToClipper(gNew, newShapes);
-
-				Clipper cl;
-				cl.StrictlySimple(true);
-				Paths currentPaths, newShapePaths;
-				PolyTreeToPaths(current, currentPaths);
-				PolyTreeToPaths(newShapes, newShapePaths);
-				cl.AddPaths(currentPaths, ptSubject, true);
-				cl.AddPaths(newShapePaths, ptClip, true);
-				cl.Execute(ctUnion, current, pftEvenOdd, pftEvenOdd);
-			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
-			}
-		}
-
-		ConvertFromClipper(current, *gAcc);
-	}
 
 	if (gTyp == OutputGeometryType::LINESTRING) {
 		MultiLinestring *gAcc = nullptr;
@@ -125,7 +83,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 			}
 
 			//This may increment the jt iterator
-			if(sharedData.config.combineSimilarObjs) {
+			if(zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, g);
 				oo = *jt;
 			}

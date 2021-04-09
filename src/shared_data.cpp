@@ -101,7 +101,7 @@ Config::Config() {
 	includeID = false, compress = true, gzip = true;
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
-	combineSimilarObjs = false;
+	combineBelow = 0;
 }
 
 Config::~Config() { }
@@ -125,8 +125,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 #endif
 
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
-	if(jsonConfig["settings"].HasMember("combine"))
-		combineSimilarObjs = jsonConfig["settings"]["combine"].GetBool();
+	combineBelow   = jsonConfig["settings"].HasMember("combine_below") ? jsonConfig["settings"]["combine_below"].GetUint() : 0;
 	mvtVersion     = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
 	projectName    = jsonConfig["settings"]["name"].GetString();
 	projectVersion = jsonConfig["settings"]["version"].GetString();

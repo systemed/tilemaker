@@ -69,7 +69,7 @@ INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 all: tilemaker
 
-tilemaker: include/osmformat.pb.o include/vector_tile.pb.o clipper/clipper.o src/mbtiles.o src/pbf_blocks.o src/coordinates.o src/osm_store.o src/helpers.o src/output_object.o src/read_shp.o src/read_pbf.o src/osm_lua_processing.o src/write_geometry.o src/shared_data.o src/tile_worker.o src/tile_data.o src/osm_mem_tiles.o src/shp_mem_tiles.o src/attribute_store.o src/tilemaker.o
+tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf_blocks.o src/coordinates.o src/osm_store.o src/helpers.o src/output_object.o src/read_shp.o src/read_pbf.o src/osm_lua_processing.o src/write_geometry.o src/shared_data.o src/tile_worker.o src/tile_data.o src/osm_mem_tiles.o src/shp_mem_tiles.o src/attribute_store.o src/tilemaker.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
 %.o: %.cpp
@@ -85,6 +85,6 @@ install:
 	install -m 0755 tilemaker /usr/local/bin
 
 clean:
-	rm -f tilemaker src/*.o clipper/*.o include/*.o
+	rm -f tilemaker src/*.o include/*.o
 
 .PHONY: install

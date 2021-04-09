@@ -60,8 +60,8 @@ class Config {
 public:
 	class LayerDefinition layers;
 	uint baseZoom, startZoom, endZoom;
-	uint mvtVersion;
-	bool includeID, compress, gzip, combineSimilarObjs;
+	uint mvtVersion, combineBelow;
+	bool includeID, compress, gzip;
 	std::string compressOpt;
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;

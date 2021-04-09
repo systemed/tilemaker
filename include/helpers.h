@@ -3,7 +3,6 @@
 #define _HELPERS_H
 
 #include <zlib.h>
-#include "clipper.hpp"
 #include "geomtypes.h"
 
 // General helper routines
@@ -35,13 +34,5 @@ std::string compress_string(const std::string& str,
                             bool asGzip = false);
 
 std::string boost_validity_error(unsigned failure);
-
-extern const double CLIPPER_SCALE;
-
-void ConvertToClipper(const Polygon &p, ClipperLib::Path &outer, ClipperLib::Paths &inners);
-void ConvertToClipper(const MultiPolygon &mp, ClipperLib::Paths &out);
-void ConvertToClipper(const MultiPolygon &mp, ClipperLib::PolyTree &out);
-void ConvertFromClipper(const ClipperLib::Path &outer, const ClipperLib::Paths &inners, Polygon &p);
-void ConvertFromClipper(const ClipperLib::PolyTree &pt, MultiPolygon &mp);
 
 #endif //_HELPERS_H
