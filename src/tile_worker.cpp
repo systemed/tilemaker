@@ -11,17 +11,19 @@ typedef std::pair<double,double> xy_pair;
 
 // Connect disconnected linestrings within a MultiLinestring
 void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
-	// create a map of the start points of each linestring
+	// create a map of the start/end points of each linestring
 	// (we should be able to do std::map<Point,unsigned>, but that errors)
 	std::map<xy_pair,unsigned> startPoints;
+	std::map<xy_pair,unsigned> endPoints;
 	for (unsigned i=0; i<input.size(); i++) {
 		startPoints[xy_pair(input[i][0].x(),input[i][0].y())] = i;
+		endPoints[xy_pair(input[i][input[i].size()-1].x(),input[i][input[i].size()-1].y())] = i;
 	}
 
 	// then for each linestring:
 	// [skip if it's already been handled]
 	// 1. create an output linestring from it
-	// 2. look to see if there's another linestring which starts at the end place
+	// 2. look to see if there's another linestring which starts at our end point, or terminates at our start point
 	// 3. if there is, then append it, remove from the map, and repeat from 2
 	std::vector<bool> added(input.size(), false);
 	for (unsigned i=0; i<input.size(); i++) {
@@ -31,11 +33,27 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 		while (true) {
 			Point lastPoint = ls[ls.size()-1];
 			auto foundStart = startPoints.find(xy_pair(lastPoint.x(),lastPoint.y()));
-			if (foundStart == startPoints.end()) break;
-			unsigned idx = foundStart->second;
-			if (added[idx]) break;
-			for (unsigned j=1; j<input[idx].size(); j++) ls.emplace_back(input[idx][j]);
-			added[idx] = true;
+			if (foundStart != startPoints.end()) {
+				unsigned idx = foundStart->second;
+				if (!added[idx]) {
+					ls.insert(ls.end(), input[idx].begin()+1, input[idx].end());
+					added[idx] = true;
+					continue;
+				}
+			}
+
+			Point firstPoint = ls[0];
+			auto foundEnd = endPoints.find(xy_pair(firstPoint.x(),firstPoint.y()));
+			if (foundEnd != endPoints.end()) {
+				unsigned idx = foundEnd->second;
+				if (!added[idx]) {
+					ls.insert(ls.begin(), input[idx].begin(), input[idx].end()-1);
+					added[idx] = true;
+					continue;
+				}
+			}
+
+			break;
 		}
 		output.resize(output.size()+1);
 		output[output.size()-1] = std::move(ls);
