@@ -7,6 +7,41 @@
 using namespace std;
 extern bool verbose;
 
+typedef std::pair<double,double> xy_pair;
+
+// Connect disconnected linestrings within a MultiLinestring
+void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
+	// create a map of the start points of each linestring
+	// (we should be able to do std::map<Point,unsigned>, but that errors)
+	std::map<xy_pair,unsigned> startPoints;
+	for (unsigned i=0; i<input.size(); i++) {
+		startPoints[xy_pair(input[i][0].x(),input[i][0].y())] = i;
+	}
+
+	// then for each linestring:
+	// [skip if it's already been handled]
+	// 1. create an output linestring from it
+	// 2. look to see if there's another linestring which starts at the end place
+	// 3. if there is, then append it, remove from the map, and repeat from 2
+	std::vector<bool> added(input.size(), false);
+	for (unsigned i=0; i<input.size(); i++) {
+		if (added[i]) continue;
+		Linestring ls = std::move(input[i]);
+		added[i] = true;
+		while (true) {
+			Point lastPoint = ls[ls.size()-1];
+			auto foundStart = startPoints.find(xy_pair(lastPoint.x(),lastPoint.y()));
+			if (foundStart == startPoints.end()) break;
+			unsigned idx = foundStart->second;
+			if (added[idx]) break;
+			for (unsigned j=1; j<input[idx].size(); j++) ls.emplace_back(input[idx][j]);
+			added[idx] = true;
+		}
+		output.resize(output.size()+1);
+		output[output.size()-1] = std::move(ls);
+	}
+}
+
 void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	const TileBbox &bbox, Geometry &g) {
 
@@ -40,7 +75,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 				MultiLinestring gNew = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
-				*gAcc = move(gTmp);
+				MultiLinestring reordered;
+				ReorderMultiLinestring(gTmp, reordered);
+				*gAcc = move(reordered);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			} catch (boost::bad_get &err) {
@@ -48,6 +85,8 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 				continue;
 			}
 		}
+		
+		
 	}
 }
 
