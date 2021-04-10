@@ -11,8 +11,6 @@
 #include "attribute_store.h"
 #include "osm_store.h"
 
-#include "clipper.hpp"
-
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"

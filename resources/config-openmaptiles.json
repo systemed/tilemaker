@@ -41,6 +41,7 @@
 		"maxzoom": 14,
 		"basezoom": 14,
 		"include_ids": false,
+		"combine_below": 14,
 		"name": "Tilemaker to OpenMapTiles schema",
 		"version": "3.0",
 		"description": "Tile config based on OpenMapTiles schema",

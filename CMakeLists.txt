@@ -78,7 +78,6 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
 
 file(GLOB tilemaker_src_files
     "src/*.cpp"
-    "clipper/*.cpp"
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}

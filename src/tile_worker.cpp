@@ -4,9 +4,61 @@
 #include <boost/filesystem.hpp>
 #include "helpers.h"
 #include "write_geometry.h"
-using namespace ClipperLib;
 using namespace std;
 extern bool verbose;
+
+typedef std::pair<double,double> xy_pair;
+
+// Connect disconnected linestrings within a MultiLinestring
+void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
+	// create a map of the start/end points of each linestring
+	// (we should be able to do std::map<Point,unsigned>, but that errors)
+	std::map<xy_pair,unsigned> startPoints;
+	std::map<xy_pair,unsigned> endPoints;
+	for (unsigned i=0; i<input.size(); i++) {
+		startPoints[xy_pair(input[i][0].x(),input[i][0].y())] = i;
+		endPoints[xy_pair(input[i][input[i].size()-1].x(),input[i][input[i].size()-1].y())] = i;
+	}
+
+	// then for each linestring:
+	// [skip if it's already been handled]
+	// 1. create an output linestring from it
+	// 2. look to see if there's another linestring which starts at our end point, or terminates at our start point
+	// 3. if there is, then append it, remove from the map, and repeat from 2
+	std::vector<bool> added(input.size(), false);
+	for (unsigned i=0; i<input.size(); i++) {
+		if (added[i]) continue;
+		Linestring ls = std::move(input[i]);
+		added[i] = true;
+		while (true) {
+			Point lastPoint = ls[ls.size()-1];
+			auto foundStart = startPoints.find(xy_pair(lastPoint.x(),lastPoint.y()));
+			if (foundStart != startPoints.end()) {
+				unsigned idx = foundStart->second;
+				if (!added[idx]) {
+					ls.insert(ls.end(), input[idx].begin()+1, input[idx].end());
+					added[idx] = true;
+					continue;
+				}
+			}
+
+			Point firstPoint = ls[0];
+			auto foundEnd = endPoints.find(xy_pair(firstPoint.x(),firstPoint.y()));
+			if (foundEnd != endPoints.end()) {
+				unsigned idx = foundEnd->second;
+				if (!added[idx]) {
+					ls.insert(ls.begin(), input[idx].begin(), input[idx].end()-1);
+					added[idx] = true;
+					continue;
+				}
+			}
+
+			break;
+		}
+		output.resize(output.size()+1);
+		output[output.size()-1] = std::move(ls);
+	}
+}
 
 void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, const ObjectsAtSubLayerIterator &ooSameLayerEnd, 
 	const TileBbox &bbox, Geometry &g) {
@@ -19,47 +71,6 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
 	auto gTyp = oo->geomType;
-	if (gTyp == OutputGeometryType::POLYGON) {
-		MultiPolygon *gAcc = nullptr;
-		try {
-			gAcc = &boost::get<MultiPolygon>(g);
-		} catch (boost::bad_get &err) {
-			cerr << "Error: Polygon " << oo->objectID << " has unexpected type" << endl;
-			return;
-		}
-	
-		PolyTree current;
-		ConvertToClipper(*gAcc, current);
-
-		while (jt+1 != ooSameLayerEnd &&
-				ooNext->geomType == gTyp &&
-				ooNext->attributes == oo->attributes) {
-			jt++;
-			oo = *jt;
-			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
-			else ooNext.reset();
-
-			try {
-
-				MultiPolygon gNew = boost::get<MultiPolygon>(buildWayGeometry(osmStore, *oo, bbox));
-				PolyTree newShapes;
-				ConvertToClipper(gNew, newShapes);
-
-				Clipper cl;
-				cl.StrictlySimple(true);
-				Paths currentPaths, newShapePaths;
-				PolyTreeToPaths(current, currentPaths);
-				PolyTreeToPaths(newShapes, newShapePaths);
-				cl.AddPaths(currentPaths, ptSubject, true);
-				cl.AddPaths(newShapePaths, ptClip, true);
-				cl.Execute(ctUnion, current, pftEvenOdd, pftEvenOdd);
-			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing POLYGON " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
-			}
-		}
-
-		ConvertFromClipper(current, *gAcc);
-	}
 
 	if (gTyp == OutputGeometryType::LINESTRING) {
 		MultiLinestring *gAcc = nullptr;
@@ -82,7 +93,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 				MultiLinestring gNew = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
 				MultiLinestring gTmp;
 				geom::union_(*gAcc, gNew, gTmp);
-				*gAcc = move(gTmp);
+				MultiLinestring reordered;
+				ReorderMultiLinestring(gTmp, reordered);
+				*gAcc = move(reordered);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			} catch (boost::bad_get &err) {
@@ -90,6 +103,8 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, ObjectsAtSubLayerIterator &jt, 
 				continue;
 			}
 		}
+		
+		
 	}
 }
 
@@ -125,7 +140,7 @@ void ProcessObjects(OSMStore &osmStore, const ObjectsAtSubLayerIterator &ooSameL
 			}
 
 			//This may increment the jt iterator
-			if(sharedData.config.combineSimilarObjs) {
+			if(zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, g);
 				oo = *jt;
 			}
