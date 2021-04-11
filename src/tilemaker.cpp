@@ -315,9 +315,9 @@ int main(int argc, char* argv[]) {
 	std::unique_ptr<OSMStore> osmStore;
 	if(osmStoreCompact) {
 		std:: cout << "\nImportant: Tilemaker running in compact mode.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
-   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>());
 	} else {
-   		osmStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   		osmStore.reset(new OSMStoreImpl<NodeStore>());
 	}
 
 	std::string indexfilename = inputFiles[0] + ".idx";
@@ -328,6 +328,8 @@ int main(int argc, char* argv[]) {
 		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
 		osmStore->open(osmStoreFile, true);
 	}
+
+   	osmStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
 
 	AttributeStore attributeStore;
 
@@ -380,9 +382,10 @@ int main(int argc, char* argv[]) {
 		if(!index && boost::filesystem::exists(indexfilename)) {
 			std::unique_ptr<OSMStore> indexStore;
 			if(osmStoreCompact)
-	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>());
 			else
-   				indexStore.reset(new OSMStoreImpl<NodeStore>(storeNodesSize * 1000000, storeWaysSize * 1000000));
+   				indexStore.reset(new OSMStoreImpl<NodeStore>());
+	   		indexStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
 	
 			std::cout << "Using index to generate tiles: " << indexfilename << std::endl;
 			indexStore->open(indexfilename, false);
@@ -410,17 +413,7 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise SharedData
 	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
 
-	std::map<uint, TileData> tileData;
-	std::size_t total_tiles = 0;
-
-	for (uint zoom=config.startZoom; zoom<=config.endZoom; zoom++) {
-		tileData.emplace(std::piecewise_construct,
-				std::forward_as_tuple(zoom), 
-				std::forward_as_tuple(sources, zoom));
-		total_tiles += tileData.at(zoom).GetTilesAtZoomSize();
-	}
-
-	class SharedData sharedData(config, layers, tileData);
+	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
 
@@ -485,13 +478,21 @@ int main(int argc, char* argv[]) {
 		// Loop through tiles
 		uint tc = 0;
 
+		std::size_t total_tiles = 0;
+		std::map<unsigned int, TileCoordinatesSet> tile_coordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+			tile_coordinates[zoom] = GetTileCoordinates(sources, zoom);
+			total_tiles += tile_coordinates[zoom].size();
+		}
 
-			for (TilesAtZoomIterator it = sharedData.tileData.at(zoom).GetTilesAtZoomBegin(); it != sharedData.tileData.at(zoom).GetTilesAtZoomEnd(); ++it) { 
+		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+			TileCoordinatesSet const &coordinates = tile_coordinates[zoom];
+
+			for (auto it: coordinates) {
 				// If we're constrained to a source tile, check we're within it
 				if (srcZ>-1) {
-					int x = it.GetCoordinates().x / pow(2, zoom-srcZ);
-					int y = it.GetCoordinates().y / pow(2, zoom-srcZ);
+					int x = it.x / pow(2, zoom-srcZ);
+					int y = it.y / pow(2, zoom-srcZ);
 					if (x!=srcX || y!=srcY) continue;
 				}
 
@@ -499,7 +500,7 @@ int main(int argc, char* argv[]) {
 				tc++;
 
 				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
-					outputProc(pool, sharedData, *osmStore, it, zoom);
+					outputProc(pool, sharedData, *osmStore, GetTileData(sources, it, zoom), it, zoom);
 
 					uint interval = 100;
 					if(tc % interval == 0 || tc == total_tiles) { 

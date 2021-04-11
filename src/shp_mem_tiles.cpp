@@ -3,18 +3,9 @@
 using namespace std;
 namespace geom = boost::geometry;
 
-ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom):
-	TileDataSource(),
-	osmStore(osmStore),
-	baseZoom(baseZoom) { }
-
-void ShpMemTiles::MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
-	::MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
-}
-
-void ShpMemTiles::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
-	::MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
-}
+ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
+	: TileDataSource(baseZoom), osmStore(osmStore)
+{ }
 
 // Find intersecting shapefile layer
 // TODO: multipolygon relations not supported, will always return false
@@ -92,7 +83,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
+				AddObject(TileCoordinates(tilex, tiley), oo);
 			}
 		} break;
 
@@ -102,7 +93,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 						geomType, true, layerNum, id, osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)), attributes);
 			cachedGeometries.push_back(oo);
 
-			addToTileIndexPolyline(oo, tileIndex, &geometry);
+			addToTileIndexPolyline(oo, &geometry);
 		} break;
 
 		case OutputGeometryType::POLYGON:
@@ -112,7 +103,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index
-			addToTileIndexByBbox(oo, tileIndex, 
+			addToTileIndexByBbox(oo, 
 				box.min_corner().get<0>(), box.min_corner().get<1>(), 
 				box.max_corner().get<0>(), box.max_corner().get<1>());
 		} break;
@@ -125,8 +116,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
-void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex,
-                          double minLon, double minLatp, double maxLon, double maxLatp) {
+void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
 	uint minTileY = latp2tiley(minLatp, baseZoom);
@@ -134,13 +124,13 @@ void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, TileIndex &tileIndex
 	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
 		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
 			TileCoordinates index(x, y);
-			tileIndex[index].push_back(oo);
+			AddObject(index, oo);
 		}
 	}
 }
 
 // Add an OutputObject to all tiles along a polyline
-void ShpMemTiles::addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileIndex, Geometry *geom) {
+void ShpMemTiles::addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom) {
 
 	const Linestring *ls = boost::get<Linestring>(geom);
 	if(ls == nullptr) return;
@@ -150,11 +140,11 @@ void ShpMemTiles::addToTileIndexPolyline(OutputObjectRef &oo, TileIndex &tileInd
 		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
 		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
 		if (lastx==UINT_MAX) {
-			tileIndex[TileCoordinates(tilex, tiley)].push_back(oo);
+			AddObject(TileCoordinates(tilex, tiley), oo);
 		} else if (lastx!=tilex || lasty!=tiley) {
 			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
 				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
-					tileIndex[TileCoordinates(x, y)].push_back(oo);
+					AddObject(TileCoordinates(x, y), oo);
 				}
 			}
 		}

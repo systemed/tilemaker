@@ -17,18 +17,8 @@ class OsmMemTiles : public TileDataSource {
 public:
 	OsmMemTiles(uint baseZoom);
 
-	virtual void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
-	virtual void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, 
-		std::vector<OutputObjectRef> &dstTile);
-
-	virtual void AddObject(TileCoordinates index, OutputObjectRef oo);
-
-	virtual void Clear();
-
-private:
-	TileIndex tileIndex;
-	uint baseZoom;
+	void Clear();
 };
 
 #endif //_OSM_MEM_TILES
