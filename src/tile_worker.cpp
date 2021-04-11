@@ -61,28 +61,18 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 }
 
 void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
-	const TileBbox &bbox, Geometry &g) {
+	const TileBbox &bbox, MultiLinestring &g) {
 
-	// If a object is a polygon or a linestring that is followed by
-	// other objects with the same geometry type and the same attributes,
+	// If a object is a linestring that is followed by
+	// other linestrings with the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
 	OutputObjectRef oo = *jt;
 	OutputObjectRef ooNext;
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
-	auto gTyp = oo->geomType;
-
-	if (gTyp == OutputGeometryType::LINESTRING) {
-		MultiLinestring *gAcc = nullptr;
-		try {
-			gAcc = &boost::get<MultiLinestring>(g);
-		} catch (boost::bad_get &err) {
-			cerr << "Error: LineString " << oo->objectID << " has unexpected type" << endl;
-			return;
-		}
-
+	if (oo->geomType == OutputGeometryType::LINESTRING) {
 		while (jt+1 != ooSameLayerEnd &&
-				ooNext->geomType == gTyp &&
+				ooNext->geomType == OutputGeometryType::LINESTRING &&
 				ooNext->attributes == oo->attributes) {
 			jt++;
 			oo = *jt;
@@ -90,12 +80,10 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 			else ooNext.reset();
 
 			try {
-				MultiLinestring gNew = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
-				MultiLinestring gTmp;
-				geom::union_(*gAcc, gNew, gTmp);
-				MultiLinestring reordered;
-				ReorderMultiLinestring(gTmp, reordered);
-				*gAcc = move(reordered);
+				MultiLinestring to_merge = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
+				MultiLinestring output;
+				geom::union_(g, to_merge, output);
+				g = move(output);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 			} catch (boost::bad_get &err) {
@@ -103,8 +91,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 				continue;
 			}
 		}
-		
-		
+		MultiLinestring reordered;
+		ReorderMultiLinestring(g, reordered);
+		g = move(reordered);
 	}
 }
 
@@ -140,8 +129,8 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			}
 
 			//This may increment the jt iterator
-			if(zoom < sharedData.config.combineBelow) {
-				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, g);
+			if(oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
+				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				oo = *jt;
 			}
 
