@@ -92,7 +92,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 }
 
 void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
-	class SharedData &sharedData, double simplifyLevel, double filterArea, unsigned zoom, const TileBbox &bbox,
+	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
@@ -118,22 +118,20 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
-			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
-				if (geom::area(g)<filterArea) continue;
-			}
 
 			//This may increment the jt iterator
-			if (zoom < sharedData.config.combineBelow) {
-				if (oo->geomType == OutputGeometryType::LINESTRING) {
-					CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
-					MultiLinestring reordered;
-					ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
-					g = move(reordered);
-					oo = *jt;
-				} else if (oo->geomType == OutputGeometryType::POLYGON) {
-					CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
-					oo = *jt;
-				}
+			if (oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
+				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
+				MultiLinestring reordered;
+				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
+				g = move(reordered);
+				oo = *jt;
+			} else if (oo->geomType == OutputGeometryType::POLYGON && combinePolygons) {
+				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
+				oo = *jt;
+			}
+			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
+				if (geom::area(g)<filterArea) continue;
 			}
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
@@ -182,7 +180,7 @@ void ProcessLayer(OSMStore &osmStore,
 		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, filterArea, zoom, bbox, vtLayer, keyList, valueList);
+			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags

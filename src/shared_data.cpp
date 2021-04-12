@@ -18,7 +18,7 @@ SharedData::~SharedData() { }
 // Define a layer (as read from the .json file)
 uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
-		uint filterBelow, double filterArea,
+		uint filterBelow, double filterArea, uint combinePolygonsBelow,
 		const std::string &source,
 		const std::vector<std::string> &sourceColumns,
 		bool allSourceColumns,
@@ -27,7 +27,7 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		const std::string &writeTo)  {
 
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-		filterBelow, filterArea,
+		filterBelow, filterArea, combinePolygonsBelow,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>() };
 	layers.push_back(layer);
@@ -174,6 +174,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
 		int    filterBelow    = it->value.HasMember("filter_below"   ) ? it->value["filter_below"   ].GetInt()    : 0;
 		double filterArea     = it->value.HasMember("filter_area"    ) ? it->value["filter_area"    ].GetDouble() : 0.5;
+		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
 		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
 		vector<string> sourceColumns;
 		bool allSourceColumns = false;
@@ -193,7 +194,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-				filterBelow, filterArea,
+				filterBelow, filterArea, combinePolyBelow,
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
