@@ -66,6 +66,7 @@ You can add optional parameters to layers:
 * `simplify_level` - how much to simplify ways (in degrees of longitude) on the zoom level `simplify_below-1`
 * `simplify_length` - how much to simplify ways (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
 * `simplify_ratio` - (optional: the default value is 1.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
+* `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
 
 Use these options to combine different layer specs within one outputted layer. For example:
 

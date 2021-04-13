@@ -23,6 +23,7 @@ struct LayerDef {
 	double simplifyRatio;
 	uint filterBelow;
 	double filterArea;
+	uint combinePolygonsBelow;
 	std::string source;
 	std::vector<std::string> sourceColumns;
 	bool allSourceColumns;
@@ -42,7 +43,7 @@ public:
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
 			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
-			uint filterBelow, double filterArea,
+			uint filterBelow, double filterArea, uint combinePolygonsBelow,
 			const std::string &source,
 			const std::vector<std::string> &sourceColumns,
 			bool allSourceColumns,

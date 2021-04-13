@@ -60,45 +60,39 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
+template <typename T>
 void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
-	const TileBbox &bbox, MultiLinestring &g) {
+	const TileBbox &bbox, T &g) {
 
-	// If a object is a linestring that is followed by
-	// other linestrings with the same attributes,
+	// If a object is a linestring/polygon that is followed by
+	// other linestrings/polygons with the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
 	OutputObjectRef oo = *jt;
 	OutputObjectRef ooNext;
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
-	if (oo->geomType == OutputGeometryType::LINESTRING) {
-		while (jt+1 != ooSameLayerEnd &&
-				ooNext->geomType == OutputGeometryType::LINESTRING &&
-				ooNext->attributes == oo->attributes) {
-			jt++;
-			oo = *jt;
-			if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
-			else ooNext.reset();
+	OutputGeometryType gt = oo->geomType;
+	while (jt+1 != ooSameLayerEnd &&
+			ooNext->geomType == gt &&
+			ooNext->attributes == oo->attributes) {
+		jt++;
+		oo = *jt;
+		if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+		else ooNext.reset();
 
-			try {
-				MultiLinestring to_merge = boost::get<MultiLinestring>(buildWayGeometry(osmStore, *oo, bbox));
-				MultiLinestring output;
-				geom::union_(g, to_merge, output);
-				g = move(output);
-			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing LINESTRING " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
-			} catch (boost::bad_get &err) {
-				cerr << "Error while processing LINESTRING " << oo->objectID << " has unexpected type" << endl;
-				continue;
-			}
+		try {
+			T to_merge = boost::get<T>(buildWayGeometry(osmStore, *oo, bbox));
+			T output;
+			geom::union_(g, to_merge, output);
+			g = move(output);
+		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << oo->objectID <<"," << err.what() << endl;
+		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << oo->objectID << endl;
 		}
-		MultiLinestring reordered;
-		ReorderMultiLinestring(g, reordered);
-		g = move(reordered);
 	}
 }
 
 void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
-	class SharedData &sharedData, double simplifyLevel, double filterArea, unsigned zoom, const TileBbox &bbox,
+	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
@@ -124,13 +118,20 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
 				continue;
 			}
+
 			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
 				if (geom::area(g)<filterArea) continue;
 			}
 
 			//This may increment the jt iterator
-			if(oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
+			if (oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
+				MultiLinestring reordered;
+				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
+				g = move(reordered);
+				oo = *jt;
+			} else if (oo->geomType == OutputGeometryType::POLYGON && combinePolygons) {
+				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}
 
@@ -180,7 +181,7 @@ void ProcessLayer(OSMStore &osmStore,
 		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, filterArea, zoom, bbox, vtLayer, keyList, valueList);
+			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 	}
 
 	// If there are any objects, then add tags
