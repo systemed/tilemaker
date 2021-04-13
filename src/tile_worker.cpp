@@ -119,6 +119,10 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 				continue;
 			}
 
+			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
+				if (geom::area(g)<filterArea) continue;
+			}
+
 			//This may increment the jt iterator
 			if (oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
@@ -129,9 +133,6 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			} else if (oo->geomType == OutputGeometryType::POLYGON && combinePolygons) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
-			}
-			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
-				if (geom::area(g)<filterArea) continue;
 			}
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
