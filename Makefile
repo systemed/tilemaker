@@ -62,7 +62,7 @@ endif
 # Main includes
 
 CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++11 -pthread -fPIE $(CONFIG)
-LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lprotobuf -lshp
+LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp
 INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 # Targets
