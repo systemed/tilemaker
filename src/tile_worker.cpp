@@ -146,13 +146,26 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 	}
 }
 
+vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &layerName, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
+	for (unsigned i=0; i<tile.layers_size(); i++) {
+		if (tile.layers(i).name()!=layerName) continue;
+		// we already have this layer, so copy the key/value lists, and return it
+		for (unsigned j=0; j<tile.layers(i).keys_size(); j++) keyList.emplace_back(tile.layers(i).keys(j));
+		for (unsigned j=0; j<tile.layers(i).values_size(); j++) valueList.emplace_back(tile.layers(i).values(j));
+		return tile.mutable_layers(i);
+	}
+	// not found, so add new layer
+	return tile.add_layers();
+}
+
 void ProcessLayer(OSMStore &osmStore,
     TileCoordinates index, uint zoom, std::vector<OutputObjectRef> const &data, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData)
 {
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
-	vector_tile::Tile_Layer *vtLayer = tile.add_layers();
+	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
+	vector_tile::Tile_Layer *vtLayer = sharedData.mergeSqlite ? findLayerByName(tile, layerName, keyList, valueList) : tile.add_layers();
 
 	//TileCoordinate tileX = index.x;
 	TileCoordinate tileY = index.y;
@@ -186,13 +199,13 @@ void ProcessLayer(OSMStore &osmStore,
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(sharedData.layers.layers[ltx.at(0)].name);
+		vtLayer->set_name(layerName);
 		vtLayer->set_version(sharedData.config.mvtVersion);
 		vtLayer->set_extent(4096);
-		for (uint j=0; j<keyList.size()  ; j++) {
+		for (uint j=vtLayer->keys_size(); j<keyList.size(); j++) {
 			vtLayer->add_keys(keyList[j]);
 		}
-		for (uint j=0; j<valueList.size(); j++) { 
+		for (uint j=vtLayer->values_size(); j<valueList.size(); j++) { 
 			vector_tile::Tile_Value *v = vtLayer->add_values();
 			*v = valueList[j];
 		}
@@ -209,6 +222,14 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 	if (sharedData.config.clippingBoxFromJSON && (sharedData.config.maxLon<=bbox.minLon 
 		|| sharedData.config.minLon>=bbox.maxLon || sharedData.config.maxLat<=bbox.minLat 
 		|| sharedData.config.minLat>=bbox.maxLat)) { return true; }
+
+	// Read existing tile if merging
+	if (sharedData.mergeSqlite) {
+		std::string rawTile;
+		if (sharedData.mbtiles.readTileAndUncompress(rawTile, zoom, bbox.index.x, bbox.index.y)) {
+			tile.ParseFromString(rawTile);
+		}
+	}
 
 	// Loop through layers
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {

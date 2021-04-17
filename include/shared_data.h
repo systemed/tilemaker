@@ -81,6 +81,7 @@ class SharedData {
 public:
 	const class LayerDefinition &layers;
 	bool sqlite;
+	bool mergeSqlite;
 	MBTiles mbtiles;
 	std::string outputFile;
 

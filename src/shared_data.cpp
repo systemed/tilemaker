@@ -9,6 +9,7 @@ using namespace rapidjson;
 SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers)
 	: layers(layers), config(configIn) {
 	sqlite=false;
+	mergeSqlite=false;
 }
 
 SharedData::~SharedData() { }

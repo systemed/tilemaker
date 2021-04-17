@@ -416,6 +416,7 @@ int main(int argc, char* argv[]) {
 	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
+	sharedData.mergeSqlite = mergeSqlite;
 
 	// ----	Initialise mbtiles if required
 	

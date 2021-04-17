@@ -28,7 +28,7 @@ public:
 	void readBoundingBox(double &minLon, double &maxLon, double &minLat, double &maxLat);
 	void readTileList(std::vector<std::tuple<int,int,int>> &tileList);
 	std::vector<char> readTile(int zoom, int col, int row);
-
+	bool readTileAndUncompress(std::string &data, int zoom, int col, int row);
 };
 
 #endif //_MBTILES_H
