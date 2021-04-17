@@ -91,3 +91,9 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	return pair<int,int>(x,y);
 }
 
+Box TileBbox::getTileBox() const {
+	double xmargin = (maxLon -minLon )/8192.0;
+	double ymargin = (maxLatp-minLatp)/8192.0;
+	return Box(geom::make<Point>(minLon+xmargin, minLatp+ymargin), geom::make<Point>(maxLon-xmargin, maxLatp-ymargin));
+}
+
