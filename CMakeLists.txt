@@ -34,7 +34,7 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
 ENDIF ()
 
-find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
+find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 find_package(Protobuf REQUIRED)
@@ -81,7 +81,7 @@ file(GLOB tilemaker_src_files
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
-	Boost::system Boost::filesystem Boost::program_options)
+	Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
 
 if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)

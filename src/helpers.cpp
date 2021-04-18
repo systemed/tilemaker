@@ -64,12 +64,17 @@ std::string compress_string(const std::string& str,
 }
 
 // Decompress an STL string using zlib and return the original data.
-std::string decompress_string(const std::string& str) {
+std::string decompress_string(const std::string& str, bool asGzip) {
     z_stream zs;                        // z_stream is zlib's control structure
     memset(&zs, 0, sizeof(zs));
 
-    if (inflateInit(&zs) != Z_OK)
-        throw(std::runtime_error("inflateInit failed while decompressing."));
+	if (asGzip) {
+		if (inflateInit2(&zs, 16+MAX_WBITS) != Z_OK)
+			throw(std::runtime_error("inflateInit2 failed while decompressing."));
+	} else {
+		if (inflateInit(&zs) != Z_OK)
+			throw(std::runtime_error("inflateInit failed while decompressing."));
+	}
 
     zs.next_in = (Bytef*)str.data();
     zs.avail_in = str.size();

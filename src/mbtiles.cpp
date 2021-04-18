@@ -2,8 +2,16 @@
 #include "mbtiles.h"
 #include "helpers.h"
 #include <cmath>
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/device/array.hpp>
+
 using namespace sqlite;
 using namespace std;
+namespace bio = boost::iostreams;
 
 MBTiles::MBTiles() {}
 
@@ -68,4 +76,35 @@ vector<char> MBTiles::readTile(int zoom, int col, int row) {
 	vector<char> pbfBlob;
 	db << "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?" << zoom << col << row >> pbfBlob;
 	return pbfBlob;
+}
+
+bool MBTiles::readTileAndUncompress(string &data, int zoom, int x, int y, bool isCompressed, bool asGzip) {
+	m.lock();
+	int tmsY = pow(2,zoom) - 1 - y;
+	int exists=0;
+	db << "SELECT COUNT(*) FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?" << zoom << x << tmsY >> exists;
+	m.unlock();
+	if (exists==0) return false;
+
+	m.lock();
+	std::vector<char> compressed;
+	db << "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?" << zoom << x << tmsY >> compressed;
+	m.unlock();
+	try {
+		bio::stream<bio::array_source> in(compressed.data(), compressed.size());
+		bio::filtering_streambuf<bio::input> out;
+
+		if (isCompressed) {
+			if (asGzip) { out.push(bio::gzip_decompressor()); }
+			else { out.push(bio::zlib_decompressor()); }
+		}
+		out.push(in);
+
+		std::stringstream decompressed;
+		bio::copy(out, decompressed);
+		data = decompressed.str();
+		return true;
+	} catch(std::runtime_error &e) {
+		return false;
+	}
 }

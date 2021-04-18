@@ -32,7 +32,7 @@ void readBlock(google::protobuf::Message *messagePtr, istream &input) {
 	readMessage(&blob, input, bh.datasize());
 
 	// Unzip the gzipped content
-	string contents = decompress_string(blob.zlib_data());
+	string contents = decompress_string(blob.zlib_data(), false);
 	messagePtr->ParseFromString(contents);
 }
 
