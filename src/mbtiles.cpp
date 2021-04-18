@@ -6,6 +6,7 @@
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/device/array.hpp>
 
 using namespace sqlite;
@@ -77,7 +78,7 @@ vector<char> MBTiles::readTile(int zoom, int col, int row) {
 	return pbfBlob;
 }
 
-bool MBTiles::readTileAndUncompress(string &data, int zoom, int x, int y) {
+bool MBTiles::readTileAndUncompress(string &data, int zoom, int x, int y, bool isCompressed, bool asGzip) {
 	m.lock();
 	int tmsY = pow(2,zoom) - 1 - y;
 	int exists=0;
@@ -93,7 +94,10 @@ bool MBTiles::readTileAndUncompress(string &data, int zoom, int x, int y) {
 		bio::stream<bio::array_source> in(compressed.data(), compressed.size());
 		bio::filtering_streambuf<bio::input> out;
 
-		out.push(bio::gzip_decompressor());
+		if (isCompressed) {
+			if (asGzip) { out.push(bio::gzip_decompressor()); }
+			else { out.push(bio::zlib_decompressor()); }
+		}
 		out.push(in);
 
 		std::stringstream decompressed;

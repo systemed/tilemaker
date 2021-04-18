@@ -226,7 +226,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 	// Read existing tile if merging
 	if (sharedData.mergeSqlite) {
 		std::string rawTile;
-		if (sharedData.mbtiles.readTileAndUncompress(rawTile, zoom, bbox.index.x, bbox.index.y)) {
+		if (sharedData.mbtiles.readTileAndUncompress(rawTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip)) {
 			tile.ParseFromString(rawTile);
 		}
 	}
