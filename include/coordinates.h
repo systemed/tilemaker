@@ -184,6 +184,7 @@ public:
 	TileBbox(TileCoordinates i, uint z);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
+	Box getTileBox() const;
 };
 
 #endif //_COORDINATES_H

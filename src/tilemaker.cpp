@@ -267,6 +267,7 @@ int main(int argc, char* argv[]) {
 		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
 		if(hasClippingBox) {
+			cout << "Bounding box " << minLon << ", " << maxLon << ", " << minLat << ", " << maxLat << endl;
 			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
 			                  geom::make<Point>(maxLon, lat2latp(maxLat)));
 		}
@@ -495,25 +496,39 @@ int main(int argc, char* argv[]) {
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 			TileCoordinatesSet const &coordinates = tile_coordinates[zoom];
 
+
 			for (auto it: coordinates) {
+				// Submit a lambda object to the pool.
+				tc++;
+
+				auto display_tilecount = [=, &io_mutex]() {
+					uint interval = 100;
+					if(tc % interval == 0 || tc == total_tiles) { 
+						const std::lock_guard<std::mutex> lock(io_mutex);
+						std::cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r" << std::flush;
+					}
+				};
+
 				// If we're constrained to a source tile, check we're within it
 				if (srcZ>-1) {
 					int x = it.x / pow(2, zoom-srcZ);
 					int y = it.y / pow(2, zoom-srcZ);
-					if (x!=srcX || y!=srcY) continue;
+					if (x!=srcX || y!=srcY) { 
+						display_tilecount();
+						continue;
+					}
+				}
+	
+				if (hasClippingBox) {
+					if(!boost::geometry::intersects(TileBbox(it, zoom).getTileBox(), clippingBox)) {
+						display_tilecount();
+						continue;
+					}
 				}
 
-				// Submit a lambda object to the pool.
-				tc++;
-
-				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore, &io_mutex]() {
+				boost::asio::post(pool, [=, &pool, &sharedData, &osmStore]() {
 					outputProc(pool, sharedData, *osmStore, GetTileData(sources, it, zoom), it, zoom);
-
-					uint interval = 100;
-					if(tc % interval == 0 || tc == total_tiles) { 
-						const std::lock_guard<std::mutex> lock(io_mutex);
-						cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << total_tiles << "               \r" << std::flush;
-					}
+					display_tilecount();
 				});
 			}
 
