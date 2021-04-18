@@ -246,6 +246,9 @@ int main(int argc, char* argv[]) {
 			cerr << "Couldn't remove existing file" << endl;
 			return 0;
 		}
+	} else if (mergeSqlite && !static_cast<bool>(std::ifstream(outputFile))) {
+		cout << "--merge specified but .mbtiles file doesn't already exist, ignoring" << endl;
+		mergeSqlite = false;
 	}
 
 	// ----	Read bounding box from first .pbf (if there is one) or mapsplit file
