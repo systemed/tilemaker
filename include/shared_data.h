@@ -73,6 +73,7 @@ public:
 	virtual ~Config();
 
 	void readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, Box &clippingBox);
+	void enlargeBbox(double cMinLon, double cMaxLon, double cMinLat, double cMaxLat);
 };
 
 ///\brief Data used by worker threads ::outputProc to write output
@@ -85,9 +86,9 @@ public:
 	MBTiles mbtiles;
 	std::string outputFile;
 
-	const class Config &config;
+	Config &config;
 
-	SharedData(const class Config &configIn, const class LayerDefinition &layers);
+	SharedData(Config &configIn, const class LayerDefinition &layers);
 	virtual ~SharedData();
 };
 

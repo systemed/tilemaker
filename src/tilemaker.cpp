@@ -421,18 +421,24 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise mbtiles if required
 	
 	if (sharedData.sqlite) {
-		ostringstream bounds;
-		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
 		sharedData.mbtiles.openForWriting(&sharedData.outputFile);
 		sharedData.mbtiles.writeMetadata("name",sharedData.config.projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
 		sharedData.mbtiles.writeMetadata("version",sharedData.config.projectVersion);
 		sharedData.mbtiles.writeMetadata("description",sharedData.config.projectDesc);
 		sharedData.mbtiles.writeMetadata("format","pbf");
-		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
 		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.config.startZoom));
 		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.config.endZoom));
 		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
+
+		ostringstream bounds;
+		if (mergeSqlite) {
+			double cMinLon, cMaxLon, cMinLat, cMaxLat;
+			sharedData.mbtiles.readBoundingBox(cMinLon, cMaxLon, cMinLat, cMaxLat);
+			sharedData.config.enlargeBbox(cMinLon, cMaxLon, cMinLat, cMaxLat);
+		}
+		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
+		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
 	}
 
 	// ----	Write out data

@@ -6,7 +6,7 @@
 using namespace std;
 using namespace rapidjson;
 
-SharedData::SharedData(const class Config &configIn, const class LayerDefinition &layers)
+SharedData::SharedData(Config &configIn, const class LayerDefinition &layers)
 	: layers(layers), config(configIn) {
 	sqlite=false;
 	mergeSqlite=false;
@@ -102,6 +102,15 @@ Config::Config() {
 }
 
 Config::~Config() { }
+
+// ----	Enlarge existing bounding box
+
+void Config::enlargeBbox(double cMinLon, double cMaxLon, double cMinLat, double cMaxLat) {
+	minLon = std::min(minLon, cMinLon);
+	maxLon = std::max(maxLon, cMaxLon);
+	minLat = std::min(minLat, cMinLat);
+	maxLat = std::max(maxLat, cMaxLat);
+}
 
 // ----	Read all config details from JSON file
 
