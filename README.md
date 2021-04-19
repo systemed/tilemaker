@@ -4,28 +4,26 @@ Tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf p
 
 Vector tiles are used by many in-browser/app renderers, and can also power server-side raster rendering. They enable on-the-fly style changes and greater interactivity, while imposing less of a storage burden. You can output them to individual files, or to a SQLite (.mbtiles) database.
 
-Tilemaker keeps nodes and ways in RAM. If you're processing a country extract or larger, you'll need a lot of RAM. It's best suited to city and region extracts.
-
-![Continuous Integration](https://github.com/systemeD/tilemaker/workflows/Continuous%20Integration/badge.svg)
+![Continuous Integration](https://github.com/systemed/tilemaker/workflows/Continuous%20Integration/badge.svg)
 
 ## Installing
 
 Tilemaker is written in C++11. The chief dependencies are:
 
 * Google Protocol Buffers
-* Boost (latest version advised, 1.56 minimum: for boost::geometry, boost::program_options, boost::filesystem, boost::variant)
+* Boost (latest version advised, 1.66 minimum)
 * Lua (5.1 or later) or LuaJIT
 * sqlite3
 * shapelib
 
-rapidjson, sqlite_modern_cpp, kaguya and sparse-map are bundled in the include/ directory.
+rapidjson, sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
 
 You can then simply install with:
 
     make
     sudo make install
 	
-For detailed installation instructions for your operating system, see INSTALL.md.
+For detailed installation instructions for your operating system, see [INSTALL.md](docs/INSTALL.md).
 
 ## Out-of-the-box setup
 
@@ -45,70 +43,50 @@ Then, to serve your tiles using the demonstration server:
 
 You can now navigate to http://localhost:8080/ and see your map!
 
-Notice: you have to install ruby and the mandatory [gems](https://en.wikipedia.org/wiki/RubyGems) before being able to start the server:    
-
-1. `$ sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev`
-2. `$ sudo gem install sqlite3 cgi glug rack`
+(If you don't already have them, you'll need to install Ruby and the required gems to run the demonstration server. On Ubuntu, for example, `sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev` and then `sudo gem install sqlite3 cgi glug rack`.)
 
 ## Your own configuration
 
-Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers. It's up to you what OSM data goes into each layer. You configure this in Tilemaker with two files:
+Vector tiles contain (generally thematic) 'layers'. For example, your tiles might contain river, cycleway and railway layers. It's up to you what OSM data goes into each layer. You configure this in tilemaker with two files:
 
 * a JSON file listing each layer, and the zoom levels at which to apply it
 * a Lua program that looks at each node/way's tags, and places it into layers accordingly
 
-You can read more about these in [CONFIGURATION.md](CONFIGURATION.md).
-
-At its simplest, you can create a set of vector tiles from a .pbf with this command:
-
-    tilemaker liechtenstein-latest.osm.pbf --output=liechtenstein.mbtiles
-
-Output can be as individual files to a directory, or to an MBTiles file aka a SQLite database (with extension .mbtiles or .sqlite). Any existing MBTiles file will be deleted (if you don't want this, specify `--merge`).
+You can read more about these in [CONFIGURATION.md](docs/CONFIGURATION.md).
 
 The JSON configuration and Lua processing files are specified with `--config` and `--process` respectively. Defaults are config.json and process.lua in the current directory. If there is no config.json and process.lua in the current directory, and you do not specify `--config` and `--process`, an error will result.
 
-You can get a run-down of available options with
+Read about tilemaker's runtime options in [RUNNING.md](docs/RUNNING.md).
 
-    tilemaker --help
+You might also find these resources helpful:
 
-When running, you may see "couldn't find constituent way" messages. This happens when the .pbf file contains a multipolygon relation, but not all the relation's members are present. Typically, this will happen when a multipolygon crosses the border of the extract - for example, a county boundary formed by a river with islands. In this case, the river will simply not be written to the tiles.
-
+* Read our [introduction to vector tiles](docs/VECTOR_TILES.md).
+* See a workflow for "Generating self-hosted maps using tilemaker" at https://blog.kleunen.nl/blog/tilemaker-generate-map.
 * See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
-* See also another workflow for "Generating self-hosted maps using tilemaker" at https://blog.kleunen.nl/blog/tilemaker-generate-map.
 
-## Github Action
-You can integrate tilemaker as Github Action into your [Github Workflow](https://help.github.com/en/actions).  
-Here is the example:
-```yaml
-- uses: systemed/tilemaker@master
-  with:
-    # Required, same to --input
-    input: /path/to/osm.pbf
-    # Required, same to --output. Could be a directory or a .mbtiles files
-    output: /path/to/output
-    # Optional, same to --config
-    # If not being set, default to resources/config-openmaptiles.config
-    config: /path/to/config
-    # Optional, same to --process
-    # If not being set, default to resources/process-openmaptiles.lua
-    process: /path/to/lua
-    # Optional, other arguments
-    # If not being set, default to '--verbose'
-    extra: --threads 0
-```
+## Why tilemaker?
+
+You might use tilemaker if:
+
+* You want to create vector tiles yourself, without a third-party contract
+* You don't want to host/maintain a database
+* You want a flexible system capable of advanced OSM tag processing
+* You want to create ready-to-go tiles for offline use
+
+But don't use tilemaker if:
+
+* You want someone else to create and host the tiles for you
+* You want the entire planet or another very large area
+* You want continuous updates with the latest OSM data
 
 ## Contributing
 
-Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or http://irc.osm.org, channel #osm-dev) and http://help.osm.org.
+Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or https://irc.osm.org, channel #osm-dev) and https://help.osm.org.
 
 Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies or increasing the memory requirement.
 
-## Copyright and contact
+## Copyright
 
-Richard Fairhurst and contributors, 2015-2020. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29), sqlite_modern_cpp (Amin Roosta), and sparse-map (Tessil) libraries are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
+Tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
 
-If you'd like to sponsor development of Tilemaker, you can contact me at richard@systemeD.net.
-
-Thank you to the usual suspects for support and advice (you know who you are), to Mapbox for developing vector tiles, and to Dennis Luxen for the introduction to Lua and the impetus to learn C++.
-
-(Looking for a provider to host vector tiles? I recommend Thunderforest: http://thunderforest.com/)
+Copyright tilemaker contributors, 2015-2021. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.

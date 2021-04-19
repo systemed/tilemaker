@@ -2,32 +2,48 @@
 
 ## [unreleased]
 
+*The next release of tilemaker will be 2.0.*
+
 ### Added
+- Optionally use on-disk workspace with new --store/--init-store options (@kleunen)
+- Run-time --compact switch for consecutive IDs (@kleunen)
+- Static executable build for github CI (@kleunen)
+- Generate .pbf index file with --index switch (@kleunen)
+- Mac and Windows CI builds (@kleunen)
+- Write metadata.json for file output (@kleunen)
+- Merge tile contents when using --merge switch
 - Mapsplit (.msf) source data support
 - `obj:MinZoom(z)` to set the minimum zoom at which a feature will be rendered
+- `filter_below` to skip small areas at low zooms
+- Make layer name available in shapefile `attribute_function`
+- Set minimum zoom at which attributes are written
+- Set minimum zoom for shapefile processing
 - Set minimum zooms for placenames, waterways, buildings, and landcover in OpenMapTiles processing (@typebrook, @systemed)
 - Render roads under construction on OpenMapTiles processing (@meromisi, @Beck-berry)
 - Support any (post-5.1) version of Lua
 - Build with Github Action (@typebrook)
-- Use a shared key/value dictionary across OutputObjects to reduce memory usage
+- Use a shared key/value dictionary across OutputObjects to reduce memory usage (@kleunen)
 
 ### Changed
 - Remove Lua scale functions now that we return metres
-- Write OpenMapTiles placenames depending on zoom
-- Improve OpenMapTiles water body processing (@leonardehrenfried)
-- Improve OpenMapTiles POI handling
-- Improve OpenMapTiles mountain_peak handling (@typebrook)
-- Change OpenMapTiles minzoom to 4
+- Improve OpenMapTiles tag processing (@leonardehrenfried, @typebrook, @systemed)
+- Change OpenMapTiles minzoom to 0
+- Ignore Lake Saimaa and USFS National Forest complex polygons in OpenMapTiles script
+- Rewrite linestring/polygon combining, with zoom level control (`combine_below` and `combine_polygons_below`)
 - Use boost::geometry::intersection for clipping (faster than clipper)
+- Use boost::asio::thread_pool for tile generation (@kleunen)
 - Fallback to valid polygons if simplification produces invalid ones
 - Consistently use 1TBS in source
 - Only output validity errors in verbose mode
 - Various speedups (don't add objects to output list that fail minZoom, optimise clipping)
 
 ### Fixed
-- Fix waterway handling in OpenMapTiles processing (@leonardehrenfried)
 - Don't filter out ABCA areas (@rdsa)
 - Don't break with old versions of sqlite
+- Don't generate tiles outside bounding box (@kleunen)
+- Assign multipolygon inners to correct outers, including multiple way inners
+- Significant performance improvements (@kleunen)
+- Support nodes in LayerAsCentroid
 
 ## [1.6.0] - 2020-05-22
 
