@@ -324,7 +324,7 @@ int main(int argc, char* argv[]) {
    		osmStore.reset(new OSMStoreImpl<NodeStore>());
 	}
 
-	std::string indexfilename = inputFiles[0] + ".idx";
+	std::string indexfilename = (inputFiles.empty() ? "tilemaker" : inputFiles[0]) + ".idx";
 	if(index) { 
 		std::cout << "Writing index to file: " << indexfilename << std::endl;
 		osmStore->open(indexfilename, true);
