@@ -485,28 +485,28 @@ protected:
 				func();
 				return;
 			} catch(boost::interprocess::bad_alloc &e) {
-				std::cout << "Resizing osm store to size: " << (2 * mmap_file_size / 1000000) << "M                " << std::endl;
-
+				std::size_t increase = 1024000000; // 1GB
 				if(osm_store_filename.empty()) {
-      				shm_region.resize(shm_region.size() + mmap_file_size);
-	      			mmap_file = bi::managed_external_buffer(bi::open_only, shm_region.data(), shm_region.size());      
-    	  			mmap_file.grow(mmap_file_size);
+					shm_region.resize(shm_region.size() + increase);
+					mmap_file = boost::interprocess::managed_external_buffer(bi::open_only, shm_region.data(), shm_region.size());      
 				} else
 				{
+					increase = std::min<size_t>(mmap_file_size, 8192000000); // double until 8GB, then increase by 8GB each time
 					mmap_file =  boost::interprocess::managed_external_buffer();
                 	osm_store_region =  boost::interprocess::mapped_region();
                 	osm_store_mapping = boost::interprocess::file_mapping();
 
-  					boost::filesystem::resize_file(osm_store_filename.c_str(), 2 * mmap_file_size);
+					boost::filesystem::resize_file(osm_store_filename.c_str(), mmap_file_size + increase);
     
  		 			osm_store_mapping = boost::interprocess::file_mapping(osm_store_filename.c_str(), boost::interprocess::read_write);
 			     	osm_store_region = boost::interprocess::mapped_region(osm_store_mapping, boost::interprocess::read_write);
       
 				    mmap_file = boost::interprocess::managed_external_buffer(boost::interprocess::open_only, osm_store_region.get_address(), osm_store_region.get_size());      
-			      	mmap_file.grow(mmap_file_size);
 				}
 
-				mmap_file_size = mmap_file_size * 2; 
+				std::cout << "Resizing osm store to size: " << ((mmap_file_size+increase) / 1000000) << "M                " << std::endl;
+				mmap_file.grow(increase);
+				mmap_file_size += increase; 
 				reopen(); 
 			}
 		}
