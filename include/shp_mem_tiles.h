@@ -9,9 +9,6 @@ class ShpMemTiles : public TileDataSource
 public:
 	ShpMemTiles(OSMStore &osmStore, uint baseZoom);
 
-	// Find intersecting shapefile layer
-	std::vector<std::string> FindIntersecting(const std::string &layerName, Box &box) const;
-	bool Intersects(const std::string &layerName, Box &box) const;
 	void CreateNamedLayerIndex(const std::string &layerName);
 
 	// Used in shape file loading
@@ -24,11 +21,12 @@ public:
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		tileIndex[index].push_back(oo);
 	}
-private:
-	std::vector<uint> findIntersectingGeometries(const std::string &layerName, Box &box) const;
-	std::vector<uint> verifyIntersectResults(std::vector<IndexValue> &results, Point &p1, Point &p2) const;
-	std::vector<std::string> namesOfGeometries(std::vector<uint> &ids) const;
+	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, Box &box, 
+		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
+		std::function<bool(OutputObject &oo)> checkQuery) const;
+	std::vector<std::string> namesOfGeometries(const std::vector<uint> &ids) const;
 
+private:
 	/// Add an OutputObject to all tiles between min/max lat/lon
 	void addToTileIndexByBbox(OutputObjectRef &oo, 
 		double minLon, double minLatp, double maxLon, double maxLatp);

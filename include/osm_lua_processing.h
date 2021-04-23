@@ -90,7 +90,12 @@ public:
 	// Find intersecting shapefile layer
 	std::vector<std::string> FindIntersecting(const std::string &layerName);
 	bool Intersects(const std::string &layerName);
+	template <typename GeometryT> std::vector<uint> intersectsQuery(const std::string &layerName, GeometryT &geom) const;
 
+	std::vector<std::string> FindCovering(const std::string &layerName);
+	bool CoveredBy(const std::string &layerName);
+	template <typename GeometryT> std::vector<uint> coveredQuery(const std::string &layerName, GeometryT &geom) const;
+		
 	// Returns whether it is closed polygon
 	bool IsClosed() const;
 
@@ -160,6 +165,10 @@ private:
 	// Internal: set start/end co-ordinates
 	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
 		lon1=a; latp1=b; lon2=c; latp2=d;
+	}
+	
+	const inline Point getPoint() {
+		return Point(lon1/10000000.0,latp1/10000000.0);
 	}
 	
 	OSMStore const *indexStore;				// global OSM for reading input

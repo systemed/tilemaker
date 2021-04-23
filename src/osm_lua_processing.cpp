@@ -42,6 +42,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("Find", &OsmLuaProcessing::Find)
 		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
 		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
+		.addFunction("FindCovering", &OsmLuaProcessing::FindCovering)
+		.addFunction("CoveredBy", &OsmLuaProcessing::CoveredBy)
 		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
 		.addFunction("Area", &OsmLuaProcessing::Area)
 		.addFunction("Length", &OsmLuaProcessing::Length)
@@ -110,23 +112,65 @@ string OsmLuaProcessing::Find(const string& key) const {
 
 // ----	Spatial queries called from Lua
 
-// Find intersecting shapefile layer
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
-	// TODO: multipolygon relations not supported, will always return empty vector
-	if(isRelation) return vector<string>();
-	Point p1(lon1/10000000.0,latp1/10000000.0);
-	Point p2(lon2/10000000.0,latp2/10000000.0);
-	Box box = Box(p1,p2);
-	return shpMemTiles.FindIntersecting(layerName, box);
+	if (isRelation)     { return vector<string>(); } // TODO: multipolygon relations not supported, will always return false
+	else if (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, linestringCached())); }
+	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, polygonCached())); }
 }
 
 bool OsmLuaProcessing::Intersects(const string &layerName) {
-	// TODO: multipolygon relations not supported, will always return false
-	if(isRelation) return false;
-	Point p1(lon1/10000000.0,latp1/10000000.0);
-	Point p2(lon2/10000000.0,latp2/10000000.0);
-	Box box = Box(p1,p2);
-	return shpMemTiles.Intersects(layerName, box);
+	if (isRelation)     { return false; } // TODO: multipolygon relations not supported, will always return false
+	else if (!isWay   ) { return !intersectsQuery(layerName, getPoint()).empty(); }
+	else if (!isClosed) { return !intersectsQuery(layerName, linestringCached()).empty(); }
+	else                { return !intersectsQuery(layerName, polygonCached()).empty(); }
+}
+
+vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
+	if (isRelation)     { return vector<string>(); } // TODO: multipolygon relations not supported, will always return false
+	else if (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, linestringCached())); }
+	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, polygonCached())); }
+}
+
+bool OsmLuaProcessing::CoveredBy(const string &layerName) {
+	if (isRelation)     { return false; } // TODO: multipolygon relations not supported, will always return false
+	else if (!isWay   ) { return !coveredQuery(layerName, getPoint()).empty(); }
+	else if (!isClosed) { return !coveredQuery(layerName, linestringCached()).empty(); }
+	else                { return !coveredQuery(layerName, polygonCached()).empty(); }
+}
+
+template <typename GeometryT>
+std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			return geom::intersects(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle));
+		}
+	);
+	return ids;
+}
+
+template <typename GeometryT>
+std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			if (oo.geomType!=OutputGeometryType::POLYGON) return false; // can only be covered by a polygon!
+			return geom::covered_by(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle));
+		}
+	);
+	return ids;
 }
 
 // Returns whether it is closed polygon
