@@ -162,13 +162,8 @@ private:
 		multiPolygonInited = false;
 	}
 
-	// Internal: set start/end co-ordinates
-	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
-		lon1=a; latp1=b; lon2=c; latp2=d;
-	}
-	
 	const inline Point getPoint() {
-		return Point(lon1/10000000.0,latp1/10000000.0);
+		return Point(lon/10000000.0,latp/10000000.0);
 	}
 	
 	OSMStore const *indexStore;				// global OSM for reading input
@@ -185,7 +180,7 @@ private:
 	WayID newWayID = MAX_WAY_ID;			///< Decrementing new ID for relations
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
-	int32_t lon1,latp1,lon2,latp2;			///< Start/end co-ordinates of OSM object
+	int32_t lon,latp;						///< Node coordinates
 	OSMStore::handle_t nodeVecHandle;
 	OSMStore::handle_t relationHandle;
 

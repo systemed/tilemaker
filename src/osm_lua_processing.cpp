@@ -113,29 +113,25 @@ string OsmLuaProcessing::Find(const string& key) const {
 // ----	Spatial queries called from Lua
 
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
-	if (isRelation)     { return vector<string>(); } // TODO: multipolygon relations not supported, will always return false
-	else if (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, getPoint())); }
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, getPoint())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, linestringCached())); }
 	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, polygonCached())); }
 }
 
 bool OsmLuaProcessing::Intersects(const string &layerName) {
-	if (isRelation)     { return false; } // TODO: multipolygon relations not supported, will always return false
-	else if (!isWay   ) { return !intersectsQuery(layerName, getPoint()).empty(); }
+	if      (!isWay   ) { return !intersectsQuery(layerName, getPoint()).empty(); }
 	else if (!isClosed) { return !intersectsQuery(layerName, linestringCached()).empty(); }
 	else                { return !intersectsQuery(layerName, polygonCached()).empty(); }
 }
 
 vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
-	if (isRelation)     { return vector<string>(); } // TODO: multipolygon relations not supported, will always return false
-	else if (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, getPoint())); }
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, getPoint())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, linestringCached())); }
 	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, polygonCached())); }
 }
 
 bool OsmLuaProcessing::CoveredBy(const string &layerName) {
-	if (isRelation)     { return false; } // TODO: multipolygon relations not supported, will always return false
-	else if (!isWay   ) { return !coveredQuery(layerName, getPoint()).empty(); }
+	if      (!isWay   ) { return !coveredQuery(layerName, getPoint()).empty(); }
 	else if (!isClosed) { return !coveredQuery(layerName, linestringCached()).empty(); }
 	else                { return !coveredQuery(layerName, polygonCached()).empty(); }
 }
@@ -428,9 +424,8 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
-
-	setLocation(node.lon, node.latp, node.lon, node.latp);
-
+	lon = node.lon;
+	latp= node.latp;
 	currentTags = tags;
 
 	//Start Lua processing for node
@@ -462,8 +457,6 @@ void OsmLuaProcessing::setWay(WayID wayId, OSMStore::handle_t handle, const tag_
 	try {
 		auto const &nodeVecPtr = &indexStore->retrieve<WayStore::nodeid_vector_t>(nodeVecHandle);
 		isClosed = nodeVecPtr->front()==nodeVecPtr->back();
-		setLocation(indexStore->nodes_at(nodeVecPtr->front()).lon, indexStore->nodes_at(nodeVecPtr->front()).latp,
-				indexStore->nodes_at(nodeVecPtr->back()).lon, indexStore->nodes_at(nodeVecPtr->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -544,9 +537,9 @@ void OsmLuaProcessing::setRelation(int64_t relationId, OSMStore::handle_t relati
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
+	isClosed = true; // TODO: change this when we support route relations
 
 	this->relationHandle = relationHandle;
-	//setLocation(...); TODO
 
 	currentTags = tags;
 	/* currentTags.clear();
