@@ -107,6 +107,10 @@ public:
 
 	// Returns length
 	double Length();
+	
+	// Return centroid lat/lon
+	std::vector<double> Centroid();
+	Point calculateCentroid();
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 
