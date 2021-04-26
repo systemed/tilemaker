@@ -48,6 +48,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("Area", &OsmLuaProcessing::Area)
 		.addFunction("AreaIntersecting", &OsmLuaProcessing::AreaIntersecting)
 		.addFunction("Length", &OsmLuaProcessing::Length)
+		.addFunction("Centroid", &OsmLuaProcessing::Centroid)
 		.addFunction("Layer", &OsmLuaProcessing::Layer)
 		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
 		.addOverloadedFunctions("Attribute", &OsmLuaProcessing::Attribute, &OsmLuaProcessing::AttributeWithMinZoom)
@@ -371,25 +372,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-    Point centroid, geomp;
+    Point geomp;
 	try {
-
-		if (isRelation) {
-			Geometry tmp;
-			auto const &relation = indexStore->retrieve<RelationStore::relation_entry_t>(relationHandle);
-			tmp = indexStore->wayListMultiPolygon(relation.first.cbegin(), relation.first.cend(), relation.second.cbegin(), relation.second.cend());
-			geom::centroid(tmp, centroid);
-			geomp = Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
-		} else if (isWay) {
-			Polygon p;
-			geom::assign_points(p, linestringCached());
-			geom::centroid(p, centroid);
-			geomp = Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
-		} else {
-			LatpLon pt = indexStore->nodes_at(osmID);
-			geomp = Point(pt.lon, pt.latp);
-		}
-
+		geomp = calculateCentroid();
 		if(geom::is_empty(geomp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
@@ -411,6 +396,31 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 					osmID, osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
     outputs.push_back(std::make_pair(oo, AttributeStore::key_value_set_entry_t()));
 }
+
+Point OsmLuaProcessing::calculateCentroid() {
+	Point centroid;
+	if (isRelation) {
+		Geometry tmp;
+		auto const &relation = indexStore->retrieve<RelationStore::relation_entry_t>(relationHandle);
+		tmp = indexStore->wayListMultiPolygon(relation.first.cbegin(), relation.first.cend(), relation.second.cbegin(), relation.second.cend());
+		geom::centroid(tmp, centroid);
+		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
+	} else if (isWay) {
+		Polygon p;
+		geom::assign_points(p, linestringCached());
+		geom::centroid(p, centroid);
+		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
+	} else {
+		LatpLon pt = indexStore->nodes_at(osmID);
+		return Point(pt.lon, pt.latp);
+	}
+}
+
+std::vector<double> OsmLuaProcessing::Centroid() {
+	Point c = calculateCentroid();
+	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
+}
+
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }

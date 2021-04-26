@@ -129,6 +129,7 @@ To do that, you use these methods:
 * `node:Id()` or `way:Id()`: get the OSM ID of the current object.
 * `node:MinZoom(zoom)` or `way:MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
 * `way:Length()` and `way:Area()`: return the length (metres)/area (square metres) of the current object. Requires recent Boost.
+* `way:Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
 
 The simplest possible function, to include roads/paths and nothing else, might look like this:
 
