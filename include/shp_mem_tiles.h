@@ -21,7 +21,7 @@ public:
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		tileIndex[index].push_back(oo);
 	}
-	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, Box &box, 
+	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
 		std::function<bool(OutputObject &oo)> checkQuery) const;
 	std::vector<std::string> namesOfGeometries(const std::vector<uint> &ids) const;

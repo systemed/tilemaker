@@ -92,11 +92,11 @@ public:
 	double AreaIntersecting(const std::string &layerName);
 	bool Intersects(const std::string &layerName);
 	template <typename GeometryT> double intersectsArea(const std::string &layerName, GeometryT &geom) const;
-	template <typename GeometryT> std::vector<uint> intersectsQuery(const std::string &layerName, GeometryT &geom) const;
+	template <typename GeometryT> std::vector<uint> intersectsQuery(const std::string &layerName, bool once, GeometryT &geom) const;
 
 	std::vector<std::string> FindCovering(const std::string &layerName);
 	bool CoveredBy(const std::string &layerName);
-	template <typename GeometryT> std::vector<uint> coveredQuery(const std::string &layerName, GeometryT &geom) const;
+	template <typename GeometryT> std::vector<uint> coveredQuery(const std::string &layerName, bool once, GeometryT &geom) const;
 		
 	// Returns whether it is closed polygon
 	bool IsClosed() const;

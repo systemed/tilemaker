@@ -114,31 +114,31 @@ string OsmLuaProcessing::Find(const string& key) const {
 // ----	Spatial queries called from Lua
 
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
-	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, getPoint())); }
-	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, linestringCached())); }
-	else if (isRelation){ return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, multiPolygonCached())); }
-	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, polygonCached())); }
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, multiPolygonCached())); }
+	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, polygonCached())); }
 }
 
 bool OsmLuaProcessing::Intersects(const string &layerName) {
-	if      (!isWay   ) { return !intersectsQuery(layerName, getPoint()).empty(); }
-	else if (!isClosed) { return !intersectsQuery(layerName, linestringCached()).empty(); }
-	else if (isRelation){ return !intersectsQuery(layerName, multiPolygonCached()).empty(); }
-	else                { return !intersectsQuery(layerName, polygonCached()).empty(); }
+	if      (!isWay   ) { return !intersectsQuery(layerName, true, getPoint()).empty(); }
+	else if (!isClosed) { return !intersectsQuery(layerName, true, linestringCached()).empty(); }
+	else if (isRelation){ return !intersectsQuery(layerName, true, multiPolygonCached()).empty(); }
+	else                { return !intersectsQuery(layerName, true, polygonCached()).empty(); }
 }
 
 vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
-	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, getPoint())); }
-	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, linestringCached())); }
-	else if (isRelation){ return shpMemTiles.namesOfGeometries(coveredQuery(layerName, multiPolygonCached())); }
-	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, polygonCached())); }
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, multiPolygonCached())); }
+	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, polygonCached())); }
 }
 
 bool OsmLuaProcessing::CoveredBy(const string &layerName) {
-	if      (!isWay   ) { return !coveredQuery(layerName, getPoint()).empty(); }
-	else if (!isClosed) { return !coveredQuery(layerName, linestringCached()).empty(); }
-	else if (isRelation){ return !coveredQuery(layerName, multiPolygonCached()).empty(); }
-	else                { return !coveredQuery(layerName, polygonCached()).empty(); }
+	if      (!isWay   ) { return !coveredQuery(layerName, true, getPoint()).empty(); }
+	else if (!isClosed) { return !coveredQuery(layerName, true, linestringCached()).empty(); }
+	else if (isRelation){ return !coveredQuery(layerName, true, multiPolygonCached()).empty(); }
+	else                { return !coveredQuery(layerName, true, polygonCached()).empty(); }
 }
 
 double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
@@ -149,9 +149,9 @@ double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
 
 
 template <typename GeometryT>
-std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, GeometryT &geom) const {
+std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, bool once, GeometryT &geom) const {
 	Box box; geom::envelope(geom, box);
-	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, once, box,
 		[&](const RTree &rtree) { // indexQuery
 			vector<IndexValue> results;
 			rtree.query(geom::index::intersects(box), back_inserter(results));
@@ -168,7 +168,7 @@ template <typename GeometryT>
 double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom) const {
 	Box box; geom::envelope(geom, box);
 	double area = 0.0;
-	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, false, box,
 		[&](const RTree &rtree) { // indexQuery
 			vector<IndexValue> results;
 			rtree.query(geom::index::intersects(box), back_inserter(results));
@@ -185,9 +185,9 @@ double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom
 }
 
 template <typename GeometryT>
-std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, GeometryT &geom) const {
+std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool once, GeometryT &geom) const {
 	Box box; geom::envelope(geom, box);
-	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, once, box,
 		[&](const RTree &rtree) { // indexQuery
 			vector<IndexValue> results;
 			rtree.query(geom::index::intersects(box), back_inserter(results));

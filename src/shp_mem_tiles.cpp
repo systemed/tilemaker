@@ -13,7 +13,7 @@ ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
 // - bounding box to match against
 // - indexQuery(rtree, results) lambda, implements: rtree.query(geom::index::covered_by(box), back_inserter(results))
 // - checkQuery(osmstore, id) lambda, implements:   return geom::covered_by(osmStore.retrieve(id), geom)
-vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, Box &box, 
+vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool once, Box &box, 
 	function<vector<IndexValue>(const RTree &rtree)> indexQuery, 
 	function<bool(OutputObject &oo)> checkQuery) const {
 	
@@ -31,7 +31,7 @@ vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, Box &
 	vector<uint> ids;
 	for (auto it: results) {
 		uint id = it.second;
-		if (checkQuery(*cachedGeometries.at(id))) { ids.push_back(id); }
+		if (checkQuery(*cachedGeometries.at(id))) { ids.push_back(id); if (once) break; }
 	}
 	return ids;
 }
