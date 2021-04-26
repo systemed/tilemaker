@@ -133,24 +133,6 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	throw std::runtime_error("Geometry type is not point");			
 }
 
-bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p)
-{
-	switch(oo.geomType) {
-		case OutputGeometryType::POINT:
-			return boost::geometry::intersects(osmStore.retrieve<mmap::point_t>(oo.handle), p);
-
-		case OutputGeometryType::LINESTRING:
-			return boost::geometry::intersects(osmStore.retrieve<mmap::linestring_t>(oo.handle), p);
-
-
-		case OutputGeometryType::POLYGON:
-			return boost::geometry::intersects(osmStore.retrieve<mmap::multi_polygon_t>(oo.handle), p);
-
-		default:
-			throw std::runtime_error("Invalid output geometry");
-	}
-}
-
 // Find a value in the value dictionary
 // (we can't easily use find() because of the different value-type encoding - 
 //	should be possible to improve this though)

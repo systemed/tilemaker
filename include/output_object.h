@@ -125,9 +125,6 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 //\brief Build a node geometry
 LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox);
 
-///\brief Check if the object intersects with the given point
-bool intersects(OSMStore &osmStore, OutputObject const &oo, Point const &p);
-
 // Comparison functions
 
 bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
