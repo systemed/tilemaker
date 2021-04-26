@@ -8,7 +8,7 @@ Vector tiles are used by many in-browser/app renderers, and can also power serve
 
 ## Installing
 
-Tilemaker is written in C++11. The chief dependencies are:
+Tilemaker is written in C++14. The chief dependencies are:
 
 * Google Protocol Buffers
 * Boost (latest version advised, 1.66 minimum)
