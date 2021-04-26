@@ -89,13 +89,21 @@ public:
 
 	// Find intersecting shapefile layer
 	std::vector<std::string> FindIntersecting(const std::string &layerName);
+	double AreaIntersecting(const std::string &layerName);
 	bool Intersects(const std::string &layerName);
+	template <typename GeometryT> double intersectsArea(const std::string &layerName, GeometryT &geom) const;
+	template <typename GeometryT> std::vector<uint> intersectsQuery(const std::string &layerName, bool once, GeometryT &geom) const;
 
+	std::vector<std::string> FindCovering(const std::string &layerName);
+	bool CoveredBy(const std::string &layerName);
+	template <typename GeometryT> std::vector<uint> coveredQuery(const std::string &layerName, bool once, GeometryT &geom) const;
+		
 	// Returns whether it is closed polygon
 	bool IsClosed() const;
 
 	// Returns area
 	double Area();
+	double multiPolygonArea(const MultiPolygon &mp) const;
 
 	// Returns length
 	double Length();
@@ -157,9 +165,8 @@ private:
 		multiPolygonInited = false;
 	}
 
-	// Internal: set start/end co-ordinates
-	inline void setLocation(int32_t a, int32_t b, int32_t c, int32_t d) {
-		lon1=a; latp1=b; lon2=c; latp2=d;
+	const inline Point getPoint() {
+		return Point(lon/10000000.0,latp/10000000.0);
 	}
 	
 	OSMStore const *indexStore;				// global OSM for reading input
@@ -176,7 +183,7 @@ private:
 	WayID newWayID = MAX_WAY_ID;			///< Decrementing new ID for relations
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
-	int32_t lon1,latp1,lon2,latp2;			///< Start/end co-ordinates of OSM object
+	int32_t lon,latp;						///< Node coordinates
 	OSMStore::handle_t nodeVecHandle;
 	OSMStore::handle_t relationHandle;
 

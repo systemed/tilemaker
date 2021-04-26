@@ -7,42 +7,36 @@ ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
 	: TileDataSource(baseZoom), osmStore(osmStore)
 { }
 
-// Find intersecting shapefile layer
-// TODO: multipolygon relations not supported, will always return false
-vector<string> ShpMemTiles::FindIntersecting(const string &layerName, Box &box) const {
-	vector<uint> ids = findIntersectingGeometries(layerName, box);
-	return namesOfGeometries(ids);
-}
-
-bool ShpMemTiles::Intersects(const string &layerName, Box &box) const {
-	return !findIntersectingGeometries(layerName, box).empty();
-}
-
-vector<uint> ShpMemTiles::findIntersectingGeometries(const string &layerName, Box &box) const {
-	vector<IndexValue> results;
-	vector<uint> ids;
-
-	auto f = indices.find(layerName);
+// Look for shapefile objects that fulfil a spatial query (e.g. intersects)
+// Parameters:
+// - shapefile layer name to search
+// - bounding box to match against
+// - indexQuery(rtree, results) lambda, implements: rtree.query(geom::index::covered_by(box), back_inserter(results))
+// - checkQuery(osmstore, id) lambda, implements:   return geom::covered_by(osmStore.retrieve(id), geom)
+vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool once, Box &box, 
+	function<vector<IndexValue>(const RTree &rtree)> indexQuery, 
+	function<bool(OutputObject &oo)> checkQuery) const {
+	
+	// Find the layer
+	auto f = indices.find(layerName); // f is an RTree
 	if (f==indices.end()) {
 		cerr << "Couldn't find indexed layer " << layerName << endl;
 		return vector<uint>();	// empty, relations not supported
 	}
-
-	f->second.query(geom::index::intersects(box), back_inserter(results));
-	return verifyIntersectResults(results,box.min_corner(),box.max_corner());
-}
-
-vector<uint> ShpMemTiles::verifyIntersectResults(vector<IndexValue> &results, Point &p1, Point &p2) const {
+	
+	// Run the index query
+	vector<IndexValue> results = indexQuery(f->second);
+	
+	// Run the check query
 	vector<uint> ids;
-	for (auto it : results) {
-		uint id=it.second;
-		if      (intersects(osmStore, *cachedGeometries.at(id), p1)) { ids.push_back(id); }
-		else if (intersects(osmStore, *cachedGeometries.at(id), p2)) { ids.push_back(id); }
+	for (auto it: results) {
+		uint id = it.second;
+		if (checkQuery(*cachedGeometries.at(id))) { ids.push_back(id); if (once) break; }
 	}
 	return ids;
 }
 
-vector<string> ShpMemTiles::namesOfGeometries(vector<uint> &ids) const {
+vector<string> ShpMemTiles::namesOfGeometries(const vector<uint> &ids) const {
 	vector<string> names;
 	for (uint i=0; i<ids.size(); i++) {
 		if (cachedGeometryNames.find(ids[i])!=cachedGeometryNames.end()) {

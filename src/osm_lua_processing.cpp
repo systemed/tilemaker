@@ -42,8 +42,11 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("Find", &OsmLuaProcessing::Find)
 		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
 		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
+		.addFunction("FindCovering", &OsmLuaProcessing::FindCovering)
+		.addFunction("CoveredBy", &OsmLuaProcessing::CoveredBy)
 		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
 		.addFunction("Area", &OsmLuaProcessing::Area)
+		.addFunction("AreaIntersecting", &OsmLuaProcessing::AreaIntersecting)
 		.addFunction("Length", &OsmLuaProcessing::Length)
 		.addFunction("Layer", &OsmLuaProcessing::Layer)
 		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
@@ -110,23 +113,92 @@ string OsmLuaProcessing::Find(const string& key) const {
 
 // ----	Spatial queries called from Lua
 
-// Find intersecting shapefile layer
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
-	// TODO: multipolygon relations not supported, will always return empty vector
-	if(isRelation) return vector<string>();
-	Point p1(lon1/10000000.0,latp1/10000000.0);
-	Point p2(lon2/10000000.0,latp2/10000000.0);
-	Box box = Box(p1,p2);
-	return shpMemTiles.FindIntersecting(layerName, box);
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, multiPolygonCached())); }
+	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, polygonCached())); }
 }
 
 bool OsmLuaProcessing::Intersects(const string &layerName) {
-	// TODO: multipolygon relations not supported, will always return false
-	if(isRelation) return false;
-	Point p1(lon1/10000000.0,latp1/10000000.0);
-	Point p2(lon2/10000000.0,latp2/10000000.0);
-	Box box = Box(p1,p2);
-	return shpMemTiles.Intersects(layerName, box);
+	if      (!isWay   ) { return !intersectsQuery(layerName, true, getPoint()).empty(); }
+	else if (!isClosed) { return !intersectsQuery(layerName, true, linestringCached()).empty(); }
+	else if (isRelation){ return !intersectsQuery(layerName, true, multiPolygonCached()).empty(); }
+	else                { return !intersectsQuery(layerName, true, polygonCached()).empty(); }
+}
+
+vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
+	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, getPoint())); }
+	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, multiPolygonCached())); }
+	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, polygonCached())); }
+}
+
+bool OsmLuaProcessing::CoveredBy(const string &layerName) {
+	if      (!isWay   ) { return !coveredQuery(layerName, true, getPoint()).empty(); }
+	else if (!isClosed) { return !coveredQuery(layerName, true, linestringCached()).empty(); }
+	else if (isRelation){ return !coveredQuery(layerName, true, multiPolygonCached()).empty(); }
+	else                { return !coveredQuery(layerName, true, polygonCached()).empty(); }
+}
+
+double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
+	if      (!isWay || !isClosed) { return 0.0; }
+	else if (isRelation){ return intersectsArea(layerName, multiPolygonCached()); }
+	else                { return intersectsArea(layerName, polygonCached()); }
+}
+
+
+template <typename GeometryT>
+std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, bool once, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, once, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			return geom::intersects(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle));
+		}
+	);
+	return ids;
+}
+
+template <typename GeometryT>
+double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	double area = 0.0;
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, false, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			MultiPolygon tmp;
+			geom::intersection(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle), tmp);
+			area += multiPolygonArea(tmp);
+			return false;
+		}
+	);
+	return area;
+}
+
+template <typename GeometryT>
+std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool once, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, once, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			if (oo.geomType!=OutputGeometryType::POLYGON) return false; // can only be covered by a polygon!
+			return geom::covered_by(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle));
+		}
+	);
+	return ids;
 }
 
 // Returns whether it is closed polygon
@@ -148,16 +220,7 @@ double OsmLuaProcessing::Area() {
 	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
 	if (isRelation) {
 		// Boost won't calculate area of a multipolygon, so we just total up the member polygons
-		double totalArea = 0;
-		MultiPolygon mp = multiPolygonCached();
-		for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
-			geom::model::polygon<DegPoint> p;
-			geom::assign(p,*it);
-			geom::for_each_point(p, reverse_project);
-			double area = geom::area(p, sph_strategy);
-			totalArea += area;
-		}
-		return totalArea;
+		return multiPolygonArea(multiPolygonCached());
 	} else if (isWay) {
 		// Reproject back into lat/lon and then run Boo
 		geom::model::polygon<DegPoint> p;
@@ -174,6 +237,18 @@ double OsmLuaProcessing::Area() {
 #endif
 
 	return 0;
+}
+
+double OsmLuaProcessing::multiPolygonArea(const MultiPolygon &mp) const {
+	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
+	double totalArea = 0;
+	for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+		geom::model::polygon<DegPoint> p;
+		geom::assign(p,*it);
+		geom::for_each_point(p, reverse_project);
+		totalArea += geom::area(p, sph_strategy);
+	}
+	return totalArea;
 }
 
 // Returns length
@@ -384,9 +459,8 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
-
-	setLocation(node.lon, node.latp, node.lon, node.latp);
-
+	lon = node.lon;
+	latp= node.latp;
 	currentTags = tags;
 
 	//Start Lua processing for node
@@ -418,8 +492,6 @@ void OsmLuaProcessing::setWay(WayID wayId, OSMStore::handle_t handle, const tag_
 	try {
 		auto const &nodeVecPtr = &indexStore->retrieve<WayStore::nodeid_vector_t>(nodeVecHandle);
 		isClosed = nodeVecPtr->front()==nodeVecPtr->back();
-		setLocation(indexStore->nodes_at(nodeVecPtr->front()).lon, indexStore->nodes_at(nodeVecPtr->front()).latp,
-				indexStore->nodes_at(nodeVecPtr->back()).lon, indexStore->nodes_at(nodeVecPtr->back()).latp);
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -500,9 +572,9 @@ void OsmLuaProcessing::setRelation(int64_t relationId, OSMStore::handle_t relati
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
+	isClosed = true; // TODO: change this when we support route relations
 
 	this->relationHandle = relationHandle;
-	//setLocation(...); TODO
 
 	currentTags = tags;
 	/* currentTags.clear();
