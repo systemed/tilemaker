@@ -197,7 +197,6 @@ Or you can find out what country(/ies) the node is within using `FindIntersectin
 
 To enable these functions, set `index` to true in your shapefile layer definition. `index_column` is not needed for `Intersects` but required for `FindIntersecting`.
 
-Note these significant provisos:
+`CoveredBy` and `FindCovering` work similarly but check if the object is covered by a shapefile layer object.
 
-* Way queries are performed on the start and end points of ways, not the full way geometry. So if your way starts and ends outside a polygon, `Intersects` will return false, even if the midpoints are within the polygon. This may be changed in a future version.
-* Spatial queries do not work where the OSM object is a multipolygon, and will return false/empty. This may be changed in a future version.
+`AreaIntersecting` returns the area of the current way's intersection with the shapefile layer. You can use this to find whether a water body is already represented in a shapefile ocean layer.

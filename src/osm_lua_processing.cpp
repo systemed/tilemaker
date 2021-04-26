@@ -46,6 +46,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("CoveredBy", &OsmLuaProcessing::CoveredBy)
 		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
 		.addFunction("Area", &OsmLuaProcessing::Area)
+		.addFunction("AreaIntersecting", &OsmLuaProcessing::AreaIntersecting)
 		.addFunction("Length", &OsmLuaProcessing::Length)
 		.addFunction("Layer", &OsmLuaProcessing::Layer)
 		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
@@ -115,26 +116,37 @@ string OsmLuaProcessing::Find(const string& key) const {
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
 	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, getPoint())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, multiPolygonCached())); }
 	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, polygonCached())); }
 }
 
 bool OsmLuaProcessing::Intersects(const string &layerName) {
 	if      (!isWay   ) { return !intersectsQuery(layerName, getPoint()).empty(); }
 	else if (!isClosed) { return !intersectsQuery(layerName, linestringCached()).empty(); }
+	else if (isRelation){ return !intersectsQuery(layerName, multiPolygonCached()).empty(); }
 	else                { return !intersectsQuery(layerName, polygonCached()).empty(); }
 }
 
 vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
 	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, getPoint())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, linestringCached())); }
+	else if (isRelation){ return shpMemTiles.namesOfGeometries(coveredQuery(layerName, multiPolygonCached())); }
 	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, polygonCached())); }
 }
 
 bool OsmLuaProcessing::CoveredBy(const string &layerName) {
 	if      (!isWay   ) { return !coveredQuery(layerName, getPoint()).empty(); }
 	else if (!isClosed) { return !coveredQuery(layerName, linestringCached()).empty(); }
+	else if (isRelation){ return !coveredQuery(layerName, multiPolygonCached()).empty(); }
 	else                { return !coveredQuery(layerName, polygonCached()).empty(); }
 }
+
+double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
+	if      (!isWay || !isClosed) { return 0.0; }
+	else if (isRelation){ return intersectsArea(layerName, multiPolygonCached()); }
+	else                { return intersectsArea(layerName, polygonCached()); }
+}
+
 
 template <typename GeometryT>
 std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, GeometryT &geom) const {
@@ -150,6 +162,26 @@ std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, Geo
 		}
 	);
 	return ids;
+}
+
+template <typename GeometryT>
+double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom) const {
+	Box box; geom::envelope(geom, box);
+	double area = 0.0;
+	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, box,
+		[&](const RTree &rtree) { // indexQuery
+			vector<IndexValue> results;
+			rtree.query(geom::index::intersects(box), back_inserter(results));
+			return results;
+		},
+		[&](OutputObject &oo) { // checkQuery
+			MultiPolygon tmp;
+			geom::intersection(geom, osmStore.retrieve<mmap::multi_polygon_t>(oo.handle), tmp);
+			area += multiPolygonArea(tmp);
+			return false;
+		}
+	);
+	return area;
 }
 
 template <typename GeometryT>
@@ -188,16 +220,7 @@ double OsmLuaProcessing::Area() {
 	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
 	if (isRelation) {
 		// Boost won't calculate area of a multipolygon, so we just total up the member polygons
-		double totalArea = 0;
-		MultiPolygon mp = multiPolygonCached();
-		for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
-			geom::model::polygon<DegPoint> p;
-			geom::assign(p,*it);
-			geom::for_each_point(p, reverse_project);
-			double area = geom::area(p, sph_strategy);
-			totalArea += area;
-		}
-		return totalArea;
+		return multiPolygonArea(multiPolygonCached());
 	} else if (isWay) {
 		// Reproject back into lat/lon and then run Boo
 		geom::model::polygon<DegPoint> p;
@@ -214,6 +237,18 @@ double OsmLuaProcessing::Area() {
 #endif
 
 	return 0;
+}
+
+double OsmLuaProcessing::multiPolygonArea(const MultiPolygon &mp) const {
+	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
+	double totalArea = 0;
+	for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+		geom::model::polygon<DegPoint> p;
+		geom::assign(p,*it);
+		geom::for_each_point(p, reverse_project);
+		totalArea += geom::area(p, sph_strategy);
+	}
+	return totalArea;
 }
 
 // Returns length

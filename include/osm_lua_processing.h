@@ -89,7 +89,9 @@ public:
 
 	// Find intersecting shapefile layer
 	std::vector<std::string> FindIntersecting(const std::string &layerName);
+	double AreaIntersecting(const std::string &layerName);
 	bool Intersects(const std::string &layerName);
+	template <typename GeometryT> double intersectsArea(const std::string &layerName, GeometryT &geom) const;
 	template <typename GeometryT> std::vector<uint> intersectsQuery(const std::string &layerName, GeometryT &geom) const;
 
 	std::vector<std::string> FindCovering(const std::string &layerName);
@@ -101,6 +103,7 @@ public:
 
 	// Returns area
 	double Area();
+	double multiPolygonArea(const MultiPolygon &mp) const;
 
 	// Returns length
 	double Length();

@@ -26,6 +26,24 @@ public:
 		std::function<bool(OutputObject &oo)> checkQuery) const;
 	std::vector<std::string> namesOfGeometries(const std::vector<uint> &ids) const;
 
+	template <typename GeometryT>
+	double AreaIntersecting(const std::string &layerName, GeometryT &g) const {
+		auto f = indices.find(layerName);
+		if (f==indices.end()) { std::cerr << "Couldn't find indexed layer " << layerName << std::endl; return false;  }
+		Box box; geom::envelope(g, box);
+		std::vector <IndexValue> results;
+		f->second.query(geom::index::intersects(box), back_inserter(results));
+		MultiPolygon mp, tmp;
+		for (auto it : results) {
+			OutputObjectRef oo = cachedGeometries.at(it.second);
+			if (oo->geomType!=OutputGeometryType::POLYGON) continue;
+			geom::union_(mp, osmStore.retrieve<mmap::multi_polygon_t>(oo->handle), tmp);
+			geom::assign(mp, tmp);
+		}
+		geom::correct(mp);
+		return geom::covered_by(g, mp);
+	}
+
 private:
 	/// Add an OutputObject to all tiles between min/max lat/lon
 	void addToTileIndexByBbox(OutputObjectRef &oo, 

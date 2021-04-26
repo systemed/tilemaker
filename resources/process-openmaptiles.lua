@@ -396,6 +396,7 @@ function way_function(way)
 		if way:Find("covered")=="yes" or not isClosed then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
 		if class=="lake" and way:Find("wikidata")=="Q192770" then return end
+		if class=="ocean" and isClosed and (way:AreaIntersecting("ocean")/way:Area() > 0.98) then return end
 		way:Layer("water",true)
 		SetMinZoomByArea(way)
 		way:Attribute("class",class)
