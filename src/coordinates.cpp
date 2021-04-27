@@ -86,8 +86,8 @@ TileBbox::TileBbox(TileCoordinates i, uint z) {
 }
 
 pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
-	int x = (lon -   minLon) / xscale;
-	int y = (maxLatp - latp) / yscale;
+	int x = round( (lon -   minLon) / xscale );
+	int y = round( (maxLatp - latp) / yscale );
 	return pair<int,int>(x,y);
 }
 
