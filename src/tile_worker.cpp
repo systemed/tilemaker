@@ -87,6 +87,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 			g = move(output);
 		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << oo->objectID <<"," << err.what() << endl;
 		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << oo->objectID << endl;
+		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << oo->objectID << endl;
 		}
 	}
 }
