@@ -189,6 +189,7 @@ waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 
 
 function way_function(way)
+	local route    = way:Find("route")
 	local highway  = way:Find("highway")
 	local waterway = way:Find("waterway")
 	local water    = way:Find("water")
@@ -328,6 +329,19 @@ function way_function(way)
 		SetNameAttributes(way)
 		way:MinZoom(14)
 		way:Attribute("class", "rail")
+	end
+
+	-- 'Ferry'
+	if route=="ferry" then
+		way:Layer("transportation", false)
+		way:Attribute("class", "ferry")
+		way:MinZoom(9)
+		SetBrunnelAttributes(way)
+
+		way:Layer("transportation_name", false)
+		SetNameAttributes(way)
+		way:MinZoom(12)
+		way:Attribute("class", "ferry")
 	end
 
 	-- 'Aeroway'
