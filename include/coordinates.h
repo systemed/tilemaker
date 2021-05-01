@@ -185,6 +185,7 @@ public:
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 	Box getTileBox() const;
+	Box getExtendBox() const;
 };
 
 #endif //_COORDINATES_H

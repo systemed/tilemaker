@@ -80,29 +80,86 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 		case OutputGeometryType::LINESTRING:
 		{
+			auto const &ls = osmStore.retrieve<mmap::linestring_t>(oo.handle);
+
 			MultiLinestring out;
-			geom::intersection(osmStore.retrieve<mmap::linestring_t>(oo.handle), bbox.clippingBox, out);
-			return out;
+			if(ls.empty())
+				return out;
+
+			Linestring current_ls;
+			geom::append(current_ls, ls[0]);
+
+			for(size_t i = 1; i < ls.size(); ++i) {
+				if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+					if(current_ls.size() > 1)
+						out.push_back(std::move(current_ls));
+					current_ls.clear();
+				}
+				geom::append(current_ls, ls[i]);
+			}
+
+			if(current_ls.size() > 1)
+				out.push_back(std::move(current_ls));
+
+			MultiLinestring result;
+			geom::intersection(out, bbox.getExtendBox(), result);
+			return result;
 		}
 
 		case OutputGeometryType::POLYGON:
 		{
-			auto const &mp = osmStore.retrieve<mmap::multi_polygon_t>(oo.handle);
+			auto const &input = osmStore.retrieve<mmap::multi_polygon_t>(oo.handle);
 
-			Polygon clippingPolygon;
+			Box box = bbox.clippingBox;
+			
+			for(auto const &p: input) {
+				for(auto const &inner: p.inners) {
+					for(std::size_t i = 0; i < inner.size() - 1; ++i) 
+					{
+						Point p1 = inner[i];
+						Point p2 = inner[i + 1];
 
-			geom::convert(bbox.clippingBox, clippingPolygon);
-			if (!geom::intersects(mp, clippingPolygon)) { return MultiPolygon(); }
-			if (geom::within(mp, clippingPolygon)) { 
-				MultiPolygon out;
-				boost::geometry::assign(out, mp);
-				return out; 
+						if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
+							box.min_corner() = Point(	
+								std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
+								std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+							box.max_corner() = Point(	
+								std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
+								std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+						}
+					}
+				}
+
+				for(std::size_t i = 0; i < p.outer.size() - 1; ++i) {
+					Point p1 = p.outer[i];
+					Point p2 = p.outer[i + 1];
+
+					if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
+						box.min_corner() = Point(	
+							std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
+							std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+						box.max_corner() = Point(	
+							std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
+							std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+					}
+				}
 			}
 
+			Box extBox = bbox.getExtendBox();
+			box.min_corner() = Point(	
+				std::max(box.min_corner().x(), extBox.min_corner().x()), 
+				std::max(box.min_corner().y(), extBox.min_corner().y()));
+			box.max_corner() = Point(	
+				std::min(box.max_corner().x(), extBox.max_corner().x()), 
+				std::min(box.max_corner().y(), extBox.max_corner().y()));
+
+			Polygon clippingPolygon;
+			geom::convert(box, clippingPolygon);
+	
 			try {
-				MultiPolygon out;
-				geom::intersection(mp, clippingPolygon, out);
-				return out;
+				MultiPolygon mp;
+				geom::intersection(input, clippingPolygon, mp);
+				return mp;
 			} catch (geom::overlay_invalid_input_exception &err) {
 				std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
 				return MultiPolygon(); // blank
