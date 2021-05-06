@@ -5,6 +5,88 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/linestring.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+
+#include <boost/graph/graph_traits.hpp>
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/dijkstra_shortest_paths.hpp>
+#include <boost/property_map/property_map.hpp>
+
+bool dissolve(Ring const &input, Ring &result)
+{
+  	typedef boost::property<boost::edge_weight_t, double> EdgeWeightProperty;
+  	typedef boost::adjacency_list < boost::listS, boost::vecS, boost::directedS, boost::no_property, EdgeWeightProperty > graph_t;
+  	typedef boost::graph_traits < graph_t >::vertex_descriptor vertex_descriptor;
+
+  	graph_t g;
+
+  	Ring nodes = input;
+  	for(std::size_t i = 0; i < input.size() - 1; ++i) {
+    	boost::add_edge(i, i + 1, EdgeWeightProperty(boost::geometry::distance(input[i], input[i + 1])), g);
+  	}
+
+    for(std::size_t i = 0; i < input.size() - 1; ++i) {
+    	Linestring src({ input[i], input[i + 1] });
+
+    	for(std::size_t j = i + 2; j < input.size() - 1; ++j) {
+      		Linestring dst({ input[j], input[j + 1] });
+
+      		std::vector<Point> intersections;
+     		boost::geometry::intersection(src, dst, intersections);
+
+			for(auto const &p: intersections) {
+				std::size_t v = nodes.size();
+				for(std::size_t i = 0; i < nodes.size(); ++i) {
+				  	if(boost::geometry::distance(nodes[i], p) == 0) {
+						v = i;
+						break;
+				  	}
+				}
+				
+				if(v == nodes.size())
+					nodes.push_back(p);
+
+				if(boost::geometry::distance(nodes[i], nodes[v]) > 0.0)
+				  	boost::add_edge(i, v, EdgeWeightProperty(boost::geometry::distance(nodes[i], nodes[v])), g);
+				if(boost::geometry::distance(nodes[i+1], nodes[v]) > 0.0)
+				  	boost::add_edge(v, i + 1, EdgeWeightProperty(boost::geometry::distance(nodes[i + 1], nodes[v])), g);
+		        if(boost::geometry::distance(nodes[j], nodes[v]) > 0.0)
+          			boost::add_edge(j, v, EdgeWeightProperty(boost::geometry::distance(nodes[j], nodes[v])), g);
+        		if(boost::geometry::distance(nodes[j+1], nodes[v]) > 0.0)
+          			boost::add_edge(v, j + 1, EdgeWeightProperty(boost::geometry::distance(nodes[j + 1], nodes[v])), g);
+      		}
+    	}
+  	}
+
+  	std::vector<vertex_descriptor> p(num_vertices(g));
+  	std::vector<double> d(num_vertices(g));
+  	std::fill(d.begin(), d.end(), std::numeric_limits<double>::max());
+
+  	dijkstra_shortest_paths(g, boost::vertex(0, g),
+      predecessor_map(boost::make_iterator_property_map(p.begin(), get(boost::vertex_index, g))).
+      distance_map(boost::make_iterator_property_map(d.begin(), get(boost::vertex_index, g))));
+
+  	if(d[num_vertices(g) - 1] == std::numeric_limits<double>::max()) {
+    	return false; // No valid path exists
+  	}
+
+  	boost::graph_traits < graph_t >::vertex_iterator vbegin, vend;
+  	boost::tie(vbegin, vend) = vertices(g);
+
+	for(auto vi = input.size() - 1; vi != 0; )
+  	{
+		if(result.empty() || boost::geometry::distance(nodes[vi], result.back()) > 0.0)
+			boost::geometry::append(result, nodes[vi]);
+    	vi = p[vi];
+  	}
+  	boost::geometry::append(result, nodes[0]);
+  	std::reverse(result.begin(), result.end());
+
+  	return true;
+}
+
 WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
 	bboxPtr = bp;
 	featurePtr = fp;
@@ -30,16 +112,65 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 		// In that case, we just revert to the unsimplified version (at the cost of a larger geometry)
 		// See comments in https://github.com/boostorg/geometry/pull/460
 		// When/if dissolve is merged into Boost.Geometry, we can use that to fix the self-intersections
-		bool v = geom::is_valid(mp);
 		geom::simplify(mp, current, simplifyLevel);
-		if (v && !geom::is_valid(current)) { current=mp; }
 	} else {
 		current = mp;
 	}
 
+	for(auto &p: current) {
+		for(auto &i: p.outer()) {
+			auto round_i = bboxPtr->floorLatpLon(i.y(), i.x());
+			i = Point(round_i.second, round_i.first);
+		}
+
+		for(auto &r: p.inners()) {
+			Ring inner;
+
+			for(auto &i: r) {
+				auto round_i = bboxPtr->floorLatpLon(i.y(), i.x());
+				i = Point(round_i.second, round_i.first);
+			}
+		}
+	} 
+
+
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { cout << "Output multipolygon has " << boost_validity_error(failure) << endl; }
+	if (!geom::is_valid(current, failure) && failure != geom::failure_spikes) { 
+		if(failure == geom::failure_spikes) {
+			geom::remove_spikes(current);
+		} else { 
+			if(verbose) 
+				cout << "Output multipolygon has " << boost_validity_error(failure) << " ";
+
+			for(std::size_t i = 0; i < current.size(); ++i) {
+				Ring new_outer;
+				dissolve(current[i].outer(), new_outer);
+				current[i].outer() = new_outer;
+
+				for(auto &r: current[i].inners()) {
+					Ring new_inner;
+					dissolve(r, new_inner);
+					r = new_inner;
+				}
+
+				if(!geom::is_valid(current[i], failure)) {
+					if(verbose) {
+						std::cout << std::endl << "Dissolve failed " <<  boost_validity_error(failure) << " " << current[i].outer().size() << std::endl;
+						for(auto &j: current[i].outer()) {
+							std::cout << "xy(" << j.x() << "," << j.y() << "), ";
+						}
+						std::cout << std::endl;
+					}
+
+					return;
+				} else {
+					if(verbose) 
+						std::cout << "dissolve success!! "  << current[i].outer().size() << std::endl;
+				}
+			}
+		}
+	}
 #endif
 
 	pair<int,int> lastPos(0,0);

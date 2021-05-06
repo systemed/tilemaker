@@ -128,7 +128,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 								std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
 						}
 					}
-				}
+				} 
 
 				for(std::size_t i = 0; i < p.outer.size() - 1; ++i) {
 					Point p1 = p.outer[i];
@@ -142,8 +142,8 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 							std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
 							std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
 					}
-				}
-			}
+				} 
+			} 
 
 			Box extBox = bbox.getExtendBox();
 			box.min_corner() = Point(	
@@ -151,7 +151,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 				std::max(box.min_corner().y(), extBox.min_corner().y()));
 			box.max_corner() = Point(	
 				std::min(box.max_corner().x(), extBox.max_corner().x()), 
-				std::min(box.max_corner().y(), extBox.max_corner().y()));
+				std::min(box.max_corner().y(), extBox.max_corner().y())); 
 
 			Polygon clippingPolygon;
 			geom::convert(box, clippingPolygon);

@@ -91,6 +91,12 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	return pair<int,int>(x,y);
 }
 
+pair<double, double> TileBbox::floorLatpLon(double latp, double lon) const {
+	int x = round( (lon -   minLon) / xscale );
+	int y = round( (maxLatp - latp) / yscale );
+	return std::make_pair( -(y * yscale - maxLatp), x * xscale + minLon); 
+}
+
 Box TileBbox::getTileBox() const {
 	double xmargin = (maxLon -minLon )/8192.0;
 	double ymargin = (maxLatp-minLatp)/8192.0;
