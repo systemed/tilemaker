@@ -1,9 +1,116 @@
 #include "write_geometry.h"
 #include <iostream>
 #include "helpers.h"
+
+#include <boost/geometry/geometries/segment.hpp>
+#include <boost/geometry/index/rtree.hpp>
+
 using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
+
+typedef boost::geometry::model::segment<Point> simplify_segment;
+typedef boost::geometry::index::rtree<simplify_segment, boost::geometry::index::quadratic<16>> simplify_rtree;
+
+struct simplify_rtree_counter
+{
+	using value_type = simplify_segment;
+	std::size_t count = 0;
+	void push_back(value_type const &) { ++count; }
+	std::size_t size() const { return count; }
+};
+
+template<typename GeometryType>
+void simplify(simplify_rtree &rtree, GeometryType const &input, GeometryType &output, double max_distance)
+{        
+    std::deque<std::size_t> nodes(input.size());
+    for(std::size_t i = 0; i < input.size(); ++i)
+        nodes[i] = i;
+        
+    std::priority_queue<std::size_t, std::vector<size_t>> pq;
+    
+    for(std::size_t i = 0; i < input.size() - 2; ++i) 
+        pq.push(i);      
+        
+    while(!pq.empty()) {
+        auto entry = pq.top();
+        pq.pop();
+        
+        auto start = nodes[entry];
+        auto middle = nodes[entry + 1];
+        auto end = nodes[entry + 2];                   
+                
+        simplify_segment line(input[start], input[end]);
+        double distance = 0.0;
+        for(auto i = start + 1; i < end; ++i) 
+            distance = std::max(distance, boost::geometry::distance(line, input[i]));          
+    
+        if((boost::geometry::distance(input[start], input[end]) < 2 * max_distance) || (distance < max_distance)) {
+            simplify_rtree_counter result;
+            boost::geometry::index::query(rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
+
+            std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
+            
+            if(result.size() == query_expected) {
+                nodes.erase(nodes.begin() + entry + 1);
+                rtree.remove(simplify_segment(input[start], input[middle]));
+                rtree.remove(simplify_segment(input[middle], input[end]));
+                rtree.insert(line);
+        
+                if(entry + 2 < nodes.size()) {
+                    pq.push(start);             
+                }
+            }
+        }
+    }
+    
+    for(auto i: nodes)
+        boost::geometry::append(output, input[i]);
+}
+
+Polygon simplify(Polygon const &p, double max_distance) 
+{
+	std::vector<Ring> new_inners;
+	for(auto &r: p.inners()) {
+		simplify_rtree rtree;
+		for(std::size_t i = 0; i < r.size() - 1; ++i) 
+			rtree.insert({ r[i], r[i + 1] });    
+		
+		Ring new_inner;
+		simplify(rtree, r, new_inner, max_distance);
+		new_inners.push_back(new_inner);
+	}
+
+	simplify_rtree rtree;
+	for(std::size_t i = 0; i < p.outer().size() - 1; ++i) 
+		rtree.insert({ p.outer()[i], p.outer()[i + 1] });    
+	
+	for(auto const &r: new_inners) {
+		for(std::size_t i = 0; i < r.size() - 1; ++i) 
+			rtree.insert({ r[i], r[i + 1] });    
+	}
+
+	Polygon result;
+	simplify(rtree, p.outer(), result.outer(), max_distance);
+
+	for(auto&& r: new_inners) {
+		if(boost::geometry::covered_by(r, result.outer())) 
+			result.inners().push_back(r);
+	} 
+
+	return result;
+}
+
+Linestring simplify(Linestring const &ls, double max_distance) 
+{
+	simplify_rtree rtree;
+	for(std::size_t i = 0; i < ls.size() - 1; ++i) 
+		rtree.insert({ ls[i], ls[i + 1] });    
+
+	Linestring result;
+	simplify(rtree, ls, result, max_distance);
+	return result;
+}
 
 WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
 	bboxPtr = bp;
@@ -26,20 +133,22 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
-		// Note that Boost simplify can sometimes produce invalid polygons, resulting in broken coastline etc.
-		// In that case, we just revert to the unsimplified version (at the cost of a larger geometry)
-		// See comments in https://github.com/boostorg/geometry/pull/460
-		// When/if dissolve is merged into Boost.Geometry, we can use that to fix the self-intersections
-		bool v = geom::is_valid(mp);
-		geom::simplify(mp, current, simplifyLevel);
-		if (v && !geom::is_valid(current)) { current=mp; }
+		for(auto const &p: mp) {
+			current.push_back(simplify(p, simplifyLevel));
+		}
 	} else {
 		current = mp;
 	}
 
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { cout << "Output multipolygon has " << boost_validity_error(failure) << endl; }
+	if (verbose && !geom::is_valid(current, failure)) { 
+		cout << "Output multipolygon has " << boost_validity_error(failure) << endl; 
+	}
+#else	
+	if (verbose && !geom::is_valid(current)) { 
+		cout << "Output multipolygon is invalid " << endl; 
+	}
 #endif
 
 	pair<int,int> lastPos(0,0);
@@ -71,7 +180,9 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 	MultiLinestring current;
 	if (simplifyLevel>0) {
-		geom::simplify(mls, current, simplifyLevel);
+		for(auto const &ls: mls) {
+			current.push_back(simplify(ls, simplifyLevel));
+		}
 	} else {
 		current = mls;
 	}

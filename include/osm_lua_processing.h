@@ -115,19 +115,22 @@ public:
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 
     template<class GeometryT>
-    void CorrectGeometry(GeometryT &geom)
+    bool CorrectGeometry(GeometryT &geom)
     {
         geom::correct(geom); // fix wrong orientation
 #if BOOST_VERSION >= 105800
         geom::validity_failure_type failure;
         if (isRelation && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-            if (failure==10) return; // too few points
         } else if (isWay && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-            if (failure==10) return; // too few points
         }
+        if (failure==boost::geometry::failure_self_intersections || failure == boost::geometry::failure_few_points) 
+			return false;
+		if (failure==boost::geometry::failure_spikes)
+			geom::remove_spikes(geom);
 #endif
+		return true;
     }
 
 	// Add layer
