@@ -70,28 +70,35 @@ void simplify(simplify_rtree &rtree, GeometryType const &input, GeometryType &ou
 
 Polygon simplify(Polygon const &p, double max_distance) 
 {
+	simplify_rtree outer_rtree;
+	for(std::size_t j = 0; j < p.outer().size() - 1; ++j) 
+		outer_rtree.insert({ p.outer()[j], p.outer()[j + 1] });    
+
 	std::vector<Ring> new_inners;
-	for(auto &r: p.inners()) {
-		simplify_rtree rtree;
-		for(std::size_t i = 0; i < r.size() - 1; ++i) 
-			rtree.insert({ r[i], r[i + 1] });    
+	for(size_t i = 0; i < p.inners().size(); ++i) {
+		simplify_rtree rtree = outer_rtree;
+
+		for(size_t j = i + 1; j < p.inners().size(); ++j) {
+			for(std::size_t z = 0; z < p.inners()[j].size() - 1; ++z) 
+				rtree.insert({ p.inners()[j][z], p.inners()[j][z + 1] });    
+		}
 		
 		Ring new_inner;
-		simplify(rtree, r, new_inner, max_distance);
-		new_inners.push_back(new_inner);
-	}
-
-	simplify_rtree rtree;
-	for(std::size_t i = 0; i < p.outer().size() - 1; ++i) 
-		rtree.insert({ p.outer()[i], p.outer()[i + 1] });    
-	
-	for(auto const &r: new_inners) {
-		for(std::size_t i = 0; i < r.size() - 1; ++i) 
-			rtree.insert({ r[i], r[i + 1] });    
+		simplify(rtree, p.inners()[i], new_inner, max_distance);
+		if(boost::geometry::area(new_inner) < 0) {
+			new_inners.push_back(new_inner);
+			
+			for(std::size_t j = 0; j < new_inner.size() - 1; ++j) 
+				outer_rtree.insert({ new_inner[j], new_inner[j + 1] });    
+		}
 	}
 
 	Polygon result;
-	simplify(rtree, p.outer(), result.outer(), max_distance);
+	simplify(outer_rtree, p.outer(), result.outer(), max_distance);
+
+	if(boost::geometry::area(result.outer()) <= 0) {
+		return Polygon();
+	}
 
 	for(auto&& r: new_inners) {
 		if(boost::geometry::covered_by(r, result.outer())) 
@@ -134,7 +141,9 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
 		for(auto const &p: mp) {
-			current.push_back(simplify(p, simplifyLevel));
+			Polygon new_p = simplify(p, simplifyLevel);
+			if(!new_p.outer().empty())
+				current.push_back(new_p);
 		}
 	} else {
 		current = mp;
@@ -143,7 +152,12 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
 	if (verbose && !geom::is_valid(current, failure)) { 
-		cout << "Output multipolygon has " << boost_validity_error(failure) << endl; 
+		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+
+		if (!geom::is_valid(mp, failure)) 
+			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
+		else
+			cout << "input multipolygon valid" << endl;
 	}
 #else	
 	if (verbose && !geom::is_valid(current)) { 
