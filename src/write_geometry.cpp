@@ -72,32 +72,34 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
         boost::geometry::append(output, input[i]);
 }
 
-bool simplify_inners_combine(std::vector<Ring> &new_inners, Ring &&new_inner)
+void simplify_inners_combine(std::vector<Ring> &new_inners, Ring &&new_inner)
 {
-	for(auto &inner: new_inners) {
-		if(boost::geometry::intersects(inner, new_inner)) {
-			std::vector<Ring> result;
-
-			std::reverse(inner.begin(), inner.end());
-			std::reverse(new_inner.begin(), new_inner.end());
-			boost::geometry::union_(inner, new_inner, result);
-
-			if(!result.empty()) {
-				inner = result[0];
-				std::reverse(inner.begin(), inner.end());
-
-				for(size_t i = 1; i < result.size(); ++i) {
-					std::reverse(result[i].begin(), result[i].end());
-					new_inners.push_back(result[i]);
-				} 
-			}
-
-			return true;
+	std::vector<Ring> result;
+	for(std::size_t i = 0; i < new_inners.size(); ) {
+		if(!boost::geometry::overlaps(new_inners[i], new_inner)) {
+			++i;
+			continue;
 		}
+
+		result.push_back(std::move(new_inners[i]));
+		std::reverse(result.back().begin(), result.back().end());
+		new_inners.erase(new_inners.begin() + i);
 	}
 
-	new_inners.push_back(new_inner);
-	return false;
+	result.push_back(std::move(new_inner));
+	std::reverse(result.back().begin(), result.back().end());
+
+	while(result.size() > 1) {
+		std::vector<Ring> union_result;
+		boost::geometry::union_(result[result.size() - 2], result[result.size() - 1], union_result);
+
+		result.pop_back();
+		if(!union_result.empty())
+			result.back() = std::move(union_result[0]);
+	}
+
+	std::reverse(result.back().begin(), result.back().end());
+	new_inners.push_back(std::move(result.back()));
 }
 
 Polygon simplify(Polygon const &p, double max_distance) 
@@ -116,13 +118,14 @@ Polygon simplify(Polygon const &p, double max_distance)
 		}
 	}
 
+	simplify_rtree inners_rtree;
 	for(auto const &inner: new_inners) {
 		for(std::size_t z = 0; z < inner.size() - 1; ++z) 
-			outer_rtree.insert({ inner[z], inner[z + 1] });    
+			inners_rtree.insert({ inner[z], inner[z + 1] });    
 	} 
 
 	Polygon result;
-	simplify(p.outer(), result.outer(), max_distance, outer_rtree);
+	simplify(p.outer(), result.outer(), max_distance, inners_rtree);
 	if(boost::geometry::area(result.outer()) < max_distance * max_distance) {
 		return Polygon();
 	}
@@ -147,24 +150,31 @@ MultiPolygon simplify(MultiPolygon const &mp, double max_distance)
 	MultiPolygon result_mp;
 	for(auto const &p: mp) {
 		Polygon new_p = simplify(p, max_distance);
-		if(!new_p.outer().empty()) {
-			bool combined = false;
+    	if(!new_p.outer().empty()) {
+			std::deque<Polygon> result;
 
-			for(auto &result_p: result_mp) {
-				if(boost::geometry::intersects(result_p, new_p)) {
-					std::vector<Polygon> result;
-					boost::geometry::union_(result_p, new_p, result);
-					if(!result.empty()) {
-						result_p = result[0];
-						for(std::size_t i = 1; i < result.size(); ++i)
-							result_mp.push_back(std::move(result[i]));
-					}
-					combined = true;
-					break;
+			for(std::size_t i = 0; i < result_mp.size(); ) {
+				if(!boost::geometry::overlaps(result_mp[i], new_p)) {
+					++i;
+					continue;
 				}
+
+				result.push_back(std::move(result_mp[i]));
+				result_mp.erase(result_mp.begin() + i);
 			}
 
-			if(!combined) result_mp.push_back(std::move(new_p));
+			result.push_back(std::move(new_p));
+
+			while(result.size() > 1) {
+				std::vector<Polygon> union_result;
+				boost::geometry::union_(result[result.size() - 2], result[result.size() - 1], union_result);
+
+				result.pop_back();
+				if(!union_result.empty())
+					result.back() = std::move(union_result[0]);
+			}
+
+			result_mp.push_back(std::move(result.back()));
 		}
 	}
 
