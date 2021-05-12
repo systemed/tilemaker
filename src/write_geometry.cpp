@@ -55,6 +55,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 
 			std::vector<simplify_segment> nearest;
 			constexpr std::size_t nearest_query_size = 5;
+			constexpr double nearest_min_distance = 0.0001;
 			boost::geometry::index::query(rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
 			boost::geometry::index::query(outer_rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
 
@@ -66,7 +67,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 			}			
 
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
-            if(result.size() == query_expected && min_distance > max_distance) {
+            if(result.size() == query_expected && min_distance > nearest_min_distance) {
                 nodes.erase(nodes.begin() + entry + 1);
                 rtree.remove(simplify_segment(input[start], input[middle]));
                 rtree.remove(simplify_segment(input[middle], input[end]));
@@ -124,7 +125,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 		Ring new_inner;
 		simplify(p.inners()[i], new_inner, max_distance, outer_rtree);
 
-		if(boost::geometry::area(new_inner) < -max_distance * max_distance) {
+		if(boost::geometry::area(new_inner) < -0.0001) {
 			simplify_inners_combine(new_inners, std::move(new_inner));
 		}
 	}
@@ -137,7 +138,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 	Polygon result;
 	simplify(p.outer(), result.outer(), max_distance, inners_rtree);
-	if(boost::geometry::area(result.outer()) < max_distance * max_distance) {
+	if(boost::geometry::area(result.outer()) < 0.0001) {
 		return Polygon();
 	}
 
