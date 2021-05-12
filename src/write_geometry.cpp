@@ -53,9 +53,20 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
             boost::geometry::index::query(rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
             boost::geometry::index::query(outer_rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
 
+			std::vector<simplify_segment> nearest;
+			constexpr std::size_t nearest_query_size = 5;
+			boost::geometry::index::query(rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
+			boost::geometry::index::query(outer_rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
+
+			double min_distance = std::numeric_limits<double>::max();
+			for(auto const &i: nearest) {
+            	double distance = boost::geometry::distance(line, i);
+				if(distance > 0.0) 
+					min_distance = std::min(min_distance, distance);
+			}			
+
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
-            
-            if(result.size() == query_expected) {
+            if(result.size() == query_expected && min_distance > max_distance) {
                 nodes.erase(nodes.begin() + entry + 1);
                 rtree.remove(simplify_segment(input[start], input[middle]));
                 rtree.remove(simplify_segment(input[middle], input[end]));
