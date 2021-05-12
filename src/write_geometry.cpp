@@ -48,7 +48,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
         for(auto i = start + 1; i < end; ++i) 
             distance = std::max(distance, boost::geometry::distance(line, input[i]));          
     
-        if((boost::geometry::distance(input[start], input[end]) < 2 * max_distance) || (distance < max_distance)) {
+        if(distance < max_distance) {
             simplify_rtree_counter result;
             boost::geometry::index::query(rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
             boost::geometry::index::query(outer_rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
@@ -84,34 +84,28 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
         boost::geometry::append(output, input[i]);
 }
 
-void simplify_inners_combine(std::vector<Ring> &new_inners, Ring &&new_inner)
+template<typename C, typename T>
+void simplify_combine(C &result, T &&new_element)
 {
-	std::vector<Ring> result;
-	for(std::size_t i = 0; i < new_inners.size(); ) {
-		if(!boost::geometry::overlaps(new_inners[i], new_inner)) {
+    result.push_back(new_element);
+
+   	for(std::size_t i = 0; i < result.size() - 1; ) {
+        if(!boost::geometry::intersects(result[i], result.back())) {
+            ++i;
+            continue;
+        }
+
+        std::vector<T> union_result;
+        boost::geometry::union_(result[i], result.back(), union_result);
+
+        if(union_result.size() != 1) {
 			++i;
 			continue;
 		}
 
-		result.push_back(std::move(new_inners[i]));
-		std::reverse(result.back().begin(), result.back().end());
-		new_inners.erase(new_inners.begin() + i);
-	}
-
-	result.push_back(std::move(new_inner));
-	std::reverse(result.back().begin(), result.back().end());
-
-	while(result.size() > 1) {
-		std::vector<Ring> union_result;
-		boost::geometry::union_(result[result.size() - 2], result[result.size() - 1], union_result);
-
-		result.pop_back();
-		if(!union_result.empty())
-			result.back() = std::move(union_result[0]);
-	}
-
-	std::reverse(result.back().begin(), result.back().end());
-	new_inners.push_back(std::move(result.back()));
+       	result.back() = std::move(union_result[0]);
+       	result.erase(result.begin() + i);
+    } 
 }
 
 Polygon simplify(Polygon const &p, double max_distance) 
@@ -120,13 +114,22 @@ Polygon simplify(Polygon const &p, double max_distance)
 	for(std::size_t j = 0; j < p.outer().size() - 1; ++j) 
 		outer_rtree.insert({ p.outer()[j], p.outer()[j + 1] });    
 
-	std::vector<Ring> new_inners;
+	std::vector<Ring> combined_inners;
 	for(size_t i = 0; i < p.inners().size(); ++i) {
-		Ring new_inner;
-		simplify(p.inners()[i], new_inner, max_distance, outer_rtree);
+		Ring new_inner = p.inners()[i];
+		if(boost::geometry::area(new_inner) < -0.0000001) {
+			std::reverse(new_inner.begin(), new_inner.end());
+			simplify_combine(combined_inners, std::move(new_inner));
+		}
+	}
 
-		if(boost::geometry::area(new_inner) < -0.0001) {
-			simplify_inners_combine(new_inners, std::move(new_inner));
+	std::vector<Ring> new_inners;
+	for(size_t i = 0; i < combined_inners.size(); ++i) {
+		Ring new_inner;
+		simplify(combined_inners[i], new_inner, max_distance, outer_rtree);
+
+		if(boost::geometry::area(new_inner) > 0.0000001) {
+			simplify_combine(new_inners, std::move(new_inner));
 		}
 	}
 
@@ -138,13 +141,15 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 	Polygon result;
 	simplify(p.outer(), result.outer(), max_distance, inners_rtree);
-	if(boost::geometry::area(result.outer()) < 0.0001) {
-		return Polygon();
-	}
+	//if(boost::geometry::area(result.outer()) < 0.0001) {
+//		return Polygon();
+	//}
 
 	for(auto&& r: new_inners) {
-		if(boost::geometry::covered_by(r, result.outer())) 
+		std::reverse(r.begin(), r.end());
+		if(boost::geometry::covered_by(r, result.outer())) {
 			result.inners().push_back(r);
+		}
 	} 
 
 	return result;
@@ -163,30 +168,8 @@ MultiPolygon simplify(MultiPolygon const &mp, double max_distance)
 	for(auto const &p: mp) {
 		Polygon new_p = simplify(p, max_distance);
     	if(!new_p.outer().empty()) {
-			std::deque<Polygon> result;
-
-			for(std::size_t i = 0; i < result_mp.size(); ) {
-				if(!boost::geometry::overlaps(result_mp[i], new_p)) {
-					++i;
-					continue;
-				}
-
-				result.push_back(std::move(result_mp[i]));
-				result_mp.erase(result_mp.begin() + i);
-			}
-
-			result.push_back(std::move(new_p));
-
-			while(result.size() > 1) {
-				std::vector<Polygon> union_result;
-				boost::geometry::union_(result[result.size() - 2], result[result.size() - 1], union_result);
-
-				result.pop_back();
-				if(!union_result.empty())
-					result.back() = std::move(union_result[0]);
-			}
-
-			result_mp.push_back(std::move(result.back()));
+	//		simplify_combine(result_mp, std::move(new_p));
+			result_mp.push_back(std::move(new_p));
 		}
 	}
 
