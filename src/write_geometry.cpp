@@ -55,7 +55,6 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 
 			std::vector<simplify_segment> nearest;
 			constexpr std::size_t nearest_query_size = 5;
-			constexpr double nearest_min_distance = 0.0001;
 			boost::geometry::index::query(rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
 			boost::geometry::index::query(outer_rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
 
@@ -67,7 +66,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 			}			
 
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
-            if(result.size() == query_expected && min_distance > nearest_min_distance) {
+            if(result.size() == query_expected && min_distance > max_distance) {
                 nodes.erase(nodes.begin() + entry + 1);
                 rtree.remove(simplify_segment(input[start], input[middle]));
                 rtree.remove(simplify_segment(input[middle], input[end]));
@@ -117,7 +116,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 	std::vector<Ring> combined_inners;
 	for(size_t i = 0; i < p.inners().size(); ++i) {
 		Ring new_inner = p.inners()[i];
-		if(boost::geometry::area(new_inner) < -0.0000001) {
+		if(boost::geometry::area(new_inner) < 0) {
 			std::reverse(new_inner.begin(), new_inner.end());
 			simplify_combine(combined_inners, std::move(new_inner));
 		}
@@ -128,7 +127,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 		Ring new_inner;
 		simplify(combined_inners[i], new_inner, max_distance, outer_rtree);
 
-		if(boost::geometry::area(new_inner) > 0.0000001) {
+		if(boost::geometry::area(new_inner) > max_distance * max_distance) {
 			simplify_combine(new_inners, std::move(new_inner));
 		}
 	}
@@ -141,9 +140,9 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 	Polygon result;
 	simplify(p.outer(), result.outer(), max_distance, inners_rtree);
-	//if(boost::geometry::area(result.outer()) < 0.0001) {
-//		return Polygon();
-	//}
+	if(boost::geometry::area(result.outer()) < max_distance * max_distance) {
+		return Polygon();
+	}
 
 	for(auto&& r: new_inners) {
 		std::reverse(r.begin(), r.end());
@@ -164,12 +163,18 @@ Linestring simplify(Linestring const &ls, double max_distance)
 
 MultiPolygon simplify(MultiPolygon const &mp, double max_distance) 
 {
+	MultiPolygon combined_mp;
+	for(auto new_p: mp) {
+    	if(!new_p.outer().empty()) {
+			simplify_combine(combined_mp, std::move(new_p));
+		}
+	}
+
 	MultiPolygon result_mp;
-	for(auto const &p: mp) {
+	for(auto const &p: combined_mp) {
 		Polygon new_p = simplify(p, max_distance);
     	if(!new_p.outer().empty()) {
-	//		simplify_combine(result_mp, std::move(new_p));
-			result_mp.push_back(std::move(new_p));
+			simplify_combine(result_mp, std::move(new_p));
 		}
 	}
 
