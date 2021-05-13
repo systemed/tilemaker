@@ -161,13 +161,24 @@ Linestring simplify(Linestring const &ls, double max_distance)
 	return result;
 }
 
-MultiPolygon simplify(MultiPolygon const &mp, double max_distance) 
+MultiPolygon simplify(TileBbox const &bbox, MultiPolygon const &mp, double max_distance) 
 {
 	MultiPolygon combined_mp;
 	for(auto new_p: mp) {
-    	if(!new_p.outer().empty()) {
-			simplify_combine(combined_mp, std::move(new_p));
+		for(auto &i: new_p.outer()) {
+			auto round_i = bbox.floorLatpLon(i.y(), i.x());
+			i = Point(round_i.second, round_i.first);
 		}
+
+		for(auto &r: new_p.inners()) {
+			for(auto &i: r) {
+				auto round_i = bbox.floorLatpLon(i.y(), i.x());
+				i = Point(round_i.second, round_i.first);
+			}
+		}
+
+		geom::remove_spikes(new_p);
+		simplify_combine(combined_mp, std::move(new_p));
 	}
 
 	MultiPolygon result_mp;
@@ -202,7 +213,7 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
-		current = simplify(mp, simplifyLevel);
+		current = simplify(*bboxPtr, mp, simplifyLevel);
 	} else {
 		current = mp;
 	}

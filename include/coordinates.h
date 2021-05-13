@@ -184,6 +184,8 @@ public:
 	TileBbox(TileCoordinates i, uint z);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
+	std::pair<double, double> floorLatpLon(double latp, double lon) const;
+
 	Box getTileBox() const;
 	Box getExtendBox() const;
 };
