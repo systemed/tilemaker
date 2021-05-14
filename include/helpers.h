@@ -3,7 +3,7 @@
 #define _HELPERS_H
 
 #include <zlib.h>
-#include "geomtypes.h"
+#include "geom.h"
 
 // General helper routines
 

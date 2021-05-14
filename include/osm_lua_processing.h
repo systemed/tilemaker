@@ -6,7 +6,7 @@
 #include <string>
 #include <sstream>
 #include <map>
-#include "geomtypes.h"
+#include "geom.h"
 #include "osm_store.h"
 #include "shared_data.h"
 #include "output_object.h"

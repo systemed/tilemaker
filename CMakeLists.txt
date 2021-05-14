@@ -77,7 +77,24 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
 		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/osmformat.proto)
 
 file(GLOB tilemaker_src_files
-    "src/*.cpp"
+	src/attribute_store.cpp
+	src/geom.cpp
+	src/mbtiles.cpp
+	src/osm_mem_tiles.cpp
+	src/output_object.cpp
+	src/read_pbf.cpp
+	src/shared_data.cpp
+	src/tile_data.cpp
+	src/tile_worker.cpp
+	src/coordinates.cpp
+	src/helpers.cpp
+	src/osm_lua_processing.cpp
+	src/osm_store.cpp
+	src/pbf_blocks.cpp
+	src/read_shp.cpp
+	src/shp_mem_tiles.cpp
+	src/tilemaker.cpp
+	src/write_geometry.cpp
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
@@ -86,5 +103,5 @@ target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE
 if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
 endif()
-	
+
 install(TARGETS tilemaker RUNTIME DESTINATION bin)

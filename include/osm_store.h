@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 #include <iostream>
-#include "geomtypes.h"
+#include "geom.h"
 #include "coordinates.h"
 namespace geom = boost::geometry;
 

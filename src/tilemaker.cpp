@@ -30,7 +30,7 @@
 #include <sys/resource.h>
 #endif
 
-#include "geomtypes.h"
+#include "geom.h"
 
 // Tilemaker code
 #include "helpers.h"
