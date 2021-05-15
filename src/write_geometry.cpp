@@ -103,7 +103,7 @@ void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 void WriteGeometryVisitor::operator()(const Linestring &ls) const { 
 	Linestring current;
 	if (simplifyLevel>0) {
-		geom::simplify(ls, current, simplifyLevel);
+		current = simplify(ls, simplifyLevel);
 	} else {
 		current = ls;
 	}

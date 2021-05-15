@@ -42,7 +42,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
         for(auto i = start + 1; i < end; ++i) 
             distance = std::max(distance, boost::geometry::distance(line, input[i]));          
     
-        if(distance < max_distance) {
+        if(boost::geometry::distance(input[start], input[end]) < 2 * max_distance || distance < max_distance) {
             simplify_rtree_counter result;
             boost::geometry::index::query(rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
             boost::geometry::index::query(outer_rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
@@ -53,11 +53,8 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 			boost::geometry::index::query(outer_rtree, boost::geometry::index::nearest(line, nearest_query_size), std::back_inserter(nearest));
 
 			double min_distance = std::numeric_limits<double>::max();
-			for(auto const &i: nearest) {
-            	double distance = boost::geometry::distance(line, i);
-				if(distance > 0.0) 
-					min_distance = std::min(min_distance, distance);
-			}			
+			for(auto const &i: nearest) 
+				min_distance = std::min(min_distance, boost::geometry::distance(line, i));
 
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
             if(result.size() == query_expected && min_distance > max_distance) {
@@ -133,8 +130,15 @@ Linestring simplify(Linestring const &ls, double max_distance)
 
 MultiPolygon simplify(MultiPolygon const &mp, double max_distance) 
 {
-	MultiPolygon result_mp;
+	MultiPolygon combined_mp;
 	for(auto const &p: mp) {
+    	if(!p.outer().empty()) {
+			simplify_combine(combined_mp, Polygon(p));
+		}
+	}
+
+	MultiPolygon result_mp;
+	for(auto const &p: combined_mp) {
 		Polygon new_p = simplify(p, max_distance);
     	if(!new_p.outer().empty()) {
 			simplify_combine(result_mp, std::move(new_p));
