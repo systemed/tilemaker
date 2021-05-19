@@ -113,9 +113,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 	for(auto&& r: new_inners) {
 		std::reverse(r.begin(), r.end());
-		if(boost::geometry::covered_by(r, result.outer())) {
-			result.inners().push_back(r);
-		}
+		result.inners().push_back(r);
 	} 
 
 	return result;
