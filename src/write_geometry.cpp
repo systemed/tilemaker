@@ -1,6 +1,10 @@
 #include "write_geometry.h"
 #include <iostream>
 #include "helpers.h"
+
+#include <boost/geometry/geometries/segment.hpp>
+#include <boost/geometry/index/rtree.hpp>
+
 using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
@@ -26,20 +30,25 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
-		// Note that Boost simplify can sometimes produce invalid polygons, resulting in broken coastline etc.
-		// In that case, we just revert to the unsimplified version (at the cost of a larger geometry)
-		// See comments in https://github.com/boostorg/geometry/pull/460
-		// When/if dissolve is merged into Boost.Geometry, we can use that to fix the self-intersections
-		bool v = geom::is_valid(mp);
-		geom::simplify(mp, current, simplifyLevel);
-		if (v && !geom::is_valid(current)) { current=mp; }
+		current = simplify(round_coordinates(*bboxPtr, mp), simplifyLevel);
 	} else {
 		current = mp;
 	}
 
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { cout << "Output multipolygon has " << boost_validity_error(failure) << endl; }
+	if (verbose && !geom::is_valid(current, failure)) { 
+		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+
+		if (!geom::is_valid(mp, failure)) 
+			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
+		else
+			cout << "input multipolygon valid" << endl;
+	}
+#else	
+	if (verbose && !geom::is_valid(current)) { 
+		cout << "Output multipolygon is invalid " << endl; 
+	}
 #endif
 
 	pair<int,int> lastPos(0,0);
@@ -71,7 +80,9 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 	MultiLinestring current;
 	if (simplifyLevel>0) {
-		geom::simplify(mls, current, simplifyLevel);
+		for(auto const &ls: mls) {
+			current.push_back(simplify(ls, simplifyLevel));
+		}
 	} else {
 		current = mls;
 	}
@@ -92,7 +103,7 @@ void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 void WriteGeometryVisitor::operator()(const Linestring &ls) const { 
 	Linestring current;
 	if (simplifyLevel>0) {
-		geom::simplify(ls, current, simplifyLevel);
+		current = simplify(ls, simplifyLevel);
 	} else {
 		current = ls;
 	}

@@ -10,6 +10,7 @@ using uint = unsigned int;
 #include <limits>
 
 // boost::geometry
+#define BOOST_GEOMETRY_INCLUDE_SELF_TURNS
 #include <boost/geometry.hpp>
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/geometries/geometries.hpp>
@@ -144,6 +145,36 @@ typedef uint64_t WayID;
 #define MAX_WAY_ID std::numeric_limits<WayID>::max()
 typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
+
+// Perform self-intersection aware simplification of geometry types
+Linestring simplify(Linestring const &ls, double max_distance);
+Polygon simplify(Polygon const &p, double max_distance);
+MultiPolygon simplify(MultiPolygon const &mp, double max_distance);
+
+// Combine overlapping elements by performing a union
+template<typename C, typename T>
+void simplify_combine(C &result, T &&new_element)
+{
+    result.push_back(new_element);
+
+   	for(std::size_t i = 0; i < result.size() - 1; ) {
+        if(!boost::geometry::intersects(result[i], result.back())) {
+            ++i;
+            continue;
+        }
+
+        std::vector<T> union_result;
+        boost::geometry::union_(result[i], result.back(), union_result);
+
+        if(union_result.size() != 1) {
+			++i;
+			continue;
+		}
+
+       	result.back() = std::move(union_result[0]);
+       	result.erase(result.begin() + i);
+    } 
+}
 
 #endif //_GEOM_TYPES_H
 

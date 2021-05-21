@@ -314,7 +314,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			LatpLon pt = indexStore->nodes_at(osmID);
 			Point p = Point(pt.lon, pt.latp);
 
-            CorrectGeometry(p);
+            if(!CorrectGeometry(p)) return;
 
         	OutputObjectRef oo(new OutputObjectOsmStorePoint(geomType, false,
 	    	    			layers.layerMap[layerName],
@@ -344,7 +344,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				mp.push_back(p);
 			}
 
-            CorrectGeometry(mp);
+            if(!CorrectGeometry(mp)) return;
 
             OutputObjectRef oo(new OutputObjectOsmStoreMultiPolygon(geomType, false,
                             layers.layerMap[layerName],
@@ -355,7 +355,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			// linestring
 			Linestring ls = linestringCached();
 
-            CorrectGeometry(ls);
+            if(!CorrectGeometry(ls)) return;
 
     	    OutputObjectRef oo(new OutputObjectOsmStoreLinestring(geomType, false,
 		    			layers.layerMap[layerName],

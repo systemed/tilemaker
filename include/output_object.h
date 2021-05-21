@@ -6,7 +6,7 @@
 #include <string>
 #include <map>
 #include <memory>
-#include "geomtypes.h"
+#include "geom.h"
 #include "coordinates.h"
 #include "attribute_store.h"
 #include "osm_store.h"
