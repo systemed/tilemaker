@@ -394,8 +394,12 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		std::size_t interval = 100;
+		std::size_t interval = 1;
 		for(std::size_t start_index = 0; start_index < tile_coordinates.size(); start_index += interval) {
+			unsigned int zoom = tile_coordinates[start_index].first;
+			if (zoom > 10) interval = 10;
+			if (zoom > 11) interval = 100;
+			if (zoom > 12) interval = 1000;
 
 			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &osmStore, &io_mutex, &tc]() {
 				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
