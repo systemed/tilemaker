@@ -331,6 +331,13 @@ function way_function(way)
 		way:Attribute("class", "rail")
 	end
 
+	-- Pier
+	if man_made=="pier" then
+		way:Layer("transportation", isClosed)
+		way:Attribute("class", "pier")
+		SetMinZoomByArea(way)
+	end
+
 	-- 'Ferry'
 	if route=="ferry" then
 		way:Layer("transportation", false)
