@@ -54,7 +54,7 @@ void addShapefileAttributes(
 		kaguya::LuaTable out_table = osmLuaProcessing.remapAttributes(in_table, layers.layers[oo->layer].name);
 
 		auto &attributeStore = osmLuaProcessing.getAttributeStore();
-		AttributeStore::key_value_set_entry_t attributes;
+		auto attributes = attributeStore.empty_set();
 
 		// Write values to vector tiles
 		for (auto key : out_table.keys()) {
@@ -78,13 +78,13 @@ void addShapefileAttributes(
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
 
-			attributes.push_back(attributeStore.store_key_value(key, v, 0));
+			attributes->emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		
 	} else {
 		auto &attributeStore = osmLuaProcessing.getAttributeStore();
-		AttributeStore::key_value_set_entry_t attributes;
+		auto attributes = attributeStore.empty_set();
 
 		for (auto it : columnMap) {
 			int pos = it.first;
@@ -102,7 +102,7 @@ void addShapefileAttributes(
 				         break;
 			}
 			
-			attributes.push_back(attributeStore.store_key_value(key, v, 0));
+			attributes->emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		

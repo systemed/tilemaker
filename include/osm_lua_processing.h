@@ -25,7 +25,6 @@ extern "C" {
 
 #include "kaguya.hpp"
 
-
 // FIXME: why is this global ?
 extern bool verbose;
 
@@ -42,7 +41,7 @@ public:
 	// ----	initialization routines
 
 	OsmLuaProcessing(
-        OSMStore const *indexStore, OSMStore &osmStore,
+        OSMStore &osmStore,
         const class Config &configIn, class LayerDefinition &layers, 
 		const std::string &luaFile,
 		const class ShpMemTiles &shpMemTiles, 
@@ -66,13 +65,13 @@ public:
 	virtual void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
 
 	/// \brief We are now processing a way
-	virtual void setWay(WayID wayId, OSMStore::handle_t handle, const tag_map_t &tags);
+	virtual void setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	virtual void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags);
+	virtual void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
 
 	// ----	Metadata queries called from Lua
 
@@ -162,7 +161,6 @@ public:
 
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
 
-	void setIndexStore(OSMStore const *indexStore) { this->indexStore = indexStore; }
 private:
 	/// Internal: clear current cached state
 	inline void reset() {
@@ -176,8 +174,7 @@ private:
 		return Point(lon/10000000.0,latp/10000000.0);
 	}
 	
-	OSMStore const *indexStore;				// global OSM for reading input
-	OSMStore &osmStore;						// global OSM store
+	OSMStore &osmStore;	// global OSM store
 
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
@@ -191,8 +188,9 @@ private:
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
 	int32_t lon,latp;						///< Node coordinates
-	OSMStore::handle_t nodeVecHandle;
-	OSMStore::handle_t relationHandle;
+	NodeVec const *nodeVecPtr;
+	WayVec const *outerWayVecPtr;
+	WayVec const *innerWayVecPtr;
 
 	Linestring linestringCache;
 	bool linestringInited;
@@ -204,7 +202,7 @@ private:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	std::deque<std::pair<OutputObjectRef, AttributeStore::key_value_set_entry_t> > outputs;			///< All output objects that have been created
+	std::deque<std::pair<OutputObjectRef, AttributeStoreRef>> outputs;			///< All output objects that have been created
 	boost::container::flat_map<std::string, std::string> currentTags;
 
 };
