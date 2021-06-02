@@ -497,6 +497,8 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 	isWay = true;
 	isRelation = false;
 	nodeVecPtr = &nodeVec;
+	outerWayVecPtr = nullptr;
+	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
 
 	try {
@@ -572,6 +574,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	isRelation = true;
 	isClosed = true; // TODO: change this when we support route relations
 
+	nodeVecPtr = nullptr;
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
 	currentTags = tags;

@@ -20,7 +20,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 	simplify_rtree rtree;
 
     std::deque<std::size_t> nodes(input.size());
-    for(std::size_t i = 0; i < input.size(); ++i) {
+    for(std::size_t i = 0; i < input.size() - 1; ++i) {
 		rtree.insert({ input[i], input[i + 1] });    
         nodes[i] = i;
 	}

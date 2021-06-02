@@ -268,7 +268,7 @@ int PbfReader::ReadPbfFile(std::string const &filename, unordered_set<string> co
 			const std::lock_guard<std::mutex> lock(block_mutex);
 			for(auto const &block: blocks) {
 				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &filename, &nodeKeys]() {
-					thread_local auto output = generate_output();
+					auto output = generate_output();
 					ifstream infile(filename, ios::in | ios::binary);
 					infile.seekg(block.first);
 					if(ReadBlock(infile, *output, progress, block.second, nodeKeys, phase)) {

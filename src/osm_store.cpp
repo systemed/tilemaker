@@ -20,7 +20,7 @@ struct mmap_file
 	static constexpr std::size_t alignment = 32;
 
 	static size_t mmap_file_size;
-	static std::string mmap_filename;
+	static std::string mmap_dir_filename;
 
 	boost::interprocess::file_mapping mapping;
 	boost::interprocess::mapped_region region;
@@ -60,7 +60,7 @@ std::vector<mmap_file_ptr> mmap_files;
 thread_local mmap_file_ptr mmap_file_thread_ptr;
 
 size_t mmap_file::mmap_file_size = 0;
-std::string mmap_file::mmap_filename;
+std::string mmap_file::mmap_dir_filename;
      
 std::vector< mmap_shm_ptr > mmap_shm_regions;  
 size_t mmap_shm::mmap_file_size = 0;
@@ -76,33 +76,41 @@ mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 
 void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
 {
-	mmap_filename = filename;
+	mmap_dir_filename = filename;
 	mmap_file_size = file_size;
 
-	std::cout << "Filename: " << filename << ", size: " << mmap_file_size << std::endl;
-	boost::filesystem::ofstream(filename.c_str());
-	boost::filesystem::resize_file(filename.c_str(), 0);
-	boost::filesystem::resize_file(filename.c_str(), mmap_file_size);
+	boost::filesystem::create_directory(filename);
 
-	mmap_file_thread_ptr = std::make_shared<mmap_file>(filename.c_str());
+	std::string dir_filename = filename + "/init.dat"; 
+	std::cout << "Filename: " << dir_filename << ", size: " << mmap_file_size << std::endl;
+	if(boost::filesystem::ofstream(dir_filename.c_str()).fail())
+		throw std::runtime_error("Failed to open mmap file");
+	boost::filesystem::resize_file(dir_filename.c_str(), 0);
+	boost::filesystem::resize_file(dir_filename.c_str(), mmap_file_size);
+	mmap_file_thread_ptr = std::make_shared<mmap_file>(dir_filename.c_str());
+
 	mmap_files.emplace_back(mmap_file_thread_ptr);
 }
 
 void mmap_file::remove()
 {
-	if(!mmap_filename.empty())
-		boost::filesystem::remove(mmap_filename.c_str());
+	if(!mmap_dir_filename.empty())
+		boost::filesystem::remove_all(mmap_dir_filename.c_str());
 }
 
 void mmap_file::resize_mmap_file(size_t add_size)
 {
 	auto offset = mmap_file_size;
-	auto size = std::min(increase, mmap_file_size) + (add_size + alignment) - (add_size % alignment);
+	auto size = increase + (add_size + alignment) - (add_size % alignment);
 
 	std::cout << "Resizing osm store to size: " << ((offset + size) / 1000000) << "M                " << std::endl;
 
-	boost::filesystem::resize_file(mmap_filename.c_str(),  offset + size);
-	mmap_file_thread_ptr = std::make_shared<mmap_file>(mmap_filename.c_str(), offset);
+	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_files.size()) + ".dat";
+	if(boost::filesystem::ofstream(new_filename.c_str()).fail())
+		throw std::runtime_error("Failed to open mmap file");
+	boost::filesystem::resize_file(new_filename.c_str(), size);
+	mmap_file_thread_ptr = std::make_shared<mmap_file>(new_filename.c_str(), 0);
+
 	mmap_files.emplace_back(mmap_file_thread_ptr);
 	mmap_file_size = offset + size;
 }
@@ -142,6 +150,7 @@ void mmap_shm::close()
 	mmap_shm_regions.clear();
 	mmap_shm_thread_region_ptr.reset();
 }
+
 void * void_mmap_allocator::allocate(size_type n, const void *hint)
 {
 	while(true) {

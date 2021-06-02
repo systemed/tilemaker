@@ -22,6 +22,8 @@ class PbfReaderOutput
 public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 
+	virtual ~PbfReaderOutput() { }
+
 	///\brief We are now processing a node
 	virtual void setNode(NodeID id, LatpLon node, const tag_map_t &tags) {};
 

@@ -91,7 +91,7 @@ public:
 			return e.first < i; 
 		});
 
-		if(iter->first != i)
+		if(iter == mLatpLons->end() || iter->first != i)
 			throw std::out_of_range("Could not find node with id " + std::to_string(i));
 
 		return iter->second;
@@ -155,7 +155,7 @@ public:
 			return e.first < wayid; 
 		});
 
-		if(iter->first != wayid)
+		if(iter == mNodeLists->end() || iter->first != wayid)
 			throw std::out_of_range("Could not find way with id " + std::to_string(wayid));
 
 		return iter->second;
