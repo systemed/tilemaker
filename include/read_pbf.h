@@ -52,8 +52,11 @@ public:
 	PbfReader(OSMStore &osmStore);
 
 	using pbfreader_generate_output = std::function< std::unique_ptr<PbfReaderOutput> () >;
-	int ReadPbfFile(std::string const &filename, std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, pbfreader_generate_output const &generate_output);
-	int ReadPbfFile(std::istream &inputFile, std::unordered_set<std::string> const &nodeKeys, PbfReaderOutput &output);
+	using pbfreader_generate_stream = std::function< std::unique_ptr<std::istream> () >;
+
+	int ReadPbfFile(std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, 
+			pbfreader_generate_stream const &generate_stream,
+			pbfreader_generate_output const &generate_output);
 
 private:
 	bool ReadBlock(std::istream &infile, PbfReaderOutput &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, std::unordered_set<std::string> const &nodeKeys, ReadPhase phase = ReadPhase::All);

@@ -279,10 +279,16 @@ int main(int argc, char* argv[]) {
 	if (!mapsplit) {
 		for (auto inputFile : inputFiles) {
 			cout << "Reading .pbf " << inputFile << endl;
+			ifstream infile(inputFile, ios::in | ios::binary);
+			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
-			int ret = pbfReader.ReadPbfFile(inputFile, nodeKeys, threadNum, [&]() {
-				return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
-			});
+			int ret = pbfReader.ReadPbfFile(nodeKeys, threadNum, 
+				[&]() { 
+					return std::make_unique<ifstream>(inputFile, ios::in | ios::binary);
+				},
+				[&]() {
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+				});	
 			if (ret != 0) return ret;
 		} 
 	}
@@ -347,8 +353,14 @@ int main(int argc, char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			boost::interprocess::bufferstream pbfstream(pbf.data(), pbf.size(),  ios::in | ios::binary);
-			pbfReader.ReadPbfFile(pbfstream, nodeKeys, osmLuaProcessing);
+			int ret = pbfReader.ReadPbfFile(nodeKeys, 1, 
+				[&]() { 
+					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
+				},
+				[&]() {
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+				});	
+			if (ret != 0) return ret;
 
 			tileList.pop_back();
 		}

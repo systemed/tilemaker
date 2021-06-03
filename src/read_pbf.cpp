@@ -229,27 +229,27 @@ bool PbfReader::ReadBlock(std::istream &infile, PbfReaderOutput &output, std::pa
 	return handled_block;
 }
 
-int PbfReader::ReadPbfFile(std::string const &filename, unordered_set<string> const &nodeKeys, unsigned int threadNum, pbfreader_generate_output const &generate_output)
+int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
+		pbfreader_generate_stream const &generate_stream, pbfreader_generate_output const &generate_output)
 {
-	ifstream infile(filename, ios::in | ios::binary);
-	if (!infile) { cerr << "Couldn't open .pbf file " << filename << endl; return -1; }
+	auto infile = generate_stream();
 
 	// ----	Read PBF
 	osmStore.clear();
 
 	HeaderBlock block;
-	readBlock(&block, readHeader(infile).datasize(), infile);
+	readBlock(&block, readHeader(*infile).datasize(), *infile);
 
 	std::map<std::size_t, std::pair< std::size_t, std::size_t> > blocks;
 
 	while (true) {
-		BlobHeader bh = readHeader(infile);
-		if (infile.eof()) {
+		BlobHeader bh = readHeader(*infile);
+		if (infile->eof()) {
 			break;
 		}
 
-		blocks[blocks.size()] = std::make_pair(infile.tellg(), bh.datasize());
-		infile.seekg(bh.datasize(), std::ios_base::cur);
+		blocks[blocks.size()] = std::make_pair(infile->tellg(), bh.datasize());
+		infile->seekg(bh.datasize(), std::ios_base::cur);
 		
 	}
 
@@ -267,11 +267,12 @@ int PbfReader::ReadPbfFile(std::string const &filename, unordered_set<string> co
 		{
 			const std::lock_guard<std::mutex> lock(block_mutex);
 			for(auto const &block: blocks) {
-				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &filename, &nodeKeys]() {
+				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &nodeKeys]() {
+					auto infile = generate_stream();
 					auto output = generate_output();
-					ifstream infile(filename, ios::in | ios::binary);
-					infile.seekg(block.first);
-					if(ReadBlock(infile, *output, progress, block.second, nodeKeys, phase)) {
+
+					infile->seekg(block.first);
+					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, phase)) {
 						const std::lock_guard<std::mutex> lock(block_mutex);
 						blocks.erase(progress.first);	
 					}
@@ -295,29 +296,6 @@ int PbfReader::ReadPbfFile(std::string const &filename, unordered_set<string> co
 	osmStore.reportSize();
 	return 0;
 }
-
-int PbfReader::ReadPbfFile(std::istream &infile, unordered_set<string> const &nodeKeys, PbfReaderOutput &output)
-{
-	// ----	Read PBF
-	osmStore.clear();
-
-	HeaderBlock block;
-	readBlock(&block, readHeader(infile).datasize(), infile);
-
-	for(std::size_t ct = 0; true; ++ct) {
-		BlobHeader bh = readHeader(infile);
-		if (infile.eof()) {
-			break;
-		}
-
-		ReadBlock(infile, output, std::make_pair(ct, ct), bh.datasize(), nodeKeys);
-	}
-	cout << endl;
-
-	osmStore.reportSize();
-	return 0;
-}
-
 
 // Find a string in the dictionary
 int PbfReader::findStringPosition(PrimitiveBlock const &pb, char const *str) {
