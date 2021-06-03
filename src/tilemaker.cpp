@@ -237,7 +237,7 @@ int main(int argc, char* argv[]) {
 		osmStore.open(osmStoreFile);
 	}
 
-	AttributeStore attributeStore;
+	AttributeStore attributeStore(threadNum);
 
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);

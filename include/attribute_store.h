@@ -92,7 +92,11 @@ struct AttributeStore
 	using key_value_index_t = std::pair<Index, char>; 
 	using key_value_map_t = std::vector< std::pair<std::mutex, key_value_set_t> >;
 
-	key_value_map_t set_list = key_value_map_t(4096);
+	key_value_map_t set_list;
+
+	AttributeStore(unsigned int threadNum) 
+		: set_list(threadNum * threadNum)
+	{ }
 
 	key_value_set_ref_t empty_set() const { return std::make_shared<key_value_set>(); }
 
