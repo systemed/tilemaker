@@ -81,13 +81,13 @@ void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
 
 	boost::filesystem::create_directory(filename);
 
-	std::string dir_filename = filename + "/init.dat"; 
-	std::cout << "Filename: " << dir_filename << ", size: " << mmap_file_size << std::endl;
-	if(boost::filesystem::ofstream(dir_filename.c_str()).fail())
+	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_files.size()) + ".dat";
+	std::cout << "Filename: " << new_filename << ", size: " << mmap_file_size << std::endl;
+	if(boost::filesystem::ofstream(new_filename.c_str()).fail())
 		throw std::runtime_error("Failed to open mmap file");
-	boost::filesystem::resize_file(dir_filename.c_str(), 0);
-	boost::filesystem::resize_file(dir_filename.c_str(), mmap_file_size);
-	mmap_file_thread_ptr = std::make_shared<mmap_file>(dir_filename.c_str());
+	boost::filesystem::resize_file(new_filename.c_str(), 0);
+	boost::filesystem::resize_file(new_filename.c_str(), mmap_file_size);
+	mmap_file_thread_ptr = std::make_shared<mmap_file>(new_filename.c_str());
 
 	mmap_files.emplace_back(mmap_file_thread_ptr);
 }
