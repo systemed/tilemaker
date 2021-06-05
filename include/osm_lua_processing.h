@@ -10,11 +10,12 @@
 #include "osm_store.h"
 #include "shared_data.h"
 #include "output_object.h"
-#include "read_pbf.h"
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "attribute_store.h"
 #include "helpers.h"
+
+#include <boost/container/flat_map.hpp>
 
 // Lua
 extern "C" {
@@ -35,7 +36,7 @@ extern bool verbose;
 
 	This class provides a consistent interface for Lua scripts to access.
 */
-class OsmLuaProcessing : public PbfReaderOutput { 
+class OsmLuaProcessing { 
 
 public:
 	// ----	initialization routines
@@ -47,7 +48,7 @@ public:
 		const class ShpMemTiles &shpMemTiles, 
 		class OsmMemTiles &osmMemTiles,
 		AttributeStore &attributeStore);
-	virtual ~OsmLuaProcessing();
+	~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
 
@@ -57,21 +58,23 @@ public:
 	// Shapefile tag remapping
 	bool canRemapShapefiles();
 	kaguya::LuaTable newTable();
-	virtual kaguya::LuaTable remapAttributes(kaguya::LuaTable& in_table, const std::string &layerName);
+	kaguya::LuaTable remapAttributes(kaguya::LuaTable& in_table, const std::string &layerName);
 
 	// ----	Data loading methods
 
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+
 	/// \brief We are now processing a significant node
-	virtual void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
+	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
 
 	/// \brief We are now processing a way
-	virtual void setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags);
+	void setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	virtual void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
 
 	// ----	Metadata queries called from Lua
 
@@ -165,6 +168,9 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
+		nodeVecPtr = nullptr;
+		outerWayVecPtr = nullptr;
+		innerWayVecPtr = nullptr;
 		linestringInited = false;
 		polygonInited = false;
 		multiPolygonInited = false;

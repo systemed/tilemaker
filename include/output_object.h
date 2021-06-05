@@ -39,7 +39,7 @@ protected:
 
 public:
 	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	OSMStore::handle_t handle;
+	OSMStore::handle_t handle;							// Handle within global store of geometries
 
 	OutputGeometryType geomType : 8;					// point, linestring, polygon...
 	uint_least8_t layer 		: 8;					// what layer is it in?

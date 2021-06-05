@@ -14,7 +14,7 @@ PbfReader::PbfReader(OSMStore &osmStore)
 	: osmStore(osmStore)
 { }
 
-bool PbfReader::ReadNodes(PbfReaderOutput &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
+bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
 {
 	// ----	Read nodes
 
@@ -63,7 +63,7 @@ bool PbfReader::ReadNodes(PbfReaderOutput &output, PrimitiveGroup &pg, Primitive
 	return false;
 }
 
-bool PbfReader::ReadWays(PbfReaderOutput &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
@@ -109,7 +109,7 @@ bool PbfReader::ReadWays(PbfReaderOutput &output, PrimitiveGroup &pg, PrimitiveB
 	return false;
 }
 
-bool PbfReader::ReadRelations(PbfReaderOutput &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// ----	Read relations
 	//		(just multipolygons for now; we should do routes in time)
 
@@ -170,7 +170,7 @@ bool PbfReader::ReadRelations(PbfReaderOutput &output, PrimitiveGroup &pg, Primi
 	return false;
 }
 
-bool PbfReader::ReadBlock(std::istream &infile, PbfReaderOutput &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, unordered_set<string> const &nodeKeys, ReadPhase phase) 
+bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, unordered_set<string> const &nodeKeys, ReadPhase phase) 
 {
 	PrimitiveBlock pb;
 	readBlock(&pb, datasize, infile);

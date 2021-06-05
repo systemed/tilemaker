@@ -1,6 +1,8 @@
 #include "osm_lua_processing.h"
 #include "helpers.h"
 #include <iostream>
+
+
 using namespace std;
 
 thread_local kaguya::State *g_luaState = nullptr;
@@ -159,9 +161,7 @@ std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, boo
 			return results;
 		},
 		[&](OutputObject &oo) { // checkQuery
-			bool result;
-			result = geom::intersects(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
-			return result;
+			return geom::intersects(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
 		}
 	);
 	return ids;
@@ -198,9 +198,7 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 		},
 		[&](OutputObject &oo) { // checkQuery
 			if (oo.geomType!=OutputGeometryType::POLYGON) return false; // can only be covered by a polygon!
-			bool result;
-			result = geom::covered_by(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
-			return result;
+			return geom::covered_by(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
 		}
 	);
 	return ids;
@@ -502,7 +500,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 	linestringInited = polygonInited = multiPolygonInited = false;
 
 	try {
-		isClosed = nodeVec.front()==nodeVec.back();
+		isClosed = nodeVecPtr->front()==nodeVecPtr->back();
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -531,7 +529,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVec.cbegin(),nodeVec.cend()), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -589,7 +587,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 		MultiPolygon mp;
 		try {
 			// for each tile the relation may cover, put the output objects.
-			mp = osmStore.wayListMultiPolygon(outerWayVec.cbegin(), outerWayVec.cend(), innerWayVec.cbegin(), innerWayVec.cend());
+			mp = osmStore.wayListMultiPolygon(outerWayVecPtr->cbegin(), outerWayVecPtr->cend(), innerWayVecPtr->cbegin(), innerWayVecPtr->cend());
 		} catch(std::out_of_range &err) {
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
