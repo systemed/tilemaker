@@ -127,7 +127,7 @@ public:
         } else if (isWay && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         }
-        if (failure==boost::geometry::failure_self_intersections || failure == boost::geometry::failure_few_points) 
+        if (failure == boost::geometry::failure_few_points) 
 			return false;
 		if (failure==boost::geometry::failure_spikes)
 			geom::remove_spikes(geom);
