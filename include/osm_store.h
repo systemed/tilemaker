@@ -409,6 +409,7 @@ public:
 	Polygon nodeListPolygon(WayIt begin, WayIt end) const {
 		Polygon poly;
 		fillPoints(poly.outer(), begin, end);
+		boost::geometry::correct(poly);
 		return poly;
 	}
 
