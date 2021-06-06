@@ -3,9 +3,7 @@
 #define _ATTRIBUTE_STORE_H
 
 #include "vector_tile.pb.h"
-#include <unordered_set>
-#include <boost/container/small_vector.hpp>
-#include <algorithm>
+#include <boost/functional/hash.hpp>
 
 /*	AttributeStore 
  *	global dictionaries for attributes
@@ -24,6 +22,10 @@ struct AttributeStore
 		std::string key;
 		vector_tile::Tile_Value value;
 		char minzoom;
+
+		kv_with_minzoom(std::string const &key, vector_tile::Tile_Value const &value, char minzoom)
+			: key(key), value(value), minzoom(minzoom)
+		{ }  
 	};
 
 	enum class Index { BOOL, FLOAT, STRING };
@@ -58,7 +60,6 @@ struct AttributeStore
 
 		throw std::runtime_error("Invalid type in attribute store");
 	}
-
     
     struct key_value_less {
         bool operator()(kv_with_minzoom const &lhs, kv_with_minzoom const& rhs) const {            
@@ -67,34 +68,17 @@ struct AttributeStore
 			     : compare(lhs.value, rhs.value);
         }
     }; 
-    
-    using key_value_store_t = std::set<kv_with_minzoom, key_value_less>;
-    using key_value_store_iter_t = key_value_store_t::const_iterator;
-    key_value_store_t key_values;
-        
-    struct key_value_store_less {
-        bool operator()(key_value_store_iter_t lhs, key_value_store_iter_t rhs) const {            
-			return (lhs->minzoom != rhs->minzoom) ? (lhs->minzoom < rhs->minzoom)
-			     : (lhs->key != rhs->key) ? (lhs->key < rhs->key)
-			     : compare(lhs->value, rhs->value);
-        }
-    }; 
-    
-	using key_value_set_entry_t = boost::container::small_vector<key_value_store_iter_t, 1>;
-	using key_value_set_id_t = uint32_t;
 
-	struct key_value_set_store_t {
-		key_value_set_id_t id;
-		key_value_set_entry_t entries; 
-	};
+	using key_value_set = std::set<kv_with_minzoom, key_value_less>;
+	using key_value_set_ref_t = std::shared_ptr<key_value_set>;
 
     struct key_value_set_store_less {
-        bool operator()(key_value_set_store_t const &lhs, key_value_set_store_t const &rhs) const {  
-            if(lhs.entries.size() < rhs.entries.size()) return true;
-            if(lhs.entries.size() > rhs.entries.size()) return false;
+        bool operator()(key_value_set_ref_t const &lhs, key_value_set_ref_t const &rhs) const {  
+            if(lhs->size() < rhs->size()) return true;
+            if(lhs->size() > rhs->size()) return false;
             
-            key_value_store_less compare;
-            for(auto i = lhs.entries.begin(), j = rhs.entries.begin(); i != lhs.entries.end(); ++i, ++j) {
+            key_value_less compare;
+            for(auto i = lhs->begin(), j = rhs->begin(); i != lhs->end(); ++i, ++j) {
                 if(compare(*i, *j)) return true;
                 if(compare(*j, *i)) return false;
             }
@@ -102,55 +86,40 @@ struct AttributeStore
             return false;            
         }
     };     
-    
-    using key_value_set_t = std::set<key_value_set_store_t, key_value_set_store_less>;
-	using key_value_set_iter_t = key_value_set_t::const_iterator;
-    key_value_set_t set_list;
 
- 
-    AttributeStore()
-		: empty_set_iter(store_set(key_value_set_entry_t()))
-		, next_set_id(0) 
-    { }
-            
-    key_value_store_iter_t store_key_value(std::string const &key, vector_tile::Tile_Value const &value, char const minZoom) {
-        return key_values.insert({ key, value, minZoom }).first;              
-    }
-    
-    key_value_set_iter_t store_set(key_value_set_entry_t set) {
-        std::sort(set.begin(), set.end(), key_value_store_less());
-        return set_list.insert( {next_set_id++, set} ).first;        
-    }
-    
-	key_value_set_iter_t empty_set() const { return empty_set_iter; }
+    using key_value_set_t = std::set<key_value_set_ref_t, key_value_set_store_less>;
 
-	/*
-    void print() {
-        std::cout << "Total sets: " << set_list.size() << std::endl;
-        std::cout << "Total keys: " << keys.size() << std::endl;
-        std::cout << "Total values: " << values.size() << std::endl;
-        std::cout << "Total key values: " << key_values.size() << std::endl;
+	using key_value_index_t = std::pair<Index, char>; 
+	using key_value_map_t = std::vector< std::pair<std::mutex, key_value_set_t> >;
 
-        for(auto const &i: set_list) {
-            std::cout << "Set" << std::endl;
-            for(auto const &j: i) {
-                std::cout << *(j->first) << " ";
-				
-				if(j->second->has_bool_value())
-					std::cout << std::boolalpha << j->second->bool_value() << std::endl;
-				else if(j->second->has_float_value())
-					std::cout << j->second->float_value() << std::endl;
-				else if(j->second->has_string_value())
-					std::cout << j->second->string_value() << std::endl;
-            }
-        } 
-    }  */
+	key_value_map_t set_list;
 
-private:
-	key_value_set_iter_t empty_set_iter;
-	key_value_set_id_t next_set_id;
+	AttributeStore(unsigned int threadNum) 
+		: set_list(threadNum * threadNum)
+	{ }
+
+	key_value_set_ref_t empty_set() const { return std::make_shared<key_value_set>(); }
+
+    key_value_set_ref_t store_set(key_value_set_ref_t attributes) {
+		auto idx = attributes->size();
+		for(auto i: *attributes) {
+			boost::hash_combine(idx, i.minzoom);
+			boost::hash_combine(idx, i.key);
+			boost::hash_combine(idx, type_index(i.value));
+
+			if(i.value.has_string_value())
+				boost::hash_combine(idx, i.value.string_value());
+			else if(i.value.has_float_value())
+				boost::hash_combine(idx, i.value.float_value());
+			else
+				boost::hash_combine(idx, i.value.bool_value());
+		} 
+		
+		std::lock_guard<std::mutex> lock(set_list[idx % set_list.size()].first);
+		return *set_list[idx % set_list.size()].second.insert(attributes).first;	
+	}
 };
 
-using AttributeStoreRef = AttributeStore::key_value_set_iter_t;
+using AttributeStoreRef = AttributeStore::key_value_set_ref_t;
 
 #endif //_COORDINATES_H

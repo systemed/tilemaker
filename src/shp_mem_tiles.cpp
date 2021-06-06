@@ -84,7 +84,8 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		case OutputGeometryType::LINESTRING:
 		{
 			oo = new OutputObjectOsmStoreLinestring(
-						geomType, true, layerNum, id, osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)), attributes);
+						geomType, true, layerNum, id,  
+						osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)), attributes);
 			cachedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, &geometry);
@@ -93,7 +94,8 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		case OutputGeometryType::POLYGON:
 		{
 			oo = new OutputObjectOsmStoreMultiPolygon(
-						geomType, true, layerNum, id, osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)), attributes);
+						geomType, true, layerNum, id,
+						osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)), attributes);
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index

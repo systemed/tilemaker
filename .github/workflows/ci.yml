@@ -26,18 +26,18 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams
+        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort
 
     - name: Build tilemaker
       run: |
         mkdir ${{ github.workspace }}\build        
         cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
-        cd ${{ github.workspace }}\build && cmake --build . --config Release
+        cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
         Invoke-WebRequest -Uri http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf
-        ${{ github.workspace }}\build\Release\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
+        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
 
     - name: 'Upload compiled executable'
       uses: actions/upload-artifact@v2
@@ -45,7 +45,8 @@ jobs:
         name: tilemaker-windows
         path: |
           ${{ github.workspace }}\resources
-          ${{ github.workspace }}\build\Release\tilemaker.exe
+          ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe
+          ${{ github.workspace }}\build\RelWithDebInfo\*.pdb
 
   unix-build:  
     strategy:  
@@ -77,7 +78,7 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams
+        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort
 
     - name: Build tilemaker
       run: |

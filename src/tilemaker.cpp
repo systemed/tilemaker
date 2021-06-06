@@ -119,65 +119,6 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 	fclose(fp);
 }
 
-void generate_from_index(OSMStore &osmStore, PbfReaderOutput *output)
-{
-	PbfReaderOutput::tag_map_t currentTags;
-
-	std::cout << "Generate from index file" << std::endl;
-	for(std::size_t i = 0; i < osmStore.total_pbf_node_entries(); ++i) {
-		if((i + 1) % 10000 == 0) {
-			cout << "Generating node " << (i + 1) << " / " << osmStore.total_pbf_node_entries() << "        \r";
-			cout.flush();
-		}
-		auto const &entry = osmStore.pbf_node_entry(i);
-
-		currentTags.clear();
-		for(auto const &i: entry.tags) {
-			currentTags.emplace(std::piecewise_construct,
-				std::forward_as_tuple(i.first.begin(), i.first.end()), 
-				std::forward_as_tuple(i.second.begin(), i.second.end()));
-		}
-
-		output->setNode(entry.nodeId, entry.node, currentTags);
-	}
-
-	for(std::size_t i = 0; i < osmStore.total_pbf_way_entries(); ++i) {
-		if((i + 1) % 10000 == 0) {
-			cout << "Generating way " << (i + 1) << " / " <<  osmStore.total_pbf_way_entries()<< "        \r";
-			cout.flush();
-		}
-
-		auto const &entry = osmStore.pbf_way_entry(i);
-
-		currentTags.clear();
-		for(auto const &i: entry.tags) {
-			currentTags.emplace(std::piecewise_construct,
-				std::forward_as_tuple(i.first.begin(), i.first.end()), 
-				std::forward_as_tuple(i.second.begin(), i.second.end()));
-		}
-
-		output->setWay(entry.wayId, entry.nodeVecHandle, currentTags);
-	}
-
-	for(std::size_t i = 0; i < osmStore.total_pbf_relation_entries(); ++i) {
-		if((i + 1) == osmStore.total_pbf_relation_entries() || ((i + 1) % 100 == 0)) {
-			cout << "Generating relation " << (i + 1) << " / " << osmStore.total_pbf_relation_entries() << "        \r";
-			cout.flush();
-		}
-
-		auto const &entry = osmStore.pbf_relation_entry(i);
-
-		currentTags.clear();
-		for(auto const &i: entry.tags) {
-			currentTags.emplace(std::piecewise_construct,
-				std::forward_as_tuple(i.first.begin(), i.first.end()), 
-				std::forward_as_tuple(i.second.begin(), i.second.end()));
-		}
-
-		output->setRelation(entry.relationId, entry.relationHandle, currentTags);
-	}
-}
-
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
  *
@@ -191,25 +132,20 @@ int main(int argc, char* argv[]) {
 	vector<string> inputFiles;
 	string luaFile;
 	string osmStoreFile;
-	string osmStoreSettings;
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
-	bool index;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false;
 
 	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
-		("index",  po::bool_switch(&index),                                      "generate an index file from the specified input file")
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
-		("compact",  po::bool_switch(&osmStoreCompact),  "Use 32bits NodeIDs and reduce overall memory usage (compact mode).\nThis requires the input to be renumbered and the init-store to be configured")
-		("init-store",  po::value< string >(&osmStoreSettings)->default_value("20:5"),  "initial number of millions of entries for the nodes (20M) and ways (5M)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
@@ -294,54 +230,20 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	uint storeNodesSize = 20;
-	uint storeWaysSize = 5;
-
-	try {
-		vector<string> tokens;
-		boost::split(tokens, osmStoreSettings, boost::is_any_of(":"));
-
-		if(tokens.size() != 2) {
-			cerr << "Invalid initial store configuration: " << osmStoreSettings << std::endl;
-			return -1;
-		}
-
-		storeNodesSize = boost::lexical_cast<uint>(tokens[0]);
-		storeWaysSize = boost::lexical_cast<uint>(tokens[1]);
-		std::cout << "Initializing storage to " << storeNodesSize << "M nodes and " << storeWaysSize << "M ways" << std::endl;
-	} catch(std::exception &e)
-	{
-		cerr << "Invalid parameter for store initial settings (" << osmStoreSettings << "): " << e.what() << endl;
-		return -1;
-	}
-
 	// For each tile, objects to be used in processing
-	std::unique_ptr<OSMStore> osmStore;
-	if(osmStoreCompact) {
-		std:: cout << "\nImportant: Tilemaker running in compact mode.\nUse 'osmium renumber' first if working with OpenStreetMap-sourced data,\ninitialize the init store to the highest NodeID that is stored in the input file.\n" << std::endl;
-   		osmStore.reset(new OSMStoreImpl<NodeStoreCompact>());
-	} else {
-   		osmStore.reset(new OSMStoreImpl<NodeStore>());
-	}
-
-	std::string indexfilename = (inputFiles.empty() ? "tilemaker" : inputFiles[0]) + ".idx";
-	if(index) { 
-		std::cout << "Writing index to file: " << indexfilename << std::endl;
-		osmStore->open(indexfilename, true);
-	} else if(!osmStoreFile.empty()) {
+	OSMStore osmStore;
+	if(!osmStoreFile.empty()) {
 		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
-		osmStore->open(osmStoreFile, true);
+		osmStore.open(osmStoreFile);
 	}
 
-   	osmStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
-
-	AttributeStore attributeStore;
+	AttributeStore attributeStore(threadNum);
 
 	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(*osmStore, config.baseZoom);
+	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
 
-	OsmLuaProcessing osmLuaProcessing(osmStore.get(), *osmStore, config, layers, luaFile, 
+	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
 
 	// ---- Load external shp files
@@ -363,6 +265,7 @@ int main(int argc, char* argv[]) {
 						  shpMemTiles, osmLuaProcessing);
 		}
 	}
+	
 
 	// ----	Read significant node tags
 
@@ -371,47 +274,23 @@ int main(int argc, char* argv[]) {
 
 	// ----	Read all PBFs
 	
-	PbfReader pbfReader(*osmStore);
-	pbfReader.output = &osmLuaProcessing;
-
-	std::unique_ptr<PbfIndexWriter> indexWriter;
-
-	if(index) {
-		std::cout << "Generating index file " << std::endl;
-		indexWriter.reset(new PbfIndexWriter(*osmStore));
-		pbfReader.output = indexWriter.get();
-	}
+	PbfReader pbfReader(osmStore);
 
 	if (!mapsplit) {
-		if(!index && boost::filesystem::exists(indexfilename)) {
-			std::unique_ptr<OSMStore> indexStore;
-			if(osmStoreCompact)
-	   			indexStore.reset(new OSMStoreImpl<NodeStoreCompact>());
-			else
-   				indexStore.reset(new OSMStoreImpl<NodeStore>());
-	   		indexStore->reserve(storeNodesSize * 1000000, storeWaysSize * 1000000);
-	
-			std::cout << "Using index to generate tiles: " << indexfilename << std::endl;
-			indexStore->open(indexfilename, false);
-			osmLuaProcessing.setIndexStore(indexStore.get());
-			generate_from_index(*indexStore, &osmLuaProcessing);
-		} else {
+		for (auto inputFile : inputFiles) {
+			cout << "Reading .pbf " << inputFile << endl;
+			ifstream infile(inputFile, ios::in | ios::binary);
+			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
-			for (auto inputFile : inputFiles) {
-				cout << "Reading .pbf " << inputFile << endl;
-				
-				ifstream infile(inputFile, ios::in | ios::binary);
-				if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
-
-				int ret = pbfReader.ReadPbfFile(infile, nodeKeys);
-				if (ret != 0) return ret;
-			} 
-		}
-
-	}
-
-	if(index) {
-		return 0;
+			int ret = pbfReader.ReadPbfFile(nodeKeys, threadNum, 
+				[&]() { 
+					return std::make_unique<ifstream>(inputFile, ios::in | ios::binary);
+				},
+				[&]() {
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+				});	
+			if (ret != 0) return ret;
+		} 
 	}
 
 	// ----	Initialise SharedData
@@ -474,8 +353,14 @@ int main(int argc, char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			boost::interprocess::bufferstream pbfstream(pbf.data(), pbf.size(),  ios::in | ios::binary);
-			pbfReader.ReadPbfFile(pbfstream, nodeKeys);
+			int ret = pbfReader.ReadPbfFile(nodeKeys, 1, 
+				[&]() { 
+					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
+				},
+				[&]() {
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+				});	
+			if (ret != 0) return ret;
 
 			tileList.pop_back();
 		}
@@ -517,7 +402,7 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
 					TileCoordinates coords = tile_coordinates[i].second;
-					outputProc(pool, sharedData, *osmStore, GetTileData(sources, coords, zoom), coords, zoom);
+					outputProc(pool, sharedData, osmStore, GetTileData(sources, coords, zoom), coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);

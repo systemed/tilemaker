@@ -12,96 +12,37 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-#include <boost/container/flat_map.hpp>
+class OsmLuaProcessing;
 
-
-///\brief Specifies callbacks used while loading data using PbfReader
-class PbfReaderOutput
-{
-public:
-	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-
-	///\brief We are now processing a node
-	virtual void setNode(NodeID id, LatpLon node, const tag_map_t &tags) {};
-
-	///\brief We are now processing a way
-	virtual void setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) {};
-
-	/** 
-	 * \brief We are now processing a relation
-	 * (note that we store relations as ways with artificial IDs, and that
-	 * we use decrementing positive IDs to give a bit more space for way IDs)
-	 */
-	virtual void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags) {};
-};
-
-///\brief Class to write data to an index file
-class PbfIndexWriter
-	: public PbfReaderOutput
-{
-public:
-	PbfIndexWriter(OSMStore &osmStore)
-		: osmStore(osmStore)
-	{ } 
-
-	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-
-	void setNode(NodeID id, LatpLon node, const tag_map_t &tags) override;
-	void setWay(WayID wayId, OSMStore::handle_t nodeVecHandle, const tag_map_t &tags) override;
-	void setRelation(int64_t relationId, OSMStore::handle_t relationHandle, const tag_map_t &tags) override;
-
-private:
-
-	OSMStore &osmStore;
-};
 /**
- *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from PbfReaderOutput
+ *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from OsmLuaProcessing
  *
- * The output class is typically OsmMemTiles, which is derived from PbfReaderOutput
+ * The output class is typically OsmMemTiles, which is derived from OsmLuaProcessing
  */
 class PbfReader
 {
-public:
+public:	
+	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, All = 7 };
+
 	PbfReader(OSMStore &osmStore);
 
-	int ReadPbfFile(std::istream &inputFile, std::unordered_set<std::string> &nodeKeys);
+	using pbfreader_generate_output = std::function< std::unique_ptr<OsmLuaProcessing> () >;
+	using pbfreader_generate_stream = std::function< std::unique_ptr<std::istream> () >;
 
-	///Pointer to output object. Loaded objects are sent here.
-	PbfReaderOutput * output;
+	int ReadPbfFile(std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, 
+			pbfreader_generate_stream const &generate_stream,
+			pbfreader_generate_output const &generate_output);
 
 private:
-	bool ReadNodes(PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
+	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, std::unordered_set<std::string> const &nodeKeys, ReadPhase phase = ReadPhase::All);
+	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
-	bool ReadWays(PrimitiveGroup &pg, PrimitiveBlock const &pb);
+	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
-	bool ReadRelations(PrimitiveGroup &pg, PrimitiveBlock const &pb);
+	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
 	/// Find a string in the dictionary
 	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
-
-	using tag_map_t = PbfReaderOutput::tag_map_t;
-
-	struct PbfNodeEntry {
-        NodeID nodeId;
-        LatpLon node;
-        tag_map_t tags;
-    };
-
-    struct PbfWayEntry {
-        WayID wayId;
-        mmap_file_t::handle_t nodeVecHandle;
-        tag_map_t tags;
-    };
-
-    struct PbfRelationEntry {
-        int64_t relationId;
-        mmap_file_t::handle_t relationHandle;
-        tag_map_t tags;
-    };
-
-	std::deque<PbfNodeEntry> node_entries;
-	std::deque<PbfWayEntry> way_entries;
-	std::deque<PbfRelationEntry> relation_entries;
 
 	OSMStore &osmStore;
 };

@@ -20,7 +20,8 @@ void readMessage(google::protobuf::Message *message, std::istream &input, unsign
 
 // Read an osm.pbf sequence of header length -> BlobHeader -> Blob
 // and parse the unzipped contents into a message
-void readBlock(google::protobuf::Message *messagePtr, std::istream &input);
+BlobHeader readHeader(std::istream &input);
+void readBlock(google::protobuf::Message *messagePtr, std::size_t datasize, std::istream &input);
 
 void writeBlock(google::protobuf::Message *messagePtr, std::ostream &output, std::string headerType);
 /* -------------------

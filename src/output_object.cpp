@@ -35,11 +35,11 @@ void OutputObject::writeAttributes(
 	vector_tile::Tile_Feature *featurePtr,
 	char zoom) const {
 
-	for(auto const &it: attributes->entries) {
-		if (it->minzoom > zoom) continue;
+	for(auto const &it: *attributes) {
+		if (it.minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = it->key;
+		std::string const &key = it.key;
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -51,7 +51,7 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value const &value = it->value;
+		vector_tile::Tile_Value const &value = it.value;
 		int subscript = findValue(valueList, value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
@@ -71,7 +71,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	switch(oo.geomType) {
 		case OutputGeometryType::POINT:
 		{
-			auto const &p = osmStore.retrieve<mmap::point_t>(oo.handle);
+			auto p = osmStore.retrieve<Point>(oo.handle);
 			if (geom::within(p, bbox.clippingBox)) {
 				return p;
 			} 
@@ -80,7 +80,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 		case OutputGeometryType::LINESTRING:
 		{
-			auto const &ls = osmStore.retrieve<mmap::linestring_t>(oo.handle);
+			auto const &ls = osmStore.retrieve<OSMStore::linestring_t>(oo.handle);
 
 			MultiLinestring out;
 			if(ls.empty())
@@ -108,12 +108,12 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 		case OutputGeometryType::POLYGON:
 		{
-			auto const &input = osmStore.retrieve<mmap::multi_polygon_t>(oo.handle);
+			auto const &input = osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle);
 
 			Box box = bbox.clippingBox;
 			
 			for(auto const &p: input) {
-				for(auto const &inner: p.inners) {
+				for(auto const &inner: p.inners()) {
 					for(std::size_t i = 0; i < inner.size() - 1; ++i) 
 					{
 						Point p1 = inner[i];
@@ -130,9 +130,9 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 					}
 				}
 
-				for(std::size_t i = 0; i < p.outer.size() - 1; ++i) {
-					Point p1 = p.outer[i];
-					Point p2 = p.outer[i + 1];
+				for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
+					Point p1 = p.outer()[i];
+					Point p2 = p.outer()[i + 1];
 
 					if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
 						box.min_corner() = Point(	
@@ -176,10 +176,10 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	switch(oo.geomType) {
 		case OutputGeometryType::POINT:
 		{
-			auto const &pt = osmStore.retrieve<mmap::point_t>(oo.handle);
+			auto p = osmStore.retrieve<Point>(oo.handle);
 			LatpLon out;
-			out.latp = pt.y();
-			out.lon = pt.x();
+			out.latp = p.y();
+			out.lon = p.x();
 		 	return out;
 		}
 
@@ -209,7 +209,7 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
 		x->layer == y->layer &&
 		x->geomType == y->geomType &&
-		x->attributes->id == y->attributes->id &&
+		x->attributes == y->attributes &&
 		x->objectID == y->objectID;
 }
 
@@ -222,8 +222,8 @@ bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
 	if (x->layer > y->layer) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
-	if (x->attributes->id < y->attributes->id) return true;
-	if (x->attributes->id > y->attributes->id) return false;
+	if (x->attributes < y->attributes) return true;
+	if (x->attributes > y->attributes) return false;
 	if (x->objectID < y->objectID) return true;
 	return false;
 }

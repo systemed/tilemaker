@@ -16,20 +16,25 @@ void readMessage(google::protobuf::Message *message, istream &input, unsigned in
 
 // Read an osm.pbf sequence of header length -> BlobHeader -> Blob
 // and parse the unzipped contents into a message
-void readBlock(google::protobuf::Message *messagePtr, istream &input) {
-	// read the header length
+BlobHeader readHeader(istream &input) {
+	BlobHeader bh;
+
 	unsigned int size;
 	input.read((char*)&size, sizeof(size));
-	if (input.eof()) { return; }
+	if (input.eof()) { return bh; }
 	endian_swap(size);
 
 	// get BlobHeader and parse
-	BlobHeader bh;
 	readMessage(&bh, input, size);
+	return bh;
+}
+
+void readBlock(google::protobuf::Message *messagePtr, std::size_t datasize, istream &input) {
+	if (input.eof()) { return ; }
 
 	// get Blob and parse
 	Blob blob;
-	readMessage(&blob, input, bh.datasize());
+	readMessage(&blob, input, datasize);
 
 	// Unzip the gzipped content
 	string contents = decompress_string(blob.zlib_data(), false);
