@@ -9,11 +9,10 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
-WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl, unsigned z) {
+WriteGeometryVisitor::WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl) {
 	bboxPtr = bp;
 	featurePtr = fp;
 	simplifyLevel = sl;
-	zoom = z;
 }
 
 // Point
@@ -31,7 +30,7 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current;
 	if (simplifyLevel>0) {
-		current = simplify(round_coordinates(*bboxPtr, mp), simplifyLevel, zoom);
+		current = simplify(round_coordinates(*bboxPtr, mp), simplifyLevel);
 	} else {
 		current = mp;
 	}
@@ -82,7 +81,7 @@ void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 	MultiLinestring current;
 	if (simplifyLevel>0) {
 		for(auto const &ls: mls) {
-			current.push_back(simplify(ls, simplifyLevel, zoom));
+			current.push_back(simplify(ls, simplifyLevel));
 		}
 	} else {
 		current = mls;
@@ -104,7 +103,7 @@ void WriteGeometryVisitor::operator()(const MultiLinestring &mls) const {
 void WriteGeometryVisitor::operator()(const Linestring &ls) const { 
 	Linestring current;
 	if (simplifyLevel>0) {
-		current = simplify(ls, simplifyLevel, zoom);
+		current = simplify(ls, simplifyLevel);
 	} else {
 		current = ls;
 	}

@@ -22,9 +22,8 @@ public:
 	const TileBbox *bboxPtr;
 	vector_tile::Tile_Feature *featurePtr;
 	double simplifyLevel;
-	unsigned zoom;
 
-	WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl, unsigned zoom);
+	WriteGeometryVisitor(const TileBbox *bp, vector_tile::Tile_Feature *fp, double sl);
 
 	// Point
 	void operator()(const Point &p) const;

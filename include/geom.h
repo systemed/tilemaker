@@ -48,9 +48,9 @@ typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
 
 // Perform self-intersection aware simplification of geometry types
-Linestring simplify(Linestring const &ls, double max_distance, unsigned zoom);
-Polygon simplify(Polygon const &p, double max_distance, unsigned zoom);
-MultiPolygon simplify(MultiPolygon const &mp, double max_distance, unsigned zoom);
+Linestring simplify(Linestring const &ls, double max_distance);
+Polygon simplify(Polygon const &p, double max_distance);
+MultiPolygon simplify(MultiPolygon const &mp, double max_distance);
 
 // Combine overlapping elements by performing a union
 template<typename C, typename T>

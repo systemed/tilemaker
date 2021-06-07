@@ -137,7 +137,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			}
 
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel, zoom);
+			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
