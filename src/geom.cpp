@@ -57,7 +57,7 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 				min_distance = std::min(min_distance, boost::geometry::distance(line, i));
 
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
-            if(result.size() == query_expected && min_distance > max_distance) {
+            if(result.size() == query_expected && min_distance < max_distance) {
                 nodes.erase(nodes.begin() + entry + 1);
                 rtree.remove(simplify_segment(input[start], input[middle]));
                 rtree.remove(simplify_segment(input[middle], input[end]));
@@ -122,7 +122,7 @@ Polygon simplify(Polygon const &p, double max_distance)
 Linestring simplify(Linestring const &ls, double max_distance) 
 {
 	Linestring result;
-	simplify(ls, result, max_distance);
+	boost::geometry::simplify(ls, result, max_distance);
 	return result;
 }
 
