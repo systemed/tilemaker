@@ -57,7 +57,6 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
 				double dist = boost::geometry::distance(line, i);
 				if (dist>0.0) min_distance = std::min(min_distance, dist);
 			}
-		}
 
             std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
             if(result.size() == query_expected && min_distance > close_tolerance) {
