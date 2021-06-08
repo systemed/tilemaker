@@ -35,7 +35,7 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 			auto foundStart = startPoints.find(xy_pair(lastPoint.x(),lastPoint.y()));
 			if (foundStart != startPoints.end()) {
 				unsigned idx = foundStart->second;
-				if (!added[idx]) {
+				if (!added[idx] && input[idx].size()+ls.size()<6000) {
 					ls.insert(ls.end(), input[idx].begin()+1, input[idx].end());
 					added[idx] = true;
 					continue;
@@ -46,7 +46,7 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 			auto foundEnd = endPoints.find(xy_pair(firstPoint.x(),firstPoint.y()));
 			if (foundEnd != endPoints.end()) {
 				unsigned idx = foundEnd->second;
-				if (!added[idx]) {
+				if (!added[idx] && input[idx].size()+ls.size()<6000) {
 					ls.insert(ls.begin(), input[idx].begin(), input[idx].end()-1);
 					added[idx] = true;
 					continue;
