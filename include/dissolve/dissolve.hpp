@@ -126,6 +126,24 @@ template<
 	typename point_t = boost::geometry::model::d2::point_xy<double>, 
 	typename ring_t = boost::geometry::model::ring<point_t>
 	>
+static inline double correct_orientation(ring_t &ring, bool is_inner)
+{
+	auto area = boost::geometry::area(ring);
+	bool should_reverse =
+		(!is_inner && area < 0) ||
+		(is_inner && area > 0);
+
+	if(should_reverse) {
+		std::reverse(ring.begin(), ring.end());
+	} 
+
+	return area;
+}
+
+template<
+	typename point_t = boost::geometry::model::d2::point_xy<double>, 
+	typename ring_t = boost::geometry::model::ring<point_t>
+	>
 static inline std::vector<ring_t> dissolve_generate_rings(
 			std::map<pseudo_vertice_key, pseudo_vertice<point_t>, compare_pseudo_vertice_key> &pseudo_vertices,
     		std::set<pseudo_vertice_key, compare_pseudo_vertice_key> &start_keys, 
@@ -168,14 +186,7 @@ static inline std::vector<ring_t> dissolve_generate_rings(
 			// Repeat until back at starting point
        	} while(new_ring.size() < 2 || boost::geometry::distance(new_ring.front(), new_ring.back()) > 0);
 
-		auto area = boost::geometry::area(new_ring);
-		bool should_reverse =
-		   	(!is_inner && area < 0) ||
-			(is_inner && area > 0);
-
-		if(should_reverse) {
-			std::reverse(new_ring.begin(), new_ring.end());
-		} 
+		auto area = correct_orientation(new_ring, is_inner);
 
 		// Store the point in output polygon
 		push_point(i->second.p);
@@ -200,7 +211,13 @@ static inline std::vector<ring_t> dissolve(ring_t const &ring, bool is_inner = f
     std::map<pseudo_vertice_key, pseudo_vertice<point_t>, compare_pseudo_vertice_key> pseudo_vertices;    
     std::set<pseudo_vertice_key, compare_pseudo_vertice_key> start_keys;
 	dissolve_find_intersections(ring, pseudo_vertices, start_keys);
-   	return dissolve_generate_rings(pseudo_vertices, start_keys, is_inner, remove_spike_min_area);
+	if(start_keys.empty()) {
+		ring_t new_ring = ring;
+		correct_orientation(new_ring, is_inner);
+		return { new_ring };
+	}
+
+	return dissolve_generate_rings(pseudo_vertices, start_keys, is_inner, remove_spike_min_area);
 }
 
 template<
