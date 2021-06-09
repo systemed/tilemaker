@@ -17,6 +17,8 @@
 
 #include <boost/container/flat_map.hpp>
 
+#include "dissolve/dissolve.hpp"
+
 // Lua
 extern "C" {
 	#include "lua.h"
@@ -117,6 +119,18 @@ public:
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 
     template<class GeometryT>
+    void dissolve(GeometryT &geom) { }
+
+	void dissolve(MultiPolygon &mp)
+	{
+		MultiPolygon result;
+		for(auto const &p: mp) {
+			dissolve::dissolve(p, result, 1E-12);
+		}
+		mp = result;
+	}
+
+    template<class GeometryT>
     bool CorrectGeometry(GeometryT &geom)
     {
         geom::correct(geom); // fix wrong orientation
@@ -127,6 +141,9 @@ public:
         } else if (isWay && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         }
+		if (failure == boost::geometry::failure_self_intersections || failure == boost::geometry::failure_interior_rings_outside || failure == boost::geometry::failure_intersecting_interiors)
+			dissolve(geom);
+
         if (failure == boost::geometry::failure_few_points) 
 			return false;
 		if (failure==boost::geometry::failure_spikes)
