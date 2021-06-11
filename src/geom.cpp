@@ -139,7 +139,7 @@ MultiPolygon simplify(MultiPolygon const &mp, double max_distance)
 	return result_mp;
 }
 
-void perform_dissolve(MultiPolygon &mp)
+void make_valid(MultiPolygon &mp)
 {
 	MultiPolygon result;
 	for(auto const &p: mp) {

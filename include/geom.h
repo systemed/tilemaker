@@ -80,9 +80,9 @@ void simplify_combine(C &result, T &&new_element)
 namespace geom = boost::geometry;
 
 template<class GeometryT>
-void perform_dissolve(GeometryT &geom) { }
+void make_valid(GeometryT &geom) { }
 
-void perform_dissolve(MultiPolygon &mp);
+void make_valid(MultiPolygon &mp);
 
 #endif //_GEOM_TYPES_H
 

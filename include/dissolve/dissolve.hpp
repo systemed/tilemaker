@@ -120,6 +120,10 @@ static inline void dissolve_find_intersections(
             }          
         }
     }
+
+	// Close ring if it is not closed
+	if(boost::geometry::distance(ring.back(), ring.front()) > 0)
+        pseudo_vertices.emplace(pseudo_vertice_key(ring.size(), ring.size(), 0.0), ring.front());       
 }
 
 template<
@@ -210,6 +214,11 @@ static inline std::vector<ring_t> dissolve(ring_t const &ring, bool is_inner = f
 {
     std::map<pseudo_vertice_key, pseudo_vertice<point_t>, compare_pseudo_vertice_key> pseudo_vertices;    
     std::set<pseudo_vertice_key, compare_pseudo_vertice_key> start_keys;
+	
+	constexpr std::size_t min_nodes = 3;
+	if(ring.size() < min_nodes)
+		return std::vector<ring_t>();
+
 	dissolve_find_intersections(ring, pseudo_vertices, start_keys);
 	if(start_keys.empty()) {
 		ring_t new_ring = ring;
