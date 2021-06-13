@@ -3,7 +3,7 @@
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
 
-#include "dissolve/dissolve.hpp"
+#include "geometry/correct.hpp"
 
 typedef boost::geometry::model::segment<Point> simplify_segment;
 typedef boost::geometry::index::rtree<simplify_segment, boost::geometry::index::quadratic<16>> simplify_rtree;
@@ -143,7 +143,7 @@ void make_valid(MultiPolygon &mp)
 {
 	MultiPolygon result;
 	for(auto const &p: mp) {
-		dissolve::dissolve(p, result, 1E-12);
+		geometry::correct(p, result, 1E-12);
 	}
 	mp = result;
 }
