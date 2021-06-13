@@ -1,3 +1,4 @@
+#define BOOST_GEOMETRY_NO_ROBUSTNESS
 #include "geom.h"
 
 #include <boost/geometry/geometries/segment.hpp>
