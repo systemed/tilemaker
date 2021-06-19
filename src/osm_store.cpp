@@ -21,6 +21,7 @@ struct mmap_file
 
 	static size_t mmap_file_size;
 	static std::string mmap_dir_filename;
+	std::string filename;
 
 	boost::interprocess::file_mapping mapping;
 	boost::interprocess::mapped_region region;
@@ -29,7 +30,9 @@ struct mmap_file
 	mmap_file(std::string const &filename, std::size_t offset = 0);
 
 	static void open_mmap_file(std::string const &filename, size_t file_size = increase);
-	static void remove();
+
+	void remove();
+	static void remove_all();
 
 	static void resize_mmap_file(size_t add_size);
 
@@ -72,14 +75,15 @@ mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 	: mapping(filename.c_str(), boost::interprocess::read_write)
 	, region(mapping, boost::interprocess::read_write)
 	, buffer(boost::interprocess::create_only, reinterpret_cast<uint8_t *>(region.get_address()) + offset, region.get_size() - offset)
+	, filename(filename)
 { }
 
-void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
+void mmap_file::open_mmap_file(std::string const &dir_filename, size_t file_size)
 {
-	mmap_dir_filename = filename;
+	mmap_dir_filename = dir_filename;
 	mmap_file_size = file_size;
 
-	boost::filesystem::create_directory(filename);
+	boost::filesystem::create_directory(dir_filename);
 
 	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_files.size()) + ".dat";
 	std::cout << "Filename: " << new_filename << ", size: " << mmap_file_size << std::endl;
@@ -94,8 +98,28 @@ void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
 
 void mmap_file::remove()
 {
-	if(!mmap_dir_filename.empty())
-		boost::filesystem::remove_all(mmap_dir_filename.c_str());
+	if(!mmap_dir_filename.empty()) {
+		try {
+			boost::filesystem::remove(filename.c_str());
+		} catch(boost::filesystem::filesystem_error &e) {
+			std::cout << e.what() << std::endl;
+		}
+	}
+}
+
+void mmap_file::remove_all()
+{
+	if(!mmap_dir_filename.empty()) {
+		try {
+			for(auto &i: mmap_files) {
+				i->remove();
+			}
+
+			boost::filesystem::remove(mmap_dir_filename.c_str());
+		} catch(boost::filesystem::filesystem_error &e) {
+			std::cout << e.what() << std::endl;
+		}
+	}
 }
 
 void mmap_file::resize_mmap_file(size_t add_size)
@@ -254,7 +278,7 @@ static inline bool isClosed(WayStore::nodeid_vector_t const &way) {
 
 OSMStore::~OSMStore()
 {
-	mmap_file::remove();
+	mmap_file::remove_all();
 }
 
 void OSMStore::open(std::string const &osm_store_filename)
