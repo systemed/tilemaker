@@ -205,6 +205,18 @@ static inline std::vector<ring_t> dissolve_generate_rings(
                 new_ring.push_back(p);
 		};
 
+		auto is_closed = [](ring_t &ring) {
+			if(ring.size() < 2) return false;
+			for(std::size_t i = 0; i < ring.size() - 1; ++i) {
+				if(boost::geometry::comparable_distance(ring[i], ring.back()) == 0) {
+					ring.erase(ring.begin(), ring.begin() + i);
+					return true;
+				}
+			}
+
+			return false;
+		};
+
         auto start_iter = pseudo_vertices.find(*start_keys.begin());
         auto i = start_iter;
     
@@ -227,14 +239,10 @@ static inline std::vector<ring_t> dissolve_generate_rings(
             }
 
 			// Repeat until back at starting point
-       	} while(new_ring.size() < 2 || boost::geometry::comparable_distance(new_ring.front(), new_ring.back()) > 0);
-
-		auto area = boost::geometry::area(new_ring);
-
-		// Store the point in output polygon
-		push_point(i->second.p);
+       	} while(!is_closed(new_ring));
 
 		// Combine with already generated polygons
+		auto area = boost::geometry::area(new_ring);
 		if(std::abs(area) > remove_spike_min_area) {
 	    	result.push_back(std::move(new_ring));
 		}
