@@ -247,8 +247,10 @@ void readShapefile(const Box &clippingBox,
 #if BOOST_VERSION >= 105800
 			if (!geom::is_valid(multi, reason)) {
 				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
-				geom::correct(multi);
-				geom::remove_spikes(multi);	// water polygon shapefile has many spikes
+
+				// Perform make_valid operation
+				make_valid(multi);
+				
 				if (geom::is_valid(multi, reason)) {
 					cerr << "... corrected";
 				} else {

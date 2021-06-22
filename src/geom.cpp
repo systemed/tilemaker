@@ -1,7 +1,10 @@
+#define BOOST_GEOMETRY_NO_ROBUSTNESS
 #include "geom.h"
 
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
+
+#include "geometry/correct.hpp"
 
 typedef boost::geometry::model::segment<Point> simplify_segment;
 typedef boost::geometry::index::rtree<simplify_segment, boost::geometry::index::quadratic<16>> simplify_rtree;
@@ -137,3 +140,11 @@ MultiPolygon simplify(MultiPolygon const &mp, double max_distance)
 	return result_mp;
 }
 
+void make_valid(MultiPolygon &mp)
+{
+	MultiPolygon result;
+	for(auto const &p: mp) {
+		geometry::correct(p, result, 1E-12);
+	}
+	mp = result;
+}
