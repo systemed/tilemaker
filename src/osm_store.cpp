@@ -21,6 +21,7 @@ struct mmap_file
 
 	static size_t mmap_file_size;
 	static std::string mmap_dir_filename;
+	static bool mmap_dir_created;
 	std::string filename;
 
 	boost::interprocess::file_mapping mapping;
@@ -64,6 +65,7 @@ thread_local mmap_file_ptr mmap_file_thread_ptr;
 
 size_t mmap_file::mmap_file_size = 0;
 std::string mmap_file::mmap_dir_filename;
+bool mmap_file::mmap_dir_created = false;
      
 std::vector< mmap_shm_ptr > mmap_shm_regions;  
 size_t mmap_shm::mmap_file_size = 0;
@@ -83,7 +85,7 @@ void mmap_file::open_mmap_file(std::string const &dir_filename, size_t file_size
 	mmap_dir_filename = dir_filename;
 	mmap_file_size = file_size;
 
-	boost::filesystem::create_directory(dir_filename);
+	mmap_dir_created |= boost::filesystem::create_directory(dir_filename);
 
 	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_files.size()) + ".dat";
 	std::cout << "Filename: " << new_filename << ", size: " << mmap_file_size << std::endl;
@@ -115,7 +117,9 @@ void mmap_file::remove_all()
 				i->remove();
 			}
 
-			boost::filesystem::remove(mmap_dir_filename.c_str());
+			if(mmap_dir_created) {
+				boost::filesystem::remove(mmap_dir_filename.c_str());
+			}
 		} catch(boost::filesystem::filesystem_error &e) {
 			std::cout << e.what() << std::endl;
 		}
