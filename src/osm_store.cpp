@@ -76,6 +76,8 @@ mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 
 void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
 {
+	std::atexit(mmap_file::remove);
+
 	mmap_dir_filename = filename;
 	mmap_file_size = file_size;
 
@@ -94,6 +96,9 @@ void mmap_file::open_mmap_file(std::string const &filename, size_t file_size)
 
 void mmap_file::remove()
 {
+	mmap_file_thread_ptr.reset();
+	mmap_files.clear();
+
 	if(!mmap_dir_filename.empty())
 		boost::filesystem::remove_all(mmap_dir_filename.c_str());
 }
@@ -253,9 +258,7 @@ static inline bool isClosed(WayStore::nodeid_vector_t const &way) {
 }
 
 OSMStore::~OSMStore()
-{
-	mmap_file::remove();
-}
+{ }
 
 void OSMStore::open(std::string const &osm_store_filename)
 {

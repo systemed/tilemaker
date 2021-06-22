@@ -115,11 +115,9 @@ public:
 	Point calculateCentroid();
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
-
     template<class GeometryT>
     bool CorrectGeometry(GeometryT &geom)
     {
-        geom::correct(geom); // fix wrong orientation
 #if BOOST_VERSION >= 105800
         geom::validity_failure_type failure;
         if (isRelation && !geom::is_valid(geom,failure)) {
@@ -127,10 +125,13 @@ public:
         } else if (isWay && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         }
-        if (failure == boost::geometry::failure_few_points) 
-			return false;
+		
 		if (failure==boost::geometry::failure_spikes)
 			geom::remove_spikes(geom);
+        if (failure == boost::geometry::failure_few_points) 
+			return false;
+		if (failure)
+			make_valid(geom);
 #endif
 		return true;
     }
