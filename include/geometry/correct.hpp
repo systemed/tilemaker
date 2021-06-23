@@ -205,18 +205,6 @@ static inline std::vector<ring_t> dissolve_generate_rings(
                 new_ring.push_back(p);
 		};
 
-		auto is_closed = [](ring_t &ring) {
-			if(ring.size() < 2) return false;
-			for(std::size_t i = 0; i < ring.size() - 1; ++i) {
-				if(boost::geometry::comparable_distance(ring[i], ring.back()) == 0) {
-					ring.erase(ring.begin(), ring.begin() + i);
-					return true;
-				}
-			}
-
-			return false;
-		};
-
         auto start_iter = pseudo_vertices.find(*start_keys.begin());
         auto i = start_iter;
     
@@ -239,7 +227,19 @@ static inline std::vector<ring_t> dissolve_generate_rings(
             }
 
 			// Repeat until back at starting point
-       	} while(!is_closed(new_ring));
+       	} while(new_ring.size() < 2 || boost::geometry::comparable_distance(new_ring.front(), new_ring.back()) != 0);
+
+		// Remove overlapping region from begin/end
+		for(std::size_t i = 0; i < new_ring.size() / 2 - 1; ++i) {
+			if(boost::geometry::comparable_distance(new_ring[i + 1], new_ring[new_ring.size() - i - 2]) != 0) {
+				if(i > 0) {
+					std::copy(new_ring.begin() + i, new_ring.end() - i, new_ring.begin());
+					new_ring.resize(new_ring.size() - 2 * i);
+				}
+
+				break;
+			}
+		} 
 
 		// Combine with already generated polygons
 		auto area = boost::geometry::area(new_ring);
