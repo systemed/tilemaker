@@ -193,7 +193,8 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		auto output_progress = [&]()
 		{
 			std::ostringstream str;
-			str << "Block " << progress.first << "/" << progress.second << " group " << i << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
+			osmStore.reportStoreSize(str);
+			str << "Block " << progress.first << "/" << progress.second << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
 			std::cout << str.str();
 			std::cout.flush();
 		};
@@ -263,7 +264,6 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
 
-		std::cout << "Total blocks: " << blocks.size() << std::endl; 
 		{
 			const std::lock_guard<std::mutex> lock(block_mutex);
 			for(auto const &block: blocks) {
@@ -283,11 +283,11 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		pool.join();
 
 		if(phase == ReadPhase::Nodes) {
-			std::cout << "Sorting nodes" << std::endl;
+			std::cout << "\nSorting nodes" << std::endl;
 			osmStore.nodes_sort(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
-			std::cout << "Sorting ways" << std::endl;
+			std::cout << "\nSorting ways" << std::endl;
 			osmStore.ways_sort(threadNum);
 		}
 	}

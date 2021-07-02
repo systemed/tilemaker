@@ -386,6 +386,7 @@ public:
 		relations.clear();
 	} 
 
+	void reportStoreSize(std::ostringstream &str);
 	void reportSize() const;
 
 	// Relation -> MultiPolygon

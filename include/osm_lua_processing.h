@@ -149,6 +149,11 @@ public:
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const unsigned z);
 
+	// Write error if in verbose mode
+	void ProcessingError(const std::string &errStr) {
+		if (verbose) { std::cerr << errStr << std::endl; }
+	}
+
 	// ----	vector_layers metadata entry
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);

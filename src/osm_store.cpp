@@ -131,8 +131,6 @@ void mmap_file::resize_mmap_file(size_t add_size)
 	auto offset = mmap_file_size;
 	auto size = increase + (add_size + alignment) - (add_size % alignment);
 
-	std::cout << "Resizing osm store to size: " << ((offset + size) / 1000000) << "M                " << std::endl;
-
 	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_files.size()) + ".dat";
 	if(boost::filesystem::ofstream(new_filename.c_str()).fail())
 		throw std::runtime_error("Failed to open mmap file");
@@ -169,8 +167,6 @@ void mmap_shm::open(size_t add_size)
 	mmap_shm_thread_region_ptr = std::make_shared<mmap_shm>(size);
 	mmap_shm_regions.emplace_back(mmap_shm_thread_region_ptr);
 	mmap_file_size += size;
-	
-	std::cout << "Resizing osm store to size: " << (mmap_file_size / 1000000) << "M                " << std::endl;
 }
 
 void mmap_shm::close() 
@@ -395,6 +391,10 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeVec> &results, std::map<Way
 	} while (added>0);
 };
 
+
+void OSMStore::reportStoreSize(std::ostringstream &str) {
+	if (mmap_file::mmap_file_size>0) { str << "Store size " << (mmap_file::mmap_file_size / 1000000) << " | "; }
+}
 
 void OSMStore::reportSize() const {
 	std::cout << "Stored " << nodes.size() << " nodes, " << ways.size() << " ways, " << relations.size() << " relations" << std::endl;

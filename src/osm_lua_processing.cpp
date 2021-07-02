@@ -425,7 +425,7 @@ std::vector<double> OsmLuaProcessing::Centroid() {
 void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
 void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val, const char minzoom) {
 	if (val.size()==0) { return; }		// don't set empty strings
-	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
 	outputs.back().second->emplace(key, v, minzoom);
@@ -434,7 +434,7 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 
 void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
 void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const float val, const char minzoom) {
-	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
 	outputs.back().second->emplace(key, v, minzoom);
@@ -443,7 +443,7 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
 void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool val, const char minzoom) {
-	if (outputs.size()==0) { cerr << "Can't add Attribute " << key << " if no Layer set" << endl; return; }
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
 	outputs.back().second->emplace(key, v, minzoom);
@@ -452,7 +452,7 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 
 // Set minimum zoom
 void OsmLuaProcessing::MinZoom(const unsigned z) {
-	if (outputs.size()==0) { cerr << "Can't set minimum zoom if no Layer set" << endl; return; }
+	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
 	outputs.back().first->setMinZoom(z);
 }
 

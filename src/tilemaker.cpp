@@ -395,13 +395,14 @@ int main(int argc, char* argv[]) {
 		}
 
 		std::size_t interval = 1;
+		std::size_t zoomDisplay = 0;
 		for(std::size_t start_index = 0; start_index < tile_coordinates.size(); start_index += interval) {
 			unsigned int zoom = tile_coordinates[start_index].first;
 			if (zoom > 10) interval = 10;
 			if (zoom > 11) interval = 100;
 			if (zoom > 12) interval = 1000;
 
-			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &osmStore, &io_mutex, &tc]() {
+			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &osmStore, &io_mutex, &tc, &zoomDisplay]() {
 				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
@@ -412,8 +413,9 @@ int main(int argc, char* argv[]) {
 				const std::lock_guard<std::mutex> lock(io_mutex);
 				tc += (end_index - start_index); 
 
-				unsigned int zoom = tile_coordinates[end_index - 1].first;
-				cout << "Zoom level " << zoom << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::flush;
+				unsigned int zoom = tile_coordinates[end_index-1].first;
+				if (zoom>zoomDisplay) zoomDisplay = zoom;
+				cout << "Zoom level " << zoomDisplay << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::flush;
 			});
 		}
 		
