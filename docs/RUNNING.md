@@ -31,50 +31,14 @@ By default, tilemaker uses RAM to store the nodes and ways it reads from the .os
 to writing them out as vector tiles. This is fine for small regions, but can impose high memory 
 requirements for larger areas.
 
-To use on-disk storage instead, pass the `--store` argument with a path where you want the 
-temporary store to be created. This should be on an SSD or other fast disk.
-
-Tilemaker will grow the store as required, but you can save some time by pre-initialising it 
-to its maximum size, specified in number of million ways and nodes. To find this, use
-Osmium Tool (https://osmcode.org/osmium-tool/) to read the size of your .pbf file:
-
-    osmium fileinfo -e australia.osm.pbf
-
-Note the lines that say "Number of nodes" and "Number of ways": in this case, 62554903 and 
-4191654.
-
-Then run tilemaker:
-
-    tilemaker --input australia.osm.pbf \
-              --output australia.mbtiles \
-              --store /media/ssd/osmstore.dat \
-              --init-store 65:5 \
-              --config resources/config-openmaptiles.lua \
-              --process resources/process-openmaptiles.lua
-
-## Compact mode
-
-OpenStreetMap node and way IDs are issued chronologically, so they won't be sequential within 
-any given .pbf extract. This requires more memory to store. You can significantly save memory 
-by renumbering the extract before you run tilemaker. Use Osmium Tool to do this:
-
-    osmium renumber australia.osm.pbf -o australia-renumbered.osm.pbf
-
-Then use `osmium fileinfo` to find the number of nodes/ways (as above), and run tilemaker with
-the `--compact` switch.
-
-    tilemaker --input australia-renumbered.osm.pbf \
-              --output australia.mbtiles \
-              --compact \
-              --store /media/ssd/osmstore.dat \
-              --init-store 65:5 \
-              [...]
+To use on-disk storage instead, pass the `--store` argument with a path to the directory where 
+you want the temporary store to be created. This should be on an SSD or other fast disk. 
+Tilemaker will grow the store as required.
 
 ## Merging
 
 You can specify multiple .pbf files on the command line, and tilemaker will read them all in 
-before writing the vector tiles. (This doesn't play well with renumbering because you'll get an 
-ID clash.)
+before writing the vector tiles.
 
 Alternatively, you can use the `--merge` switch to add to an existing .mbtiles. Create your
 .mbtiles in the usual way:
@@ -91,21 +55,12 @@ Then rerun with another .pbf, using the `--merge` flag:
               [...]
 
 The second run will proceed a little more slowly due to reading in existing tiles in areas which 
-overlap. Any OSM objects which appear in both files will be written twice. You can use `--compact`
-with renumbering without issue when using `--merge`.
+overlap. Any OSM objects which appear in both files will be written twice.
 
 For very large areas, you could potentially use `osmium tags-filter` to split a .pbf into several 
 "thematic" extracts: for example, one containing buildings, another roads, and another landuse. 
 Renumber each one, then run tilemaker several times with `--merge` to add one theme at a time. 
 This would greatly reduce memory usage.
-
-## Index file
-
-If you're creating several .mbtiles from the same .pbf, you can shorten the .pbf-loading process 
-by creating an index file (.idx) with the `--index` switch. This is useful when prototyping Lua/
-style development. Use `--index` on the first run to create this file, which will be named 
-(for example) `australia.osm.pbf.idx`. Then, on subsequent runs, omit the switch; tilemaker will 
-automatically look for the `.idx` file and use it if present.
 
 ## Pre-split data
 
@@ -124,14 +79,18 @@ normal.
 
 ## Output messages
 
-When running, you may see "couldn't find constituent way" messages. This happens when the .pbf 
-file contains a multipolygon relation, but not all the relation's members are present. Typically, 
-this will happen when a multipolygon crosses the border of the extract - for example, a county 
-boundary formed by a river with islands. In this case, the river will simply not be written to 
-the tiles.
+Running tilemaker with the `--verbose` argument will output any issues encountered during tile
+creation.
+
+You may see "couldn't find constituent way" messages. This happens when the .pbf file contains 
+a multipolygon relation, but not all the relation's members are present. Typically, this will 
+happen when a multipolygon crosses the border of the extract - for example, a county boundary 
+formed by a river with islands. In this case, the river will simply not be written to the tiles.
 
 You may also see geometry errors reported by Boost::Geometry. This typically reflects an error 
 in the OSM source data (for example, a multipolygon with several inner rings but no outer ring).
+Often, if the geometry could not be written to the layer, the error will subsequently show in 
+a failed attempt to add attributes afterwards.
 
 ## Github Action
 
