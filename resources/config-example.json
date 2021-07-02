@@ -1,0 +1,25 @@
+{
+	"layers": {
+		"waterway": { "minzoom": 11, "maxzoom": 14 },
+		"transportation": { "minzoom": 12, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2.0 },
+		"building": { "minzoom": 14, "maxzoom": 14 },
+		"poi": { "minzoom": 13, "maxzoom": 14 }
+	},
+	"settings": {
+		"minzoom": 12,
+		"maxzoom": 14,
+		"basezoom": 14,
+		"include_ids": false,
+		"name": "Tilemaker example",
+		"version": "0.1",
+		"description": "Sample vector tiles for Tilemaker",
+		"compress": "gzip",
+		"metadata": {
+			"json": { "vector_layers": [
+						{ "id": "transportation",     "description": "transportation",     "fields": {"class":"String"}},
+						{ "id": "waterway",     "description": "waterway",     "fields": {"class":"String"}},
+						{ "id": "building", "description": "building", "fields": {}}
+					] }
+		}
+	}
+}
