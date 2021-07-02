@@ -181,7 +181,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		int    simplifyBelow  = it->value.HasMember("simplify_below" ) ? it->value["simplify_below" ].GetInt()    : 0;
 		double simplifyLevel  = it->value.HasMember("simplify_level" ) ? it->value["simplify_level" ].GetDouble() : 0.01;
 		double simplifyLength = it->value.HasMember("simplify_length") ? it->value["simplify_length"].GetDouble() : 0.0;
-		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 1.0;
+		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 2.0;
 		int    filterBelow    = it->value.HasMember("filter_below"   ) ? it->value["filter_below"   ].GetInt()    : 0;
 		double filterArea     = it->value.HasMember("filter_area"    ) ? it->value["filter_area"    ].GetDouble() : 0.5;
 		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
