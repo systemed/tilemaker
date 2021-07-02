@@ -52,6 +52,12 @@
 #include <boost/asio/post.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
 
+#ifndef TM_VERSION
+#define TM_VERSION (version not set)
+#endif
+#define STR1(x)  #x
+#define STR(x)  STR1(x)
+
 // Namespaces
 using namespace std;
 namespace po = boost::program_options;
@@ -137,7 +143,7 @@ int main(int argc, char* argv[]) {
 	string outputFile;
 	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false;
 
-	po::options_description desc("tilemaker (c) 2016-2020 Richard Fairhurst and contributors\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")

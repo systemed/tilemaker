@@ -58,6 +58,11 @@ include_directories(${ZLIB_INCLUDE_DIR})
 
 set(CMAKE_CXX_STANDARD 14)
 
+execute_process(
+	COMMAND git describe --tags --abbrev=0
+	OUTPUT_VARIABLE tm_version)
+add_compile_definitions(TM_VERSION=${tm_version})
+
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
 	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI)
