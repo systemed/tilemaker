@@ -26,8 +26,9 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
     for(std::size_t i = 0; i < input.size(); ++i) 
         nodes[i] = i;
     for(std::size_t i = 0; i < input.size() - 1; ++i)
-		rtree.insert({ input[i], input[i + 1] });    
-        
+        rtree.insert({ input[i], input[i + 1] });    
+    Box envelope; boost::geometry::envelope(input, envelope);
+
     std::priority_queue<std::size_t, std::vector<size_t>> pq;
     for(std::size_t i = 0; i < input.size() - 2; ++i) 
         pq.push(i);      
@@ -38,8 +39,13 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
         
         auto start = nodes[entry];
         auto middle = nodes[entry + 1];
-        auto end = nodes[entry + 2];                   
-                
+        auto end = nodes[entry + 2];
+
+        if (input[middle].x()==envelope.min_corner().x() ||
+            input[middle].y()==envelope.min_corner().y() ||
+            input[middle].x()==envelope.max_corner().x() ||
+            input[middle].y()==envelope.max_corner().y()) continue;
+
         simplify_segment line(input[start], input[end]);
         double distance = 0.0;
         for(auto i = start + 1; i < end; ++i) 
