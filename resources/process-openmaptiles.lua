@@ -27,6 +27,9 @@ ZRES11 = 76.4
 ZRES12 = 38.2
 ZRES13 = 19.1
 
+-- The height of one floor, in meters
+BUILDING_FLOOR_HEIGHT = 3.66
+
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
 
@@ -403,6 +406,7 @@ function way_function(way)
 	-- Set 'building' and associated
 	if building~="" then
 		way:Layer("building", true)
+		SetBuildingHeightAttributes(way)
 		SetMinZoomByArea(way)
 	end
 
@@ -570,6 +574,30 @@ function GetPOIRank(obj)
 
 	-- Nothing found
 	return nil,nil,nil
+end
+
+function SetBuildingHeightAttributes(way)
+	local height = tonumber(way:Find("height"), 10)
+	local minHeight = tonumber(way:Find("min_height"), 10)
+	local levels = tonumber(way:Find("building:levels"), 10)
+	local minLevel = tonumber(way:Find("building:min_level"), 10)
+
+	local renderHeight = BUILDING_FLOOR_HEIGHT
+	if height or levels then
+		renderHeight = height or (levels * BUILDING_FLOOR_HEIGHT)
+	end
+	local renderMinHeight = 0
+	if minHeight or minLevel then
+		renderMinHeight = minHeight or (minLevel * BUILDING_FLOOR_HEIGHT)
+	end
+
+	-- Fix upside-down buildings
+	if renderHeight < renderMinHeight then
+		renderHeight = renderHeight + renderMinHeight
+	end
+
+	way:AttributeNumeric("render_height", renderHeight)
+	way:AttributeNumeric("render_min_height", renderMinHeight)
 end
 
 -- ==========================================================
