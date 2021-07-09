@@ -98,7 +98,7 @@ You can integrate tilemaker as a Github Action into your [Github Workflow](https
 Here is an example:
 
 ```yaml
-- uses: systemed/tilemaker@master
+- uses: systemed/tilemaker@v2.0.0
   with:
     # Required, same to --input
     input: /path/to/osm.pbf
