@@ -4,6 +4,8 @@ Tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf p
 
 Vector tiles are used by many in-browser/app renderers, and can also power server-side raster rendering. They enable on-the-fly style changes and greater interactivity, while imposing less of a storage burden. You can output them to individual files, or to a SQLite (.mbtiles) database.
 
+See an example of a vector tile map produced by tilemaker at [tilemaker.org](https://tilemaker.org).
+
 ![Continuous Integration](https://github.com/systemed/tilemaker/workflows/Continuous%20Integration/badge.svg)
 
 ## Installing

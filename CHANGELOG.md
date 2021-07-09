@@ -1,9 +1,9 @@
 # Changelog
 
-## [2.0-rc1] - 2021-07-02
+## [2.0.0] - 2021-07-09
 
 ### Added
-- Optionally use on-disk workspace with new --store/--init-store options (@kleunen)
+- Optionally use on-disk workspace with new --store option (@kleunen)
 - Load .pbf in parallel (@kleunen)
 - Static executable build for github CI (@kleunen)
 - Mac and Windows CI builds (@kleunen)
@@ -25,13 +25,14 @@
 ### Changed
 - C++14 required
 - Remove Lua scale functions now that we return metres
-- Improve OpenMapTiles tag processing (@leonardehrenfried, @typebrook, @systemed, @QuentinC)
+- Improve OpenMapTiles tag processing (@leonardehrenfried, @typebrook, @systemed, @QuentinC, @keichan34)
 - Use OpenMapTiles processing as default in tilemaker directory
 - Change OpenMapTiles minzoom to 0
 - Default simplify_ratio to 2
 - Ignore Lake Saimaa and USFS National Forest complex polygons in OpenMapTiles script
 - Rewrite linestring/polygon combining, with zoom level control (`combine_below` and `combine_polygons_below`)
 - Use boost::geometry::intersection for clipping (faster than clipper)
+- New simplify code (@kleunen)
 - Use boost::asio::thread_pool for tile generation (@kleunen)
 - Fallback to valid polygons if simplification produces invalid ones
 - Consistently use 1TBS in source

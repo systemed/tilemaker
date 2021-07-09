@@ -38,7 +38,7 @@ There's no one standard schema, but that used by the OpenMapTiles project is pop
 
 Once you've generated your vector tiles, you need to render them on-screen. This is outside tilemaker's scope, but here's some pointers.
 
-If you're serving them over the web, you'll need a server which accepts requests, and responds with the relevant tile. You'll usually do this by reading the record from the .mbtiles container (for which you can use a SQLite client library) and sending it back over HTTP. There's a Ruby example of how to do this in tilemaker's `server/` directory; ready-made servers in other languages are available as open source.
+If you're serving them over the web, you'll need a server which accepts requests, and responds with the relevant tile. You'll usually do this by reading the record from the .mbtiles container (for which you can use a SQLite client library) and sending it back over HTTP. There's a Ruby example of how to do this in tilemaker's `server/` directory. Ready-made servers in other languages are available as open source, such as [mbtileserver](https://github.com/consbio/mbtileserver) (Go) and [tileserver-php](https://github.com/maptiler/tileserver-php), or you can use [tileserverless](https://github.com/geolonia/tileserverless) to serve direct from AWS.
 
 It's then up to the client to render the tiles. There are a few libraries that do this, but the most popular and full-featured is that developed by Mapbox, usually known as Mapbox GL. The latest versions of this are closed-source and require a Mapbox contract, but the earlier open-source version has been forked and continues as [MapLibre GL](https://github.com/maplibre), which we recommend. There's a JavaScript version as well as an iOS/Android native version.
 
