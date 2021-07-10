@@ -301,8 +301,6 @@ public:
 		reopen();
 	}
 
-	~OSMStore();
-
 	void open(std::string const &osm_store_filename);
 
 	void nodes_insert_back(NodeID i, LatpLon coord) {
