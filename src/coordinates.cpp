@@ -1,5 +1,6 @@
 #include "coordinates.h"
 #include <math.h>
+
 using namespace std;
 namespace geom = boost::geometry;
 
@@ -18,7 +19,10 @@ double rad2deg(double rad) { return (180.0/M_PI) * rad; }
 
 // Project latitude (spherical Mercator)
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)
-double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(lat+90.0)/2.0))); }
+static inline double clamp(double value, double limit) { 
+	return (value < -limit ? -limit : (value > limit ? limit : value));
+}
+double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(clamp(lat,85.06)+90.0)/2.0))); }
 double latp2lat(double latp) { return rad2deg(atan(exp(deg2rad(latp)))*2.0)-90.0; }
 
 // Tile conversions
