@@ -17,6 +17,7 @@
 // Other utilities
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
@@ -122,12 +123,27 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 
 double bboxElementFromStr(const string& number) {
 	char* endptr;
-	double num = strtod(number.c_str(), &endptr);
-	if (*endptr != '\0') {
+	try {
+		return boost::lexical_cast<double>(number);
+	} catch (boost::bad_lexical_cast&) {
 		cerr << "Failed to parse coordinate " << number << endl;
 		exit(1);
 	}
-	return num;
+}
+
+/**
+ * Split bounding box provided as a comma-separated list of coordinates.
+ */
+vector<string> parseBox(const string& bbox) {
+	vector<string> bboxParts;
+	if (!bbox.empty()) {
+		boost::split(bboxParts, bbox, boost::is_any_of(","));
+		if (bboxParts.size() != 4) {
+			cerr << "Bounding box must contain 4 elements: minlon,minlat,maxlon,maxlat" << endl;
+			exit(1);
+		}
+	}
+	return bboxParts;
 }
 
 /**
@@ -176,14 +192,7 @@ int main(int argc, char* argv[]) {
 	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
 	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
 
-	vector<string> bboxElements;
-	if (!bbox.empty()) {
-		boost::split(bboxElements, bbox, boost::is_any_of(","));
-		if (bboxElements.size() != 4) {
-			cerr << "Bounding box must contain 4 elements: minlon,minlat,maxlon,maxlat" << endl;
-			return -1;
-		}
-	}
+	vector<string> bboxElements = parseBox(bbox);
 
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { sqlite=true; }
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
