@@ -208,6 +208,7 @@ int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_t
 bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 	return
 		x->layer == y->layer &&
+		x->z_order == y->z_order &&
 		x->geomType == y->geomType &&
 		x->attributes == y->attributes &&
 		x->objectID == y->objectID;
@@ -220,6 +221,8 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
 bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
 	if (x->layer < y->layer) return true;
 	if (x->layer > y->layer) return false;
+	if (x->z_order < y->z_order) return true;
+	if (x->z_order > y->z_order) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
 	if (x->attributes < y->attributes) return true;
