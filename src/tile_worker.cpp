@@ -72,10 +72,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
 
 	OutputGeometryType gt = oo->geomType;
-    int8_t z_order = oo->z_order;
 	while (jt+1 != ooSameLayerEnd &&
 			ooNext->geomType == gt &&
-			ooNext->z_order == z_order &&
+			ooNext->z_order == oo->z_order &&
 			ooNext->attributes == oo->attributes) {
 		jt++;
 		oo = *jt;
