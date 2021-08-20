@@ -257,6 +257,8 @@ void void_mmap_allocator::destroy(void *p)
 }
 
 void NodeStore::sort(unsigned int threadNum) { 
+	std::cout << "\nSorting nodes" << std::endl;
+
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mLatpLons->begin(), mLatpLons->end(), 
@@ -265,6 +267,8 @@ void NodeStore::sort(unsigned int threadNum) {
 }
 
 void WayStore::sort(unsigned int threadNum) { 
+	std::cout << "\nSorting ways" << std::endl;
+
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mNodeLists->begin(), mNodeLists->end(), 

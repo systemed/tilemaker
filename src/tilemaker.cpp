@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false,osmStoreCompact = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -152,6 +152,7 @@ int main(int argc, char* argv[]) {
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
+		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
@@ -238,6 +239,7 @@ int main(int argc, char* argv[]) {
 
 	// For each tile, objects to be used in processing
 	OSMStore osmStore;
+	osmStore.use_compact_store(osmStoreCompact);
 	if(!osmStoreFile.empty()) {
 		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
 		osmStore.open(osmStoreFile);
