@@ -236,7 +236,7 @@ void void_mmap_allocator::deallocate(void *p, size_type n)
 		}
 	}
 
-	for(auto &i: mmap_files) {
+	for(auto &i: mmap_dir.files) {
 		if(p >= i->region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.get_address()) + i->region.get_size())) {
 			std::lock_guard<std::mutex> lock(i->mutex);
 			allocator_t allocator(i->buffer.get_segment_manager());
@@ -274,7 +274,7 @@ void void_mmap_allocator::destroy(void *p)
 		}
 	}
 
-	for(auto &i: mmap_files) {
+	for(auto &i: mmap_dir.files) {
 		if(p >= i->region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.get_address()) + i->region.get_size())) {
 			std::lock_guard<std::mutex> lock(i->mutex);
 			allocator_t allocator(i->buffer.get_segment_manager());
