@@ -189,6 +189,41 @@ private:
 	std::shared_ptr<map_t> mLatpLons;
 };
 
+// list of ways used by relations
+// by noting these in advance, we don't need to store all ways in the store
+class UsedWays {
+
+private:
+	std::vector<bool> usedList;
+
+public:
+	bool inited = false;
+
+	// Size the vector to a reasonable estimate, to avoid resizing on the fly
+	void reserve(bool compact, int numNodes) {
+		inited = true;
+		if (compact) {
+			// If we're running in compact mode, way count is roughly 1/9th of node count... say 1/8 to be safe
+			usedList.reserve(numNodes/8);
+		} else {
+			// Otherwise, we could have anything up to the current max node ID (approaching 2**30 in summer 2021)
+			// 2**31 is 0.25GB with a vector<bool>
+			usedList.reserve(pow(2,31));
+		}
+	}
+	
+	// Mark a way as used
+	void insert(WayID wayid) {
+		if (wayid>usedList.size()) usedList.resize(wayid);
+		usedList[wayid] = true;
+	}
+	
+	// See if a way is used
+	bool at(WayID wayid) {
+		return (wayid>usedList.size()) ? false : usedList[wayid];
+	}
+};
+
 // way store
 class WayStore {
 
@@ -336,6 +371,7 @@ protected:
 
 	WayStore ways;
 	RelationStore relations;
+	UsedWays used_ways;
 
 	generated osm_generated;
 	generated shp_generated;
@@ -382,7 +418,10 @@ public:
 		if(!use_compact_nodes)
 			nodes.sort(threadNum);
 	}
-	
+	std::size_t nodes_size() {
+		return use_compact_nodes ? compact_nodes.size() : nodes.size();
+	}
+
 	LatpLon nodes_at(NodeID i) const { 
 		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
 	}
@@ -396,6 +435,12 @@ public:
 
 	void relations_insert_front(std::vector<RelationStore::element_t> &new_relations) {
 		relations.insert_front(new_relations);
+	}
+
+	void mark_way_used(WayID i) { used_ways.insert(i); }
+	bool way_is_used(WayID i) { return used_ways.at(i); }
+	void ensure_used_ways_inited() {
+		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
 	}
 
 	generated &osm() { return osm_generated; }

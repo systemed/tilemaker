@@ -22,7 +22,7 @@ class OsmLuaProcessing;
 class PbfReader
 {
 public:	
-	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, All = 7 };
+	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8, All = 15 };
 
 	PbfReader(OSMStore &osmStore);
 
@@ -38,7 +38,7 @@ private:
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
 	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
-
+	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
 	/// Find a string in the dictionary
