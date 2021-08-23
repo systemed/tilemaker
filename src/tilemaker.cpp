@@ -15,7 +15,9 @@
 #include <chrono>
 
 // Other utilities
+#include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
@@ -125,6 +127,31 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 	fclose(fp);
 }
 
+double bboxElementFromStr(const string& number) {
+	char* endptr;
+	try {
+		return boost::lexical_cast<double>(number);
+	} catch (boost::bad_lexical_cast&) {
+		cerr << "Failed to parse coordinate " << number << endl;
+		exit(1);
+	}
+}
+
+/**
+ * Split bounding box provided as a comma-separated list of coordinates.
+ */
+vector<string> parseBox(const string& bbox) {
+	vector<string> bboxParts;
+	if (!bbox.empty()) {
+		boost::split(bboxParts, bbox, boost::is_any_of(","));
+		if (bboxParts.size() != 4) {
+			cerr << "Bounding box must contain 4 elements: minlon,minlat,maxlon,maxlat" << endl;
+			exit(1);
+		}
+	}
+	return bboxParts;
+}
+
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
  *
@@ -141,13 +168,15 @@ int main(int argc, char* argv[]) {
 	string jsonFile;
 	uint threadNum;
 	string outputFile;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false,osmStoreCompact = false;
+	string bbox;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
 		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
+		("bbox",   po::value< string >(&bbox),                                   "bounding box to use if input file does not have a bbox header set, example: minlon,minlat,maxlon,maxlat")
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
@@ -169,6 +198,8 @@ int main(int argc, char* argv[]) {
 	if (vm.count("help")) { cout << desc << endl; return 0; }
 	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
 	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
+
+	vector<string> bboxElements = parseBox(bbox);
 
 	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { sqlite=true; }
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
@@ -200,6 +231,13 @@ int main(int argc, char* argv[]) {
 	Box clippingBox;
 	MBTiles mapsplitFile;
 	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	if (!bboxElements.empty()) {
+		hasClippingBox = true;
+		minLon = bboxElementFromStr(bboxElements.at(0));
+		minLat = bboxElementFromStr(bboxElements.at(1));
+		maxLon = bboxElementFromStr(bboxElements.at(2));
+		maxLat = bboxElementFromStr(bboxElements.at(3));
+	}
 	if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
 		mapsplit = true;
 		mapsplitFile.openForReading(&inputFiles[0]);
