@@ -200,7 +200,7 @@ public:
 	bool inited = false;
 
 	// Size the vector to a reasonable estimate, to avoid resizing on the fly
-	void reserve(bool compact, int numNodes) {
+	void reserve(bool compact, size_t numNodes) {
 		inited = true;
 		if (compact) {
 			// If we're running in compact mode, way count is roughly 1/9th of node count... say 1/8 to be safe
@@ -502,6 +502,7 @@ public:
 		compact_nodes.clear();
 		ways.clear();
 		relations.clear();
+		used_ways.clear();
 	} 
 
 	void reportStoreSize(std::ostringstream &str);
