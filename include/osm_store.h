@@ -222,6 +222,8 @@ public:
 	bool at(WayID wayid) {
 		return (wayid>usedList.size()) ? false : usedList[wayid];
 	}
+	
+	void clear() { usedList.clear(); }
 };
 
 // way store
