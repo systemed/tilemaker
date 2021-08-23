@@ -18,7 +18,6 @@ struct mmap_file
 {
 	std::string filename;
 
-	std::mutex mutex;
 	boost::interprocess::file_mapping mapping;
 	boost::interprocess::mapped_region region;
 	boost::interprocess::managed_external_buffer buffer;
@@ -55,7 +54,6 @@ thread_local mmap_file_ptr mmap_file_thread_ptr;
 
 struct mmap_shm 
 {
-	std::mutex mutex;
 	std::vector<uint8_t> region;
 	boost::interprocess::managed_external_buffer buffer;
 
@@ -187,12 +185,10 @@ void * void_mmap_allocator::allocate(size_type n, const void *hint)
 		try {
 			if(mmap_dir.is_open() && mmap_file_thread_ptr != nullptr) {	
 				auto &i = *mmap_file_thread_ptr;
-				std::lock_guard<std::mutex> lock(i.mutex);
 				allocator_t allocator(i.buffer.get_segment_manager());
 				return &(*allocator.allocate(n, hint));
 			} else if(mmap_shm_thread_region_ptr != nullptr) {	
 				auto &i = *mmap_shm_thread_region_ptr;
-				std::lock_guard<std::mutex> lock(i.mutex);
 				allocator_t allocator(i.buffer.get_segment_manager());
 				return &(*allocator.allocate(n, hint));
 			}
@@ -213,7 +209,6 @@ void void_mmap_allocator::deallocate(void *p, size_type n)
 	if(mmap_shm_thread_region_ptr != nullptr) {	
 		auto &i = *mmap_shm_thread_region_ptr;
 		if(p >= (void const *)i.region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i.region.data()) + i.region.size())) {
-			std::lock_guard<std::mutex> lock(i.mutex);
 			allocator_t allocator(i.buffer.get_segment_manager());
 			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
 		}
@@ -227,22 +222,13 @@ void void_mmap_allocator::deallocate(void *p, size_type n)
 		}
 	} 
 
-	std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
-	for(auto &i: mmap_shm_regions) {
+	//std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
+	/* for(auto &i: boost::adaptors::reverse(mmap_shm_regions)) {
 		if(p >= (void const *)i->region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.data()) + i->region.size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
 			allocator_t allocator(i->buffer.get_segment_manager());
 			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
 		}
-	}
-
-	for(auto &i: mmap_files) {
-		if(p >= i->region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.get_address()) + i->region.get_size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
-			allocator_t allocator(i->buffer.get_segment_manager());
-			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
-		}
-	} 
+	} */
 }
 
 void void_mmap_allocator::destroy(void *p)
@@ -264,29 +250,17 @@ void void_mmap_allocator::destroy(void *p)
 		}
 	} 
 
-	std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
-	for(auto &i: mmap_shm_regions) {
+	//std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
+	/* for(auto &i: boost::adaptors::reverse(mmap_shm_regions)) {
 		if(p >= (void const *)i->region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.data()) + i->region.size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
 			allocator_t allocator(i->buffer.get_segment_manager());
 			allocator.destroy(reinterpret_cast<uint8_t *>(p));
 			return;
 		}
-	}
-
-	for(auto &i: mmap_files) {
-		if(p >= i->region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.get_address()) + i->region.get_size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
-			allocator_t allocator(i->buffer.get_segment_manager());
-			allocator.destroy(reinterpret_cast<uint8_t *>(p));
-			return;
-		}
-	} 
+	} */
 }
 
 void NodeStore::sort(unsigned int threadNum) { 
-	std::cout << "\nSorting nodes" << std::endl;
-
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mLatpLons->begin(), mLatpLons->end(), 
@@ -295,8 +269,6 @@ void NodeStore::sort(unsigned int threadNum) {
 }
 
 void WayStore::sort(unsigned int threadNum) { 
-	std::cout << "\nSorting ways" << std::endl;
-
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mNodeLists->begin(), mNodeLists->end(), 
