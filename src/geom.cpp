@@ -6,37 +6,30 @@
 
 #include "geometry/correct.hpp"
 
+#include <boost/range/adaptor/transformed.hpp>
+#include <boost/range/irange.hpp>
+
 typedef boost::geometry::model::segment<Point> simplify_segment;
 typedef boost::geometry::index::rtree<simplify_segment, boost::geometry::index::quadratic<16>> simplify_rtree;
 
-struct simplify_rtree_counter
-{
-	using value_type = simplify_segment;
-	std::size_t count = 0;
-	void push_back(value_type const &) { ++count; }
-	std::size_t size() const { return count; }
-};
-
 template<typename GeometryType>
-void simplify(GeometryType const &input, GeometryType &output, double max_distance, simplify_rtree const &outer_rtree = simplify_rtree())
-{        
-	simplify_rtree rtree;
-
+static inline void simplify_ring(GeometryType const &input, GeometryType &output, double distance, simplify_rtree const &outer_rtree = simplify_rtree())
+{
     std::deque<std::size_t> nodes(input.size());
-    for(std::size_t i = 0; i < input.size(); ++i) 
+    for(std::size_t i = 0; i < input.size(); ++i)
         nodes[i] = i;
-    for(std::size_t i = 0; i < input.size() - 1; ++i)
-        rtree.insert({ input[i], input[i + 1] });    
+
+	simplify_rtree rtree(
+		boost::irange<std::size_t>(0, input.size() - 1)
+		| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&input](std::size_t i) {
+			return simplify_segment(input[i], input[i+1]);
+		})));
+
     Box envelope; boost::geometry::envelope(input, envelope);
 
-    std::priority_queue<std::size_t, std::vector<size_t>> pq;
-    for(std::size_t i = 0; i < input.size() - 2; ++i) 
-        pq.push(i);      
-        
-    while(!pq.empty()) {
-        auto entry = pq.top();
-        pq.pop();
-        
+	for(std::size_t pq = input.size() - 2; pq--; ) {
+        auto entry = pq;
+
         auto start = nodes[entry];
         auto middle = nodes[entry + 1];
         auto end = nodes[entry + 2];
@@ -47,75 +40,77 @@ void simplify(GeometryType const &input, GeometryType &output, double max_distan
             input[middle].y()==envelope.max_corner().y()) continue;
 
         simplify_segment line(input[start], input[end]);
-        double distance = 0.0;
-        for(auto i = start + 1; i < end; ++i) 
-            distance = std::max(distance, boost::geometry::distance(line, input[i]));          
-    
-        if(boost::geometry::distance(input[start], input[end]) < 2 * max_distance || distance < max_distance) {
-            simplify_rtree_counter result;
-            boost::geometry::index::query(rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
-            boost::geometry::index::query(outer_rtree, boost::geometry::index::intersects(line), std::back_inserter(result));
 
-            std::size_t query_expected = ((start == 0 || end == input.size() - 1) ? 2 : 4);
-            if(result.size() == query_expected) {
+        double max_comp_distance = 0.0;
+		std::size_t max_comp_i = start + 1;
+
+        for(auto i = start + 1; i < end; ++i) {
+			auto comp_distance = boost::geometry::comparable_distance(line, input[i]);
+            if(comp_distance > max_comp_distance) {
+				max_comp_distance = comp_distance;
+				max_comp_i = i;
+			}
+		}
+
+        if(boost::geometry::distance(line, input[max_comp_i]) < distance) {
+			std::size_t query_count = 0;
+            for(auto const &result: rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(line)))
+				++query_count;
+            for(auto const &result: outer_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(line)))
+				++query_count;
+
+			std::size_t expected_count = std::min<std::size_t>(4, nodes.size() - 1);
+            if(query_count == expected_count) {
                 nodes.erase(nodes.begin() + entry + 1);
                 rtree.remove(simplify_segment(input[start], input[middle]));
                 rtree.remove(simplify_segment(input[middle], input[end]));
                 rtree.insert(line);
-        
-                if(entry + 2 < nodes.size()) {
-                    pq.push(start);             
-                }
             }
         }
     }
-    
-    for(auto i: nodes)
-        boost::geometry::append(output, input[i]);
+
+	output.resize(nodes.size());
+	for(std::size_t i = 0; i < nodes.size(); ++i)
+		output[i] = input[nodes[i]];
 }
 
 Polygon simplify(Polygon const &p, double max_distance) 
 {
-	simplify_rtree outer_rtree;
-	for(std::size_t j = 0; j < p.outer().size() - 1; ++j) 
-		outer_rtree.insert({ p.outer()[j], p.outer()[j + 1] });    
+	Polygon result;
 
-	std::vector<Ring> combined_inners;
-	for(size_t i = 0; i < p.inners().size(); ++i) {
-		Ring new_inner = p.inners()[i];
-		if(boost::geometry::area(new_inner) < 0) {
-			std::reverse(new_inner.begin(), new_inner.end());
-			simplify_combine(combined_inners, std::move(new_inner));
-		}
-	}
+	simplify_rtree outer_rtree(
+		boost::irange<std::size_t>(0, p.outer().size() - 1)
+		| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&p](std::size_t i) {
+			return simplify_segment(p.outer()[i], p.outer()[i+1]);
+		})));
 
-	std::vector<Ring> new_inners;
-	for(size_t i = 0; i < combined_inners.size(); ++i) {
+	for(auto const &inner: p.inners()) {
 		Ring new_inner;
-		simplify(combined_inners[i], new_inner, max_distance, outer_rtree);
+		simplify_ring(inner, new_inner, max_distance, outer_rtree);
 
-		if(boost::geometry::area(new_inner) > max_distance * max_distance) {
-			simplify_combine(new_inners, std::move(new_inner));
+		std::reverse(new_inner.begin(), new_inner.end());
+		if(new_inner.size() > 3 && boost::geometry::perimeter(new_inner) > 3 * max_distance) {
+			simplify_combine(result.inners(), std::move(new_inner));
 		}
 	}
 
 	simplify_rtree inners_rtree;
-	for(auto const &inner: new_inners) {
-		for(std::size_t z = 0; z < inner.size() - 1; ++z) 
-			inners_rtree.insert({ inner[z], inner[z + 1] });    
-	} 
+	for(auto &inner: result.inners()) {
+		std::reverse(inner.begin(), inner.end());
 
-	Polygon result;
-	simplify(p.outer(), result.outer(), max_distance, inners_rtree);
-	if(boost::geometry::area(result.outer()) < max_distance * max_distance) {
-		return Polygon();
+		inners_rtree.insert(
+			boost::irange<std::size_t>(0, inner.size() - 1)
+			| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&inner](std::size_t i) {
+				return simplify_segment(inner[i], inner[i+1]);
+			})));
 	}
 
-	for(auto&& r: new_inners) {
-		std::reverse(r.begin(), r.end());
-		result.inners().push_back(r);
-	} 
+	simplify_ring(p.outer(), result.outer(), max_distance, inners_rtree);
+	if(result.outer().size() > 3 && boost::geometry::perimeter(result.outer()) > 3 * max_distance) {
+		return result;
+	}
 
+	result = Polygon();
 	return result;
 }
 
@@ -128,15 +123,8 @@ Linestring simplify(Linestring const &ls, double max_distance)
 
 MultiPolygon simplify(MultiPolygon const &mp, double max_distance) 
 {
-	MultiPolygon combined_mp;
-	for(auto const &p: mp) {
-    	if(!p.outer().empty()) {
-			simplify_combine(combined_mp, Polygon(p));
-		}
-	}
-
 	MultiPolygon result_mp;
-	for(auto const &p: combined_mp) {
+	for(auto const &p: mp) {
 		Polygon new_p = simplify(p, max_distance);
     	if(!new_p.outer().empty()) {
 			simplify_combine(result_mp, std::move(new_p));
