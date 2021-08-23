@@ -132,6 +132,63 @@ private:
 	std::shared_ptr<map_t> mLatpLons;
 };
 
+class CompactNodeStore
+{
+
+public:
+	using element_t = std::pair<NodeID, LatpLon>;
+	using map_t = std::deque<LatpLon, mmap_allocator<LatpLon>>;
+
+	void reopen()
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		mLatpLons = std::make_unique<map_t>();
+	}
+
+	// @brief Lookup a latp/lon pair
+	// @param i OSM ID of a node
+	// @return Latp/lon pair
+	// @exception NotFound
+	LatpLon at(NodeID i) const {
+		if(i >= mLatpLons->size())
+			throw std::out_of_range("Could not find node with id " + std::to_string(i));
+		return mLatpLons->at(i);
+	}
+
+	// @brief Return the number of stored items
+	size_t size() const { 
+		std::lock_guard<std::mutex> lock(mutex);
+		return mLatpLons->size(); 
+	}
+
+	// @brief Insert a latp/lon pair.
+	// @param i OSM ID of a node
+	// @param coord a latp/lon pair to be inserted
+	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
+	//			  (though unnecessarily for current impl, future impl may impose that)
+	void insert_back(NodeID i, LatpLon coord) {
+		if(i >= mLatpLons->size())
+			mLatpLons->resize(i + 1);
+		(*mLatpLons)[i] = coord;
+	}
+
+	void insert_back(std::vector<element_t> const &elements) {
+		std::lock_guard<std::mutex> lock(mutex);
+		for(auto const &i: elements) 
+			insert_back(i.first, i.second);
+	}
+
+	// @brief Make the store empty
+	void clear() { 
+		std::lock_guard<std::mutex> lock(mutex);
+		mLatpLons->clear(); 
+	}
+
+private: 
+	mutable std::mutex mutex;
+	std::shared_ptr<map_t> mLatpLons;
+};
+
 // way store
 class WayStore {
 
@@ -274,6 +331,9 @@ public:
 
 protected:	
 	NodeStore nodes;
+	CompactNodeStore compact_nodes;
+	bool use_compact_nodes = false;
+
 	WayStore ways;
 	RelationStore relations;
 
@@ -282,6 +342,7 @@ protected:
 
 	void reopen() {
 		nodes.reopen();
+		compact_nodes.reopen();
 		ways.reopen();
 		relations.reopen();
 		
@@ -305,14 +366,27 @@ public:
 
 	void open(std::string const &osm_store_filename);
 
+	void use_compact_store(bool use = true) { use_compact_nodes = use; }
+
 	void nodes_insert_back(NodeID i, LatpLon coord) {
-		nodes.insert_back(i, coord);
+		if(!use_compact_nodes)
+			nodes.insert_back(i, coord);
+		else
+			compact_nodes.insert_back(i, coord);
 	}
 	void nodes_insert_back(std::vector<NodeStore::element_t> const &new_nodes) {
-		nodes.insert_back(new_nodes);
+		if(!use_compact_nodes)
+			nodes.insert_back(new_nodes);
+		else
+			compact_nodes.insert_back(new_nodes);
 	}
 	void nodes_sort(unsigned int threadNum) {
-		nodes.sort(threadNum);
+		if(!use_compact_nodes)
+			nodes.sort(threadNum);
+	}
+	
+	LatpLon nodes_at(NodeID i) const { 
+		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
 	}
 
 	void ways_insert_back(std::vector<WayStore::element_t> &new_ways) {
@@ -382,6 +456,7 @@ public:
 
 	void clear() {
 		nodes.clear();
+		compact_nodes.clear();
 		ways.clear();
 		relations.clear();
 	} 
@@ -427,7 +502,7 @@ private:
 	template<class PointRange, class NodeIt>
 	void fillPoints(PointRange &points, NodeIt begin, NodeIt end) const {
 		for (auto it = begin; it != end; ++it) {
-			LatpLon ll = nodes.at(*it);
+			LatpLon ll = nodes_at(*it);
 			boost::geometry::range::push_back(points, boost::geometry::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
 		}
 	}

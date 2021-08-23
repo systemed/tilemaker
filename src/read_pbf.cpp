@@ -283,11 +283,9 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		pool.join();
 
 		if(phase == ReadPhase::Nodes) {
-			std::cout << "\nSorting nodes" << std::endl;
 			osmStore.nodes_sort(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
-			std::cout << "\nSorting ways" << std::endl;
 			osmStore.ways_sort(threadNum);
 		}
 	}
