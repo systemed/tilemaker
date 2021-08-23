@@ -362,8 +362,6 @@ public:
 		reopen();
 	}
 
-	~OSMStore();
-
 	void open(std::string const &osm_store_filename);
 
 	void use_compact_store(bool use = true) { use_compact_nodes = use; }
