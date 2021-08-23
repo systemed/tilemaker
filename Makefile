@@ -3,25 +3,25 @@
 
 ifneq ("$(wildcard /usr/local/include/luajit-2.1/lua.h)","")
   LUA_VER := LuaJIT 2.1
-  LUA_CFLAGS := -I/usr/local/include/luajit-2.1
+  LUA_CFLAGS := -I/usr/local/include/luajit-2.1 -DLUAJIT
   LUA_LIBS := -lluajit-5.1
   LUAJIT := 1
 
 else ifneq ("$(wildcard /usr/include/luajit-2.1/lua.h)","")
   LUA_VER := LuaJIT 2.1
-  LUA_CFLAGS := -I/usr/include/luajit-2.1
+  LUA_CFLAGS := -I/usr/include/luajit-2.1 -DLUAJIT
   LUA_LIBS := -lluajit-5.1
   LUAJIT := 1
 
 else ifneq ("$(wildcard /usr/local/include/luajit-2.0/lua.h)","")
   LUA_VER := LuaJIT 2.0
-  LUA_CFLAGS := -I/usr/local/include/luajit-2.0
+  LUA_CFLAGS := -I/usr/local/include/luajit-2.0 -DLUAJIT
   LUA_LIBS := -lluajit-5.1
   LUAJIT := 1
 
 else ifneq ("$(wildcard /usr/include/luajit-2.0/lua.h)","")
   LUA_VER := LuaJIT 2.0
-  LUA_CFLAGS := -I/usr/include/luajit-2.0
+  LUA_CFLAGS := -I/usr/include/luajit-2.0 -DLUAJIT
   LUA_LIBS := -lluajit-5.1
   LUAJIT := 1
 
