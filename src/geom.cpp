@@ -21,9 +21,9 @@ static inline void simplify_ring(GeometryType const &input, GeometryType &output
 
 	simplify_rtree rtree(
 		boost::irange<std::size_t>(0, input.size() - 1)
-		| boost::adaptors::transformed([&input](std::size_t i) {
+		| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&input](std::size_t i) {
 			return simplify_segment(input[i], input[i+1]);
-		}));
+		})));
 
     Box envelope; boost::geometry::envelope(input, envelope);
 
@@ -80,9 +80,9 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 	simplify_rtree outer_rtree(
 		boost::irange<std::size_t>(0, p.outer().size() - 1)
-		| boost::adaptors::transformed([&p](std::size_t i) {
+		| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&p](std::size_t i) {
 			return simplify_segment(p.outer()[i], p.outer()[i+1]);
-		}));
+		})));
 
 	for(auto const &inner: p.inners()) {
 		Ring new_inner;
@@ -100,9 +100,9 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 		inners_rtree.insert(
 			boost::irange<std::size_t>(0, inner.size() - 1)
-			| boost::adaptors::transformed([&inner](std::size_t i) {
+			| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&inner](std::size_t i) {
 				return simplify_segment(inner[i], inner[i+1]);
-			}));
+			})));
 	}
 
 	simplify_ring(p.outer(), result.outer(), max_distance, inners_rtree);
