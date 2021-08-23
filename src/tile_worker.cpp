@@ -74,6 +74,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 	OutputGeometryType gt = oo->geomType;
 	while (jt+1 != ooSameLayerEnd &&
 			ooNext->geomType == gt &&
+			ooNext->z_order == oo->z_order &&
 			ooNext->attributes == oo->attributes) {
 		jt++;
 		oo = *jt;

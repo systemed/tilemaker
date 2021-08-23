@@ -57,6 +57,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addOverloadedFunctions("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric, &OsmLuaProcessing::AttributeNumericWithMinZoom)
 		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
+		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
 	);
 	if (luaState["attribute_function"]) {
 		supportsRemappingShapefiles = true;
@@ -454,6 +455,12 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 void OsmLuaProcessing::MinZoom(const unsigned z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
 	outputs.back().first->setMinZoom(z);
+}
+
+// Set z_order
+void OsmLuaProcessing::ZOrder(const int z) {
+	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
+	outputs.back().first->setZOrder(z);
 }
 
 // Record attribute name/type for vector_layers table

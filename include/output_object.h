@@ -29,11 +29,12 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
  * Possible future improvements to save memory:
  * - use a global dictionary for attribute key/values
 */
-class OutputObject { 
+class OutputObject {
 
 protected:	
 	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
-		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), minZoom(0), references(0), attributes(attributes)
+		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), z_order(0),
+		  minZoom(0), references(0), attributes(attributes)
 	{ }
 
 
@@ -43,12 +44,20 @@ public:
 
 	OutputGeometryType geomType : 8;					// point, linestring, polygon...
 	uint_least8_t layer 		: 8;					// what layer is it in?
+	int8_t z_order				: 8;					// z_order: used for sorting features within layers
 	bool fromShapefile 			: 1;
 	unsigned minZoom 			: 4;
 	
 	mutable std::atomic<uint32_t> references;
 
 	AttributeStoreRef attributes;
+
+	void setZOrder(const int z) {
+		if (z <= -127 || z >= 127) {
+			throw std::runtime_error("z_order is limited to 1 byte signed integer.");
+		}
+		z_order = z;
+	}
 
 	void setMinZoom(unsigned z) {
 		minZoom = z;
