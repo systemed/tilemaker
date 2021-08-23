@@ -195,12 +195,14 @@ class UsedWays {
 
 private:
 	std::vector<bool> usedList;
+	mutable std::mutex mutex;
 
 public:
 	bool inited = false;
 
 	// Size the vector to a reasonable estimate, to avoid resizing on the fly
 	void reserve(bool compact, size_t numNodes) {
+		std::lock_guard<std::mutex> lock(mutex);
 		inited = true;
 		if (compact) {
 			// If we're running in compact mode, way count is roughly 1/9th of node count... say 1/8 to be safe
@@ -214,6 +216,7 @@ public:
 	
 	// Mark a way as used
 	void insert(WayID wayid) {
+		std::lock_guard<std::mutex> lock(mutex);
 		if (wayid>usedList.size()) usedList.resize(wayid);
 		usedList[wayid] = true;
 	}
@@ -223,7 +226,10 @@ public:
 		return (wayid>usedList.size()) ? false : usedList[wayid];
 	}
 	
-	void clear() { usedList.clear(); }
+	void clear() {
+		std::lock_guard<std::mutex> lock(mutex);
+		usedList.clear();
+	}
 };
 
 // way store
