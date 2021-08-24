@@ -29,6 +29,7 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
  * Possible future improvements to save memory:
  * - use a global dictionary for attribute key/values
 */
+#pragma pack(push, 4)
 class OutputObject {
 
 protected:	
@@ -76,6 +77,7 @@ public:
 	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const;
 };
+#pragma pack(pop)
 
 /**
  * \brief An OutputObject derived class that contains data originally from OsmMemTiles
