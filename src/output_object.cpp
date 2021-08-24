@@ -13,14 +13,14 @@ namespace geom = boost::geometry;
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 {
 	switch(geomType) {
-		case OutputGeometryType::POINT:
-			os << "OutputGeometryType::POINT";
+		case POINT:
+			os << "POINT";
 			break;
-		case OutputGeometryType::LINESTRING:
-			os << "OutputGeometryType::LINESTRING";
+		case LINESTRING:
+			os << "LINESTRING";
 			break;
-		case OutputGeometryType::POLYGON:
-			os << "OutputGeometryType::POLYGON";
+		case POLYGON:
+			os << "POLYGON";
 			break;
 	}
 
@@ -69,7 +69,7 @@ void OutputObject::writeAttributes(
 Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox) 
 {
 	switch(oo.geomType) {
-		case OutputGeometryType::POINT:
+		case POINT:
 		{
 			auto p = osmStore.retrieve<Point>(oo.handle);
 			if (geom::within(p, bbox.clippingBox)) {
@@ -78,7 +78,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			return MultiLinestring();
 		}
 
-		case OutputGeometryType::LINESTRING:
+		case LINESTRING:
 		{
 			auto const &ls = osmStore.retrieve<OSMStore::linestring_t>(oo.handle);
 
@@ -106,7 +106,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			return result;
 		}
 
-		case OutputGeometryType::POLYGON:
+		case POLYGON:
 		{
 			auto const &input = osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle);
 
@@ -174,7 +174,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox)
 {
 	switch(oo.geomType) {
-		case OutputGeometryType::POINT:
+		case POINT:
 		{
 			auto p = osmStore.retrieve<Point>(oo.handle);
 			LatpLon out;

@@ -101,7 +101,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
-		if (oo->geomType == OutputGeometryType::POINT) {
+		if (oo->geomType == POINT) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			LatpLon pos = buildNodeGeometry(osmStore, *oo, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
@@ -121,18 +121,18 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 				continue;
 			}
 
-			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
+			if (oo->geomType == POLYGON && filterArea > 0.0) {
 				if (geom::area(g)<filterArea) continue;
 			}
 
 			//This may increment the jt iterator
-			if (oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
+			if (oo->geomType == LINESTRING && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
-			} else if (oo->geomType == OutputGeometryType::POLYGON && combinePolygons) {
+			} else if (oo->geomType == POLYGON && combinePolygons) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}
