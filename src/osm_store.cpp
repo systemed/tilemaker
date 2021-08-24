@@ -325,8 +325,8 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	// - If no matches can be found, then one linestring is added (to 'attract' others)
 	// - The process is rerun until no ways are left
 	// There's quite a lot of copying going on here - could potentially be addressed
-	std::vector<NodeVec> outers;
-	std::vector<NodeVec> inners;
+	std::vector<NodeDeque> outers;
+	std::vector<NodeDeque> inners;
 	std::map<WayID,bool> done; // true=this way has already been added to outers/inners, don't reconsider
 
 	// merge constituent ways together
@@ -354,7 +354,7 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	return mp;
 }
 
-void OSMStore::mergeMultiPolygonWays(std::vector<NodeVec> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
+void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
 
 	int added;
 	do {

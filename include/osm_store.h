@@ -464,7 +464,7 @@ public:
 
 	// Relation -> MultiPolygon
 	MultiPolygon wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const;
-	void mergeMultiPolygonWays(std::vector<NodeVec> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
+	void mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
 
 	///It is not really meaningful to try using a relation as a linestring. Not normally used but included
 	///if Lua script attempts to do this.

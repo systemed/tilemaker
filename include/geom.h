@@ -46,6 +46,7 @@ typedef uint64_t WayID;
 #define MAX_WAY_ID std::numeric_limits<WayID>::max()
 typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
+typedef std::deque<NodeID> NodeDeque;
 
 // Perform self-intersection aware simplification of geometry types
 Linestring simplify(Linestring const &ls, double max_distance);
