@@ -39,17 +39,15 @@ protected:
 
 
 public:
-	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	OSMStore::handle_t handle;							// Handle within global store of geometries
-
-	OutputGeometryType geomType : 8;					// point, linestring, polygon...
+	NodeID objectID 			: 40;					// id of way (linestring/polygon) or node (point)
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	int8_t z_order				: 8;					// z_order: used for sorting features within layers
+	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	bool fromShapefile 			: 1;
 	unsigned minZoom 			: 4;
-	
-	mutable std::atomic<uint32_t> references;
 
+	OSMStore::handle_t handle;							// Handle within global store of geometries
+	mutable std::atomic<uint32_t> references;
 	AttributeStoreRef attributes;
 
 	void setZOrder(const int z) {
