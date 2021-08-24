@@ -86,9 +86,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 			T output;
 			geom::union_(g, to_merge, output);
 			g = move(output);
-		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << std::to_string(oo->objectID) <<"," << err.what() << endl;
-		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << std::to_string(oo->objectID) << endl;
-		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << std::to_string(oo->objectID) << endl;
+		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
+		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
+		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
 		}
 	}
 }
@@ -117,7 +117,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			try {
 				g = buildWayGeometry(osmStore, *oo, bbox);
 			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << std::to_string(oo->objectID) <<"," << err.what() << endl;
+				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
 				continue;
 			}
 
