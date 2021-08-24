@@ -198,7 +198,7 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 			return results;
 		},
 		[&](OutputObject &oo) { // checkQuery
-			if (oo.geomType!=POLYGON) return false; // can only be covered by a polygon!
+			if (oo.geomType!=POLYGON_) return false; // can only be covered by a polygon!
 			return geom::covered_by(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
 		}
 	);
@@ -310,9 +310,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	OutputGeometryType geomType = isWay ? (area ? POLYGON : LINESTRING) : POINT;
+	OutputGeometryType geomType = isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
-		if (geomType==POINT) {
+		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
             if(!CorrectGeometry(p)) return;
@@ -323,7 +323,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
 		}
-		else if (geomType==POLYGON) {
+		else if (geomType==POLYGON_) {
 			// polygon
 
 			MultiPolygon mp;
@@ -352,7 +352,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 							osmStore.store_multi_polygon(osmStore.osm(), mp), attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
-		else if (geomType==LINESTRING) {
+		else if (geomType==LINESTRING_) {
 			// linestring
 			Linestring ls = linestringCached();
 
@@ -392,7 +392,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-	OutputObjectRef oo(new OutputObjectOsmStorePoint(POINT,
+	OutputObjectRef oo(new OutputObjectOsmStorePoint(POINT_,
 					false, layers.layerMap[layerName], osmID, 
 					osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
@@ -543,7 +543,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
 				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->first->geomType == POLYGON) {
+					if (jt->first->geomType == POLYGON_) {
 						polygonExists = true;
 						continue;
 					}
@@ -557,7 +557,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-						if (jt->first->geomType != POLYGON) continue;
+						if (jt->first->geomType != POLYGON_) continue;
 						osmMemTiles.AddObject(index, jt->first);
 					}
 				}

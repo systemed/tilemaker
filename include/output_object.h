@@ -18,7 +18,7 @@
 #include <boost/intrusive_ptr.hpp>
 #include <atomic>
 
-enum OutputGeometryType { POINT, LINESTRING, POLYGON };
+enum OutputGeometryType { POINT_, LINESTRING_, POLYGON_ };
 
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
@@ -86,7 +86,7 @@ public:
 	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == POINT);
+		assert(type == POINT_);
 	}
 }; 
 
@@ -96,7 +96,7 @@ public:
 	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == LINESTRING);
+		assert(type == LINESTRING_);
 	}
 };
 
@@ -106,7 +106,7 @@ public:
 	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
 		: OutputObject(type, shp, l, id, handle, attributes)
 	{ 
-		assert(type == POLYGON);
+		assert(type == POLYGON_);
 	}
 };
 
