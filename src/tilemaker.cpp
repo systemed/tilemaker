@@ -237,24 +237,21 @@ int main(int argc, char* argv[]) {
 		minLat = bboxElementFromStr(bboxElements.at(1));
 		maxLon = bboxElementFromStr(bboxElements.at(2));
 		maxLat = bboxElementFromStr(bboxElements.at(3));
-	}
-	if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
+
+	} else if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
 		mapsplit = true;
 		mapsplitFile.openForReading(&inputFiles[0]);
 		mapsplitFile.readBoundingBox(minLon, maxLon, minLat, maxLat);
-		cout << "Bounding box " << minLon << ", " << maxLon << ", " << minLat << ", " << maxLat << endl;
-		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
 		hasClippingBox = true;
 
 	} else if (inputFiles.size()>0) {
 		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
-		if(hasClippingBox) {
-			cout << "Bounding box " << minLon << ", " << maxLon << ", " << minLat << ", " << maxLat << endl;
-			clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
-			                  geom::make<Point>(maxLon, lat2latp(maxLat)));
-		}
+	}
+
+	if (hasClippingBox) {
+		clippingBox = Box(geom::make<Point>(minLon, lat2latp(minLat)),
+		                  geom::make<Point>(maxLon, lat2latp(maxLat)));
 	}
 
 	// ----	Read JSON config
@@ -273,6 +270,10 @@ int main(int argc, char* argv[]) {
 	} catch (...) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
+	}
+	if (hasClippingBox) {
+		cout << "Bounding box " << clippingBox.min_corner().x() << ", " << latp2lat(clippingBox.min_corner().y()) << ", " << 
+		                           clippingBox.max_corner().x() << ", " << latp2lat(clippingBox.max_corner().y()) << endl;
 	}
 
 	// For each tile, objects to be used in processing
