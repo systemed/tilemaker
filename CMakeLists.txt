@@ -121,4 +121,6 @@ endif()
 
 install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
 
+add_executable(tilemaker-server server/server.cpp)
+
 install(TARGETS tilemaker RUNTIME DESTINATION bin)
