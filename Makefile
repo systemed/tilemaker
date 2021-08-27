@@ -66,7 +66,7 @@ endif
 
 # Main includes
 
-TM_VERSION := $(shell git describe --tags --abbrev=0)
+TM_VERSION := v2.0.0
 CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp
 INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
