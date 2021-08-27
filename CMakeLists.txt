@@ -109,4 +109,6 @@ if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
 endif()
 
+add_executable(tilemaker-server server/server.cpp)
+
 install(TARGETS tilemaker RUNTIME DESTINATION bin)
