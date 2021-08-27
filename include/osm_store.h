@@ -440,7 +440,17 @@ public:
 	handle_t store_multi_polygon(generated &store, Input const &src)
 	{
 		multi_polygon_t dst;
-		boost::geometry::assign(dst, src);
+		dst.resize(src.size());
+		for(std::size_t i = 0; i < src.size(); ++i) {
+			dst[i].outer().resize(src[i].outer().size());
+			boost::geometry::assign(dst[i].outer(), src[i].outer());
+
+			dst[i].inners().resize(src[i].inners().size());
+			for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
+				dst[i].inners()[j].resize(src[i].inners()[j].size());
+				boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
+			}
+		}
 		
 		std::lock_guard<std::mutex> lock(store.multi_polygon_store_mutex);
 		std::size_t id = store.multi_polygon_store->size();
