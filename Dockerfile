@@ -1,4 +1,4 @@
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 LABEL Description="Tilemaker" Version="1.4.0"
 
 ARG DEBIAN_FRONTEND=noninteractive
