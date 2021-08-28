@@ -17,8 +17,9 @@ Tilemaker is written in C++14. The chief dependencies are:
 * Lua (5.1 or later) or LuaJIT
 * sqlite3
 * shapelib
+* rapidjson
 
-rapidjson, sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
+sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
 
 You can then simply install with:
 
@@ -89,4 +90,4 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 
 Tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
 
-Copyright tilemaker contributors, 2015-2021. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included rapidjson (Milo Yip and THL A29) and sqlite_modern_cpp (Amin Roosta) are MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
+Copyright tilemaker contributors, 2015-2021. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included sqlite_modern_cpp (Amin Roosta) is MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
