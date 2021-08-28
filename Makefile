@@ -66,6 +66,8 @@ endif
 
 # Main includes
 
+prefix = /usr/local
+
 TM_VERSION := $(shell git describe --tags --abbrev=0)
 CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp
@@ -88,7 +90,8 @@ tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf
 	protoc --proto_path=include --cpp_out=include $<
 
 install:
-	install -m 0755 tilemaker /usr/local/bin
+	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
+	install -m 0755 tilemaker $(DESTDIR)$(prefix)/bin/
 
 clean:
 	rm -f tilemaker src/*.o include/*.o
