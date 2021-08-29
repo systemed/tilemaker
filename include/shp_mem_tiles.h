@@ -23,7 +23,7 @@ public:
 	}
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
-		std::function<bool(OutputObject &oo)> checkQuery) const;
+		std::function<bool(OutputObject const &oo)> checkQuery) const;
 	std::vector<std::string> namesOfGeometries(const std::vector<uint> &ids) const;
 
 	template <typename GeometryT>

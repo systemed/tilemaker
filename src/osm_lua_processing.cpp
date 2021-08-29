@@ -161,7 +161,7 @@ std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, boo
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-		[&](OutputObject &oo) { // checkQuery
+		[&](OutputObject const &oo) { // checkQuery
 			return geom::intersects(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
 		}
 	);
@@ -178,7 +178,7 @@ double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-		[&](OutputObject &oo) { // checkQuery
+		[&](OutputObject const &oo) { // checkQuery
 			MultiPolygon tmp;
 			geom::intersection(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle), tmp);
 			area += multiPolygonArea(tmp);
@@ -317,7 +317,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(p)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStorePoint(geomType, false,
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, false,
 							layers.layerMap[layerName], osmID, 
 							osmStore.store_point(osmStore.osm(), p), attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
@@ -347,7 +347,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(mp)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStoreMultiPolygon(geomType, false,
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, false,
 							layers.layerMap[layerName], osmID, 
 							osmStore.store_multi_polygon(osmStore.osm(), mp), attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
@@ -358,7 +358,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(ls)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStoreLinestring(geomType, false,
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, false,
 						layers.layerMap[layerName], osmID, 
 						osmStore.store_linestring(osmStore.osm(), ls), attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
@@ -392,7 +392,11 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
+<<<<<<< HEAD
 	OutputObjectRef oo(new OutputObjectOsmStorePoint(POINT_,
+=======
+	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(OutputGeometryType::POINT,
+>>>>>>> Remove reference counted outputobject
 					false, layers.layerMap[layerName], osmID, 
 					osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));

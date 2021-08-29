@@ -35,7 +35,7 @@ class OutputObject {
 protected:	
 	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
 		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), z_order(0),
-		  minZoom(0), references(0), attributes(attributes)
+		  minZoom(0), attributes(attributes)
 	{ }
 
 
@@ -112,18 +112,24 @@ public:
 	}
 };
 
-typedef boost::intrusive_ptr<OutputObject> OutputObjectRef;
+class OutputObjectRef
+{
+	OutputObject *oo;
 
-static inline void intrusive_ptr_add_ref(OutputObject *oo){
-	auto result = oo->references.fetch_add(1, std::memory_order_relaxed);
-}
+public:
+	OutputObjectRef(OutputObject *oo = nullptr)
+		: oo(oo)
+	{ }
+	OutputObjectRef(OutputObjectRef const &other) = default;
+	OutputObjectRef(OutputObjectRef &&other) = default;
 
-static inline void intrusive_ptr_release(OutputObject *oo) {
-	if (oo->references.fetch_sub(1, std::memory_order_release) == 1) {
-      std::atomic_thread_fence(std::memory_order_acquire);
-      delete oo;
-    }
-}
+	OutputObjectRef &operator=(OutputObjectRef const &other) { oo = other.oo; return *this; }
+    OutputObject& operator*() { return *oo; }
+    OutputObject const& operator*() const { return *oo; }
+    OutputObject *operator->() { return oo; }
+    OutputObject const *operator->() const { return oo; }
+	void reset() { oo = nullptr; }
+};
 
 /** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
  * Returns a boost::variant -
@@ -136,7 +142,7 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 // Comparison functions
 
-bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
+bool operator==(const OutputObjectRef x, const OutputObjectRef y);
 
 /**
  * Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
@@ -144,7 +150,7 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
  * It is to arrange objects with the identical attributes continuously.
  * Such objects will be merged into one object, to reduce the size of output.
  */
-bool operator<(const OutputObjectRef &x, const OutputObjectRef &y);
+bool operator<(const OutputObjectRef x, const OutputObjectRef y);
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
