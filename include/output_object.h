@@ -20,6 +20,13 @@
 
 enum OutputGeometryType { POINT_, LINESTRING_, POLYGON_ };
 
+#define OSMID_TYPE_OFFSET	40
+#define OSMID_MASK 		((1L<<OSMID_TYPE_OFFSET)-1)
+#define OSMID_SHAPE 	(0L<<OSMID_TYPE_OFFSET)
+#define OSMID_NODE 		(1L<<OSMID_TYPE_OFFSET)
+#define OSMID_WAY 		(2L<<OSMID_TYPE_OFFSET)
+#define OSMID_RELATION 	(3L<<OSMID_TYPE_OFFSET)
+
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
@@ -33,22 +40,19 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 class OutputObject {
 
 protected:	
-	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
-		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), z_order(0),
+	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes) 
+		: objectID(id), geomType(type), layer(l), z_order(0),
 		  minZoom(0), attributes(attributes)
 	{ }
 
 
 public:
-	NodeID objectID 			: 40;					// id of way (linestring/polygon) or node (point) - cf MAX_WAY_ID
+	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point) - cf MAX_WAY_ID
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	int8_t z_order				: 8;					// z_order: used for sorting features within layers
 	OutputGeometryType geomType : 2;					// point, linestring, polygon
-	bool fromShapefile 			: 1;
 	unsigned minZoom 			: 4;
 
-	OSMStore::handle_t handle;							// Handle within global store of geometries
-	mutable std::atomic<uint32_t> references;
 	AttributeStoreRef attributes;
 
 	void setZOrder(const int z) {
@@ -85,8 +89,8 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
 		assert(type == POINT_);
 	}
@@ -95,8 +99,8 @@ public:
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
 		assert(type == LINESTRING_);
 	}
@@ -105,8 +109,8 @@ public:
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
 		assert(type == POLYGON_);
 	}

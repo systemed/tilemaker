@@ -285,8 +285,6 @@ void void_mmap_allocator::destroy(void *p)
 }
 
 void NodeStore::sort(unsigned int threadNum) { 
-	std::cout << "\nSorting nodes" << std::endl;
-
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mLatpLons->begin(), mLatpLons->end(), 
@@ -295,8 +293,6 @@ void NodeStore::sort(unsigned int threadNum) {
 }
 
 void WayStore::sort(unsigned int threadNum) { 
-	std::cout << "\nSorting ways" << std::endl;
-
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
 		mNodeLists->begin(), mNodeLists->end(), 
@@ -313,6 +309,55 @@ void OSMStore::open(std::string const &osm_store_filename)
 	mmap_dir.open_mmap_file(osm_store_filename);
 	reopen();
 	mmap_shm::close();
+}
+
+void OSMStore::shapes_sort(unsigned int threadNum)
+{
+	std::cout << "Sorting loaded shapes" << std::endl;
+	boost::sort::block_indirect_sort(
+		shp_generated.points_store->begin(), shp_generated.points_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
+	boost::sort::block_indirect_sort(
+		shp_generated.linestring_store->begin(), shp_generated.linestring_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+	boost::sort::block_indirect_sort(
+		shp_generated.multi_polygon_store->begin(), shp_generated.multi_polygon_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+}
+
+void OSMStore::generated_sort(unsigned int threadNum)
+{
+	std::cout << "Sorting generated geometries" << std::endl;
+	std::lock_guard<std::mutex> lock_points(osm_generated.points_store_mutex);
+	boost::sort::block_indirect_sort(
+		osm_generated.points_store->begin(), osm_generated.points_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
+
+	std::lock_guard<std::mutex> lock_linestring(osm_generated.linestring_store_mutex);
+	boost::sort::block_indirect_sort(
+		osm_generated.linestring_store->begin(), osm_generated.linestring_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+	
+	std::lock_guard<std::mutex> lock_multi_polygon(osm_generated.multi_polygon_store_mutex);
+	boost::sort::block_indirect_sort(
+		osm_generated.multi_polygon_store->begin(), osm_generated.multi_polygon_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+}
+
+void OSMStore::nodes_sort(unsigned int threadNum) 
+{
+	std::cout << "\nSorting nodes" << std::endl;
+	if(!use_compact_nodes)
+		nodes.sort(threadNum);
+}
+
+void OSMStore::ways_sort(unsigned int threadNum) { 
+	std::cout << "\nSorting ways" << std::endl;
+	ways.sort(threadNum); 
 }
 
 MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const {

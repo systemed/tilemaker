@@ -37,7 +37,7 @@ public:
 		for (auto it : results) {
 			OutputObjectRef oo = cachedGeometries.at(it.second);
 			if (oo->geomType!=POLYGON_) continue;
-			geom::union_(mp, osmStore.retrieve<OSMStore::multi_polygon_t>(oo->handle), tmp);
+			geom::union_(mp, osmStore.retrieve_multi_polygon(osmStore.shp(), oo->objectID), tmp);
 			geom::assign(mp, tmp);
 		}
 		geom::correct(mp);

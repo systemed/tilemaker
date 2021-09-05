@@ -71,7 +71,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	switch(oo.geomType) {
 		case POINT_:
 		{
-			auto p = osmStore.retrieve<Point>(oo.handle);
+			auto p = osmStore.retrieve_point((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 			if (geom::within(p, bbox.clippingBox)) {
 				return p;
 			} 
@@ -80,7 +80,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 		case LINESTRING_:
 		{
-			auto const &ls = osmStore.retrieve<OSMStore::linestring_t>(oo.handle);
+			auto const &ls = osmStore.retrieve_linestring((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 
 			MultiLinestring out;
 			if(ls.empty())
@@ -108,7 +108,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 		case POLYGON_:
 		{
-			auto const &input = osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle);
+			auto const &input = osmStore.retrieve_multi_polygon((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 
 			Box box = bbox.clippingBox;
 			
@@ -176,7 +176,7 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	switch(oo.geomType) {
 		case POINT_:
 		{
-			auto p = osmStore.retrieve<Point>(oo.handle);
+			auto p = osmStore.retrieve_point((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 			LatpLon out;
 			out.latp = p.y();
 			out.lon = p.x();
