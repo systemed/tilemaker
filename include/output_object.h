@@ -15,9 +15,6 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-#include <boost/intrusive_ptr.hpp>
-#include <atomic>
-
 enum OutputGeometryType { POINT_, LINESTRING_, POLYGON_ };
 
 #define OSMID_TYPE_OFFSET	40

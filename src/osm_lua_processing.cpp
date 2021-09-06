@@ -197,15 +197,9 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-<<<<<<< HEAD
-		[&](OutputObject &oo) { // checkQuery
-			if (oo.geomType!=POLYGON_) return false; // can only be covered by a polygon!
-			return geom::covered_by(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
-=======
 		[&](OutputObject const &oo) { // checkQuery
-			if (oo.geomType!=OutputGeometryType::POLYGON) return false; // can only be covered by a polygon!
+			if (oo.geomType!=POLYGON_) return false; // can only be covered by a polygon!
 			return geom::covered_by(geom, osmStore.retrieve_multi_polygon(osmStore.shp(), oo.objectID));
->>>>>>> Use OsmID to lookup generated geometry
 		}
 	);
 	return ids;
@@ -398,19 +392,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-	OutputObjectRef oo(new OutputObjectOsmStorePoint(POINT_,
-=======
-	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(OutputGeometryType::POINT,
->>>>>>> Remove reference counted outputobject
-					false, layers.layerMap[layerName], osmID, 
-					osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
-=======
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
-	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(OutputGeometryType::POINT,
+	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
->>>>>>> Use OsmID to lookup generated geometry
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
 
@@ -445,7 +429,7 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 0);
 }
 
@@ -454,7 +438,7 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
 }
 
@@ -463,7 +447,7 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 

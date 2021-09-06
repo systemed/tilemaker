@@ -78,7 +78,7 @@ void addShapefileAttributes(
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
 
-			attributes->emplace(key, v, 0);
+			attributes->values.emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		
@@ -102,7 +102,7 @@ void addShapefileAttributes(
 				         break;
 			}
 			
-			attributes->emplace(key, v, 0);
+			attributes->values.emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		

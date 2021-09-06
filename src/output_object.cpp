@@ -35,7 +35,7 @@ void OutputObject::writeAttributes(
 	vector_tile::Tile_Feature *featurePtr,
 	char zoom) const {
 
-	for(auto const &it: *attributes) {
+	for(auto const &it: attributes->values) {
 		if (it.minzoom > zoom) continue;
 
 		// Look for key
@@ -225,8 +225,8 @@ bool operator<(const OutputObjectRef x, const OutputObjectRef y) {
 	if (x->z_order > y->z_order) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
-	if (x->attributes < y->attributes) return true;
-	if (x->attributes > y->attributes) return false;
+	if (x->attributes.get() < y->attributes.get()) return true;
+	if (x->attributes.get() > y->attributes.get()) return false;
 	if (x->objectID < y->objectID) return true;
 	return false;
 } 
