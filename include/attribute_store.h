@@ -4,6 +4,8 @@
 
 #include "vector_tile.pb.h"
 #include <boost/functional/hash.hpp>
+#include <boost/intrusive_ptr.hpp>
+#include <atomic>
 
 /*	AttributeStore 
  *	global dictionaries for attributes
@@ -69,16 +71,24 @@ struct AttributeStore
         }
     }; 
 
-	using key_value_set = std::set<kv_with_minzoom, key_value_less>;
-	using key_value_set_ref_t = std::shared_ptr<key_value_set>;
+	struct key_value_set {
+		std::set<kv_with_minzoom, key_value_less> values;
+		mutable std::atomic<uint64_t> references;
+
+		key_value_set() 
+			: references(0)
+		{ }
+	};
+
+	using key_value_set_ref_t = boost::intrusive_ptr<key_value_set>;
 
     struct key_value_set_store_less {
         bool operator()(key_value_set_ref_t const &lhs, key_value_set_ref_t const &rhs) const {  
-            if(lhs->size() < rhs->size()) return true;
-            if(lhs->size() > rhs->size()) return false;
+            if(lhs->values.size() < rhs->values.size()) return true;
+            if(lhs->values.size() > rhs->values.size()) return false;
             
             key_value_less compare;
-            for(auto i = lhs->begin(), j = rhs->begin(); i != lhs->end(); ++i, ++j) {
+            for(auto i = lhs->values.begin(), j = rhs->values.begin(); i != lhs->values.end(); ++i, ++j) {
                 if(compare(*i, *j)) return true;
                 if(compare(*j, *i)) return false;
             }
@@ -98,11 +108,11 @@ struct AttributeStore
 		: set_list(threadNum * threadNum)
 	{ }
 
-	key_value_set_ref_t empty_set() const { return std::make_shared<key_value_set>(); }
+	key_value_set_ref_t empty_set() const { return new key_value_set(); }
 
     key_value_set_ref_t store_set(key_value_set_ref_t attributes) {
-		auto idx = attributes->size();
-		for(auto i: *attributes) {
+		auto idx = attributes->values.size();
+		for(auto const &i: attributes->values) {
 			boost::hash_combine(idx, i.minzoom);
 			boost::hash_combine(idx, i.key);
 			boost::hash_combine(idx, type_index(i.value));
@@ -119,6 +129,17 @@ struct AttributeStore
 		return *set_list[idx % set_list.size()].second.insert(attributes).first;	
 	}
 };
+
+static inline void intrusive_ptr_add_ref(AttributeStore::key_value_set *kv_set){
+	auto result = kv_set->references.fetch_add(1, std::memory_order_relaxed);
+}
+
+static inline void intrusive_ptr_release(AttributeStore::key_value_set *kv_set) {
+	if (kv_set->references.fetch_sub(1, std::memory_order_release) == 1) {
+      std::atomic_thread_fence(std::memory_order_acquire);
+      delete kv_set;
+    }
+}
 
 using AttributeStoreRef = AttributeStore::key_value_set_ref_t;
 

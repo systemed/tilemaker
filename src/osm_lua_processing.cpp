@@ -161,8 +161,8 @@ std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, boo
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-		[&](OutputObject &oo) { // checkQuery
-			return geom::intersects(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
+		[&](OutputObject const &oo) { // checkQuery
+			return geom::intersects(geom, osmStore.retrieve_multi_polygon(osmStore.shp(), oo.objectID));
 		}
 	);
 	return ids;
@@ -178,9 +178,9 @@ double OsmLuaProcessing::intersectsArea(const string &layerName, GeometryT &geom
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-		[&](OutputObject &oo) { // checkQuery
+		[&](OutputObject const &oo) { // checkQuery
 			MultiPolygon tmp;
-			geom::intersection(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle), tmp);
+			geom::intersection(geom, osmStore.retrieve_multi_polygon(osmStore.shp(), oo.objectID), tmp);
 			area += multiPolygonArea(tmp);
 			return false;
 		}
@@ -197,9 +197,9 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 			rtree.query(geom::index::intersects(box), back_inserter(results));
 			return results;
 		},
-		[&](OutputObject &oo) { // checkQuery
-			if (oo.geomType!=OutputGeometryType::POLYGON) return false; // can only be covered by a polygon!
-			return geom::covered_by(geom, osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle));
+		[&](OutputObject const &oo) { // checkQuery
+			if (oo.geomType!=POLYGON_) return false; // can only be covered by a polygon!
+			return geom::covered_by(geom, osmStore.retrieve_multi_polygon(osmStore.shp(), oo.objectID));
 		}
 	);
 	return ids;
@@ -310,20 +310,20 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
-	OutputGeometryType geomType = isWay ? (area ? OutputGeometryType::POLYGON : OutputGeometryType::LINESTRING) : OutputGeometryType::POINT;
+	OutputGeometryType geomType = isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
-		if (geomType==OutputGeometryType::POINT) {
+		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
             if(!CorrectGeometry(p)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStorePoint(geomType, false,
-							layers.layerMap[layerName], osmID, 
-							osmStore.store_point(osmStore.osm(), p), attributeStore.empty_set()));
+			osmStore.store_point(osmStore.osm(), osmID, p);
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
+							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
 		}
-		else if (geomType==OutputGeometryType::POLYGON) {
+		else if (geomType==POLYGON_) {
 			// polygon
 
 			MultiPolygon mp;
@@ -347,20 +347,20 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(mp)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStoreMultiPolygon(geomType, false,
-							layers.layerMap[layerName], osmID, 
-							osmStore.store_multi_polygon(osmStore.osm(), mp), attributeStore.empty_set()));
+			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
+							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
-		else if (geomType==OutputGeometryType::LINESTRING) {
+		else if (geomType==LINESTRING_) {
 			// linestring
 			Linestring ls = linestringCached();
 
             if(!CorrectGeometry(ls)) return;
 
-			OutputObjectRef oo(new OutputObjectOsmStoreLinestring(geomType, false,
-						layers.layerMap[layerName], osmID, 
-						osmStore.store_linestring(osmStore.osm(), ls), attributeStore.empty_set()));
+			osmStore.store_linestring(osmStore.osm(), osmID, ls);
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, 
+						layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 	} catch (std::invalid_argument &err) {
@@ -392,9 +392,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-	OutputObjectRef oo(new OutputObjectOsmStorePoint(OutputGeometryType::POINT,
-					false, layers.layerMap[layerName], osmID, 
-					osmStore.store_point(osmStore.osm(), geomp), attributeStore.empty_set()));
+	osmStore.store_point(osmStore.osm(), osmID, geomp);
+	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
+					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
 
@@ -429,7 +429,7 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 0);
 }
 
@@ -438,7 +438,7 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
 }
 
@@ -447,7 +447,7 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs.back().second->emplace(key, v, minzoom);
+	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 
@@ -471,7 +471,7 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 	reset();
-	osmID = id;
+	osmID = (id & OSMID_MASK) | OSMID_NODE;
 	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
@@ -497,7 +497,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 // We are now processing a way
 void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags) {
 	reset();
-	osmID = wayId;
+	osmID = (wayId & OSMID_MASK) | OSMID_WAY;
 	originalOsmID = osmID;
 	isWay = true;
 	isRelation = false;
@@ -543,7 +543,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
 				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->first->geomType == OutputGeometryType::POLYGON) {
+					if (jt->first->geomType == POLYGON_) {
 						polygonExists = true;
 						continue;
 					}
@@ -557,7 +557,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-						if (jt->first->geomType != OutputGeometryType::POLYGON) continue;
+						if (jt->first->geomType != POLYGON_) continue;
 						osmMemTiles.AddObject(index, jt->first);
 					}
 				}
@@ -573,7 +573,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 //  we use decrementing positive IDs to give a bit more space for way IDs)
 void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags) {
 	reset();
-	osmID = --newWayID;
+	osmID = (--newWayID & OSMID_MASK) | OSMID_WAY;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
