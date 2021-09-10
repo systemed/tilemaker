@@ -312,6 +312,8 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	
+	// ---- Sort the generated shapes
+	osmStore.shapes_sort(threadNum);
 
 	// ----	Read significant node tags
 
