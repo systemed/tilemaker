@@ -4,7 +4,7 @@
 
 Install all dependencies with Homebrew:
 
-    brew install protobuf boost lua51 shapelib
+    brew install protobuf boost lua51 shapelib rapidjson
 
 Then:
 
@@ -15,11 +15,7 @@ Then:
 
 Start with:
 
-    sudo apt-get install build-essential liblua5.1-0 liblua5.1-0-dev libprotobuf-dev libsqlite3-dev protobuf-compiler shapelib libshp-dev
-    sudo apt-get install libboost-all-dev
-
-Boost should be version 1.66 or later. If that's not available on your system, then you can install a more recent 
-version from [this PPA](https://launchpad.net/~mhier/+archive/ubuntu/libboost-latest).
+    sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libprotobuf-dev libshp-dev libsqlite3-dev protobuf-compiler rapidjson-dev
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
@@ -32,7 +28,7 @@ If it fails, check that the LIB and INC lines in the Makefile correspond with yo
 
 Start with:
 
-    dnf install lua-devel luajit-devel sqlite-devel protobuf-devel protobuf-compiler shapelib-devel
+    dnf install lua-devel luajit-devel sqlite-devel protobuf-devel protobuf-compiler shapelib-devel rapidjson
 
 then build either with lua:
 

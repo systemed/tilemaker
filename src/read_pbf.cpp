@@ -326,8 +326,10 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		}
 	}
 
-
+	// ---- Sort the generated geometries
+	osmStore.generated_sort(threadNum);
 	osmStore.reportSize();
+
 	return 0;
 }
 
