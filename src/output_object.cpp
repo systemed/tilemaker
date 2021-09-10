@@ -13,14 +13,14 @@ namespace geom = boost::geometry;
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 {
 	switch(geomType) {
-		case OutputGeometryType::POINT:
-			os << "OutputGeometryType::POINT";
+		case POINT_:
+			os << "POINT";
 			break;
-		case OutputGeometryType::LINESTRING:
-			os << "OutputGeometryType::LINESTRING";
+		case LINESTRING_:
+			os << "LINESTRING";
 			break;
-		case OutputGeometryType::POLYGON:
-			os << "OutputGeometryType::POLYGON";
+		case POLYGON_:
+			os << "POLYGON";
 			break;
 	}
 
@@ -35,7 +35,7 @@ void OutputObject::writeAttributes(
 	vector_tile::Tile_Feature *featurePtr,
 	char zoom) const {
 
-	for(auto const &it: *attributes) {
+	for(auto const &it: attributes->values) {
 		if (it.minzoom > zoom) continue;
 
 		// Look for key
@@ -69,18 +69,18 @@ void OutputObject::writeAttributes(
 Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox) 
 {
 	switch(oo.geomType) {
-		case OutputGeometryType::POINT:
+		case POINT_:
 		{
-			auto p = osmStore.retrieve<Point>(oo.handle);
+			auto p = osmStore.retrieve_point((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 			if (geom::within(p, bbox.clippingBox)) {
 				return p;
 			} 
 			return MultiLinestring();
 		}
 
-		case OutputGeometryType::LINESTRING:
+		case LINESTRING_:
 		{
-			auto const &ls = osmStore.retrieve<OSMStore::linestring_t>(oo.handle);
+			auto const &ls = osmStore.retrieve_linestring((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 
 			MultiLinestring out;
 			if(ls.empty())
@@ -106,9 +106,9 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			return result;
 		}
 
-		case OutputGeometryType::POLYGON:
+		case POLYGON_:
 		{
-			auto const &input = osmStore.retrieve<OSMStore::multi_polygon_t>(oo.handle);
+			auto const &input = osmStore.retrieve_multi_polygon((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 
 			Box box = bbox.clippingBox;
 			
@@ -174,9 +174,9 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox)
 {
 	switch(oo.geomType) {
-		case OutputGeometryType::POINT:
+		case POINT_:
 		{
-			auto p = osmStore.retrieve<Point>(oo.handle);
+			auto p = osmStore.retrieve_point((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
 			LatpLon out;
 			out.latp = p.y();
 			out.lon = p.x();
@@ -205,31 +205,31 @@ int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_t
 
 // Comparision functions
 
-bool operator==(const OutputObjectRef &x, const OutputObjectRef &y) {
+bool operator==(const OutputObjectRef x, const OutputObjectRef y) {
 	return
 		x->layer == y->layer &&
 		x->z_order == y->z_order &&
 		x->geomType == y->geomType &&
 		x->attributes == y->attributes &&
 		x->objectID == y->objectID;
-}
+} 
 
 // Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
 // Note that attributes is preffered to objectID.
 // It is to arrange objects with the identical attributes continuously.
 // Such objects will be merged into one object, to reduce the size of output.
-bool operator<(const OutputObjectRef &x, const OutputObjectRef &y) {
+bool operator<(const OutputObjectRef x, const OutputObjectRef y) {
 	if (x->layer < y->layer) return true;
 	if (x->layer > y->layer) return false;
 	if (x->z_order < y->z_order) return true;
 	if (x->z_order > y->z_order) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
-	if (x->attributes < y->attributes) return true;
-	if (x->attributes > y->attributes) return false;
+	if (x->attributes.get() < y->attributes.get()) return true;
+	if (x->attributes.get() > y->attributes.get()) return false;
 	if (x->objectID < y->objectID) return true;
 	return false;
-}
+} 
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {

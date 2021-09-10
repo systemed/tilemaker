@@ -76,9 +76,10 @@ endif
 
 prefix = /usr/local
 
-TM_VERSION := $(shell git describe --tags --abbrev=0)
-CXXFLAGS := -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
-LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp
+MANPREFIX := /usr/share/man
+TM_VERSION ?= $(shell git describe --tags --abbrev=0)
+CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
+LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 # Targets
@@ -100,6 +101,8 @@ tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf
 install:
 	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
 	install -m 0755 tilemaker $(DESTDIR)$(prefix)/bin/
+	install -d ${DESTDIR}${MANPREFIX}/man1/
+	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
 
 clean:
 	rm -f tilemaker src/*.o include/*.o

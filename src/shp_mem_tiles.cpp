@@ -15,7 +15,7 @@ ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
 // - checkQuery(osmstore, id) lambda, implements:   return geom::covered_by(osmStore.retrieve(id), geom)
 vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool once, Box &box, 
 	function<vector<IndexValue>(const RTree &rtree)> indexQuery, 
-	function<bool(OutputObject &oo)> checkQuery) const {
+	function<bool(OutputObject const &oo)> checkQuery) const {
 	
 	// Find the layer
 	auto f = indices.find(layerName); // f is an RTree
@@ -67,12 +67,14 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 	uint tilex = 0, tiley = 0;
 	switch(geomType) {
-		case OutputGeometryType::POINT:
+		case POINT_:
 		{
 			Point *p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
-				oo = new OutputObjectOsmStorePoint(
-					geomType, true, layerNum, id, osmStore.store_point(osmStore.shp(), *p), attributes);
+	
+				osmStore.store_point(osmStore.shp(), id, *p);
+				oo = CreateObject(OutputObjectOsmStorePoint(
+					geomType, layerNum, id, attributes));
 				cachedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -81,21 +83,21 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			}
 		} break;
 
-		case OutputGeometryType::LINESTRING:
+		case LINESTRING_:
 		{
-			oo = new OutputObjectOsmStoreLinestring(
-						geomType, true, layerNum, id,  
-						osmStore.store_linestring(osmStore.shp(), boost::get<Linestring>(geometry)), attributes);
+			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
+			oo = CreateObject(OutputObjectOsmStoreLinestring(
+						geomType, layerNum, id, attributes));
 			cachedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, &geometry);
 		} break;
 
-		case OutputGeometryType::POLYGON:
+		case POLYGON_:
 		{
-			oo = new OutputObjectOsmStoreMultiPolygon(
-						geomType, true, layerNum, id,
-						osmStore.store_multi_polygon(osmStore.shp(), boost::get<MultiPolygon>(geometry)), attributes);
+			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
+			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
+						geomType, layerNum, id, attributes));
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index

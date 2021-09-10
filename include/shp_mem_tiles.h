@@ -23,7 +23,7 @@ public:
 	}
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
-		std::function<bool(OutputObject &oo)> checkQuery) const;
+		std::function<bool(OutputObject const &oo)> checkQuery) const;
 	std::vector<std::string> namesOfGeometries(const std::vector<uint> &ids) const;
 
 	template <typename GeometryT>
@@ -36,8 +36,8 @@ public:
 		MultiPolygon mp, tmp;
 		for (auto it : results) {
 			OutputObjectRef oo = cachedGeometries.at(it.second);
-			if (oo->geomType!=OutputGeometryType::POLYGON) continue;
-			geom::union_(mp, osmStore.retrieve<OSMStore::multi_polygon_t>(oo->handle), tmp);
+			if (oo->geomType!=POLYGON_) continue;
+			geom::union_(mp, osmStore.retrieve_multi_polygon(osmStore.shp(), oo->objectID), tmp);
 			geom::assign(mp, tmp);
 		}
 		geom::correct(mp);
