@@ -43,6 +43,9 @@ include_directories(${PROTOBUF_INCLUDE_DIR})
 find_package(libshp REQUIRED)
 include_directories(${LIBSHP_INCLUDE_DIR})
 
+find_package(Rapidjson REQUIRED)
+include_directories(${RAPIDJSON_INCLUDEDIR})
+
 find_package(Lua)
 
 if(LUA_FOUND)

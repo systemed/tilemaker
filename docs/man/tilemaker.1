@@ -1,0 +1,53 @@
+.\" Manpage for tilemaker.
+.TH man 1 "27 Aug 2021" "1.0" "tilemaker man page"
+.SH NAME
+tilemaker \- Generates vector tiles from OpenStreetMap data
+.SH SYNOPSIS
+tilemaker --input input.osm.pbf --output output.mbtiles
+.SH DESCRIPTION
+This manual page documents briefly the
+.B tilemaker
+command.
+.PP
+.B tilemaker
+generates vector tiles from OpenStreetMap planet and diff files
+without any complex stack or need for database. It uses the schema of
+OpenMapTiles by default, but other configuration can be provided.
+.PP
+This program follows the usual GNU command line syntax, with long
+options starting with two dashes (`-').
+A summary of options is included below:
+.TP
+\fB\-\-input
+Source path and file from OpenStreetMap (.osm.pbf).
+.TP
+\fB\-\-output
+Target path and file for vector tiles (.mbtiles/.sqlite).
+.TP
+\fB\-\-config
+Specific config file (.json).
+.TP
+\fB\-\-process
+Lua processing script for processing tags.
+.TP
+\fB\-\-store
+Path to the directory as a temporary store during processing.
+If specifcied tilemaker uses on-disk storage instead of holding everything
+in RAM.
+.TP
+\fB\-\-merge
+Merge with existing .mbtiles/.sqlite file.
+.TP
+\fB\-\-verbose
+Outputs any issues encountered during tile creation.
+.TP
+\fB\-\-threads
+Number of threads (automatically detected if 0).
+.TP
+\fB\-\-help
+Show help message for tilemaker.
+.PP
+.SH BUGS
+No known bugs.
+.SH AUTHOR
+This manual page was written by tilemaker contributors.

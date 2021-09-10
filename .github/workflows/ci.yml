@@ -26,7 +26,7 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort
+        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
 
     - name: Build tilemaker
       run: |
@@ -78,7 +78,7 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort
+        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
 
     - name: Build tilemaker
       run: |

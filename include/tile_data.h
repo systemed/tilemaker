@@ -18,6 +18,7 @@ class TileDataSource {
 protected:	
 	std::mutex mutex;
 	TileIndex tileIndex;
+	std::deque<OutputObject> objects;
 
 	unsigned int baseZoom;
 
@@ -34,6 +35,12 @@ public:
 	///This must be thread safe!
 	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
+	}
+
+	OutputObjectRef CreateObject(OutputObject const &oo) {
+		std::lock_guard<std::mutex> lock(mutex);
+		objects.push_back(oo);
+		return &objects.back();
 	}
 
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {

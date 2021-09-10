@@ -86,9 +86,9 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 			T output;
 			geom::union_(g, to_merge, output);
 			g = move(output);
-		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << oo->objectID <<"," << err.what() << endl;
-		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << oo->objectID << endl;
-		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << oo->objectID << endl;
+		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
+		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
+		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
 		}
 	}
 }
@@ -101,7 +101,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
-		if (oo->geomType == OutputGeometryType::POINT) {
+		if (oo->geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			LatpLon pos = buildNodeGeometry(osmStore, *oo, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
@@ -117,22 +117,22 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			try {
 				g = buildWayGeometry(osmStore, *oo, bbox);
 			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << oo->objectID <<"," << err.what() << endl;
+				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
 				continue;
 			}
 
-			if (oo->geomType == OutputGeometryType::POLYGON && filterArea > 0.0) {
+			if (oo->geomType == POLYGON_ && filterArea > 0.0) {
 				if (geom::area(g)<filterArea) continue;
 			}
 
 			//This may increment the jt iterator
-			if (oo->geomType == OutputGeometryType::LINESTRING && zoom < sharedData.config.combineBelow) {
+			if (oo->geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
-			} else if (oo->geomType == OutputGeometryType::POLYGON && combinePolygons) {
+			} else if (oo->geomType == POLYGON_ && combinePolygons) {
 				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}

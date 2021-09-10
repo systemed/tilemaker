@@ -78,7 +78,7 @@ void addShapefileAttributes(
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
 
-			attributes->emplace(key, v, 0);
+			attributes->values.emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		
@@ -102,7 +102,7 @@ void addShapefileAttributes(
 				         break;
 			}
 			
-			attributes->emplace(key, v, 0);
+			attributes->values.emplace(key, v, 0);
 		}
 
 		oo->setAttributeSet(attributeStore.store_set(attributes));		
@@ -177,7 +177,7 @@ void readShapefile(const Box &clippingBox,
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 				auto &attributeStore = osmLuaProcessing.getAttributeStore();
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, OutputGeometryType::POINT, p, isIndexed, hasName, name, attributeStore.empty_set());
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, POINT_, p, isIndexed, hasName, name, attributeStore.empty_set());
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}
@@ -199,7 +199,7 @@ void readShapefile(const Box &clippingBox,
 					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 					auto &attributeStore = osmLuaProcessing.getAttributeStore();
-					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, OutputGeometryType::LINESTRING, *it, isIndexed, hasName, name, attributeStore.empty_set());
+					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, LINESTRING_, *it, isIndexed, hasName, name, attributeStore.empty_set());
 
 					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 				}
@@ -272,7 +272,7 @@ void readShapefile(const Box &clippingBox,
 
 				// create OutputObject
 				auto &attributeStore = osmLuaProcessing.getAttributeStore();
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, OutputGeometryType::POLYGON, out, isIndexed, hasName, name, attributeStore.empty_set());
+				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, POLYGON_, out, isIndexed, hasName, name, attributeStore.empty_set());
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}

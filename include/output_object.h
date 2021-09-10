@@ -15,10 +15,14 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-#include <boost/intrusive_ptr.hpp>
-#include <atomic>
+enum OutputGeometryType { POINT_, LINESTRING_, POLYGON_ };
 
-enum class OutputGeometryType : uint8_t { POINT, LINESTRING, POLYGON };
+#define OSMID_TYPE_OFFSET	40
+#define OSMID_MASK 		((1L<<OSMID_TYPE_OFFSET)-1)
+#define OSMID_SHAPE 	(0L<<OSMID_TYPE_OFFSET)
+#define OSMID_NODE 		(1L<<OSMID_TYPE_OFFSET)
+#define OSMID_WAY 		(2L<<OSMID_TYPE_OFFSET)
+#define OSMID_RELATION 	(3L<<OSMID_TYPE_OFFSET)
 
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
@@ -29,26 +33,22 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
  * Possible future improvements to save memory:
  * - use a global dictionary for attribute key/values
 */
+#pragma pack(push, 4)
 class OutputObject {
 
 protected:	
-	OutputObject(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes) 
-		: objectID(id), handle(handle), geomType(type), fromShapefile(shp), layer(l), z_order(0),
-		  minZoom(0), references(0), attributes(attributes)
+	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes) 
+		: objectID(id), geomType(type), layer(l), z_order(0),
+		  minZoom(0), attributes(attributes)
 	{ }
 
 
 public:
-	NodeID objectID;									// id of way (linestring/polygon) or node (point)
-	OSMStore::handle_t handle;							// Handle within global store of geometries
-
-	OutputGeometryType geomType : 8;					// point, linestring, polygon...
+	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point) - cf MAX_WAY_ID
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	int8_t z_order				: 8;					// z_order: used for sorting features within layers
-	bool fromShapefile 			: 1;
+	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	unsigned minZoom 			: 4;
-	
-	mutable std::atomic<uint32_t> references;
 
 	AttributeStoreRef attributes;
 
@@ -78,6 +78,7 @@ public:
 	 */
 	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const;
 };
+#pragma pack(pop)
 
 /**
  * \brief An OutputObject derived class that contains data originally from OsmMemTiles
@@ -85,45 +86,51 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
-		assert(type == OutputGeometryType::POINT);
+		assert(type == POINT_);
 	}
 }; 
 
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
-		assert(type == OutputGeometryType::LINESTRING);
+		assert(type == LINESTRING_);
 	}
 };
 
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, bool shp, uint_least8_t l, NodeID id, OSMStore::handle_t handle, AttributeStoreRef attributes)
-		: OutputObject(type, shp, l, id, handle, attributes)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
+		: OutputObject(type, l, id, attributes)
 	{ 
-		assert(type == OutputGeometryType::POLYGON);
+		assert(type == POLYGON_);
 	}
 };
 
-typedef boost::intrusive_ptr<OutputObject> OutputObjectRef;
+class OutputObjectRef
+{
+	OutputObject *oo;
 
-static inline void intrusive_ptr_add_ref(OutputObject *oo){
-	auto result = oo->references.fetch_add(1, std::memory_order_relaxed);
-}
+public:
+	OutputObjectRef(OutputObject *oo = nullptr)
+		: oo(oo)
+	{ }
+	OutputObjectRef(OutputObjectRef const &other) = default;
+	OutputObjectRef(OutputObjectRef &&other) = default;
 
-static inline void intrusive_ptr_release(OutputObject *oo) {
-	if (oo->references.fetch_sub(1, std::memory_order_release) == 1) {
-      std::atomic_thread_fence(std::memory_order_acquire);
-      delete oo;
-    }
-}
+	OutputObjectRef &operator=(OutputObjectRef const &other) { oo = other.oo; return *this; }
+    OutputObject& operator*() { return *oo; }
+    OutputObject const& operator*() const { return *oo; }
+    OutputObject *operator->() { return oo; }
+    OutputObject const *operator->() const { return oo; }
+	void reset() { oo = nullptr; }
+};
 
 /** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
  * Returns a boost::variant -
@@ -136,7 +143,7 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 // Comparison functions
 
-bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
+bool operator==(const OutputObjectRef x, const OutputObjectRef y);
 
 /**
  * Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
@@ -144,7 +151,7 @@ bool operator==(const OutputObjectRef &x, const OutputObjectRef &y);
  * It is to arrange objects with the identical attributes continuously.
  * Such objects will be merged into one object, to reduce the size of output.
  */
-bool operator<(const OutputObjectRef &x, const OutputObjectRef &y);
+bool operator<(const OutputObjectRef x, const OutputObjectRef y);
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
