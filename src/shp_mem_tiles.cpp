@@ -73,7 +73,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			if (p != nullptr) {
 	
 				osmStore.store_point(osmStore.shp(), id, *p);
-				oo = CreateObject(getEnvelope(*p), OutputObjectOsmStorePoint(
+				oo = CreateObject(*p, OutputObjectOsmStorePoint(
 					geomType, layerNum, id, attributes));
 				cachedGeometries.push_back(oo);
 
@@ -88,7 +88,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
 			oo = CreateObject(getEnvelope(boost::get<Linestring>(geometry)), OutputObjectOsmStoreLinestring(
 						geomType, layerNum, id, attributes));
-			cachedGeometries.push_back(oo);
+			if(oo) cachedGeometries.push_back(oo);
 
 			//addToTileIndexPolyline(oo, &geometry);
 		} break;
@@ -98,7 +98,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
 			oo = CreateObject(getEnvelope(boost::get<MultiPolygon>(geometry)), OutputObjectOsmStoreMultiPolygon(
 						geomType, layerNum, id, attributes));
-			cachedGeometries.push_back(oo);
+			if(oo) cachedGeometries.push_back(oo);
 			
 			// add to tile index
 			//addToTileIndexByBbox(oo, 

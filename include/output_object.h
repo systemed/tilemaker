@@ -129,6 +129,9 @@ public:
     OutputObject const& operator*() const { return *oo; }
     OutputObject *operator->() { return oo; }
     OutputObject const *operator->() const { return oo; }
+
+	operator bool() const { return oo != nullptr; }
+
 	void reset() { oo = nullptr; }
 };
 

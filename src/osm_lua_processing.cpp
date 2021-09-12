@@ -316,7 +316,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(p)) return;
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
-			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(p), OutputObjectOsmStorePoint(geomType, 
+			OutputObjectRef oo = osmMemTiles.CreateObject(p, OutputObjectOsmStorePoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
@@ -348,7 +348,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(mp), OutputObjectOsmStoreMultiPolygon(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			if(oo) outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 		else if (geomType==LINESTRING_) {
 			// linestring
@@ -359,7 +359,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmStore.store_linestring(osmStore.osm(), osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(ls), OutputObjectOsmStoreLinestring(geomType, 
 						layers.layerMap[layerName], osmID, attributeStore.empty_set()));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			if(oo) outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObjectOsmStore constructor: " << err.what() << endl;
@@ -391,9 +391,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
-	OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(geomp), OutputObjectOsmStorePoint(POINT_,
+	OutputObjectRef oo = osmMemTiles.CreateObject(geomp, OutputObjectOsmStorePoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
-	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+	if(oo) outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
 
 Point OsmLuaProcessing::calculateCentroid() {
