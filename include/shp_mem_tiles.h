@@ -19,7 +19,7 @@ public:
 		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes);
 
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
-		tileIndex[index].push_back(oo);
+		//tileIndex[index].push_back(oo);
 	}
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 

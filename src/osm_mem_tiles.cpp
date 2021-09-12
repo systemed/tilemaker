@@ -6,5 +6,5 @@ OsmMemTiles::OsmMemTiles(uint baseZoom)
 { }
 
 void OsmMemTiles::Clear() {
-	tileIndex.clear();
+	//tileIndex.clear();
 }

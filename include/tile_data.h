@@ -13,12 +13,26 @@ typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConst
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare> TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
+/** 
+ * \brief Get the envelope of this geometry
+ */
+template<class Geometry>
+static inline Box getEnvelope(Geometry const &g)
+{
+	Box result;
+	boost::geometry::envelope(g, result);
+	return result;
+}
+
 class TileDataSource {
 
 protected:	
 	std::mutex mutex;
-	TileIndex tileIndex;
+	//TileIndex tileIndex;
 	std::deque<OutputObject> objects;
+
+	using oo_rtree_param_type = boost::geometry::index::quadratic<16>;
+	boost::geometry::index::rtree< std::pair<Box, OutputObjectRef>, oo_rtree_param_type> oo_rtree;
 
 	unsigned int baseZoom;
 
@@ -28,32 +42,30 @@ public:
 	{ }
 
 	///This must be thread safe!
-	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
-		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
+	void MergeSingleTileDataAtZoom(Box const &box, std::vector<OutputObjectRef> &dstTile) {
+   		for(auto const &result: oo_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+			dstTile.push_back(result.second);
+//		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
-	///This must be thread safe!
-	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
-		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
-	}
-
-	OutputObjectRef CreateObject(OutputObject const &oo) {
+	OutputObjectRef CreateObject(Box const &envelope, OutputObject const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		objects.push_back(oo);
+
+		oo_rtree.insert(std::make_pair(envelope, &objects.back()));
 		return &objects.back();
 	}
 
-	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
+	/* void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		tileIndex[index].push_back(oo);
-	}
+	} */
 
-private:	
-	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
+	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileCoordinatesSet &srcTiles, TileCoordinatesSet &dstCoords);
+	//static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
 };
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom);
+TileCoordinatesSet GetTileCoordinates(Box const &clippingBox, unsigned int baseZoom, unsigned int zoom);
 
 std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom);
 

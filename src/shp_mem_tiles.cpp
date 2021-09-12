@@ -73,7 +73,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			if (p != nullptr) {
 	
 				osmStore.store_point(osmStore.shp(), id, *p);
-				oo = CreateObject(OutputObjectOsmStorePoint(
+				oo = CreateObject(getEnvelope(*p), OutputObjectOsmStorePoint(
 					geomType, layerNum, id, attributes));
 				cachedGeometries.push_back(oo);
 
@@ -86,24 +86,24 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		case LINESTRING_:
 		{
 			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
-			oo = CreateObject(OutputObjectOsmStoreLinestring(
+			oo = CreateObject(getEnvelope(boost::get<Linestring>(geometry)), OutputObjectOsmStoreLinestring(
 						geomType, layerNum, id, attributes));
 			cachedGeometries.push_back(oo);
 
-			addToTileIndexPolyline(oo, &geometry);
+			//addToTileIndexPolyline(oo, &geometry);
 		} break;
 
 		case POLYGON_:
 		{
 			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
-			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
+			oo = CreateObject(getEnvelope(boost::get<MultiPolygon>(geometry)), OutputObjectOsmStoreMultiPolygon(
 						geomType, layerNum, id, attributes));
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index
-			addToTileIndexByBbox(oo, 
-				box.min_corner().get<0>(), box.min_corner().get<1>(), 
-				box.max_corner().get<0>(), box.max_corner().get<1>());
+			//addToTileIndexByBbox(oo, 
+		//		box.min_corner().get<0>(), box.min_corner().get<1>(), 
+		//		box.max_corner().get<0>(), box.max_corner().get<1>());
 		} break;
 
 		default:

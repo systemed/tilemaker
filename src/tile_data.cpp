@@ -9,18 +9,18 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords) {
+void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileCoordinatesSet &srcTiles, TileCoordinatesSet &dstCoords) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
 		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
+			TileCoordinates index = *it;
 			dstCoords.insert(index);
 		}
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
 		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
+			TileCoordinates index = *it;
 			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
 			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
 			TileCoordinates newIndex(tilex, tiley);
@@ -29,6 +29,7 @@ void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileI
 	}
 }
 
+/*
 void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
@@ -57,24 +58,39 @@ void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zo
 			}
 		}
 	}
-}
+} */
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
-	TileCoordinatesSet tileCoordinates;
+TileCoordinatesSet GetTileCoordinates(Box const &clippingBox, unsigned int baseZoom, unsigned int zoom) {
+	TileCoordinatesSet srcCoords;
 
-	// Create list of tiles
-	tileCoordinates.clear();
-	for(size_t i=0; i<sources.size(); i++)
-		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
+	auto p1 = clippingBox.min_corner();
+	double min_x = lon2tilexf(p1.get<0>(), baseZoom);
+	double max_y = latp2tileyf(p1.get<1>(), baseZoom);
 
-	return tileCoordinates;
+	auto p2 = clippingBox.max_corner();
+	double max_x = lon2tilexf(p2.get<0>(), baseZoom);
+	double min_y = latp2tileyf(p2.get<1>(), baseZoom);
+
+	for(double x = min_x; x < max_x; x += 1) {
+		for(double y = min_y; y < max_y; y += 1) {
+			TileCoordinate tileX1 = static_cast<TileCoordinate>(x);
+			TileCoordinate tileY1 = static_cast<TileCoordinate>(y);
+			srcCoords.insert(TileCoordinates(tileX1, tileY1));
+		}
+	}
+
+	TileCoordinatesSet dstCoords;
+	TileDataSource::MergeTileCoordsAtZoom(zoom, baseZoom, srcCoords, dstCoords);
+	return dstCoords;
 }
 
 std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom)
 {
+	TileBbox bbox(coordinates, zoom);
+
 	std::vector<OutputObjectRef> data;
 	for(size_t i=0; i<sources.size(); i++)
-		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
+		sources[i]->MergeSingleTileDataAtZoom(bbox.getTileBox(), data);
 
 	boost::sort::pdqsort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());

@@ -316,7 +316,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(p)) return;
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
-			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
+			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(p), OutputObjectOsmStorePoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
@@ -346,7 +346,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(mp)) return;
 
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
-			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
+			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(mp), OutputObjectOsmStoreMultiPolygon(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
@@ -357,7 +357,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(ls)) return;
 
 			osmStore.store_linestring(osmStore.osm(), osmID, ls);
-			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, 
+			OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(ls), OutputObjectOsmStoreLinestring(geomType, 
 						layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
@@ -391,7 +391,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
-	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
+	OutputObjectRef oo = osmMemTiles.CreateObject(getEnvelope(geomp), OutputObjectOsmStorePoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
@@ -487,7 +487,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 			// Store the attributes of the generated geometry
 			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 
-			osmMemTiles.AddObject(index, jt->first);
+			//osmMemTiles.AddObject(index, jt->first);
 		}
 	} 
 }
@@ -532,7 +532,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 		}
 
 		// create a list of tiles this way passes through (tileSet)
-		unordered_set<TileCoordinates> tileSet;
+		/* unordered_set<TileCoordinates> tileSet;
 		try {
 			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
 
@@ -545,7 +545,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 						polygonExists = true;
 						continue;
 					}
-					osmMemTiles.AddObject(index, jt->first);
+	//				osmMemTiles.AddObject(index, jt->first);
 				}
 			}
 
@@ -556,13 +556,13 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 						if (jt->first->geomType != POLYGON_) continue;
-						osmMemTiles.AddObject(index, jt->first);
+	//					osmMemTiles.AddObject(index, jt->first);
 					}
 				}
 			}
 		} catch(std::out_of_range &err) {
 			cerr << "Error calculating intermediate tiles: " << err.what() << endl;
-		}
+		} */
 	}
 }
 
@@ -598,7 +598,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			return;
 		}		
 
-		unordered_set<TileCoordinates> tileSet;
+		/* unordered_set<TileCoordinates> tileSet;
 		if (mp.size() == 1) {
 			insertIntermediateTiles(mp[0].outer(), this->config.baseZoom, tileSet);
 			fillCoveredTiles(tileSet);
@@ -609,19 +609,19 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 				fillCoveredTiles(tileSetTmp);
 				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 			}
-		}
+		} */
 
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			// Store the attributes of the generated geometry
 			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 		}
 
-		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+		/* for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-				osmMemTiles.AddObject(index, jt->first);
+//				osmMemTiles.AddObject(index, jt->first);
 			}
-		}
+		} */
 	}
 }
 
