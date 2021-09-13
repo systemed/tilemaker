@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 #include <mutex>
+#include <unordered_set>
 
 class void_mmap_allocator
 {
@@ -189,6 +190,58 @@ private:
 	std::shared_ptr<map_t> mLatpLons;
 };
 
+// list of ways used by relations
+// by noting these in advance, we don't need to store all ways in the store
+class UsedWays {
+
+private:
+	std::vector<bool> usedList;
+	mutable std::mutex mutex;
+
+public:
+	bool inited = false;
+
+	// Size the vector to a reasonable estimate, to avoid resizing on the fly
+	void reserve(bool compact, size_t numNodes) {
+		std::lock_guard<std::mutex> lock(mutex);
+		if (inited) return;
+		inited = true;
+		if (compact) {
+			// If we're running in compact mode, way count is roughly 1/9th of node count... say 1/8 to be safe
+			usedList.reserve(numNodes/8);
+		} else {
+			// Otherwise, we could have anything up to the current max node ID (approaching 2**30 in summer 2021)
+			// 2**31 is 0.25GB with a vector<bool>
+			usedList.reserve(pow(2,31));
+		}
+	}
+	
+	// Mark a way as used
+	void insert(WayID wayid) {
+		std::lock_guard<std::mutex> lock(mutex);
+		if (wayid>usedList.size()) usedList.resize(wayid+1);
+		usedList[wayid] = true;
+	}
+	
+	void insert_set(std::unordered_set<WayID> ids) {
+		std::lock_guard<std::mutex> lock(mutex);
+		for (WayID wayid : ids) {
+			if (wayid>usedList.size()) usedList.resize(wayid+1);
+			usedList[wayid] = true;
+		}
+	}
+	
+	// See if a way is used
+	bool at(WayID wayid) const {
+		return (wayid>usedList.size()) ? false : usedList[wayid];
+	}
+	
+	void clear() {
+		std::lock_guard<std::mutex> lock(mutex);
+		usedList.clear();
+	}
+};
+
 // way store
 class WayStore {
 
@@ -336,6 +389,7 @@ protected:
 
 	WayStore ways;
 	RelationStore relations;
+	UsedWays used_ways;
 
 	generated osm_generated;
 	generated shp_generated;
@@ -382,8 +436,11 @@ public:
 			compact_nodes.insert_back(new_nodes);
 	}
 	void nodes_sort(unsigned int threadNum);
-	
-	LatpLon nodes_at(NodeID i) const { 
+	std::size_t nodes_size() {
+		return use_compact_nodes ? compact_nodes.size() : nodes.size();
+	}
+
+  LatpLon nodes_at(NodeID i) const { 
 		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
 	}
 
@@ -396,6 +453,13 @@ public:
 		relations.insert_front(new_relations);
 	}
 	void relations_sort(unsigned int threadNum);
+
+	void mark_way_used(WayID i) { used_ways.insert(i); }
+	void mark_ways_used(std::unordered_set<WayID> ids) { used_ways.insert_set(ids); }
+	bool way_is_used(WayID i) { return used_ways.at(i); }
+	void ensure_used_ways_inited() {
+		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
+	}
 
 	generated &osm() { return osm_generated; }
 	generated const &osm() const { return osm_generated; }
@@ -477,6 +541,7 @@ public:
 		compact_nodes.clear();
 		ways.clear();
 		relations.clear();
+		used_ways.clear();
 	} 
 
 	void reportStoreSize(std::ostringstream &str);

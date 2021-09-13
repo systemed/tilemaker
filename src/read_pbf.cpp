@@ -5,6 +5,7 @@
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <unordered_set>
 
 #include "osm_lua_processing.h"
 
@@ -91,9 +92,10 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 					tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
 				}
 
-				// Store the way's nodes in the global way store
-				ways.push_back(std::make_pair(static_cast<WayID>(pbfWay.id()), 
-					WayStore::nodeid_vector_t(nodeVec.begin(), nodeVec.end())));
+				// If we need it for later, store the way's nodes in the global way store
+				if (osmStore.way_is_used(wayId)) {
+					ways.push_back(std::make_pair(wayId, WayStore::nodeid_vector_t(nodeVec.begin(), nodeVec.end())));
+				}
 				output.setWay(static_cast<WayID>(pbfWay.id()), nodeVec, tags);
 
 			} catch (std::out_of_range &err) {
@@ -107,6 +109,30 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 		return true;
 	}
 	return false;
+}
+
+bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+	// Scan relations to see which ways we need to save
+	// as with ReadRelations, we currently just parse multipolygons
+	if (pg.relations_size()==0) return false;
+
+	int typeKey = findStringPosition(pb, "type");
+	int mpKey   = findStringPosition(pb, "multipolygon");
+
+	std::unordered_set<WayID> wayIDs;
+	for (int j=0; j<pg.relations_size(); j++) {
+		Relation pbfRelation = pg.relations(j);
+		if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
+		if (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) == pbfRelation.vals().end()) { continue; }
+		int64_t lastID = 0;
+		for (int n=0; n < pbfRelation.memids_size(); n++) {
+			lastID += pbfRelation.memids(n);
+			if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+			wayIDs.insert(static_cast<WayID>(lastID));
+		}
+	}
+	osmStore.mark_ways_used(wayIDs);
+	return true;
 }
 
 bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
@@ -207,6 +233,16 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 				continue;
 			}
 		}
+
+		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
+			osmStore.ensure_used_ways_inited();
+			bool done = ScanRelations(output, pg, pb);
+			if(done) { 
+				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)\r";
+				std::cout.flush();
+				continue;
+			}
+		}
 	
 		if(phase == ReadPhase::Ways || phase == ReadPhase::All) {
 			bool done = ReadWays(output, pg, pb);
@@ -259,7 +295,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 
 	std::size_t total_blocks = blocks.size();
 
-	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::Ways, ReadPhase::Relations };
+	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);

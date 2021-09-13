@@ -340,6 +340,7 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
+		osmStore.clear(); // no longer needed
 	}
 
 	// ----	Initialise SharedData
