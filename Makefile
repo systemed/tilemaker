@@ -1,6 +1,8 @@
 # See what Lua versions are installed
 # order of preference: LuaJIT 2.1, LuaJIT 2.0, any generic Lua, Lua 5.1
 
+PLATFORM_PATH := /usr/local
+
 ifneq ("$(wildcard /usr/local/include/luajit-2.1/lua.h)","")
   LUA_VER := LuaJIT 2.1
   LUA_CFLAGS := -I/usr/local/include/luajit-2.1 -DLUAJIT
@@ -50,6 +52,12 @@ else ifneq ("$(wildcard /usr/include/lua5.1/lua.h)","")
   LUA_CFLAGS := -I/usr/include/lua5.1
   LUA_LIBS := -llua5.1
 
+else ifneq ("$(wildcard /opt/homebrew/include/lua5.1/lua.h)","")
+  LUA_VER := Lua 5.1
+  LUA_CFLAGS := -I/opt/homebrew/include/lua5.1
+  LUA_LIBS := -llua5.1
+  PLATFORM_PATH := /opt/homebrew
+
 else
   $(error Couldn't find Lua)
 endif
@@ -71,8 +79,8 @@ prefix = /usr/local
 MANPREFIX := /usr/share/man
 TM_VERSION ?= $(shell git describe --tags --abbrev=0)
 CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
-LIB := -L/usr/local/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp -pthread
-INC := -I/usr/local/include -isystem ./include -I./src $(LUA_CFLAGS)
+LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp -pthread
+INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 # Targets
 
