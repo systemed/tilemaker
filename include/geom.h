@@ -43,7 +43,6 @@ typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadr
 typedef uint64_t NodeID;
 typedef uint64_t WayID;
 
-#define MAX_WAY_ID pow(2,40)-1
 typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
 typedef std::deque<NodeID> NodeDeque;

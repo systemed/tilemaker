@@ -44,7 +44,7 @@ protected:
 
 
 public:
-	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point) - cf MAX_WAY_ID
+	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point)
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	int8_t z_order				: 8;					// z_order: used for sorting features within layers
 	OutputGeometryType geomType : 2;					// point, linestring, polygon

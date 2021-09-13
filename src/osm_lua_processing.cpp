@@ -32,8 +32,6 @@ OsmLuaProcessing::OsmLuaProcessing(
 	config(configIn),
 	layers(layers) {
 
-	newWayID = MAX_WAY_ID;
-
 	// ----	Initialise Lua
 	g_luaState = &luaState;
 	luaState.setErrorHandler(lua_error_handler);
@@ -573,7 +571,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 //  we use decrementing positive IDs to give a bit more space for way IDs)
 void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags) {
 	reset();
-	osmID = (--newWayID & OSMID_MASK) | OSMID_RELATION;
+	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
