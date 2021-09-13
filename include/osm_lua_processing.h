@@ -197,7 +197,6 @@ private:
 
 	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
 	int64_t originalOsmID;					///< Original OSM object ID
-	WayID newWayID = MAX_WAY_ID;			///< Decrementing new ID for relations
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
 	int32_t lon,latp;						///< Node coordinates
