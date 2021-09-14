@@ -491,5 +491,6 @@ int main(int argc, char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
+	exit(0); // no need to call destructors, which can be slow
 }
 
