@@ -38,7 +38,7 @@ class OutputObject {
 
 protected:	
 	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes) 
-		: objectID(id), geomType(type), layer(l), z_order(0),
+		: objectID(id), geomType(type), layer(l), z_order(0), sortable_number(0),
 		  minZoom(0), attributes(attributes)
 	{ }
 
@@ -47,6 +47,7 @@ public:
 	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point)
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	int8_t z_order				: 8;					// z_order: used for sorting features within layers
+	uint32_t sortable_number    : 32;                   // a numeric value the features of a layer should be sorted by in reverse order (e.g. area or population)
 	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	unsigned minZoom 			: 4;
 
@@ -57,6 +58,13 @@ public:
 			throw std::runtime_error("z_order is limited to 1 byte signed integer.");
 		}
 		z_order = z;
+	}
+
+	void setSortableNumber(const int num) {
+		if (num <= std::numeric_limits<uint32_t>::min() || num >= std::numeric_limits<uint32_t>::max()) {
+			throw std::runtime_error("sortable_number is limited to 4 byte unsigned integer.");
+		}
+		sortable_number = num;
 	}
 
 	void setMinZoom(unsigned z) {

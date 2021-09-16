@@ -149,6 +149,7 @@ public:
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const unsigned z);
 	void ZOrder(const int z);
+	void SortableNumber(const int num);
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {

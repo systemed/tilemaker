@@ -209,6 +209,7 @@ bool operator==(const OutputObjectRef x, const OutputObjectRef y) {
 	return
 		x->layer == y->layer &&
 		x->z_order == y->z_order &&
+		x->sortable_number == y->sortable_number &&
 		x->geomType == y->geomType &&
 		x->attributes == y->attributes &&
 		x->objectID == y->objectID;
@@ -223,6 +224,10 @@ bool operator<(const OutputObjectRef x, const OutputObjectRef y) {
 	if (x->layer > y->layer) return false;
 	if (x->z_order < y->z_order) return true;
 	if (x->z_order > y->z_order) return false;
+	// Comparison inverted for area because large features should appear first in the vector tile
+	// if the area was set.
+	if (x->sortable_number > y->sortable_number) return true;
+	if (x->sortable_number < y->sortable_number) return false;
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
 	if (x->attributes.get() < y->attributes.get()) return true;
