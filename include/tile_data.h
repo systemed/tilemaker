@@ -33,7 +33,7 @@ protected:
 	//TileIndex tileIndex;
 	std::deque<OutputObject> objects;
 
-	using oo_rtree_param_type = boost::geometry::index::quadratic<64>;
+	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
 	boost::geometry::index::rtree< std::pair<Point, OutputObjectRef>, oo_rtree_param_type> point_rtree;
 	boost::geometry::index::rtree< std::pair<Box, OutputObjectRef>, oo_rtree_param_type> box_rtree;
 
