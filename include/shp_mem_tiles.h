@@ -18,9 +18,6 @@ public:
 		Geometry geometry, 
 		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes);
 
-	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
-		//tileIndex[index].push_back(oo);
-	}
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
 		std::function<bool(OutputObject const &oo)> checkQuery) const;
@@ -45,13 +42,6 @@ public:
 	}
 
 private:
-	/// Add an OutputObject to all tiles between min/max lat/lon
-	void addToTileIndexByBbox(OutputObjectRef &oo, 
-		double minLon, double minLatp, double maxLon, double maxLatp);
-
-	/// Add an OutputObject to all tiles along a polyline
-	void addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom);
-
 	OSMStore &osmStore;
 
 	std::vector<OutputObjectRef> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)

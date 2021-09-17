@@ -530,39 +530,6 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 			// Store the attributes of the generated geometry
 			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 		}
-
-		// create a list of tiles this way passes through (tileSet)
-		/* unordered_set<TileCoordinates> tileSet;
-		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
-
-			// then, for each tile, store the OutputObject for each layer
-			bool polygonExists = false;
-			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-				TileCoordinates index = *it;
-				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->first->geomType == POLYGON_) {
-						polygonExists = true;
-						continue;
-					}
-	//				osmMemTiles.AddObject(index, jt->first);
-				}
-			}
-
-			// for polygon, fill inner tiles
-			if (polygonExists) {
-				fillCoveredTiles(tileSet);
-				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-					TileCoordinates index = *it;
-					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-						if (jt->first->geomType != POLYGON_) continue;
-	//					osmMemTiles.AddObject(index, jt->first);
-					}
-				}
-			}
-		} catch(std::out_of_range &err) {
-			cerr << "Error calculating intermediate tiles: " << err.what() << endl;
-		} */
 	}
 }
 
@@ -598,30 +565,10 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			return;
 		}		
 
-		/* unordered_set<TileCoordinates> tileSet;
-		if (mp.size() == 1) {
-			insertIntermediateTiles(mp[0].outer(), this->config.baseZoom, tileSet);
-			fillCoveredTiles(tileSet);
-		} else {
-			for (Polygon poly: mp) {
-				unordered_set<TileCoordinates> tileSetTmp;
-				insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
-				fillCoveredTiles(tileSetTmp);
-				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
-			}
-		} */
-
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			// Store the attributes of the generated geometry
 			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 		}
-
-		/* for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-			TileCoordinates index = *it;
-			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-//				osmMemTiles.AddObject(index, jt->first);
-			}
-		} */
 	}
 }
 

@@ -86,12 +86,6 @@ double degp2meter(double degp, double latp);
 
 double meter2degp(double meter, double latp);
 
-void insertIntermediateTiles(Linestring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
-void insertIntermediateTiles(Ring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
-
-// the range between smallest y and largest y is filled, for each x
-void fillCoveredTiles(std::unordered_set<TileCoordinates> &tileSet);
-
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 

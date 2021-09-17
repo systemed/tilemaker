@@ -8,6 +8,8 @@
 #include <memory>
 #include "output_object.h"
 
+#include <boost/geometry/index/parameters.hpp>
+
 typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare> TileIndex;
@@ -31,7 +33,7 @@ protected:
 	//TileIndex tileIndex;
 	std::deque<OutputObject> objects;
 
-	using oo_rtree_param_type = boost::geometry::index::quadratic<16>;
+	using oo_rtree_param_type = boost::geometry::index::quadratic<64>;
 	boost::geometry::index::rtree< std::pair<Point, OutputObjectRef>, oo_rtree_param_type> point_rtree;
 	boost::geometry::index::rtree< std::pair<Box, OutputObjectRef>, oo_rtree_param_type> box_rtree;
 
@@ -48,7 +50,6 @@ public:
 			dstTile.push_back(result.second);
    		for(auto const &result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
 			dstTile.push_back(result.second);
-//		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
 	OutputObjectRef CreateObject(Box const &envelope, OutputObject const &oo) {
@@ -70,13 +71,7 @@ public:
 		return &objects.back();
 	}
 
-	/* void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
-		std::lock_guard<std::mutex> lock(mutex);
-		tileIndex[index].push_back(oo);
-	} */
-
 	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileCoordinatesSet &srcTiles, TileCoordinatesSet &dstCoords);
-	//static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
 };
 
 TileCoordinatesSet GetTileCoordinates(Box const &clippingBox, unsigned int baseZoom, unsigned int zoom);
