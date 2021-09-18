@@ -65,7 +65,6 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 
 	OutputObjectRef oo;
 
-	uint tilex = 0, tiley = 0;
 	switch(geomType) {
 		case POINT_:
 		{
@@ -73,7 +72,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			if (p != nullptr) {
 	
 				osmStore.store_point(osmStore.shp(), id, *p);
-				oo = CreateObject(*p, OutputObjectOsmStorePoint(
+				oo = CreateObject(Point(p->x() / 10000000.0, p->y() / 10000000.0), OutputObjectOsmStorePoint(
 					geomType, layerNum, id, attributes));
 				cachedGeometries.push_back(oo);
 			}

@@ -316,7 +316,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(p)) return;
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
-			OutputObjectRef oo = osmMemTiles.CreateObject(p, OutputObjectOsmStorePoint(geomType, 
+			OutputObjectRef oo = osmMemTiles.CreateObject(Point(lon / 10000000.0, latp / 10000000.0), OutputObjectOsmStorePoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
@@ -391,7 +391,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
-	OutputObjectRef oo = osmMemTiles.CreateObject(geomp, OutputObjectOsmStorePoint(POINT_,
+	OutputObjectRef oo = osmMemTiles.CreateObject(Point(geomp.x() / 10000000.0, geomp.y() / 10000000.0), OutputObjectOsmStorePoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
 	if(oo) outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
