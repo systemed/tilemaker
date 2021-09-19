@@ -77,6 +77,17 @@ void simplify_combine(C &result, T &&new_element)
     } 
 }
 
+/**
+ * \brief Get the envelope of this geometry
+ */
+template<class Geometry>
+static inline Box getEnvelope(Geometry const &g)
+{
+	Box result;
+	boost::geometry::envelope(g, result);
+	return result;
+}
+
 namespace geom = boost::geometry;
 
 template<class GeometryT>

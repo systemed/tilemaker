@@ -119,10 +119,15 @@ void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, doubl
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
 	uint minTileY = latp2tiley(minLatp, baseZoom);
 	uint maxTileY = latp2tiley(maxLatp, baseZoom);
-	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-			TileCoordinates index(x, y);
-			AddObject(index, oo);
+
+	if((maxTileX - minTileX) * (maxTileY - minTileY) > 2) {
+		CreateObject(Box(Point(minLon, minLatp), Point(maxLon, maxLatp)), oo);
+	} else {
+		for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
+			for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
+				TileCoordinates index(x, y);
+				AddObject(index, oo);
+			}
 		}
 	}
 }

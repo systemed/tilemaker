@@ -72,9 +72,13 @@ TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const 
 
 std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom)
 {
+	TileBbox bbox(coordinates, zoom);
 	std::vector<OutputObjectRef> data;
-	for(size_t i=0; i<sources.size(); i++)
+
+	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
+		sources[i]->MergeSingleTileDataAtZoom(bbox.getTileBox(), data);
+	}
 
 	boost::sort::pdqsort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());

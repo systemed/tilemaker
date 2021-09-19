@@ -534,7 +534,8 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
+			Linestring ls = osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend());
+			insertIntermediateTiles(ls, this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -556,7 +557,10 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 						if (jt->first->geomType != POLYGON_) continue;
-						osmMemTiles.AddObject(index, jt->first);
+						if(tileSet.size() > 2) 
+							osmMemTiles.CreateObject(getEnvelope(ls), jt->first);
+						else
+							osmMemTiles.AddObject(index, jt->first);
 					}
 				}
 			}

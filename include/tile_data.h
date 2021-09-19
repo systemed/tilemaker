@@ -20,6 +20,9 @@ protected:
 	TileIndex tileIndex;
 	std::deque<OutputObject> objects;
 
+	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
+	boost::geometry::index::rtree< std::pair<Box, OutputObjectRef>, oo_rtree_param_type> box_rtree;
+
 	unsigned int baseZoom;
 
 public:
@@ -37,6 +40,11 @@ public:
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
+	void MergeSingleTileDataAtZoom(Box const &box, std::vector<OutputObjectRef> &dstTile) {
+   		for(auto const &result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+			dstTile.push_back(result.second);
+	}
+
 	OutputObjectRef CreateObject(OutputObject const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		objects.push_back(oo);
@@ -46,6 +54,14 @@ public:
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		tileIndex[index].push_back(oo);
+	}
+
+	void CreateObject(Box const &envelope, OutputObjectRef const &oo) {
+		if(!boost::geometry::is_valid(envelope))
+			return;
+
+		std::lock_guard<std::mutex> lock(mutex);
+		box_rtree.insert(std::make_pair(envelope, oo));
 	}
 
 private:	
