@@ -18,6 +18,7 @@ public:
     static void *allocate(size_type n, const void *hint = 0);
     static void deallocate(void *p, size_type n);
     static void destroy(void *p);
+	static void shutdown();
 };
 
 template<typename T>

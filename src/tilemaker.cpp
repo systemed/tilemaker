@@ -490,6 +490,8 @@ int main(int argc, char* argv[]) {
 	}
 #endif
 
+	void_mmap_allocator::shutdown();
+
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
 

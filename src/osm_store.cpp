@@ -181,6 +181,10 @@ void mmap_shm::close()
 	mmap_shm_thread_region_ptr.reset();
 }
 
+bool void_mmap_allocator_shutdown = false;
+
+void void_mmap_allocator::shutdown() { void_mmap_allocator_shutdown = true; }
+
 void * void_mmap_allocator::allocate(size_type n, const void *hint)
 {
 	while(true) {
@@ -210,43 +214,13 @@ void * void_mmap_allocator::allocate(size_type n, const void *hint)
 
 void void_mmap_allocator::deallocate(void *p, size_type n)
 {
-	if(mmap_shm_thread_region_ptr != nullptr) {	
-		auto &i = *mmap_shm_thread_region_ptr;
-		if(p >= (void const *)i.region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i.region.data()) + i.region.size())) {
-			std::lock_guard<std::mutex> lock(i.mutex);
-			allocator_t allocator(i.buffer.get_segment_manager());
-			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
-		}
-	}
-
-	if(mmap_file_thread_ptr != nullptr) {	
-		auto &i = *mmap_file_thread_ptr;
-		if(p >= i.region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i.region.get_address()) + i.region.get_size())) {
-			allocator_t allocator(i.buffer.get_segment_manager());
-			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
-		}
-	} 
-
-	std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
-	for(auto &i: mmap_shm_regions) {
-		if(p >= (void const *)i->region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.data()) + i->region.size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
-			allocator_t allocator(i->buffer.get_segment_manager());
-			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
-		}
-	}
-
-	for(auto &i: mmap_dir.files) {
-		if(p >= i->region.get_address()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i->region.get_address()) + i->region.get_size())) {
-			std::lock_guard<std::mutex> lock(i->mutex);
-			allocator_t allocator(i->buffer.get_segment_manager());
-			return allocator.deallocate(reinterpret_cast<uint8_t *>(p), n);
-		}
-	} 
+	destroy(p);
 }
 
 void void_mmap_allocator::destroy(void *p)
 {
+	if(void_mmap_allocator_shutdown) return;
+
 	if(mmap_shm_thread_region_ptr != nullptr) {	
 		auto &i = *mmap_shm_thread_region_ptr;
 		if(p >= (void const *)i.region.data()  && p < reinterpret_cast<void const *>(reinterpret_cast<uint8_t const *>(i.region.data()) + i.region.size())) {
