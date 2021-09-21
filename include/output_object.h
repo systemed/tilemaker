@@ -61,7 +61,7 @@ public:
 	}
 
 	void setSortableNumber(const int num) {
-		if (num <= std::numeric_limits<uint32_t>::min() || num >= std::numeric_limits<uint32_t>::max()) {
+		if (num < std::numeric_limits<uint32_t>::min() || num > std::numeric_limits<uint32_t>::max()) {
 			throw std::runtime_error("sortable_number is limited to 4 byte unsigned integer.");
 		}
 		sortable_number = num;
