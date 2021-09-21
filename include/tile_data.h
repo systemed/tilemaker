@@ -31,11 +31,6 @@ public:
 	{ }
 
 	///This must be thread safe!
-	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
-		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
-	}
-
-	///This must be thread safe!
 	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
@@ -64,12 +59,11 @@ public:
 		box_rtree.insert(std::make_pair(envelope, oo));
 	}
 
-private:	
-	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
+	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileCoordinatesSet &srcTiles, TileCoordinatesSet &dstCoords);
 	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
 };
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom);
+TileCoordinatesSet GetTileCoordinates(Box const &clippingBox, unsigned int baseZoom, unsigned int zoom);
 
 std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom);
 

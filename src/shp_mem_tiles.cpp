@@ -125,8 +125,7 @@ void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, doubl
 	} else {
 		for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
 			for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-				TileCoordinates index(x, y);
-				AddObject(index, oo);
+				AddObject(TileCoordinates(x, y), oo);
 			}
 		}
 	}

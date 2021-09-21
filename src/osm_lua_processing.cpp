@@ -557,7 +557,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 					TileCoordinates index = *it;
 					for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 						if (jt->first->geomType != POLYGON_) continue;
-						if(tileSet.size() > 2) 
+						if(tileSet.size() > 4) 
 							osmMemTiles.CreateObject(getEnvelope(ls), jt->first);
 						else
 							osmMemTiles.AddObject(index, jt->first);
@@ -623,7 +623,10 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-				osmMemTiles.AddObject(index, jt->first);
+				if(tileSet.size() >= 4) 
+					osmMemTiles.CreateObject(getEnvelope(mp), jt->first);
+				else
+					osmMemTiles.AddObject(index, jt->first);
 			}
 		}
 	}

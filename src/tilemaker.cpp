@@ -271,9 +271,13 @@ int main(int argc, char* argv[]) {
 		cerr << "Couldn't find expected details in JSON file." << endl;
 		return -1;
 	}
+
 	if (hasClippingBox) {
 		cout << "Bounding box " << clippingBox.min_corner().x() << ", " << latp2lat(clippingBox.min_corner().y()) << ", " << 
 		                           clippingBox.max_corner().x() << ", " << latp2lat(clippingBox.max_corner().y()) << endl;
+	} else {
+		cout << "No bounding box found in input file or command line" << endl;
+		return -1;
 	}
 
 	// For each tile, objects to be used in processing
@@ -426,7 +430,8 @@ int main(int argc, char* argv[]) {
 
 		std::deque< std::pair<unsigned int, TileCoordinates> > tile_coordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
-			auto zoom_result = GetTileCoordinates(sources, zoom);
+			auto zoom_result = GetTileCoordinates(clippingBox, sharedData.config.baseZoom, zoom);
+
 			for(auto&& it: zoom_result) {
 				// If we're constrained to a source tile, check we're within it
 				if (srcZ>-1) {
