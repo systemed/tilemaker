@@ -2,6 +2,7 @@
 #include "osm_store.h"
 #include <iostream>
 #include <iterator>
+#include <unordered_map>
 
 #include <boost/interprocess/mapped_region.hpp>
 #include <boost/interprocess/managed_external_buffer.hpp>
@@ -376,12 +377,12 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
 
 	// Create maps of start/end nodes
-	std::map<NodeID, std::vector<NodeID>> startNodes;
-	std::map<NodeID, std::vector<NodeID>> endNodes;
+	std::unordered_map<NodeID, std::vector<NodeID>> startNodes;
+	std::unordered_map<NodeID, std::vector<NodeID>> endNodes;
 	for (auto it = itBegin; it != itEnd; ++it) {
 		if (done[*it]) { continue; }
 		auto const &way = ways.at(*it);
-		if (isClosed(way)) {
+		if (isClosed(way) || results.empty()) {
 			// if start==end, simply add it to the set
 			results.emplace_back(way.begin(), way.end());
 			done[*it] = true;
@@ -413,45 +414,50 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<W
 	do {
 		added = 0;
 		for (auto rt = results.begin(); rt != results.end(); rt++) {
-			NodeID rFirst = rt->front();
-			NodeID rLast  = rt->back();
-			if (rFirst==rLast) continue;
-			if (startNodes.find(rLast)!=startNodes.end()) {
-				// append to the result
-				auto match = startNodes.find(rLast)->second;
-				auto nodes = ways.at(match.back());
-				rt->insert(rt->end(), nodes.begin(), nodes.end());
-				removeWay(match.back());
-				added++; break;
+			bool working=true;
+			do {
+				NodeID rFirst = rt->front();
+				NodeID rLast  = rt->back();
+				if (rFirst==rLast) break;
+				if (startNodes.find(rLast)!=startNodes.end()) {
+					// append to the result
+					auto match = startNodes.find(rLast)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->end(), nodes.begin(), nodes.end());
+					removeWay(match.back());
+					added++;
 
-			} else if (endNodes.find(rLast)!=endNodes.end()) {
-				// append reversed to the original
-				auto match = endNodes.find(rLast)->second;
-				auto nodes = ways.at(match.back());
-				rt->insert(rt->end(),
-					std::make_reverse_iterator(nodes.end()),
-					std::make_reverse_iterator(nodes.begin()));
-				removeWay(match.back());
-				added++; break;
+				} else if (endNodes.find(rLast)!=endNodes.end()) {
+					// append reversed to the original
+					auto match = endNodes.find(rLast)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->end(),
+						std::make_reverse_iterator(nodes.end()),
+						std::make_reverse_iterator(nodes.begin()));
+					removeWay(match.back());
+					added++;
 
-			} else if (endNodes.find(rFirst)!=endNodes.end()) {
-				// prepend to the original
-				auto match = endNodes.find(rFirst)->second;
-				auto nodes = ways.at(match.back());
-				rt->insert(rt->begin(), nodes.begin(), nodes.end());
-				removeWay(match.back());
-				added++; break;
+				} else if (endNodes.find(rFirst)!=endNodes.end()) {
+					// prepend to the original
+					auto match = endNodes.find(rFirst)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->begin(), nodes.begin(), nodes.end());
+					removeWay(match.back());
+					added++;
 
-			} else if (startNodes.find(rFirst)!=startNodes.end()) {
-				// prepend reversed to the original
-				auto match = startNodes.find(rFirst)->second;
-				auto nodes = ways.at(match.back());
-				rt->insert(rt->begin(),
-					std::make_reverse_iterator(nodes.end()),
-					std::make_reverse_iterator(nodes.begin()));
-				removeWay(match.back());
-				added++; break;
-			}
+				} else if (startNodes.find(rFirst)!=startNodes.end()) {
+					// prepend reversed to the original
+					auto match = startNodes.find(rFirst)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->begin(),
+						std::make_reverse_iterator(nodes.end()),
+						std::make_reverse_iterator(nodes.begin()));
+					removeWay(match.back());
+					added++;
+
+				} else { working=false; }
+				
+			} while (working);
 		}
 
 		// If nothing was added, then 'seed' it with a remaining unallocated way
