@@ -147,8 +147,8 @@ public:
 	void AttributeNumericWithMinZoom(const std::string &key, const float val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val);
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
-	void MinZoom(const unsigned z);
-	void ZOrder(const int z);
+	void MinZoom(const double z);
+	void ZOrder(const double z);
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {
