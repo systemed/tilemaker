@@ -30,6 +30,7 @@ struct LayerDef {
 	bool indexed;
 	std::string indexName;
 	std::map<std::string, uint> attributeMap;
+	bool writeTo;
 };
 
 ///\brief Defines layers used in map rendering
