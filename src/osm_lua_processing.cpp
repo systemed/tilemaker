@@ -449,16 +449,23 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 
+template<typename T>
+static inline T make_valid(double v)
+{
+	if(!std::isfinite(v)) return 0;
+	return static_cast<T>(std::floor(v));
+}
+
 // Set minimum zoom
-void OsmLuaProcessing::MinZoom(const unsigned z) {
+void OsmLuaProcessing::MinZoom(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
-	outputs.back().first->setMinZoom(z);
+	outputs.back().first->setMinZoom(make_valid<unsigned int>(z));
 }
 
 // Set z_order
-void OsmLuaProcessing::ZOrder(const int z) {
+void OsmLuaProcessing::ZOrder(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
-	outputs.back().first->setZOrder(z);
+	outputs.back().first->setZOrder(make_valid<int>(z));
 }
 
 // Record attribute name/type for vector_layers table
