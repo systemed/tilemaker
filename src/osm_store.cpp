@@ -354,11 +354,12 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 		fillPoints(inner, it->begin(), it->end());
 		filledInners.emplace_back(inner);
 	}
+	bool onlyOneOuter = outers.size()==1;
 	for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 		Polygon poly;
 		fillPoints(poly.outer(), ot->begin(), ot->end());
 		for (auto it = filledInners.begin(); it != filledInners.end(); ++it) {
-			if (geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
+			if (onlyOneOuter || geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
 		}
 		mp.emplace_back(move(poly));
 	}
