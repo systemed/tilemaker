@@ -2,6 +2,7 @@
 #include "osm_store.h"
 #include <iostream>
 #include <iterator>
+#include <unordered_map>
 
 #include <boost/interprocess/mapped_region.hpp>
 #include <boost/interprocess/managed_external_buffer.hpp>
@@ -338,12 +339,6 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	MultiPolygon mp;
 	if (outerBegin == outerEnd) { return mp; } // no outers so quit
 
-	// Assemble outers
-	// - Any closed polygons are added as-is
-	// - Linestrings are joined to existing linestrings with which they share a start/end
-	// - If no matches can be found, then one linestring is added (to 'attract' others)
-	// - The process is rerun until no ways are left
-	// There's quite a lot of copying going on here - could potentially be addressed
 	std::vector<NodeDeque> outers;
 	std::vector<NodeDeque> inners;
 	std::map<WayID,bool> done; // true=this way has already been added to outers/inners, don't reconsider
@@ -359,11 +354,12 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 		fillPoints(inner, it->begin(), it->end());
 		filledInners.emplace_back(inner);
 	}
+	bool onlyOneOuter = outers.size()==1;
 	for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 		Polygon poly;
 		fillPoints(poly.outer(), ot->begin(), ot->end());
 		for (auto it = filledInners.begin(); it != filledInners.end(); ++it) {
-			if (geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
+			if (onlyOneOuter || geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
 		}
 		mp.emplace_back(move(poly));
 	}
@@ -373,64 +369,107 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	return mp;
 }
 
+// Assemble multipolygon constituent ways
+// - Any closed polygons are added as-is
+// - Linestrings are joined to existing linestrings with which they share a start/end
+// - If no matches can be found, then one linestring is added (to 'attract' others)
+// - The process is rerun until no ways are left
+// There's quite a lot of copying going on here - could potentially be addressed
 void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
 
+	// Create maps of start/end nodes
+	std::unordered_map<NodeID, std::vector<NodeID>> startNodes;
+	std::unordered_map<NodeID, std::vector<NodeID>> endNodes;
+	for (auto it = itBegin; it != itEnd; ++it) {
+		if (done[*it]) { continue; }
+		auto const &way = ways.at(*it);
+		if (isClosed(way) || results.empty()) {
+			// if start==end, simply add it to the set
+			results.emplace_back(way.begin(), way.end());
+			done[*it] = true;
+		} else {
+			startNodes[way.front()].emplace_back(*it);
+			endNodes[way.back()].emplace_back(*it);
+		}
+	}
+
+	auto deleteFromWayList = [&](NodeID n, NodeID w, bool which) {
+		auto &nodemap = which ? startNodes : endNodes;
+		std::vector<NodeID> &waylist = nodemap.find(n)->second;
+		waylist.erase(std::remove(waylist.begin(), waylist.end(), w), waylist.end());
+		if (waylist.empty()) { nodemap.erase(nodemap.find(n)); }
+	};
+	auto removeWay = [&](NodeID w) {
+		auto const &way = ways.at(w);
+		NodeID first = way.front();
+		NodeID last  = way.back();
+		if (startNodes.find(first) != startNodes.end()) { deleteFromWayList(first, w, true ); }
+		if (startNodes.find(last)  != startNodes.end()) { deleteFromWayList(last,  w, true ); }
+		if (endNodes.find(first)   != endNodes.end()  ) { deleteFromWayList(first, w, false); }
+		if (endNodes.find(last)    != endNodes.end()  ) { deleteFromWayList(last,  w, false); }
+		done[w] = true;
+	};
+
+	// Loop through, repeatedly adding start/end nodes if we can
 	int added;
 	do {
 		added = 0;
-		for (auto it = itBegin; it != itEnd; ++it) {
-			if (done[*it]) { continue; }
-			auto const &way = ways.at(*it);
-			if (isClosed(way)) {
-				// if start==end, simply add it to the set
-				results.emplace_back(way.begin(), way.end());
-				added++;
-				done[*it] = true;
-			} else {
-				// otherwise, can we find a matching outer to append it to?
-				bool joined = false;
-				auto const &nodes = ways.at(*it);
-				NodeID jFirst = nodes.front();
-				NodeID jLast  = nodes.back();
-				for (auto ot = results.begin(); ot != results.end(); ot++) {
-					NodeID oFirst = ot->front();
-					NodeID oLast  = ot->back();
-					if (jFirst==jLast) continue; // don't join to already-closed ways
-					else if (oLast==jFirst) {
-						// append to the original
-						ot->insert(ot->end(), nodes.begin(), nodes.end());
-						joined=true; break;
-					} else if (oLast==jLast) {
-						// append reversed to the original
-						ot->insert(ot->end(),
-							std::make_reverse_iterator(nodes.end()),
-							std::make_reverse_iterator(nodes.begin()));
-						joined=true; break;
-					} else if (jLast==oFirst) {
-						// prepend to the original
-						ot->insert(ot->begin(), nodes.begin(), nodes.end());
-						joined=true; break;
-					} else if (jFirst==oFirst) {
-						ot->insert(ot->begin(),
-							std::make_reverse_iterator(nodes.end()),
-							std::make_reverse_iterator(nodes.begin()));
-						joined=true; break;
-					}
-				}
-				if (joined) {
+		for (auto rt = results.begin(); rt != results.end(); rt++) {
+			bool working=true;
+			do {
+				NodeID rFirst = rt->front();
+				NodeID rLast  = rt->back();
+				if (rFirst==rLast) break;
+				if (startNodes.find(rLast)!=startNodes.end()) {
+					// append to the result
+					auto match = startNodes.find(rLast)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->end(), nodes.begin(), nodes.end());
+					removeWay(match.back());
 					added++;
-					done[*it] = true;
-				}
-			}
+
+				} else if (endNodes.find(rLast)!=endNodes.end()) {
+					// append reversed to the original
+					auto match = endNodes.find(rLast)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->end(),
+						std::make_reverse_iterator(nodes.end()),
+						std::make_reverse_iterator(nodes.begin()));
+					removeWay(match.back());
+					added++;
+
+				} else if (endNodes.find(rFirst)!=endNodes.end()) {
+					// prepend to the original
+					auto match = endNodes.find(rFirst)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->begin(), nodes.begin(), nodes.end());
+					removeWay(match.back());
+					added++;
+
+				} else if (startNodes.find(rFirst)!=startNodes.end()) {
+					// prepend reversed to the original
+					auto match = startNodes.find(rFirst)->second;
+					auto nodes = ways.at(match.back());
+					rt->insert(rt->begin(),
+						std::make_reverse_iterator(nodes.end()),
+						std::make_reverse_iterator(nodes.begin()));
+					removeWay(match.back());
+					added++;
+
+				} else { working=false; }
+				
+			} while (working);
 		}
+
 		// If nothing was added, then 'seed' it with a remaining unallocated way
-		if (added==0) {
-			for (auto it = itBegin; it != itEnd; ++it) {
-				if (done[*it]) { continue; }
-				auto const &way = ways.at(*it);
+		for (int i=0; i<=1; i++) {
+			if (added>0) continue;
+			for (auto nt : (i==0 ? startNodes : endNodes)) {
+				NodeID w = nt.second.back();
+				auto const &way = ways.at(w);
 				results.emplace_back(way.begin(), way.end());
 				added++;
-				done[*it] = true;
+				removeWay(w);
 				break;
 			}
 		}
