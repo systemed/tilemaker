@@ -27,10 +27,11 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		const std::string &indexName,
 		const std::string &writeTo)  {
 
+	bool isWriteTo = !writeTo.empty();
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 		filterBelow, filterArea, combinePolygonsBelow,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
-		std::map<std::string,uint>() };
+		std::map<std::string,uint>(), isWriteTo };
 	layers.push_back(layer);
 	uint layerNum = layers.size()-1;
 	layerMap[name] = layerNum;
@@ -56,6 +57,9 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 Value LayerDefinition::serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const {
 	Value layerArray(kArrayType);
 	for (auto it = layers.begin(); it != layers.end(); ++it) {
+		if (it->writeTo) {
+			continue;
+		}
 		Value fieldObj(kObjectType);
 		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
 			Value k(jt->first.c_str(), allocator);
