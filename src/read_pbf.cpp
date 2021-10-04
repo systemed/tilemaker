@@ -119,7 +119,6 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 
-	std::unordered_set<WayID> wayIDs;
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
 		if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
@@ -128,10 +127,9 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		for (int n=0; n < pbfRelation.memids_size(); n++) {
 			lastID += pbfRelation.memids(n);
 			if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-			wayIDs.insert(static_cast<WayID>(lastID));
+			osmStore.mark_way_used(static_cast<WayID>(lastID));
 		}
 	}
-	osmStore.mark_ways_used(wayIDs);
 	return true;
 }
 

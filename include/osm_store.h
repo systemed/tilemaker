@@ -224,14 +224,6 @@ public:
 		usedList[wayid] = true;
 	}
 	
-	void insert_set(std::unordered_set<WayID> ids) {
-		std::lock_guard<std::mutex> lock(mutex);
-		for (WayID wayid : ids) {
-			if (wayid>usedList.size()) usedList.resize(wayid+1);
-			usedList[wayid] = true;
-		}
-	}
-	
 	// See if a way is used
 	bool at(WayID wayid) const {
 		return (wayid>usedList.size()) ? false : usedList[wayid];
@@ -456,7 +448,6 @@ public:
 	void relations_sort(unsigned int threadNum);
 
 	void mark_way_used(WayID i) { used_ways.insert(i); }
-	void mark_ways_used(std::unordered_set<WayID> ids) { used_ways.insert_set(ids); }
 	bool way_is_used(WayID i) { return used_ways.at(i); }
 	void ensure_used_ways_inited() {
 		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
