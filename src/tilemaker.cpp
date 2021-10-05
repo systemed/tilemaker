@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -183,6 +183,7 @@ int main(int argc, char* argv[]) {
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
+		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
 	p.add("input", -1);
@@ -279,6 +280,7 @@ int main(int argc, char* argv[]) {
 	// For each tile, objects to be used in processing
 	OSMStore osmStore;
 	osmStore.use_compact_store(osmStoreCompact);
+	osmStore.enforce_integrity(!skipIntegrity);
 	if(!osmStoreFile.empty()) {
 		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
 		osmStore.open(osmStoreFile);
