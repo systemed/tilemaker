@@ -35,7 +35,7 @@ aerodromeValues = Set { "international", "public", "regional", "military", "priv
 
 -- Process node tags
 
-node_keys = { "amenity", "shop", "sport", "tourism", "place", "office", "natural", "addr:housenumber", "aeroway" }
+node_keys = { "addr:housenumber","aerialway","aeroway","amenity","barrier","highway","historic","leisure","natural","office","place","railway","shop","sport","tourism","waterway" }
 function node_function(node)
 	-- Write 'aerodrome_label'
 	local aeroway = node:Find("aeroway")
