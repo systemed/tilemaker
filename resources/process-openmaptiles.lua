@@ -3,6 +3,19 @@
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
 
+--------
+-- Alter these lines to control which languages are written for place/streetnames
+--
+-- Preferred language can be (for example) "en" for English, "de" for German, or nil to use OSM's name tag:
+preferred_language = nil
+-- This is written into the following vector tile attribute (usually "name:latin"):
+preferred_language_attribute = "name:latin"
+-- If OSM's name tag differs, then write it into this attribute (usually "name_int"):
+default_language_attribute = "name_int"
+-- Also write these languages if they differ - for example, { "de", "fr" }
+additional_languages = { }
+--------
+
 -- Enter/exit Tilemaker
 function init_function()
 end
@@ -534,10 +547,26 @@ function WritePOI(obj,class,subclass,rank)
 	obj:Attribute("subclass", subclass)
 end
 
--- Set name, name_en, and name_de on any object
+-- Set name attributes on any object
 function SetNameAttributes(obj)
-	obj:Attribute("name:latin", obj:Find("name"))
-	-- **** do transliteration
+	local name = obj:Find("name"), iname
+	local main_written = name
+	-- if we have a preferred language, then write that (if available), and additionally write the base name tag
+	if preferred_language and obj:Holds("name:"..preferred_language) then 
+		iname = obj:Find("name:"..preferred_language)
+		obj:Attribute(preferred_language_attribute, iname)
+		if iname~=name and default_language_attribute then
+			obj:Attribute(default_language_attribute, name)
+		else main_written = iname end
+	else
+		obj:Attribute(preferred_language_attribute, name)
+	end
+	-- then set any additional languages
+	for i,lang in ipairs(additional_languages) do
+		iname = obj:Find("name:"..lang)
+		if iname=="" then iname=name end
+		if iname~=main_written then obj:Attribute("name:"..lang, iname) end
+	end
 end
 
 -- Set ele and ele_ft on any object
