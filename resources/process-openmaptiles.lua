@@ -581,7 +581,7 @@ function GetPOIRank(obj)
 	for k,list in pairs(poiTags) do
 		if list[obj:Find(k)] then
 			v = obj:Find(k)	-- k/v are the OSM tag pair
-			class = poiClasses[v] or v
+			class = poiClasses[v] or k
 			rank  = poiClassRanks[class] or 25
 			return rank, class, v
 		end
