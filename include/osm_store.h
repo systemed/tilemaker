@@ -220,7 +220,7 @@ public:
 	// Mark a way as used
 	void insert(WayID wayid) {
 		std::lock_guard<std::mutex> lock(mutex);
-		if (wayid>usedList.size()) usedList.resize(wayid+1);
+		if (wayid>usedList.size()) usedList.resize(wayid+256);
 		usedList[wayid] = true;
 	}
 	
