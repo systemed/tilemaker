@@ -323,24 +323,33 @@ function way_function(way)
 			if minzoom < 8 then
 				minzoom = 8
 			end
-			if highway == "motorway" or highway == "trunk" then
-				way:Layer("transportation_name", false)
-				way:MinZoom(minzoom)
-			elseif h == "minor" or h == "track" or h == "path" or h == "service" then
-				way:Layer("transportation_name_detail", false)
-				way:MinZoom(minzoom)
-			else
-				way:Layer("transportation_name_mid", false)
-				way:MinZoom(minzoom)
+
+			-- If ref has multiple values (delimited by a semicolon), add multiple linestrings
+			-- with each ref individually.
+			local rawRef = way:Find("ref")
+			local splitRef = split(rawRef, ";")
+			if #splitRef == 0 then
+				table.insert(splitRef, "")
 			end
-			SetNameAttributes(way)
-			way:Attribute("class",h)
-			way:Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
-			if h~=highway then way:Attribute("subclass",highway) end
-			local ref = way:Find("ref")
-			if ref~="" then
-				way:Attribute("ref",ref)
-				way:AttributeNumeric("ref_length",ref:len())
+			for _, ref in ipairs(splitRef) do
+				if highway == "motorway" or highway == "trunk" then
+					way:Layer("transportation_name", false)
+					way:MinZoom(minzoom)
+				elseif h == "minor" or h == "track" or h == "path" or h == "service" then
+					way:Layer("transportation_name_detail", false)
+					way:MinZoom(minzoom)
+				else
+					way:Layer("transportation_name_mid", false)
+					way:MinZoom(minzoom)
+				end
+				SetNameAttributes(way)
+				way:Attribute("class",h)
+				way:Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
+				if h~=highway then way:Attribute("subclass",highway) end
+				if ref~="" then
+					way:Attribute("ref",ref)
+					way:AttributeNumeric("ref_length",ref:len())
+				end
 			end
 		end
 	end
