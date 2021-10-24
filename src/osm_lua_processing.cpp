@@ -503,7 +503,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags) {
 	reset();
 	osmID = (wayId & OSMID_MASK) | OSMID_WAY;
-	originalOsmID = osmID;
+	originalOsmID = wayId;
 	isWay = true;
 	isRelation = false;
 	nodeVecPtr = &nodeVec;
