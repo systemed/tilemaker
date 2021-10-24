@@ -308,6 +308,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		throw out_of_range("ERROR: Layer(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}
 
+	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
 	OutputGeometryType geomType = isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
 		if (geomType==POINT_) {
@@ -317,7 +318,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
-							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
+							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
 		}
@@ -347,7 +348,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
-							layers.layerMap[layerName], osmID, attributeStore.empty_set()));
+							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 		else if (geomType==LINESTRING_) {
@@ -358,7 +359,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_linestring(osmStore.osm(), osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, 
-						layers.layerMap[layerName], osmID, attributeStore.empty_set()));
+						layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 	} catch (std::invalid_argument &err) {
@@ -371,7 +372,8 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}	
 
-    Point geomp;
+	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
+	Point geomp;
 	try {
 		geomp = calculateCentroid();
 		if(geom::is_empty(geomp)) {
@@ -392,7 +394,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
-					layers.layerMap[layerName], osmID, attributeStore.empty_set()));
+					layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
 

@@ -16,7 +16,7 @@ public:
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes);
+		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom);
 
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		tileIndex[index].push_back(oo);

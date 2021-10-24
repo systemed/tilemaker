@@ -52,7 +52,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName) {
 
 OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 	const std::string &layerName, enum OutputGeometryType geomType,
-	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes) {		
+	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom) {
 
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
@@ -74,7 +74,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 	
 				osmStore.store_point(osmStore.shp(), id, *p);
 				oo = CreateObject(OutputObjectOsmStorePoint(
-					geomType, layerNum, id, attributes));
+					geomType, layerNum, id, attributes, minzoom));
 				cachedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -87,7 +87,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		{
 			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreLinestring(
-						geomType, layerNum, id, attributes));
+						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, &geometry);
@@ -97,7 +97,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		{
 			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
-						geomType, layerNum, id, attributes));
+						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index
