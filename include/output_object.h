@@ -37,9 +37,9 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 class OutputObject {
 
 protected:	
-	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes) 
+	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint mz) 
 		: objectID(id), geomType(type), layer(l), z_order(0),
-		  minZoom(0), attributes(attributes)
+		  minZoom(mz), attributes(attributes)
 	{ }
 
 
@@ -86,8 +86,8 @@ public:
 class OutputObjectOsmStorePoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
-		: OutputObject(type, l, id, attributes)
+	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POINT_);
 	}
@@ -96,8 +96,8 @@ public:
 class OutputObjectOsmStoreLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
-		: OutputObject(type, l, id, attributes)
+	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == LINESTRING_);
 	}
@@ -106,8 +106,8 @@ public:
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes)
-		: OutputObject(type, l, id, attributes)
+	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POLYGON_);
 	}
