@@ -194,6 +194,7 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	return false;
 }
 
+// Returns true when block was completely handled, thus could be omited by another phases.
 bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, unordered_set<string> const &nodeKeys, ReadPhase phase) 
 {
 	PrimitiveBlock pb;
@@ -202,7 +203,8 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		return true;
 	}
 
-	bool handled_block = false;
+	// Keep count of groups read during this phase.
+	std::size_t read_groups = 0;
 
 	// Read the string table, and pre-calculate the positions of valid node keys
 	unordered_set<int> nodeKeyPositions;
@@ -227,7 +229,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			bool done = ReadNodes(output, pg, pb, nodeKeyPositions);
 			if(done) { 
 				output_progress();
-				handled_block = true;
+				++read_groups;
 				continue;
 			}
 		}
@@ -246,7 +248,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			bool done = ReadWays(output, pg, pb);
 			if(done) { 
 				output_progress();
-				handled_block = true;
+				++read_groups;
 				continue;
 			}
 		}
@@ -255,13 +257,25 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			bool done = ReadRelations(output, pg, pb);
 			if(done) { 
 				output_progress();
-				handled_block = true;
+				++read_groups;
 				continue;
 			}
 		}
 	}
 
-	return handled_block;
+	// Possible cases of a block contents:
+	// - single group
+	// - multiple groups of the same type
+	// - multiple groups of the different type
+	// 
+	// In later case block would not be handled during this phase, and should be
+	// read again in remaining phases. Thus we return false to indicate that the
+	// block was not handled completelly.
+	if(read_groups != pb.primitivegroup_size()) {
+		return false;
+	}
+
+	return true;
 }
 
 int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
