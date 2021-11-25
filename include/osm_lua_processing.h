@@ -76,6 +76,9 @@ public:
 	 */
 	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
 
+	// Refresh way ID in case of multiple layers per object
+	void refreshOsmID();
+
 	// ----	Metadata queries called from Lua
 
 	// Get the ID of the current object
@@ -195,9 +198,13 @@ private:
 	class OsmMemTiles &osmMemTiles;
 	AttributeStore &attributeStore;			// key/value store
 
-	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
+	uint64_t osmID;							///< ID of OSM object
 	int64_t originalOsmID;					///< Original OSM object ID
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
+	bool osmIDHasBeenUsed;					// whether we've written a layer with this ID yet
+	uint64_t spareWayID = OSMID_WAY | OSMID_MASK;			// if we have >1 layers per OSM object, we need to generate new IDs as keys
+	uint64_t spareNodeID = OSMID_NODE | OSMID_MASK;			//  |
+	uint64_t spareRelationID = OSMID_RELATION | OSMID_MASK;	//  |
 
 	int32_t lon,latp;						///< Node coordinates
 	NodeVec const *nodeVecPtr;

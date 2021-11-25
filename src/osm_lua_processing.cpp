@@ -316,6 +316,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(p)) return;
 
+			refreshOsmID();
 			osmStore.store_point(osmStore.osm(), osmID, p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
@@ -346,6 +347,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(mp)) return;
 
+			refreshOsmID();
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
@@ -357,6 +359,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(ls)) return;
 
+			refreshOsmID();
 			osmStore.store_linestring(osmStore.osm(), osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, 
 						layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
@@ -392,6 +395,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
+	refreshOsmID();
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
@@ -421,6 +425,14 @@ std::vector<double> OsmLuaProcessing::Centroid() {
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
+// If we have more than one layer for a single OSM object,
+// we need to generate a new key for the OutputObject
+void OsmLuaProcessing::refreshOsmID() {
+	if (!osmIDHasBeenUsed) { osmIDHasBeenUsed = true; }
+	else if (isWay)        { osmID = spareWayID--; }
+	else if (isRelation)   { osmID = spareRelationID--; }
+	else                   { osmID = spareNodeID--; }
+}
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
@@ -479,6 +491,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 	reset();
 	osmID = (id & OSMID_MASK) | OSMID_NODE;
+	osmIDHasBeenUsed = false;
 	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
@@ -505,6 +518,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags) {
 	reset();
 	osmID = (wayId & OSMID_MASK) | OSMID_WAY;
+	osmIDHasBeenUsed = false;
 	originalOsmID = wayId;
 	isWay = true;
 	isRelation = false;
@@ -581,6 +595,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags) {
 	reset();
 	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
+	osmIDHasBeenUsed = false;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
