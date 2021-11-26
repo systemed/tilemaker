@@ -245,15 +245,20 @@ function way_function(way)
 		elseif admin_level==7 then mz=10
 		elseif admin_level>=8 then mz=12
 		end
-		if boundary~="" and way:Find("disputed")=="yes" then
-			-- disputed boundaries
-			way:Layer("boundary",false)
-			way:AttributeNumeric("disputed", 1)
-		elseif boundary=="administrative" and not (way:Find("maritime")=="yes") then
-			-- administrative boundaries
+
+		-- administrative boundaries
+		-- https://openmaptiles.org/schema/#boundary
+		if boundary=="administrative" and not (way:Find("maritime")=="yes") then
 			way:Layer("boundary",false)
 			way:AttributeNumeric("admin_level", admin_level)
 			way:MinZoom(mz)
+			-- disputed status (0 or 1). some styles need to have the 0 to show it.
+			local disputed = way:Find("disputed")
+			if disputed=="yes" then
+				way:AttributeNumeric("disputed", 1)
+			else
+				way:AttributeNumeric("disputed", 0)
+			end
 		end
 	end
 
@@ -552,7 +557,7 @@ function SetNameAttributes(obj)
 	local name = obj:Find("name"), iname
 	local main_written = name
 	-- if we have a preferred language, then write that (if available), and additionally write the base name tag
-	if preferred_language and obj:Holds("name:"..preferred_language) then 
+	if preferred_language and obj:Holds("name:"..preferred_language) then
 		iname = obj:Find("name:"..preferred_language)
 		obj:Attribute(preferred_language_attribute, iname)
 		if iname~=name and default_language_attribute then
@@ -703,3 +708,4 @@ function split(inputstr, sep) -- https://stackoverflow.com/a/7615129/4288232
 	return t
 end
 
+-- vim: tabstop=2 shiftwidth=2 noexpandtab
