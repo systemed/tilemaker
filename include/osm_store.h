@@ -9,6 +9,7 @@
 #include <vector>
 #include <mutex>
 #include <unordered_set>
+#include <boost/container/flat_map.hpp>
 
 class void_mmap_allocator
 {
@@ -235,6 +236,43 @@ public:
 	}
 };
 
+// scanned relations store
+class RelationScanStore {
+
+private:
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	std::map<WayID, std::vector<WayID>> relationsForWays;
+	std::map<WayID, tag_map_t> relationTags;
+
+public:
+	void relation_contains_way(WayID relid, WayID wayid) {
+		if (relationsForWays.find(wayid) != relationsForWays.end()) {
+			relationsForWays[wayid] = {};
+		}
+		relationsForWays[wayid].emplace_back(relid);
+	}
+	void store_relation_tags(WayID relid, const tag_map_t &tags) {
+		relationTags[relid] = tags;
+	}
+	bool way_in_any_relations(WayID wayid) {
+		return relationsForWays.find(wayid) != relationsForWays.end();
+	}
+	std::vector<WayID> relations_for_way(WayID wayid) {
+		return relationsForWays[wayid];
+	}
+	std::string get_relation_tag(WayID relid, const std::string &key) {
+		auto it = relationTags.find(relid);
+		if (it==relationTags.end()) return "";
+		auto jt = it->second.find(key);
+		if (jt==it->second.end()) return "";
+		return jt->second;
+	}
+	void clear() {
+		relationsForWays.clear();
+		relationTags.clear();
+	}
+};
+
 // way store
 class WayStore {
 
@@ -384,6 +422,7 @@ protected:
 	WayStore ways;
 	RelationStore relations;
 	UsedWays used_ways;
+	RelationScanStore scanned_relations;
 
 	generated osm_generated;
 	generated shp_generated;
@@ -435,7 +474,7 @@ public:
 		return use_compact_nodes ? compact_nodes.size() : nodes.size();
 	}
 
-  LatpLon nodes_at(NodeID i) const { 
+	LatpLon nodes_at(NodeID i) const { 
 		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
 	}
 
@@ -454,6 +493,13 @@ public:
 	void ensure_used_ways_inited() {
 		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
 	}
+	
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }
+	void store_relation_tags(WayID relid, const tag_map_t &tags) { scanned_relations.store_relation_tags(relid,tags); }
+	bool way_in_any_relations(WayID wayid) { return scanned_relations.way_in_any_relations(wayid); }
+	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
+	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
 
 	generated &osm() { return osm_generated; }
 	generated const &osm() const { return osm_generated; }

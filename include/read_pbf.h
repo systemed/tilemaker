@@ -33,6 +33,17 @@ public:
 			pbfreader_generate_stream const &generate_stream,
 			pbfreader_generate_output const &generate_output);
 
+	// Read tags into a map from a way/node/relation
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	template<typename T>
+	void readTags(T &pbfObject, PrimitiveBlock const &pb, tag_map_t &tags) {
+		auto keysPtr = pbfObject.mutable_keys();
+		auto valsPtr = pbfObject.mutable_vals();
+		for (uint n=0; n < pbfObject.keys_size(); n++) {
+			tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
+		}
+	}
+
 private:
 	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, std::unordered_set<std::string> const &nodeKeys, ReadPhase phase = ReadPhase::All);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
@@ -43,7 +54,7 @@ private:
 
 	/// Find a string in the dictionary
 	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
-
+	
 	OSMStore &osmStore;
 };
 

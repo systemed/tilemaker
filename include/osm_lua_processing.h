@@ -54,6 +54,10 @@ public:
 
 	// Has this object been assigned to any layers?
 	bool empty();
+	
+	// Do we have Lua routines for non-MP relations?
+	bool canReadRelations();
+	bool canWriteRelations();
 
 	// Shapefile tag remapping
 	bool canRemapShapefiles();
@@ -63,6 +67,9 @@ public:
 	// ----	Data loading methods
 
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+
+	// Scan non-MP relation
+	bool scanRelation(WayID id, const tag_map_t &tags);
 
 	/// \brief We are now processing a significant node
 	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
@@ -152,6 +159,11 @@ public:
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
+	
+	// Relation scan support
+	kaguya::optional<int> NextRelation();
+	std::string FindInRelation(const std::string &key);
+	void Accept();
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {
@@ -184,6 +196,8 @@ private:
 		linestringInited = false;
 		polygonInited = false;
 		multiPolygonInited = false;
+		relationAccepted = false;
+		relationSubscript = -1;
 	}
 
 	const inline Point getPoint() {
@@ -194,6 +208,8 @@ private:
 
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
+	bool supportsReadingRelations;
+	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
 	AttributeStore &attributeStore;			// key/value store
@@ -205,6 +221,10 @@ private:
 	uint64_t spareWayID = OSMID_WAY | OSMID_MASK;			// if we have >1 layers per OSM object, we need to generate new IDs as keys
 	uint64_t spareNodeID = OSMID_NODE | OSMID_MASK;			//  |
 	uint64_t spareRelationID = OSMID_RELATION | OSMID_MASK;	//  |
+
+	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
+	std::vector<WayID> relationList;		// in processWay, list of relations this way is in
+	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
 	NodeVec const *nodeVecPtr;

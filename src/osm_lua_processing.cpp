@@ -56,12 +56,13 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
+		.addFunction("Accept", &OsmLuaProcessing::Accept)
+		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
+		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
 	);
-	if (luaState["attribute_function"]) {
-		supportsRemappingShapefiles = true;
-	} else {
-		supportsRemappingShapefiles = false;
-	}
+	supportsRemappingShapefiles = !!luaState["attribute_function"];
+	supportsReadingRelations    = !!luaState["relation_scan_function"];
+	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
 
@@ -83,6 +84,14 @@ bool OsmLuaProcessing::empty() {
 
 bool OsmLuaProcessing::canRemapShapefiles() {
 	return supportsRemappingShapefiles;
+}
+
+bool OsmLuaProcessing::canReadRelations() {
+	return supportsReadingRelations;
+}
+
+bool OsmLuaProcessing::canWriteRelations() {
+	return supportsWritingRelations;
 }
 
 kaguya::LuaTable OsmLuaProcessing::newTable() {
@@ -425,6 +434,11 @@ std::vector<double> OsmLuaProcessing::Centroid() {
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
+// Accept a relation in relation_scan phase
+void OsmLuaProcessing::Accept() {
+	relationAccepted = true;
+}
+
 // If we have more than one layer for a single OSM object,
 // we need to generate a new key for the OutputObject
 void OsmLuaProcessing::refreshOsmID() {
@@ -482,9 +496,35 @@ void OsmLuaProcessing::ZOrder(const double z) {
 	outputs.back().first->setZOrder(make_valid<int>(z));
 }
 
+// Read scanned relations
+kaguya::optional<int> OsmLuaProcessing::NextRelation() {
+	relationSubscript++;
+	if (relationSubscript >= relationList.size()) return kaguya::nullopt_t();
+	return relationList[relationSubscript];
+}
+
+std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
+	return osmStore.get_relation_tag(relationList[relationSubscript], key);
+}
+
 // Record attribute name/type for vector_layers table
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
 	layers.layers[layer].attributeMap[key] = type;
+}
+
+// Scan relation (but don't write geometry)
+// return true if we want it, false if we don't
+bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
+	reset();
+	originalOsmID = id;
+	isWay = false;
+	isRelation = true;
+	currentTags = tags;
+	luaState["relation_scan_function"](this);
+	if (!relationAccepted) return false;
+	
+	osmStore.store_relation_tags(id, tags);
+	return true;
 }
 
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
@@ -526,6 +566,12 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
+
+	if (supportsReadingRelations && osmStore.way_in_any_relations(wayId)) {
+		relationList = osmStore.relations_for_way(wayId);
+	} else {
+		relationList.clear();
+	}
 
 	try {
 		isClosed = nodeVecPtr->front()==nodeVecPtr->back();

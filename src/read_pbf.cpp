@@ -85,12 +85,8 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 			}
 
 			try {
-				auto keysPtr = pbfWay.mutable_keys();
-				auto valsPtr = pbfWay.mutable_vals();
-				boost::container::flat_map<std::string, std::string> tags;
-				for (uint n=0; n < pbfWay.keys_size(); n++) {
-					tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
-				}
+				tag_map_t tags;
+				readTags(pbfWay, pb, tags);
 
 				// If we need it for later, store the way's nodes in the global way store
 				if (osmStore.way_is_used(wayId)) {
@@ -113,7 +109,6 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// Scan relations to see which ways we need to save
-	// as with ReadRelations, we currently just parse multipolygons
 	if (pg.relations_size()==0) return false;
 
 	int typeKey = findStringPosition(pb, "type");
@@ -121,13 +116,23 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
-		if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
-		if (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) == pbfRelation.vals().end()) { continue; }
+		bool isMultiPolygon = (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) != pbfRelation.keys().end()) &&
+		                      (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) != pbfRelation.vals().end());
+		bool isAccepted = false;
+		WayID relid = static_cast<WayID>(pbfRelation.id());
+		if (!isMultiPolygon) {
+			tag_map_t tags;
+			readTags(pbfRelation, pb, tags);
+			isAccepted = output.scanRelation(relid, tags);
+			if (!isAccepted) continue;
+			std::cout << " - accepted" << std::endl;
+		}
 		int64_t lastID = 0;
 		for (int n=0; n < pbfRelation.memids_size(); n++) {
 			lastID += pbfRelation.memids(n);
 			if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 			osmStore.mark_way_used(static_cast<WayID>(lastID));
+			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
 		}
 	}
 	return true;
@@ -135,7 +140,6 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
 	// ----	Read relations
-	//		(just multipolygons for now; we should do routes in time)
 
 	if (pg.relations_size() > 0) {
 		std::vector<RelationStore::element_t> relations;
@@ -147,42 +151,44 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
-				if (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) == pbfRelation.keys().end()) { continue; }
-				if (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) == pbfRelation.vals().end()) { continue; }
+				bool isMultiPolygon = (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) != pbfRelation.keys().end()) &&
+				                      (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) != pbfRelation.vals().end());
 
-				// Read relation members
-				WayVec outerWayVec, innerWayVec;
-				int64_t lastID = 0;
-				for (int n=0; n < pbfRelation.memids_size(); n++) {
-					lastID += pbfRelation.memids(n);
-					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-					int32_t role = pbfRelation.roles_sid(n);
-					// if (role != innerKey && role != outerKey) { continue; }
-					// ^^^^ commented out so that we don't die horribly when a relation has no outer way
-					WayID wayId = static_cast<WayID>(lastID);
-					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
-				}
-
-				try {
-					auto keysPtr = pbfRelation.mutable_keys();
-					auto valsPtr = pbfRelation.mutable_vals();
-					boost::container::flat_map<std::string, std::string> tags;
-					for (uint n=0; n < pbfRelation.keys_size(); n++) {
-						tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
-
+				// Multipolygon relation handling
+				if (isMultiPolygon) {
+					// Read relation members
+					WayVec outerWayVec, innerWayVec;
+					int64_t lastID = 0;
+					for (int n=0; n < pbfRelation.memids_size(); n++) {
+						lastID += pbfRelation.memids(n);
+						if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+						int32_t role = pbfRelation.roles_sid(n);
+						// if (role != innerKey && role != outerKey) { continue; }
+						// ^^^^ commented out so that we don't die horribly when a relation has no outer way
+						WayID wayId = static_cast<WayID>(lastID);
+						(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 					}
 
-					// Store the relation members in the global relation store
-					relations.push_back(std::make_pair(pbfRelation.id(), 
-						std::make_pair(
-							RelationStore::wayid_vector_t(outerWayVec.begin(), outerWayVec.end()),
-							RelationStore::wayid_vector_t(innerWayVec.begin(), innerWayVec.end()))));
+					try {
+						tag_map_t tags;
+						readTags(pbfRelation, pb, tags);
 
-					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags);
+						// Store the relation members in the global relation store
+						relations.push_back(std::make_pair(pbfRelation.id(), 
+							std::make_pair(
+								RelationStore::wayid_vector_t(outerWayVec.begin(), outerWayVec.end()),
+								RelationStore::wayid_vector_t(innerWayVec.begin(), innerWayVec.end()))));
 
-				} catch (std::out_of_range &err) {
-					// Relation is missing a member?
-					cerr << endl << err.what() << endl;
+						output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags);
+
+					} catch (std::out_of_range &err) {
+						// Relation is missing a member?
+						cerr << endl << err.what() << endl;
+					}
+				}
+				
+				// Other relation handling
+				else if (output.canWriteRelations()) {
 				}
 
 			}
@@ -353,6 +359,7 @@ int PbfReader::findStringPosition(PrimitiveBlock const &pb, char const *str) {
 	}
 	return -1;
 }
+
 
 // *************************************************
 
