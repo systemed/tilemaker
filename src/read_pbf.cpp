@@ -153,44 +153,37 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 				Relation pbfRelation = pg.relations(j);
 				bool isMultiPolygon = (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) != pbfRelation.keys().end()) &&
 				                      (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) != pbfRelation.vals().end());
+				if (!isMultiPolygon && !output.canWriteRelations()) continue;
 
-				// Multipolygon relation handling
-				if (isMultiPolygon) {
-					// Read relation members
-					WayVec outerWayVec, innerWayVec;
-					int64_t lastID = 0;
-					for (int n=0; n < pbfRelation.memids_size(); n++) {
-						lastID += pbfRelation.memids(n);
-						if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-						int32_t role = pbfRelation.roles_sid(n);
-						// if (role != innerKey && role != outerKey) { continue; }
-						// ^^^^ commented out so that we don't die horribly when a relation has no outer way
-						WayID wayId = static_cast<WayID>(lastID);
-						(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
-					}
-
-					try {
-						tag_map_t tags;
-						readTags(pbfRelation, pb, tags);
-
-						// Store the relation members in the global relation store
-						relations.push_back(std::make_pair(pbfRelation.id(), 
-							std::make_pair(
-								RelationStore::wayid_vector_t(outerWayVec.begin(), outerWayVec.end()),
-								RelationStore::wayid_vector_t(innerWayVec.begin(), innerWayVec.end()))));
-
-						output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags);
-
-					} catch (std::out_of_range &err) {
-						// Relation is missing a member?
-						cerr << endl << err.what() << endl;
-					}
-				}
-				
-				// Other relation handling
-				else if (output.canWriteRelations()) {
+				// Read relation members
+				WayVec outerWayVec, innerWayVec;
+				int64_t lastID = 0;
+				for (int n=0; n < pbfRelation.memids_size(); n++) {
+					lastID += pbfRelation.memids(n);
+					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+					int32_t role = pbfRelation.roles_sid(n);
+					// if (role != innerKey && role != outerKey) { continue; }
+					// ^^^^ commented out so that we don't die horribly when a relation has no outer way
+					WayID wayId = static_cast<WayID>(lastID);
+					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
 
+				try {
+					tag_map_t tags;
+					readTags(pbfRelation, pb, tags);
+
+					// Store the relation members in the global relation store
+					relations.push_back(std::make_pair(pbfRelation.id(), 
+						std::make_pair(
+							RelationStore::wayid_vector_t(outerWayVec.begin(), outerWayVec.end()),
+							RelationStore::wayid_vector_t(innerWayVec.begin(), innerWayVec.end()))));
+
+					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags, isMultiPolygon);
+
+				} catch (std::out_of_range &err) {
+					// Relation is missing a member?
+					cerr << endl << err.what() << endl;
+				}
 			}
 		}
 

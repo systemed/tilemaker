@@ -81,7 +81,7 @@ public:
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP);
 
 	// Refresh way ID in case of multiple layers per object
 	void refreshOsmID();
@@ -182,6 +182,8 @@ public:
 
 	const Polygon &polygonCached();
 
+	const MultiLinestring &multiLinestringCached();
+
 	const MultiPolygon &multiPolygonCached();
 
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
@@ -194,6 +196,7 @@ private:
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
 		linestringInited = false;
+		multiLinestringInited = false;
 		polygonInited = false;
 		multiPolygonInited = false;
 		relationAccepted = false;
@@ -235,6 +238,8 @@ private:
 	bool linestringInited;
 	Polygon polygonCache;
 	bool polygonInited;
+	MultiLinestring multiLinestringCache;
+	bool multiLinestringInited;
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
 
