@@ -14,6 +14,8 @@
 
 require 'sqlite3'
 require 'cgi'
+require 'json'
+
 begin; require 'glug'	# Optional glug dependency
 rescue LoadError; end 	#  |
 
