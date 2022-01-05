@@ -82,15 +82,17 @@ normal.
 Running tilemaker with the `--verbose` argument will output any issues encountered during tile
 creation.
 
-You may see "couldn't find constituent way" messages. This happens when the .pbf file contains 
-a multipolygon relation, but not all the relation's members are present. Typically, this will 
-happen when a multipolygon crosses the border of the extract - for example, a county boundary 
-formed by a river with islands. In this case, the river will simply not be written to the tiles.
-
-You may also see geometry errors reported by Boost::Geometry. This typically reflects an error 
+You may see geometry errors reported by Boost::Geometry. This typically reflects an error 
 in the OSM source data (for example, a multipolygon with several inner rings but no outer ring).
 Often, if the geometry could not be written to the layer, the error will subsequently show in 
 a failed attempt to add attributes afterwards.
+
+If you see a (possibly fatal) error about nodes missing from ways, or ways missing from 
+relations, this suggests your source .osm.pbf is malformed. This will often happen if you have 
+used another program to clip the .osm.pbf with a bounding polygon. You can tell tilemaker to 
+ignore missing nodes in ways with `--skip-integrity`, but it can't fix missing ways in 
+multipolygon relations. Instead, tell your clipping utility to create a well-formed file using 
+`--strategy=smart` (Osmium) or `clipIncompleteEntities=true` (Osmosis).
 
 ## Github Action
 

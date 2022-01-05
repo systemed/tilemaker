@@ -121,11 +121,11 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id());
 		if (!isMultiPolygon) {
+			if (!output.canReadRelations()) continue;
 			tag_map_t tags;
 			readTags(pbfRelation, pb, tags);
 			isAccepted = output.scanRelation(relid, tags);
 			if (!isAccepted) continue;
-			std::cout << " - accepted" << std::endl;
 		}
 		int64_t lastID = 0;
 		for (int n=0; n < pbfRelation.memids_size(); n++) {

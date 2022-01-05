@@ -83,9 +83,6 @@ public:
 	 */
 	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP);
 
-	// Refresh way ID in case of multiple layers per object
-	void refreshOsmID();
-
 	// ----	Metadata queries called from Lua
 
 	// Get the ID of the current object
@@ -217,13 +214,9 @@ private:
 	class OsmMemTiles &osmMemTiles;
 	AttributeStore &attributeStore;			// key/value store
 
-	uint64_t osmID;							///< ID of OSM object
+	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
 	int64_t originalOsmID;					///< Original OSM object ID
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
-	bool osmIDHasBeenUsed;					// whether we've written a layer with this ID yet
-	uint64_t spareWayID = OSMID_WAY | OSMID_MASK;			// if we have >1 layers per OSM object, we need to generate new IDs as keys
-	uint64_t spareNodeID = OSMID_NODE | OSMID_MASK;			//  |
-	uint64_t spareRelationID = OSMID_RELATION | OSMID_MASK;	//  |
 
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
 	std::vector<WayID> relationList;		// in processWay, list of relations this way is in
