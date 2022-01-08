@@ -54,6 +54,10 @@ public:
 
 	// Has this object been assigned to any layers?
 	bool empty();
+	
+	// Do we have Lua routines for non-MP relations?
+	bool canReadRelations();
+	bool canWriteRelations();
 
 	// Shapefile tag remapping
 	bool canRemapShapefiles();
@@ -63,6 +67,9 @@ public:
 	// ----	Data loading methods
 
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+
+	// Scan non-MP relation
+	bool scanRelation(WayID id, const tag_map_t &tags);
 
 	/// \brief We are now processing a significant node
 	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
@@ -74,7 +81,7 @@ public:
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP);
 
 	// ----	Metadata queries called from Lua
 
@@ -149,6 +156,11 @@ public:
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
+	
+	// Relation scan support
+	kaguya::optional<int> NextRelation();
+	std::string FindInRelation(const std::string &key);
+	void Accept();
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {
@@ -167,6 +179,8 @@ public:
 
 	const Polygon &polygonCached();
 
+	const MultiLinestring &multiLinestringCached();
+
 	const MultiPolygon &multiPolygonCached();
 
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
@@ -179,8 +193,11 @@ private:
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
 		linestringInited = false;
+		multiLinestringInited = false;
 		polygonInited = false;
 		multiPolygonInited = false;
+		relationAccepted = false;
+		relationSubscript = -1;
 	}
 
 	const inline Point getPoint() {
@@ -191,6 +208,8 @@ private:
 
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
+	bool supportsReadingRelations;
+	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
 	AttributeStore &attributeStore;			// key/value store
@@ -198,6 +217,10 @@ private:
 	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
 	int64_t originalOsmID;					///< Original OSM object ID
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
+
+	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
+	std::vector<WayID> relationList;		// in processWay, list of relations this way is in
+	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
 	NodeVec const *nodeVecPtr;
@@ -208,6 +231,8 @@ private:
 	bool linestringInited;
 	Polygon polygonCache;
 	bool polygonInited;
+	MultiLinestring multiLinestringCache;
+	bool multiLinestringInited;
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
 

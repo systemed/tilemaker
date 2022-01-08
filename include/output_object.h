@@ -15,7 +15,7 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-enum OutputGeometryType { POINT_, LINESTRING_, POLYGON_ };
+enum OutputGeometryType { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
 
 #define OSMID_TYPE_OFFSET	40
 #define OSMID_MASK 		((1L<<OSMID_TYPE_OFFSET)-1)
@@ -102,6 +102,17 @@ public:
 		assert(type == LINESTRING_);
 	}
 };
+
+class OutputObjectOsmStoreMultiLinestring : public OutputObject
+{
+public:
+	OutputObjectOsmStoreMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+		: OutputObject(type, l, id, attributes, minzoom)
+	{ 
+		assert(type == MULTILINESTRING_);
+	}
+};
+
 
 class OutputObjectOsmStoreMultiPolygon : public OutputObject
 {

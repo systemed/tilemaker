@@ -9,6 +9,9 @@
 #include <vector>
 #include <mutex>
 #include <unordered_set>
+#include <boost/container/flat_map.hpp>
+
+extern bool verbose;
 
 class void_mmap_allocator
 {
@@ -235,6 +238,43 @@ public:
 	}
 };
 
+// scanned relations store
+class RelationScanStore {
+
+private:
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	std::map<WayID, std::vector<WayID>> relationsForWays;
+	std::map<WayID, tag_map_t> relationTags;
+
+public:
+	void relation_contains_way(WayID relid, WayID wayid) {
+		if (relationsForWays.find(wayid) != relationsForWays.end()) {
+			relationsForWays[wayid] = {};
+		}
+		relationsForWays[wayid].emplace_back(relid);
+	}
+	void store_relation_tags(WayID relid, const tag_map_t &tags) {
+		relationTags[relid] = tags;
+	}
+	bool way_in_any_relations(WayID wayid) {
+		return relationsForWays.find(wayid) != relationsForWays.end();
+	}
+	std::vector<WayID> relations_for_way(WayID wayid) {
+		return relationsForWays[wayid];
+	}
+	std::string get_relation_tag(WayID relid, const std::string &key) {
+		auto it = relationTags.find(relid);
+		if (it==relationTags.end()) return "";
+		auto jt = it->second.find(key);
+		if (jt==it->second.end()) return "";
+		return jt->second;
+	}
+	void clear() {
+		relationsForWays.clear();
+		relationTags.clear();
+	}
+};
+
 // way store
 class WayStore {
 
@@ -360,6 +400,9 @@ public:
 	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
 	using linestring_store_t = std::deque<std::pair<NodeID, linestring_t>>;
 
+	using multi_linestring_t = boost::geometry::model::multi_linestring<linestring_t, std::vector, mmap_allocator>;
+	using multi_linestring_store_t = std::deque<std::pair<NodeID, multi_linestring_t>>;
+
 	using polygon_t = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, mmap_allocator, mmap_allocator>;
 	using multi_polygon_t = boost::geometry::model::multi_polygon<polygon_t, std::vector, mmap_allocator>;
 	using multi_polygon_store_t = std::deque<std::pair<NodeID, multi_polygon_t>>;
@@ -373,6 +416,9 @@ public:
 		
 		std::mutex multi_polygon_store_mutex;
 		std::unique_ptr<multi_polygon_store_t> multi_polygon_store;
+
+		std::mutex multi_linestring_store_mutex;
+		std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
 	};
 
 protected:	
@@ -384,6 +430,7 @@ protected:
 	WayStore ways;
 	RelationStore relations;
 	UsedWays used_ways;
+	RelationScanStore scanned_relations;
 
 	generated osm_generated;
 	generated shp_generated;
@@ -397,6 +444,7 @@ protected:
 		osm_generated.points_store = std::make_unique<point_store_t>();
 		osm_generated.linestring_store = std::make_unique<linestring_store_t>();
 		osm_generated.multi_polygon_store = std::make_unique<multi_polygon_store_t>();
+		osm_generated.multi_linestring_store = std::make_unique<multi_linestring_store_t>();
 
 		shp_generated.points_store = std::make_unique<point_store_t>();
 		shp_generated.linestring_store = std::make_unique<linestring_store_t>();
@@ -435,7 +483,7 @@ public:
 		return use_compact_nodes ? compact_nodes.size() : nodes.size();
 	}
 
-  LatpLon nodes_at(NodeID i) const { 
+	LatpLon nodes_at(NodeID i) const { 
 		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
 	}
 
@@ -454,6 +502,13 @@ public:
 	void ensure_used_ways_inited() {
 		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
 	}
+	
+	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }
+	void store_relation_tags(WayID relid, const tag_map_t &tags) { scanned_relations.store_relation_tags(relid,tags); }
+	bool way_in_any_relations(WayID wayid) { return scanned_relations.way_in_any_relations(wayid); }
+	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
+	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
 
 	generated &osm() { return osm_generated; }
 	generated const &osm() const { return osm_generated; }
@@ -495,6 +550,30 @@ public:
 
 		if(iter == store.linestring_store->end() || iter->first != id)
 			throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id));
+
+		return iter->second;
+	}
+	
+	template<typename Input>
+	void store_multi_linestring(generated &store, NodeID id, Input const &src)
+	{
+		multi_linestring_t dst;
+		dst.resize(src.size());
+		for (std::size_t i=0; i<src.size(); ++i) {
+			boost::geometry::assign(dst[i], src[i]);
+		}
+
+		std::lock_guard<std::mutex> lock(store.multi_linestring_store_mutex);
+		store.multi_linestring_store->emplace_back(id, std::move(dst));
+	}
+
+	multi_linestring_t const &retrieve_multi_linestring(generated const &store, NodeID id) const {
+		auto iter = std::lower_bound(store.multi_linestring_store->begin(), store.multi_linestring_store->end(), id, [](auto const &e, auto id) { 
+			return e.first < id; 
+		});
+
+		if(iter == store.multi_linestring_store->end() || iter->first != id)
+			throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id));
 
 		return iter->second;
 	}
@@ -541,8 +620,9 @@ public:
 	void reportStoreSize(std::ostringstream &str);
 	void reportSize() const;
 
-	// Relation -> MultiPolygon
+	// Relation -> MultiPolygon or MultiLinestring
 	MultiPolygon wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const;
+	MultiLinestring wayListMultiLinestring(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd) const;
 	void mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
 
 	///It is not really meaningful to try using a relation as a linestring. Not normally used but included

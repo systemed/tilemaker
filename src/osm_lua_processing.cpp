@@ -56,12 +56,13 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
+		.addFunction("Accept", &OsmLuaProcessing::Accept)
+		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
+		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
 	);
-	if (luaState["attribute_function"]) {
-		supportsRemappingShapefiles = true;
-	} else {
-		supportsRemappingShapefiles = false;
-	}
+	supportsRemappingShapefiles = !!luaState["attribute_function"];
+	supportsReadingRelations    = !!luaState["relation_scan_function"];
+	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
 
@@ -83,6 +84,14 @@ bool OsmLuaProcessing::empty() {
 
 bool OsmLuaProcessing::canRemapShapefiles() {
 	return supportsRemappingShapefiles;
+}
+
+bool OsmLuaProcessing::canReadRelations() {
+	return supportsReadingRelations;
+}
+
+bool OsmLuaProcessing::canWriteRelations() {
+	return supportsWritingRelations;
 }
 
 kaguya::LuaTable OsmLuaProcessing::newTable() {
@@ -117,6 +126,7 @@ string OsmLuaProcessing::Find(const string& key) const {
 
 vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
 	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, getPoint())); }
+	else if (!isClosed && isRelation) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, multiLinestringCached())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, linestringCached())); }
 	else if (isRelation){ return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, multiPolygonCached())); }
 	else                { return shpMemTiles.namesOfGeometries(intersectsQuery(layerName, false, polygonCached())); }
@@ -125,6 +135,7 @@ vector<string> OsmLuaProcessing::FindIntersecting(const string &layerName) {
 bool OsmLuaProcessing::Intersects(const string &layerName) {
 	if      (!isWay   ) { return !intersectsQuery(layerName, true, getPoint()).empty(); }
 	else if (!isClosed) { return !intersectsQuery(layerName, true, linestringCached()).empty(); }
+	else if (!isClosed && isRelation) { return !intersectsQuery(layerName, true, multiLinestringCached()).empty(); }
 	else if (isRelation){ return !intersectsQuery(layerName, true, multiPolygonCached()).empty(); }
 	else                { return !intersectsQuery(layerName, true, polygonCached()).empty(); }
 }
@@ -132,6 +143,7 @@ bool OsmLuaProcessing::Intersects(const string &layerName) {
 vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
 	if      (!isWay   ) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, getPoint())); }
 	else if (!isClosed) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, linestringCached())); }
+	else if (!isClosed && isRelation) { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, multiLinestringCached())); }
 	else if (isRelation){ return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, multiPolygonCached())); }
 	else                { return shpMemTiles.namesOfGeometries(coveredQuery(layerName, false, polygonCached())); }
 }
@@ -139,6 +151,7 @@ vector<string> OsmLuaProcessing::FindCovering(const string &layerName) {
 bool OsmLuaProcessing::CoveredBy(const string &layerName) {
 	if      (!isWay   ) { return !coveredQuery(layerName, true, getPoint()).empty(); }
 	else if (!isClosed) { return !coveredQuery(layerName, true, linestringCached()).empty(); }
+	else if (!isClosed && isRelation) { return !coveredQuery(layerName, true, multiLinestringCached()).empty(); }
 	else if (isRelation){ return !coveredQuery(layerName, true, multiPolygonCached()).empty(); }
 	else                { return !coveredQuery(layerName, true, polygonCached()).empty(); }
 }
@@ -206,7 +219,6 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 // Returns whether it is closed polygon
 bool OsmLuaProcessing::IsClosed() const {
 	if (!isWay) return false; // nonsense: it isn't a way
-	if (isRelation) return true; // TODO: check it when non-multipolygon are supported
 	return isClosed;
 }
 
@@ -269,17 +281,17 @@ double OsmLuaProcessing::Length() {
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
-
-		if (isRelation) {
-			//A relation is being treated as a linestring, which might be
-			//caused by bug in the Lua script
-			linestringCache = OSMStore::wayListLinestring(osmStore.wayListMultiPolygon(
-				outerWayVecPtr->cbegin(), outerWayVecPtr->cend(), innerWayVecPtr->begin(), innerWayVecPtr->cend()));
-		} else if (isWay) {
-			linestringCache = osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend());
-		}
+		linestringCache = osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend());
 	}
 	return linestringCache;
+}
+
+const MultiLinestring &OsmLuaProcessing::multiLinestringCached() {
+	if (!multiLinestringInited) {
+		multiLinestringInited = true;
+		multiLinestringCache = osmStore.wayListMultiLinestring(outerWayVecPtr->cbegin(), outerWayVecPtr->cend());
+	}
+	return multiLinestringCache;
 }
 
 const Polygon &OsmLuaProcessing::polygonCached() {
@@ -309,7 +321,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	}
 
 	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
-	OutputGeometryType geomType = isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
+	OutputGeometryType geomType = isRelation ? (area ? POLYGON_ : MULTILINESTRING_ ) :
+	                                   isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
@@ -348,6 +361,22 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
+							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+		}
+		else if (geomType==MULTILINESTRING_) {
+			// multilinestring
+			MultiLinestring mls;
+			try {
+				mls = multiLinestringCached();
+			} catch(std::out_of_range &err) {
+				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
+				return;
+			}
+			if (!CorrectGeometry(mls)) return;
+
+			osmStore.store_multi_linestring(osmStore.osm(), osmID, mls);
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiLinestring(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
@@ -421,6 +450,10 @@ std::vector<double> OsmLuaProcessing::Centroid() {
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
+// Accept a relation in relation_scan phase
+void OsmLuaProcessing::Accept() {
+	relationAccepted = true;
+}
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
@@ -470,9 +503,35 @@ void OsmLuaProcessing::ZOrder(const double z) {
 	outputs.back().first->setZOrder(make_valid<int>(z));
 }
 
+// Read scanned relations
+kaguya::optional<int> OsmLuaProcessing::NextRelation() {
+	relationSubscript++;
+	if (relationSubscript >= relationList.size()) return kaguya::nullopt_t();
+	return relationList[relationSubscript];
+}
+
+std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
+	return osmStore.get_relation_tag(relationList[relationSubscript], key);
+}
+
 // Record attribute name/type for vector_layers table
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
 	layers.layers[layer].attributeMap[key] = type;
+}
+
+// Scan relation (but don't write geometry)
+// return true if we want it, false if we don't
+bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
+	reset();
+	originalOsmID = id;
+	isWay = false;
+	isRelation = true;
+	currentTags = tags;
+	luaState["relation_scan_function"](this);
+	if (!relationAccepted) return false;
+	
+	osmStore.store_relation_tags(id, tags);
+	return true;
 }
 
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
@@ -512,6 +571,12 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
+
+	if (supportsReadingRelations && osmStore.way_in_any_relations(wayId)) {
+		relationList = osmStore.relations_for_way(wayId);
+	} else {
+		relationList.clear();
+	}
 
 	try {
 		isClosed = nodeVecPtr->front()==nodeVecPtr->back();
@@ -578,13 +643,13 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 // We are now processing a relation
 // (note that we store relations as ways with artificial IDs, and that
 //  we use decrementing positive IDs to give a bit more space for way IDs)
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags) {
+void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP) {
 	reset();
 	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
-	isClosed = true; // TODO: change this when we support route relations
+	isClosed = isNativeMP;
 
 	nodeVecPtr = nullptr;
 	outerWayVecPtr = &outerWayVec;
@@ -594,10 +659,13 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	bool ok = true;
 	if (ok) {
 		//Start Lua processing for relation
-		luaState["way_function"](this);
+		luaState[isNativeMP ? "way_function" : "relation_function"](this);
 	}
+	
+	if (this->empty()) return;
 
-	if (!this->empty()) {								
+	// Assemble multipolygon
+	if (isClosed) {
 		MultiPolygon mp;
 		try {
 			// for each tile the relation may cover, put the output objects.
@@ -629,6 +697,33 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			TileCoordinates index = *it;
 			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 				osmMemTiles.AddObject(index, jt->first);
+			}
+		}
+
+	// Assemble multilinestring
+	} else {
+		MultiLinestring mls;
+		try {
+			mls = osmStore.wayListMultiLinestring(outerWayVecPtr->cbegin(), outerWayVecPtr->cend());
+		} catch(std::out_of_range &err) {
+			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
+			return;
+		}
+
+		// Store attributes
+		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
+		}
+
+		// Calculate tileset and then insert outputobject for each one
+		for (Linestring ls : mls) {
+			unordered_set<TileCoordinates> tileSet;
+			insertIntermediateTiles(ls, this->config.baseZoom, tileSet);
+			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+				TileCoordinates index = *it;
+				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+					osmMemTiles.AddObject(index, jt->first);
+				}
 			}
 		}
 	}

@@ -315,6 +315,12 @@ void OSMStore::generated_sort(unsigned int threadNum)
 		osm_generated.linestring_store->begin(), osm_generated.linestring_store->end(), 
 		[](auto const &a, auto const &b) { return a.first < b.first; }, 
 		threadNum);
+
+	std::lock_guard<std::mutex> lock_multi_linestring(osm_generated.multi_linestring_store_mutex);
+	boost::sort::block_indirect_sort(
+		osm_generated.multi_linestring_store->begin(), osm_generated.multi_linestring_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
 	
 	std::lock_guard<std::mutex> lock_multi_polygon(osm_generated.multi_polygon_store_mutex);
 	boost::sort::block_indirect_sort(
@@ -369,6 +375,24 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	return mp;
 }
 
+MultiLinestring OSMStore::wayListMultiLinestring(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd) const {
+	MultiLinestring mls;
+	if (outerBegin == outerEnd) { return mls; }
+
+	std::vector<NodeDeque> linestrings;
+	std::map<WayID,bool> done;
+
+	mergeMultiPolygonWays(linestrings, done, outerBegin, outerEnd);
+
+	for (auto ot = linestrings.begin(); ot != linestrings.end(); ot++) {
+		Linestring ls;
+		fillPoints(ls, ot->begin(), ot->end());
+		mls.emplace_back(move(ls));
+	}
+
+	return mls;
+}
+
 // Assemble multipolygon constituent ways
 // - Any closed polygons are added as-is
 // - Linestrings are joined to existing linestrings with which they share a start/end
@@ -382,14 +406,19 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<W
 	std::unordered_map<NodeID, std::vector<NodeID>> endNodes;
 	for (auto it = itBegin; it != itEnd; ++it) {
 		if (done[*it]) { continue; }
-		auto const &way = ways.at(*it);
-		if (isClosed(way) || results.empty()) {
-			// if start==end, simply add it to the set
-			results.emplace_back(way.begin(), way.end());
+		try {
+			auto const &way = ways.at(*it);
+			if (isClosed(way) || results.empty()) {
+				// if start==end, simply add it to the set
+				results.emplace_back(way.begin(), way.end());
+				done[*it] = true;
+			} else {
+				startNodes[way.front()].emplace_back(*it);
+				endNodes[way.back()].emplace_back(*it);
+			}
+		} catch (std::out_of_range &err) {
+			if (verbose) { cerr << "Missing way in relation: " << err.what() << endl; }
 			done[*it] = true;
-		} else {
-			startNodes[way.front()].emplace_back(*it);
-			endNodes[way.back()].emplace_back(*it);
 		}
 	}
 

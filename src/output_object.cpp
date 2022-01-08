@@ -19,6 +19,9 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 		case LINESTRING_:
 			os << "LINESTRING";
 			break;
+		case MULTILINESTRING_:
+			os << "MULTILINESTRING";
+			break;
 		case POLYGON_:
 			os << "POLYGON";
 			break;
@@ -103,6 +106,15 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 			MultiLinestring result;
 			geom::intersection(out, bbox.getExtendBox(), result);
+			return result;
+		}
+
+		case MULTILINESTRING_:
+		{
+			auto const &mls = osmStore.retrieve_multi_linestring((oo.objectID >> OSMID_TYPE_OFFSET) > 0 ? osmStore.osm() : osmStore.shp(), oo.objectID);
+			// investigate whether filtering the constituent linestrings improves performance
+			MultiLinestring result;
+			geom::intersection(mls, bbox.getExtendBox(), result);
 			return result;
 		}
 
