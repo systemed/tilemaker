@@ -137,15 +137,13 @@ jobs:
         username: tilemakerbot
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Build container image
+    - name: Build image
       run: |
         docker build . \
           -t lehrenfried/tilemaker:${{ github.sha }} \
           -t lehrenfried/tilemaker:latest
 
-    - name: Push container image
-      run: |
-        docker push \
-          lehrenfried/tilemaker:${{ github.sha }} \
-          lehrenfried/tilemaker:latest
+    - name: Push image
+      run: docker push lehrenfried/tilemaker --all-tags
+
 
