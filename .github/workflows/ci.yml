@@ -26,13 +26,13 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort boost-test rapidjson
 
     - name: Build tilemaker
       run: |
         mkdir ${{ github.workspace }}\build        
         cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
-        cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
+        cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo --target tilemaker
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
@@ -78,14 +78,14 @@ jobs:
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort boost-test rapidjson
 
     - name: Build tilemaker
       run: |
         mkdir build        
         cd build        
         cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
-        cmake --build . 
+        cmake --build . --target tilemaker
         strip tilemaker
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein

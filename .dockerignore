@@ -1,0 +1,7 @@
+/build/
+/cmake-build-debug/
+/server/
+/test/cmake-build-debug/
+/include/osmformat.pb.o
+/include/osmformat.pb.h
+/include/vector_tile.pb.h

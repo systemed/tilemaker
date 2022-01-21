@@ -19,22 +19,30 @@ RUN apt-get update && \
       libboost-system-dev \
       libboost-iostreams-dev \
       rapidjson-dev \
-      cmake
+      cmake \
+      libboost-test-dev
 
 COPY CMakeLists.txt /
 COPY cmake /cmake
 COPY src /src
 COPY include /include
+COPY test /test
 
 WORKDIR /build
 
-RUN cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
-RUN cmake --build .
+FROM src as test
+RUN cmake ..
+RUN cmake --build . --target tilemaker_test
+RUN cd test && ctest
+
+FROM src as static
+RUN cmake  -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release ..
+RUN cmake --build . --target tilemaker
 RUN strip tilemaker
 
 FROM debian:bullseye-slim
 WORKDIR /
-COPY --from=src /build/tilemaker .
+COPY --from=static /build/tilemaker .
 COPY resources /resources
 COPY process.lua .
 COPY config.json .

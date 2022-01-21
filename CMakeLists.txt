@@ -105,13 +105,49 @@ file(GLOB tilemaker_src_files
 	src/shp_mem_tiles.cpp
 	src/tilemaker.cpp
 	src/write_geometry.cpp
-  )
+)
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
-target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
-	Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
+target_link_libraries(tilemaker
+	${PROTOBUF_LIBRARY}
+	${LIBSHP_LIBRARIES}
+	${SQLITE3_LIBRARIES}
+	${LUAJIT_LIBRARY}
+	${LUA_LIBRARIES}
+	${ZLIB_LIBRARY}
+	${THREAD_LIB}
+	${CMAKE_DL_LIBS}
+	Boost::system
+	Boost::filesystem
+	Boost::program_options
+	Boost::iostreams
+)
 
 if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
 endif()
 
 install(TARGETS tilemaker RUNTIME DESTINATION bin)
+
+# Unit tests
+add_library(libtilemaker SHARED STATIC
+	src/helpers.cpp
+	include/helpers.h
+	vector_tile.pb.cc
+	osmformat.pb.cc
+)
+target_link_libraries(libtilemaker
+	${PROTOBUF_LIBRARY}
+	${LIBSHP_LIBRARIES}
+	${SQLITE3_LIBRARIES}
+	${LUAJIT_LIBRARY}
+	${LUA_LIBRARIES}
+	${ZLIB_LIBRARY}
+	${THREAD_LIB}
+	${CMAKE_DL_LIBS}
+	Boost::system
+	Boost::filesystem
+	Boost::program_options
+	Boost::iostreams
+)
+
+add_subdirectory(test)
