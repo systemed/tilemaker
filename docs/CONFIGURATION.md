@@ -65,7 +65,9 @@ You can add optional parameters to layers:
 * `simplify_below` - simplify ways below this zoom level
 * `simplify_level` - how much to simplify ways (in degrees of longitude) on the zoom level `simplify_below-1`
 * `simplify_length` - how much to simplify ways (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
-* `simplify_ratio` - (optional: the default value is 1.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
+* `simplify_ratio` - (optional: the default value is 2.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
+* `filter_below` - filter areas by minimum size below this zoom level
+* `filter_area` - minimum size (in square degrees of longitude) for the zoom level `filter_below-1`
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
 
 Use these options to combine different layer specs within one outputted layer. For example:
@@ -151,7 +153,7 @@ If your Lua file causes an error due to mistaken syntax, you can test it at the 
 
 Tilemaker handles multipolygon relations natively. The combined geometries are processed as ways (i.e. by `way_function`), so if your function puts buildings in a 'buildings' layer, tilemaker will cope with this whether the building is mapped as a simple way or a multipolygon. The only difference is that they're given an artificial ID. Multipolygons are expected to have tags on the relation, not the outer way.
 
-There is currently no support for other relation types.
+Working with other types of relations (e.g. routes) is documented in RELATIONS.md.
 
 ### Shapefiles
 
