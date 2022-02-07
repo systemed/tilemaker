@@ -248,9 +248,6 @@ private:
 
 public:
 	void relation_contains_way(WayID relid, WayID wayid) {
-		if (relationsForWays.find(wayid) != relationsForWays.end()) {
-			relationsForWays[wayid] = {};
-		}
 		relationsForWays[wayid].emplace_back(relid);
 	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
