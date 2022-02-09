@@ -130,15 +130,20 @@ public:
         if (isRelation && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         } else if (isWay && !geom::is_valid(geom,failure)) {
-            if (verbose) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+            if (verbose && failure!=22) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         }
 		
 		if (failure==boost::geometry::failure_spikes)
 			geom::remove_spikes(geom);
         if (failure == boost::geometry::failure_few_points) 
 			return false;
-		if (failure)
+		if (failure) {
+			std::time_t start = std::time(0);
 			make_valid(geom);
+			if (verbose && std::time(0)-start>3) {
+				std::cout << (isRelation ? "Relation " : "Way ") << originalOsmID << " took " << (std::time(0)-start) << " seconds to correct" << std::endl;
+			}
+		}
 #endif
 		return true;
     }

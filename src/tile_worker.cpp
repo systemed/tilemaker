@@ -173,6 +173,7 @@ void ProcessLayer(OSMStore &osmStore,
 	TileCoordinate tileY = index.y;
 
 	// Loop through sub-layers
+	std::time_t start = std::time(0);
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
 		const LayerDef &ld = sharedData.layers.layers[layerNum];
@@ -197,6 +198,9 @@ void ProcessLayer(OSMStore &osmStore,
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
+	}
+	if (verbose && std::time(0)-start>3) {
+		std::cout << "Layer " << layerName << " at " << zoom << "/" << index.x << "/" << index.y << " took " << (std::time(0)-start) << " seconds" << std::endl;
 	}
 
 	// If there are any objects, then add tags
