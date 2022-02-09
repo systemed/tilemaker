@@ -220,6 +220,12 @@ void ProcessLayer(OSMStore &osmStore,
 	}
 }
 
+bool signalStop=false;
+void handleUserSignal(int signum) {
+	std::cout << "User requested break in processing" << std::endl;
+	signalStop=true;
+}
+
 bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
 {
 	// Create tile
@@ -239,6 +245,8 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 
 	// Loop through layers
 	signal(SIGUSR1, handleUserSignal);
+	signalStop=false;
+
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
 		if (signalStop) break;
 		ProcessLayer(osmStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
@@ -270,4 +278,3 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 
 	return true;
 }
-
