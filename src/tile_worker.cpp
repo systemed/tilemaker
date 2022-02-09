@@ -2,6 +2,7 @@
 #include "tile_worker.h"
 #include <fstream>
 #include <boost/filesystem.hpp>
+#include <signal.h>
 #include "helpers.h"
 #include "write_geometry.h"
 using namespace std;
@@ -244,7 +245,9 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 	}
 
 	// Loop through layers
+#ifndef _WIN32
 	signal(SIGUSR1, handleUserSignal);
+#endif
 	signalStop=false;
 
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
