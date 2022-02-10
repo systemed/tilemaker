@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.1.0] - 2022-02-11
+
+### Added
+- Relation support via new Lua functions (@systemed)
+- Restore --compact mode for memory-efficient sequential store (@kleunen)
+- Give objects a ZOrder which is sorted on output (@Nakaner)
+- Add man page (@xamanu)
+- Configurable language support in OMT-compatible schema (@systemed)
+- Support highway=pedestrian (@leonardehrenfried)
+- New --skip-integrity option to disable way-node check (@systemed)
+- New --bbox option which overwrites any other bounding box (@systemed)
+
+### Changed
+- Reduce Docker image size (@guillaumerose)
+- Build no longer requires git (@xamanu)
+- Faster multipolygon assembly (@systemed)
+- Faster simplify (@kleunen)
+- Faster shutdown and delete mmap file (@kleunen)
+- Reduce memory usage by optimising OutputObject (@kleunen)
+- Reduce memory usage by not storing ways unless used by relations (@systemed)
+- Unbundle rapidjson and expect it as a dependency (@xamanu, @kleunen)
+- simplify_level used consistently through OMT-compatible schema (@systemed)
+- Use destdir and prefix variables in Makefile (@xamanu)
+
+### Fixed
+- Load JSON module in example Ruby server (@Silvercast)
+- Support multiple types of entities in a single PBF block (@irnc)
+- Correctly output OSM object IDs (@typebrook)
+- Improve POI output in OMT-compatible schema (@systemed)
+- Don't write 'meta'-layers (using write_to attribute) to metadata.json (@Nakaner)
+- Handle nan issue in MinZoom/ZOrder with invalid values (@kleunen)
+- Use real relation IDs in processing (@systemed)
+- Support new homebrew paths on Apple Silicon Macs (@prebm)
+- Improve Lua support in Makefile (@kleunen, @zidel)
+- Clamp latitude to range valid for spherical Mercator (@kleunen)
+- Documentation updates (@xamanu, @systemed)
+
 ## [2.0.0] - 2021-07-09
 
 ### Added
