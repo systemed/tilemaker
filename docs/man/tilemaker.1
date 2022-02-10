@@ -1,5 +1,5 @@
 .\" Manpage for tilemaker.
-.TH man 1 "27 Aug 2021" "1.0" "tilemaker man page"
+.TH man 1 "10 Feb 2022" "1.0" "tilemaker man page"
 .SH NAME
 tilemaker \- Generates vector tiles from OpenStreetMap data
 .SH SYNOPSIS
@@ -11,8 +11,10 @@ command.
 .PP
 .B tilemaker
 generates vector tiles from OpenStreetMap planet and diff files
-without any complex stack or need for database. It uses the schema of
-OpenMapTiles by default, but other configuration can be provided.
+without any complex stack or need for a database. It uses the schema of
+OpenMapTiles by default, but custom vector tiles can be produced by
+modifying the JSON config (layer config and general options) and Lua
+processing script (mapping OSM tags to vector tile layers/attributes).
 .PP
 This program follows the usual GNU command line syntax, with long
 options starting with two dashes (`-').
@@ -22,21 +24,35 @@ A summary of options is included below:
 Source path and file from OpenStreetMap (.osm.pbf).
 .TP
 \fB\-\-output
-Target path and file for vector tiles (.mbtiles/.sqlite).
+Target path for vector tiles. Specify .mbtiles/.sqlite to create
+an mbtiles archive, or a directory to create individual .mvt files.
 .TP
 \fB\-\-config
-Specific config file (.json).
+Path to layer and global config file (.json). config.json assumed if
+not specified.
 .TP
 \fB\-\-process
-Lua processing script for processing tags.
+Path to Lua processing script for processing tags. process.lua assumed if
+not specified.
 .TP
 \fB\-\-store
-Path to the directory as a temporary store during processing.
-If specifcied tilemaker uses on-disk storage instead of holding everything
-in RAM.
+Path to the directory to use as a temporary store during processing.
+If specified, tilemaker uses on-disk storage instead of holding everything
+in RAM. Fast storage (e.g. SSD) is strongly recommended.
+.TP
+\fB\-\-compact
+Reduce overall memory usage by assuming nodes are numbered sequentially
+(requires .osm.pbf to be pre-processed with osmium renumber).
 .TP
 \fB\-\-merge
 Merge with existing .mbtiles/.sqlite file.
+.TP
+\fB\-\-bbox
+Bounding box to use if the input file does not set one in the header
+(as minlon,minlat,maxlon,maxlat).
+.TP
+\fB\-\-skip\-integrity
+Don't enforce checks on all nodes being present in ways.
 .TP
 \fB\-\-verbose
 Outputs any issues encountered during tile creation.
