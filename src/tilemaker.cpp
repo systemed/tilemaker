@@ -364,7 +364,6 @@ int main(int argc, char* argv[]) {
 		sharedData.mbtiles.writeMetadata("format","pbf");
 		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.config.startZoom));
 		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.config.endZoom));
-		if (!sharedData.config.defaultView.empty()) { sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView); }
 
 		ostringstream bounds;
 		if (mergeSqlite) {
@@ -374,6 +373,17 @@ int main(int argc, char* argv[]) {
 		}
 		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
 		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
+
+		if (!sharedData.config.defaultView.empty()) {
+			sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView);
+		} else {
+			double centerLon = (sharedData.config.minLon + sharedData.config.maxLon) / 2;
+			double centerLat = (sharedData.config.minLat + sharedData.config.maxLat) / 2;
+			int centerZoom = floor((sharedData.config.startZoom + sharedData.config.endZoom) / 2);
+			ostringstream center;
+			center << fixed << centerLon << "," << centerLat << "," << centerZoom;
+			sharedData.mbtiles.writeMetadata("center",center.str());
+		}
 	}
 
 	// ----	Write out data
