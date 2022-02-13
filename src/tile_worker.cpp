@@ -69,13 +69,15 @@ void MergeIntersecting(MultiLinestring &input, MultiLinestring &to_merge) {
 
 // Merge two multipolygons by doing intersection checks for each constituent polygon
 void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
-	for (std::size_t i=0; i<input.size(); i++) {
-		if (boost::geometry::intersects(input[i], to_merge)) {
-	        MultiPolygon union_result;
-			boost::geometry::union_(input[i], to_merge, union_result);
-			for (auto output : union_result) input.emplace_back(output);
-			input.erase(input.begin() + i);
-			return;
+	if (boost::geometry::intersects(input, to_merge)) {
+		for (std::size_t i=0; i<input.size(); i++) {
+			if (boost::geometry::intersects(input[i], to_merge)) {
+				MultiPolygon union_result;
+				boost::geometry::union_(input[i], to_merge, union_result);
+				for (auto output : union_result) input.emplace_back(output);
+				input.erase(input.begin() + i);
+				return;
+			}
 		}
 	}
 	for (auto output : to_merge) input.emplace_back(output);
