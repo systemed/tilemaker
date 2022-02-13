@@ -60,6 +60,27 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
+// Merge two multilinestrings (just a wrapper around boost::geometry::union_)
+void MergeIntersecting(MultiLinestring &input, MultiLinestring &to_merge) {
+	MultiLinestring output;
+	geom::union_(input, to_merge, output);
+	input = move(output);
+}
+
+// Merge two multipolygons by doing intersection checks for each constituent polygon
+void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
+	for (std::size_t i=0; i<input.size(); i++) {
+		if (boost::geometry::intersects(input[i], to_merge)) {
+	        MultiPolygon union_result;
+			boost::geometry::union_(input[i], to_merge, union_result);
+			for (auto output : union_result) input.emplace_back(output);
+			input.erase(input.begin() + i);
+			return;
+		}
+	}
+	for (auto output : to_merge) input.emplace_back(output);
+}
+
 template <typename T>
 void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox &bbox, T &g) {
@@ -83,9 +104,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 
 		try {
 			T to_merge = boost::get<T>(buildWayGeometry(osmStore, *oo, bbox));
-			T output;
-			geom::union_(g, to_merge, output);
-			g = move(output);
+			MergeIntersecting(g, to_merge);
 		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
 		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
 		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
