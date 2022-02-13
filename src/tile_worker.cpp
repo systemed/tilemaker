@@ -224,7 +224,7 @@ void ProcessLayer(OSMStore &osmStore,
 	if (vtLayer->features_size()>0) {
 		vtLayer->set_name(layerName);
 		vtLayer->set_version(sharedData.config.mvtVersion);
-		vtLayer->set_extent(4096);
+		vtLayer->set_extent(bbox.hires ? 8192 : 4096);
 		for (uint j=vtLayer->keys_size(); j<keyList.size(); j++) {
 			vtLayer->add_keys(keyList[j]);
 		}
@@ -241,7 +241,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 {
 	// Create tile
 	vector_tile::Tile tile;
-	TileBbox bbox(coordinates, zoom);
+	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (sharedData.config.maxLon<=bbox.minLon 
 		|| sharedData.config.minLon>=bbox.maxLon || sharedData.config.maxLat<=bbox.minLat 
 		|| sharedData.config.minLat>=bbox.maxLat)) { return true; }

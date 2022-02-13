@@ -63,7 +63,7 @@ public:
 	class LayerDefinition layers;
 	uint baseZoom, startZoom, endZoom;
 	uint mvtVersion, combineBelow;
-	bool includeID, compress, gzip;
+	bool includeID, compress, gzip, highResolution;
 	std::string compressOpt;
 	bool clippingBoxFromJSON;
 	double minLon, minLat, maxLon, maxLat;
