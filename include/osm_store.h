@@ -245,12 +245,15 @@ private:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	std::map<WayID, std::vector<WayID>> relationsForWays;
 	std::map<WayID, tag_map_t> relationTags;
+	mutable std::mutex mutex;
 
 public:
 	void relation_contains_way(WayID relid, WayID wayid) {
+		std::lock_guard<std::mutex> lock(mutex);
 		relationsForWays[wayid].emplace_back(relid);
 	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
+		std::lock_guard<std::mutex> lock(mutex);
 		relationTags[relid] = tags;
 	}
 	bool way_in_any_relations(WayID wayid) {
@@ -267,6 +270,7 @@ public:
 		return jt->second;
 	}
 	void clear() {
+		std::lock_guard<std::mutex> lock(mutex);
 		relationsForWays.clear();
 		relationTags.clear();
 	}
