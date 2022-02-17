@@ -99,7 +99,7 @@ std::string LayerDefinition::serialiseToJSON() const {
 // *****************************************************************
 
 Config::Config() {
-	includeID = false, compress = true, gzip = true;
+	includeID = false, compress = true, gzip = true, highResolution = false;
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
 	combineBelow = 0;
@@ -123,6 +123,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 	startZoom      = jsonConfig["settings"]["minzoom" ].GetUint();
 	endZoom        = jsonConfig["settings"]["maxzoom" ].GetUint();
 	includeID      = jsonConfig["settings"]["include_ids"].GetBool();
+	highResolution = jsonConfig["settings"].HasMember("high_resolution") && jsonConfig["settings"]["high_resolution"].GetBool();
 	if (! jsonConfig["settings"]["compress"].IsString()) {
 		cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 		exit (EXIT_FAILURE);

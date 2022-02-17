@@ -72,9 +72,10 @@ void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-TileBbox::TileBbox(TileCoordinates i, uint z) {
+TileBbox::TileBbox(TileCoordinates i, uint z, bool h) {
 	zoom = z;
 	index = i;
+	hires = h;
 	minLon = tilex2lon(i.x  ,zoom);
 	minLat = tiley2lat(i.y+1,zoom);
 	maxLon = tilex2lon(i.x+1,zoom);
@@ -83,8 +84,8 @@ TileBbox::TileBbox(TileCoordinates i, uint z) {
 	maxLatp = lat2latp(maxLat);
 	xmargin = (maxLon -minLon )/200.0;
 	ymargin = (maxLatp-minLatp)/200.0;
-	xscale  = (maxLon -minLon )/4096.0;
-	yscale  = (maxLatp-minLatp)/4096.0;
+	xscale  = (maxLon -minLon )/(hires ? 8192.0 : 4096.0);
+	yscale  = (maxLatp-minLatp)/(hires ? 8192.0 : 4096.0);
 	clippingBox = Box(geom::make<Point>(minLon-xmargin, minLatp-ymargin),
 		              geom::make<Point>(maxLon+xmargin, maxLatp+ymargin));
 }

@@ -448,7 +448,7 @@ int main(int argc, char* argv[]) {
 				}
 			
 				if (hasClippingBox) {
-					if(!boost::geometry::intersects(TileBbox(it, zoom).getTileBox(), clippingBox)) 
+					if(!boost::geometry::intersects(TileBbox(it, zoom, false).getTileBox(), clippingBox)) 
 						continue;
 				}
 

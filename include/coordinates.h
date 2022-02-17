@@ -102,9 +102,10 @@ public:
 	double xmargin, ymargin, xscale, yscale;
 	TileCoordinates index;
 	uint zoom;
+	bool hires;
 	Box clippingBox;
 
-	TileBbox(TileCoordinates i, uint z);
+	TileBbox(TileCoordinates i, uint z, bool h);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 	std::pair<double, double> floorLatpLon(double latp, double lon) const;
