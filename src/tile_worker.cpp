@@ -2,6 +2,7 @@
 #include "tile_worker.h"
 #include <fstream>
 #include <boost/filesystem.hpp>
+#include <signal.h>
 #include "helpers.h"
 #include "write_geometry.h"
 using namespace std;
@@ -194,6 +195,7 @@ void ProcessLayer(OSMStore &osmStore,
 	TileCoordinate tileY = index.y;
 
 	// Loop through sub-layers
+	std::time_t start = std::time(0);
 	for (auto mt = ltx.begin(); mt != ltx.end(); ++mt) {
 		uint layerNum = *mt;
 		const LayerDef &ld = sharedData.layers.layers[layerNum];
@@ -219,6 +221,9 @@ void ProcessLayer(OSMStore &osmStore,
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 	}
+	if (verbose && std::time(0)-start>3) {
+		std::cout << "Layer " << layerName << " at " << zoom << "/" << index.x << "/" << index.y << " took " << (std::time(0)-start) << " seconds" << std::endl;
+	}
 
 	// If there are any objects, then add tags
 	if (vtLayer->features_size()>0) {
@@ -235,6 +240,12 @@ void ProcessLayer(OSMStore &osmStore,
 	} else {
 		tile.mutable_layers()->RemoveLast();
 	}
+}
+
+bool signalStop=false;
+void handleUserSignal(int signum) {
+	std::cout << "User requested break in processing" << std::endl;
+	signalStop=true;
 }
 
 bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
@@ -255,7 +266,13 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 	}
 
 	// Loop through layers
+#ifndef _WIN32
+	signal(SIGUSR1, handleUserSignal);
+#endif
+	signalStop=false;
+
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
+		if (signalStop) break;
 		ProcessLayer(osmStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
 	}
 
@@ -285,4 +302,3 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 
 	return true;
 }
-
