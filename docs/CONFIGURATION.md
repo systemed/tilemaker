@@ -133,7 +133,7 @@ To do that, you use these methods:
 * `node:Attribute(key,value)` or `node:Attribute(key,value)`: add an attribute to the most recently written layer.
 * `node:AttributeNumeric(key,value)`, `node:AttributeBoolean(key,value)` (and `way:`...): for numeric/boolean columns.
 * `node:Id()` or `way:Id()`: get the OSM ID of the current object.
-* `node:ZOrder(number)` or `way:ZOrder(number)`: Set a numeric value (default 0, 1-byte unsigned integer) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used.
+* `node:ZOrder(number)` or `way:ZOrder(number)`: Set a numeric value (float, default 0) used to sort features within a layer in ascending order. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting (e.g. by highway type or feature size). Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used.
 * `node:MinZoom(zoom)` or `way:MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
 * `way:Length()` and `way:Area()`: return the length (metres)/area (square metres) of the current object. Requires recent Boost.
 * `way:Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).

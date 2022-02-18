@@ -501,7 +501,7 @@ void OsmLuaProcessing::MinZoom(const double z) {
 // Set z_order
 void OsmLuaProcessing::ZOrder(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
-	outputs.back().first->setZOrder(make_valid<int>(z));
+	outputs.back().first->setZOrder(z);
 }
 
 // Read scanned relations

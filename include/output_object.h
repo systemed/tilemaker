@@ -46,16 +46,13 @@ protected:
 public:
 	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point)
 	uint_least8_t layer 		: 8;					// what layer is it in?
-	int8_t z_order				: 8;					// z_order: used for sorting features within layers
 	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	unsigned minZoom 			: 4;
+	float z_order;					// z_order: used for sorting features within layers
 
 	AttributeStoreRef attributes;
 
-	void setZOrder(const int z) {
-		if (z <= -127 || z >= 127) {
-			throw std::runtime_error("z_order is limited to 1 byte signed integer.");
-		}
+	void setZOrder(const float z) {
 		z_order = z;
 	}
 
