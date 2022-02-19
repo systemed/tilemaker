@@ -64,7 +64,7 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 	return false;
 }
 
-bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays) {
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
@@ -77,22 +77,32 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 			WayID wayId = static_cast<WayID>(pbfWay.id());
 
 			// Assemble nodelist
-			int64_t nodeId = 0;
-			NodeVec nodeVec;
-			for (int k=0; k<pbfWay.refs_size(); k++) {
-				nodeId += pbfWay.refs(k);
-				nodeVec.push_back(static_cast<NodeID>(nodeId));
+			LatpLonVec llVec;
+			if (locationsOnWays) {
+				int lat=0, lon=0;
+				for (int k=0; k<pbfWay.lats_size(); k++) {
+					lat += pbfWay.lats(k);
+					lon += pbfWay.lons(k);
+					LatpLon ll = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
+					llVec.push_back(ll);
+				}
+			} else {
+				int64_t nodeId = 0;
+				for (int k=0; k<pbfWay.refs_size(); k++) {
+					nodeId += pbfWay.refs(k);
+					llVec.push_back(osmStore.nodes_at(static_cast<NodeID>(nodeId)));
+				}
 			}
 
 			try {
 				tag_map_t tags;
 				readTags(pbfWay, pb, tags);
 
-				// If we need it for later, store the way's nodes in the global way store
+				// If we need it for later, store the way's coordinates in the global way store
 				if (osmStore.way_is_used(wayId)) {
-					ways.push_back(std::make_pair(wayId, WayStore::nodeid_vector_t(nodeVec.begin(), nodeVec.end())));
+					ways.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
 				}
-				output.setWay(static_cast<WayID>(pbfWay.id()), nodeVec, tags);
+				output.setWay(static_cast<WayID>(pbfWay.id()), llVec, tags);
 
 			} catch (std::out_of_range &err) {
 				// Way is missing a node?
@@ -194,7 +204,8 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, unordered_set<string> const &nodeKeys, ReadPhase phase) 
+bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
+                          unordered_set<string> const &nodeKeys, bool locationsOnWays, ReadPhase phase) 
 {
 	PrimitiveBlock pb;
 	readBlock(&pb, datasize, infile);
@@ -244,7 +255,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		}
 	
 		if(phase == ReadPhase::Ways || phase == ReadPhase::All) {
-			bool done = ReadWays(output, pg, pb);
+			bool done = ReadWays(output, pg, pb, locationsOnWays);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -287,6 +298,13 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 
 	HeaderBlock block;
 	readBlock(&block, readHeader(*infile).datasize(), *infile);
+	bool locationsOnWays = false;
+	for (std::string option : block.optional_features()) {
+		if (option=="LocationsOnWays") {
+			std::cout << ".osm.pbf file has locations on ways" << std::endl;
+			locationsOnWays = true;
+		}
+	}
 
 	std::map<std::size_t, std::pair< std::size_t, std::size_t> > blocks;
 
@@ -319,7 +337,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 					auto output = generate_output();
 
 					infile->seekg(block.first);
-					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, phase)) {
+					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, locationsOnWays, phase)) {
 						const std::lock_guard<std::mutex> lock(block_mutex);
 						blocks.erase(progress.first);	
 					}

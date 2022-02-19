@@ -281,7 +281,7 @@ double OsmLuaProcessing::Length() {
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
-		linestringCache = osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend());
+		linestringCache = osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend());
 	}
 	return linestringCache;
 }
@@ -297,7 +297,7 @@ const MultiLinestring &OsmLuaProcessing::multiLinestringCached() {
 const Polygon &OsmLuaProcessing::polygonCached() {
 	if (!polygonInited) {
 		polygonInited = true;
-		polygonCache = osmStore.nodeListPolygon(nodeVecPtr->cbegin(), nodeVecPtr->cend());
+		polygonCache = osmStore.llListPolygon(llVecPtr->cbegin(), llVecPtr->cend());
 	}
 	return polygonCache;
 }
@@ -561,13 +561,13 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 }
 
 // We are now processing a way
-void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags) {
+void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
 	reset();
 	osmID = (wayId & OSMID_MASK) | OSMID_WAY;
 	originalOsmID = wayId;
 	isWay = true;
 	isRelation = false;
-	nodeVecPtr = &nodeVec;
+	llVecPtr = &llVec;
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
@@ -579,7 +579,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 	}
 
 	try {
-		isClosed = nodeVecPtr->front()==nodeVecPtr->back();
+		isClosed = llVecPtr->front()==llVecPtr->back();
 
 	} catch (std::out_of_range &err) {
 		std::stringstream ss;
@@ -608,7 +608,7 @@ void OsmLuaProcessing::setWay(WayID wayId, NodeVec const &nodeVec, const tag_map
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
 		try {
-			insertIntermediateTiles(osmStore.nodeListLinestring(nodeVecPtr->cbegin(),nodeVecPtr->cend()), this->config.baseZoom, tileSet);
+			insertIntermediateTiles(osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend()), this->config.baseZoom, tileSet);
 
 			// then, for each tile, store the OutputObject for each layer
 			bool polygonExists = false;
@@ -651,7 +651,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	isRelation = true;
 	isClosed = isNativeMP;
 
-	nodeVecPtr = nullptr;
+	llVecPtr = nullptr;
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
 	currentTags = tags;
