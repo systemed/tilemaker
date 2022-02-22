@@ -12,6 +12,85 @@
 typedef boost::geometry::model::segment<Point> simplify_segment;
 typedef boost::geometry::index::rtree<simplify_segment, boost::geometry::index::quadratic<16>> simplify_rtree;
 
+
+/* -------------------------------------------------------------------------------------
+   2-step simplify as per https://github.com/mourner/simplify-js/blob/master/simplify.js
+   ------------------------------------------------------------------------------------- */
+
+double getSqDist(Point const &p1, Point const &p2) {
+	double dx = p1.x() - p2.x();
+	double dy = p1.y() - p2.y();
+	return dx*dx + dy*dy;
+}
+double getSqSegDist(Point const &p, Point const &p1, Point const &p2) {
+	double x  = p1.x();
+	double y  = p1.y();
+	double dx = p2.x() - x;
+	double dy = p2.y() - y;
+	if (dx != 0 || dy != 0) {
+		double t = ((p.x()-x)*dx + (p.y()-y)*dy) / (dx*dx + dy*dy);
+		if (t > 1) {
+			x = p2.x(); y = p2.y();
+		} else if (t > 0) {
+			x += dx * t;
+			y += dy * t;
+		}
+	}
+	dx = p.x() - x;
+	dy = p.y() - y;
+	return dx*dx + dy*dy;
+}
+// basic distance-based simplification
+void simplifyRadialDist(Linestring const &points, double sqTolerance, Linestring &newPoints) {
+	Point prevPoint = points[0];
+	newPoints.clear();
+	newPoints.emplace_back(prevPoint);
+
+	Point point;
+	for (unsigned i=1; i<points.size(); i++) {
+		point = points[i];
+		if (getSqDist(point, prevPoint) > sqTolerance) {
+			newPoints.emplace_back(point);
+			prevPoint = point;
+		}
+	}
+	if (prevPoint.x()!=point.x() && prevPoint.y()!=point.y()) newPoints.emplace_back(point);
+}
+// simplification using Ramer-Douglas-Peucker algorithm
+void simplifyDPStep(Linestring const &points, unsigned first, unsigned last, double sqTolerance, Linestring &simplified) {
+	double maxSqDist = sqTolerance;
+	unsigned index = 0;
+	for (unsigned i = first + 1; i < last; i++) {
+		double sqDist = getSqSegDist(points[i], points[first], points[last]);
+		if (sqDist > maxSqDist) {
+			index = i;
+			maxSqDist = sqDist;
+		}
+	}
+	if (maxSqDist > sqTolerance) {
+		if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+		simplified.emplace_back(points[index]);
+		if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+	}
+}
+void simplifyDouglasPeucker(Linestring const &points, double sqTolerance, Linestring &simplified) {
+    unsigned last = points.size() - 1;
+    simplified.clear();
+	simplified.emplace_back(points[0]);
+    simplifyDPStep(points, 0, last, sqTolerance, simplified);
+    simplified.emplace_back(points[last]);
+}
+// both algorithms combined for awesome performance
+Linestring simplifyTwoStep(Linestring const &points, double tolerance) {
+    if (points.size() <= 2) { return points; }
+    double sqTolerance = tolerance * tolerance;
+	Linestring outPoints1; simplifyRadialDist(points, sqTolerance, outPoints1);
+	Linestring outPoints2; simplifyDouglasPeucker(outPoints1, sqTolerance, outPoints2);
+	return outPoints2;
+}
+
+// -------------------------------------------------------------------------------------
+
 template<typename GeometryType>
 static inline void simplify_ring(GeometryType const &input, GeometryType &output, double distance, simplify_rtree const &outer_rtree = simplify_rtree())
 {
@@ -116,9 +195,11 @@ Polygon simplify(Polygon const &p, double max_distance)
 
 Linestring simplify(Linestring const &ls, double max_distance) 
 {
-	Linestring result;
-	boost::geometry::simplify(ls, result, max_distance);
-	return result;
+    if (ls.size() <= 2) { return ls; }
+    double sqTolerance = max_distance * max_distance;
+	Linestring outPoints1; simplifyRadialDist(ls, sqTolerance, outPoints1);
+	Linestring outPoints2; simplifyDouglasPeucker(outPoints1, sqTolerance, outPoints2);
+	return outPoints2;
 }
 
 MultiPolygon simplify(MultiPolygon const &mp, double max_distance) 

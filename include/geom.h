@@ -47,6 +47,15 @@ typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
 typedef std::deque<NodeID> NodeDeque;
 
+// 2-step simplify
+double getSqDist(Point const &p1, Point const &p2);
+double getSqSegDist(Point const &p, Point const &p1, Point const &p2);
+void simplifyRadialDist(Linestring const &points, double sqTolerance, Linestring &newPoints);
+void simplifyDPStep(Linestring const &points, unsigned first, unsigned last, double sqTolerance, Linestring &simplified);
+void simplifyDouglasPeucker(Linestring const &points, double sqTolerance, Linestring &simplified);
+Linestring simplifyTwoStep(Linestring const &points, double tolerance);
+
+
 // Perform self-intersection aware simplification of geometry types
 Linestring simplify(Linestring const &ls, double max_distance);
 Polygon simplify(Polygon const &p, double max_distance);
