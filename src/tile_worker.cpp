@@ -9,13 +9,21 @@ using namespace std;
 extern bool verbose;
 
 typedef std::pair<double,double> xy_pair;
+namespace std {
+	template<>
+	struct hash<xy_pair> {
+		size_t operator()(const xy_pair &xy) const {
+			return std::hash<double>()(xy.first) ^ std::hash<double>()(xy.second);
+		}
+	};
+}
 
 // Connect disconnected linestrings within a MultiLinestring
 void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	// create a map of the start/end points of each linestring
 	// (we should be able to do std::map<Point,unsigned>, but that errors)
-	std::map<xy_pair,unsigned> startPoints;
-	std::map<xy_pair,unsigned> endPoints;
+	std::unordered_map<xy_pair,unsigned> startPoints;
+	std::unordered_map<xy_pair,unsigned> endPoints;
 	for (unsigned i=0; i<input.size(); i++) {
 		startPoints[xy_pair(input[i][0].x(),input[i][0].y())] = i;
 		endPoints[xy_pair(input[i][input[i].size()-1].x(),input[i][input[i].size()-1].y())] = i;
@@ -61,11 +69,10 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
-// Merge two multilinestrings (just a wrapper around boost::geometry::union_)
+// Merge two multilinestrings by simply appending
+// (the constituent parts will be matched up in subsequent call to ReorderMultiLinestring)
 void MergeIntersecting(MultiLinestring &input, MultiLinestring &to_merge) {
-	MultiLinestring output;
-	geom::union_(input, to_merge, output);
-	input = move(output);
+	for (auto ls : to_merge) input.emplace_back(ls);
 }
 
 // Merge two multipolygons by doing intersection checks for each constituent polygon
