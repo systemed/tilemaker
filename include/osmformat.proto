@@ -200,6 +200,8 @@ message Way {
    optional Info info = 4;
 
    repeated sint64 refs = 8 [packed = true];  // DELTA coded
+   repeated sint64 lats = 9  [packed = true];
+   repeated sint64 lons = 10 [packed = true];
 }
 
 message Relation {

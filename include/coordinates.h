@@ -49,6 +49,19 @@ struct LatpLon {
 	int32_t latp;
 	int32_t lon;
 };
+inline bool operator==(const LatpLon &a, const LatpLon &b) { return a.latp==b.latp && a.lon==b.lon; }
+namespace std {
+	/// Hashing function so we can use an unordered_set
+	template<>
+	struct hash<LatpLon> {
+		size_t operator()(const LatpLon &ll) const {
+			return std::hash<int32_t>()(ll.latp) ^ std::hash<int32_t>()(ll.lon);
+		}
+	};
+}
+
+typedef std::vector<LatpLon> LatpLonVec;
+typedef std::deque<LatpLon> LatpLonDeque;
 
 double deg2rad(double deg);
 double rad2deg(double rad);

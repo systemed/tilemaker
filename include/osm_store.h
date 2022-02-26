@@ -280,26 +280,26 @@ public:
 class WayStore {
 
 public:
-	using nodeid_vector_t = std::vector<NodeID, mmap_allocator<NodeID>>;
-	using element_t = std::pair<NodeID, nodeid_vector_t>;
+	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;
+	using element_t = std::pair<WayID, latplon_vector_t>;
 	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
 
 	void reopen() {
-		mNodeLists = std::make_unique<map_t>();
+		mLatpLonLists = std::make_unique<map_t>();
 	}
 
 	// @brief Lookup a node list
 	// @param i OSM ID of a way
 	// @return A node list
 	// @exception NotFound
-	nodeid_vector_t const &at(WayID wayid) const {
+	latplon_vector_t const &at(WayID wayid) const {
 		std::lock_guard<std::mutex> lock(mutex);
 		
-		auto iter = std::lower_bound(mNodeLists->begin(), mNodeLists->end(), wayid, [](auto const &e, auto wayid) { 
+		auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), wayid, [](auto const &e, auto wayid) { 
 			return e.first < wayid; 
 		});
 
-		if(iter == mNodeLists->end() || iter->first != wayid)
+		if(iter == mLatpLonLists->end() || iter->first != wayid)
 			throw std::out_of_range("Could not find way with id " + std::to_string(wayid));
 
 		return iter->second;
@@ -307,32 +307,32 @@ public:
 
 	// @brief Insert a node list.
 	// @param i OSM ID of a way
-	// @param nodeVec a node vector to be inserted
+	// @param llVec a coordinate vector to be inserted
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	void insert_back(std::vector<element_t> &new_ways) {
 		std::lock_guard<std::mutex> lock(mutex);
-		auto i = mNodeLists->size();
-		mNodeLists->resize(i + new_ways.size());
-		std::copy(std::make_move_iterator(new_ways.begin()), std::make_move_iterator(new_ways.end()), mNodeLists->begin() + i); 
+		auto i = mLatpLonLists->size();
+		mLatpLonLists->resize(i + new_ways.size());
+		std::copy(std::make_move_iterator(new_ways.begin()), std::make_move_iterator(new_ways.end()), mLatpLonLists->begin() + i); 
 	}
 
 	// @brief Make the store empty
 	void clear() { 
 		std::lock_guard<std::mutex> lock(mutex);
-		mNodeLists->clear(); 
+		mLatpLonLists->clear(); 
 	}
 
 	std::size_t size() const { 
 		std::lock_guard<std::mutex> lock(mutex);
-		return mNodeLists->size(); 
+		return mLatpLonLists->size(); 
 	}
 
 	void sort(unsigned int threadNum);
 
 private:	
 	mutable std::mutex mutex;
-	std::unique_ptr<map_t> mNodeLists;
+	std::unique_ptr<map_t> mLatpLonLists;
 };
 
 // relation store
@@ -624,7 +624,7 @@ public:
 	// Relation -> MultiPolygon or MultiLinestring
 	MultiPolygon wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const;
 	MultiLinestring wayListMultiLinestring(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd) const;
-	void mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
+	void mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
 
 	///It is not really meaningful to try using a relation as a linestring. Not normally used but included
 	///if Lua script attempts to do this.
@@ -640,7 +640,7 @@ public:
 	}
 
 	template<class WayIt>
-	Polygon nodeListPolygon(WayIt begin, WayIt end) const {
+	Polygon llListPolygon(WayIt begin, WayIt end) const {
 		Polygon poly;
 		fillPoints(poly.outer(), begin, end);
 		boost::geometry::correct(poly);
@@ -649,7 +649,7 @@ public:
 
 	// Way -> Linestring
 	template<class WayIt>
-	Linestring nodeListLinestring(WayIt begin, WayIt end) const {
+	Linestring llListLinestring(WayIt begin, WayIt end) const {
 		Linestring ls;
 		fillPoints(ls, begin, end);
 		return ls;
@@ -657,12 +657,11 @@ public:
 
 private:
 	// helper
-	template<class PointRange, class NodeIt>
-	void fillPoints(PointRange &points, NodeIt begin, NodeIt end) const {
+	template<class PointRange, class LatpLonIt>
+	void fillPoints(PointRange &points, LatpLonIt begin, LatpLonIt end) const {
 		for (auto it = begin; it != end; ++it) {
 			try {
-				LatpLon ll = nodes_at(*it);
-				boost::geometry::range::push_back(points, boost::geometry::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
+				boost::geometry::range::push_back(points, boost::geometry::make<Point>(it->lon/10000000.0, it->latp/10000000.0));
 			} catch (std::out_of_range &err) {
 				if (require_integrity) throw err;
 			}

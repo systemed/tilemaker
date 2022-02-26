@@ -75,7 +75,7 @@ public:
 	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
 
 	/// \brief We are now processing a way
-	void setWay(WayID wayId, NodeVec const &nodeVec, const tag_map_t &tags);
+	void setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
@@ -194,7 +194,7 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
-		nodeVecPtr = nullptr;
+		llVecPtr = nullptr;
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
 		linestringInited = false;
@@ -228,7 +228,7 @@ private:
 	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
-	NodeVec const *nodeVecPtr;
+	LatpLonVec const *llVecPtr;
 	WayVec const *outerWayVecPtr;
 	WayVec const *innerWayVecPtr;
 

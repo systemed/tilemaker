@@ -270,12 +270,12 @@ void NodeStore::sort(unsigned int threadNum) {
 void WayStore::sort(unsigned int threadNum) { 
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
-		mNodeLists->begin(), mNodeLists->end(), 
+		mLatpLonLists->begin(), mLatpLonLists->end(), 
 		[](auto const &a, auto const &b) { return a.first < b.first; }, 
 		threadNum);
 }
 
-static inline bool isClosed(WayStore::nodeid_vector_t const &way) {
+static inline bool isClosed(WayStore::latplon_vector_t const &way) {
 	return way.begin() == way.end();
 }
 
@@ -345,8 +345,8 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	MultiPolygon mp;
 	if (outerBegin == outerEnd) { return mp; } // no outers so quit
 
-	std::vector<NodeDeque> outers;
-	std::vector<NodeDeque> inners;
+	std::vector<LatpLonDeque> outers;
+	std::vector<LatpLonDeque> inners;
 	std::map<WayID,bool> done; // true=this way has already been added to outers/inners, don't reconsider
 
 	// merge constituent ways together
@@ -379,7 +379,7 @@ MultiLinestring OSMStore::wayListMultiLinestring(WayVec::const_iterator outerBeg
 	MultiLinestring mls;
 	if (outerBegin == outerEnd) { return mls; }
 
-	std::vector<NodeDeque> linestrings;
+	std::vector<LatpLonDeque> linestrings;
 	std::map<WayID,bool> done;
 
 	mergeMultiPolygonWays(linestrings, done, outerBegin, outerEnd);
@@ -399,11 +399,11 @@ MultiLinestring OSMStore::wayListMultiLinestring(WayVec::const_iterator outerBeg
 // - If no matches can be found, then one linestring is added (to 'attract' others)
 // - The process is rerun until no ways are left
 // There's quite a lot of copying going on here - could potentially be addressed
-void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
+void OSMStore::mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
 
 	// Create maps of start/end nodes
-	std::unordered_map<NodeID, std::vector<NodeID>> startNodes;
-	std::unordered_map<NodeID, std::vector<NodeID>> endNodes;
+	std::unordered_map<LatpLon, std::vector<WayID>> startNodes;
+	std::unordered_map<LatpLon, std::vector<WayID>> endNodes;
 	for (auto it = itBegin; it != itEnd; ++it) {
 		if (done[*it]) { continue; }
 		try {
@@ -422,16 +422,16 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<W
 		}
 	}
 
-	auto deleteFromWayList = [&](NodeID n, NodeID w, bool which) {
+	auto deleteFromWayList = [&](LatpLon n, WayID w, bool which) {
 		auto &nodemap = which ? startNodes : endNodes;
-		std::vector<NodeID> &waylist = nodemap.find(n)->second;
+		std::vector<WayID> &waylist = nodemap.find(n)->second;
 		waylist.erase(std::remove(waylist.begin(), waylist.end(), w), waylist.end());
 		if (waylist.empty()) { nodemap.erase(nodemap.find(n)); }
 	};
-	auto removeWay = [&](NodeID w) {
+	auto removeWay = [&](WayID w) {
 		auto const &way = ways.at(w);
-		NodeID first = way.front();
-		NodeID last  = way.back();
+		LatpLon first = way.front();
+		LatpLon last  = way.back();
 		if (startNodes.find(first) != startNodes.end()) { deleteFromWayList(first, w, true ); }
 		if (startNodes.find(last)  != startNodes.end()) { deleteFromWayList(last,  w, true ); }
 		if (endNodes.find(first)   != endNodes.end()  ) { deleteFromWayList(first, w, false); }
@@ -446,8 +446,8 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<W
 		for (auto rt = results.begin(); rt != results.end(); rt++) {
 			bool working=true;
 			do {
-				NodeID rFirst = rt->front();
-				NodeID rLast  = rt->back();
+				LatpLon rFirst = rt->front();
+				LatpLon rLast  = rt->back();
 				if (rFirst==rLast) break;
 				if (startNodes.find(rLast)!=startNodes.end()) {
 					// append to the result
@@ -494,7 +494,7 @@ void OSMStore::mergeMultiPolygonWays(std::vector<NodeDeque> &results, std::map<W
 		for (int i=0; i<=1; i++) {
 			if (added>0) continue;
 			for (auto nt : (i==0 ? startNodes : endNodes)) {
-				NodeID w = nt.second.back();
+				WayID w = nt.second.back();
 				auto const &way = ways.at(w);
 				results.emplace_back(way.begin(), way.end());
 				added++;

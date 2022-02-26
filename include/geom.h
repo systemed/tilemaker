@@ -43,9 +43,7 @@ typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadr
 typedef uint64_t NodeID;
 typedef uint64_t WayID;
 
-typedef std::vector<NodeID> NodeVec;
 typedef std::vector<WayID> WayVec;
-typedef std::deque<NodeID> NodeDeque;
 
 // Perform self-intersection aware simplification of geometry types
 Linestring simplify(Linestring const &ls, double max_distance);
