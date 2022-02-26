@@ -72,7 +72,8 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 			Point *p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
 	
-				osmStore.store_point(osmStore.shp(), id, *p);
+				Point sp(p->x()*10000000.0, p->y()*10000000.0);
+				osmStore.store_point(osmStore.shp(), id, sp);
 				oo = CreateObject(OutputObjectOsmStorePoint(
 					geomType, layerNum, id, attributes, minzoom));
 				cachedGeometries.push_back(oo);
