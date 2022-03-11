@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.0] - 2022-03-11
+
+### Added
+- Calculate center and write to metadata (@yuiseki)
+- Option to use high-resolution geometries at max zoom (@systemed)
+- Output slow geometries and allow user interrupt (@systemed, @billysan)
+- Support osmium locations-on-ways format (@systemed)
+- CORS support in server.rb (@Kimiru)
+
+### Changed
+- Faster multipolygon combining (@systemed)
+- Faster multilinestring combining (@systemed)
+
+### Fixed
+- Correctly store and write points from .shp (@systemed)
+- Relation scan is now thread-safe (@systemed)
+- Remove unused variable in OMT profile (@leonardehrenfried)
+
+
 ## [2.1.0] - 2022-02-11
 
 ### Added
