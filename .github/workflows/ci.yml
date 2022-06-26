@@ -3,54 +3,67 @@ name: "Continuous Integration"
 on:
   push:
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 env:
   AREA: liechtenstein
 
 jobs:
-
-  Windows-Build:
+  linter:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - name: Check out repository ✨
+        uses: actions/checkout@v3
+      - name: Run hadolint 🐳
+        uses: hadolint/hadolint-action@v2.1.0
+        with:
+          dockerfile: Dockerfile
+  windows-build:
     name: Windows build
     runs-on: windows-latest
-
+    needs: linter
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Enable vcpkg cache
-      uses: actions/cache@v2
-      with:
-        path: c:\vcpkg\installed
-        key: windows-vcpkg-x64-0 # Increase the number whenever dependencies are modified
-        restore-keys: windows-vcpkg-x64
+      - name: Enable vcpkg cache
+        uses: actions/cache@v2
+        with:
+          path: c:\vcpkg\installed
+          key: windows-vcpkg-x64-0 # Increase the number whenever dependencies are modified
+          restore-keys: windows-vcpkg-x64
 
-    - name: Build dependencies
-      run: |
-        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+      - name: Build dependencies
+        run: |
+          vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
 
-    - name: Build tilemaker
-      run: |
-        mkdir ${{ github.workspace }}\build        
-        cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
-        cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
+      - name: Build tilemaker
+        run: |
+          mkdir ${{ github.workspace }}\build        
+          cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
+          cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
 
-    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
-      run: |
-        Invoke-WebRequest -Uri http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf
-        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --store osm_store --verbose || true
+      - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+        run: |
+          Invoke-WebRequest -Uri http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf
+          ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --store osm_store --verbose || true
 
-    - name: 'Upload compiled executable'
-      uses: actions/upload-artifact@v2
-      with:
-        name: tilemaker-windows
-        path: |
-          ${{ github.workspace }}\resources
-          ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe
-          ${{ github.workspace }}\build\RelWithDebInfo\*.pdb
+      - name: "Upload compiled executable"
+        uses: actions/upload-artifact@v2
+        with:
+          name: tilemaker-windows
+          path: |
+            ${{ github.workspace }}\resources
+            ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe
+            ${{ github.workspace }}\build\RelWithDebInfo\*.pdb
 
-  unix-build:  
-    strategy:  
-      matrix: 
+  unix-build:
+    needs: linter
+    strategy:
+      matrix:
         include:
           - os: ubuntu-18.04
             triplet: x64-linux
@@ -67,53 +80,55 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Enable vcpkg cache
-      uses: actions/cache@v2
-      with:
-        path: ${{ matrix.path }}
-        key: vcpkg-${{ matrix.triplet }}-0 # Increase the number whenever dependencies are modified
-        restore-keys: vcpkg-${{ matrix.triplet }}
+      - name: Enable vcpkg cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ matrix.path }}
+          key: vcpkg-${{ matrix.triplet }}-0 # Increase the number whenever dependencies are modified
+          restore-keys: vcpkg-${{ matrix.triplet }}
 
-    - name: Build dependencies
-      run: |
-        vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+      - name: Build dependencies
+        run: |
+          vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
 
-    - name: Build tilemaker
-      run: |
-        mkdir build        
-        cd build        
-        cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
-        cmake --build . 
-        strip tilemaker
+      - name: Build tilemaker
+        run: |
+          mkdir build        
+          cd build        
+          cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
+          cmake --build . 
+          strip tilemaker
 
-    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
-      run: |
-        curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
-        ${{ github.workspace }}/build/${{ matrix.executable }} ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
+      - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+        run: |
+          curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
+          ${{ github.workspace }}/build/${{ matrix.executable }} ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
 
-    - name: 'Upload compiled executable'
-      uses: actions/upload-artifact@v2
-      with:
-        name: tilemaker-${{ matrix.os }}
-        path: |
-          ${{ github.workspace }}/resources
-          ${{ github.workspace }}/build/${{ matrix.executable }}
+      - name: "Upload compiled executable"
+        uses: actions/upload-artifact@v2
+        with:
+          name: tilemaker-${{ matrix.os }}
+          path: |
+            ${{ github.workspace }}/resources
+            ${{ github.workspace }}/build/${{ matrix.executable }}
 
-  Github-Action:
+  github-action:
     name: Generate mbtiles with Github Action
+    needs: linter
     runs-on: ubuntu-latest
 
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v2
+      - name: Check out repository
+        uses: actions/checkout@v2
 
-    - name: Download PBF file
-      run: curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
+      - name: Download PBF file
+        run: curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
 
-    - name: Build openmaptiles-compatible mbtiles files of given area
-      uses: ./
-      with:
-        input: ${{ env.AREA }}.osm.pbf 
-        output: ${{ env.AREA }}.mbtiles
+      - name: Build openmaptiles-compatible mbtiles files of given area
+        uses: ./
+        with:
+          input: ${{ env.AREA }}.osm.pbf
+          output: ${{ env.AREA }}.mbtiles
+
