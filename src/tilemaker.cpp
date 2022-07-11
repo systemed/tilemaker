@@ -188,12 +188,12 @@ int main(int argc, char* argv[]) {
 	po::positional_options_description p;
 	p.add("input", -1);
 	po::variables_map vm;
-    try {
-        po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
-    } catch (const po::unknown_option& ex) {
-        cerr << "Unknown option: " << ex.get_option_name() << endl;
-        return -1;
-    }
+	try {
+		po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+	} catch (const po::unknown_option& ex) {
+		cerr << "Unknown option: " << ex.get_option_name() << endl;
+		return -1;
+	}
 	po::notify(vm);
 	
 	if (vm.count("help")) { cout << desc << endl; return 0; }
