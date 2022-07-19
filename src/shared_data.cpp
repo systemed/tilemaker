@@ -41,7 +41,8 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		layerOrder.push_back(r);
 	} else {
 		if (layerMap.count(writeTo) == 0) {
-			throw out_of_range("ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist.");
+			cerr << "ERROR: addLayer(): the layer to write, named as \"" + writeTo + "\", doesn't exist." << endl;
+			exit (EXIT_FAILURE);
 		}
 		uint lookingFor = layerMap[writeTo];
 		for (auto it = layerOrder.begin(); it!= layerOrder.end(); ++it) {
