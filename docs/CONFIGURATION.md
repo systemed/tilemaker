@@ -54,6 +54,9 @@ A typical config file would look like this:
 
 The order of layers will be carried forward into the vector tile.
 
+Layers with `write_to` set must appear after the layers they're writing into.
+An incorrect order will result in "the layer to write doesn't exist".
+
 All options are compulsory unless stated otherwise. If tilemaker baulks at the JSON file, check everything's included, and run it through an online JSON validator to check for syntax errors.
 
 By default tilemaker expects to find this file at config.json, but you can specify another filename with the `--config` command-line option.
