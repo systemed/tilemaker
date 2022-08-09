@@ -110,6 +110,12 @@ add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files
 target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
 	Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
 
+include(CheckCxxAtomic)
+if(NOT HAVE_CXX11_ATOMIC)
+	string(APPEND CMAKE_CXX_STANDARD_LIBRARIES
+	" ${LIBATOMIC_LINK_FLAGS}")
+endif()
+
 if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
 endif()
