@@ -28,12 +28,8 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 
 // Multipolygon
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
-	MultiPolygon current;
-	if (simplifyLevel>0) {
-		current = simplify(round_coordinates(*bboxPtr, mp), simplifyLevel);
-	} else {
-		current = mp;
-	}
+	MultiPolygon current = bboxPtr->scaleGeometry(mp);
+	if (simplifyLevel>0) { current = simplify(current, simplifyLevel/bboxPtr->xscale); }
 
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
@@ -53,24 +49,23 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 
 	pair<int,int> lastPos(0,0);
 	for (MultiPolygon::const_iterator it = current.begin(); it != current.end(); ++it) {
-		XYString scaledString;
+		XYString points;
 		Ring ring = geom::exterior_ring(*it);
 		for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
-			pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
-			scaledString.push_back(xy);
+			pair<int,int> xy(jt->get<1>(), jt->get<0>());
+			points.push_back(xy);
 		}
-		bool success = writeDeltaString(&scaledString, featurePtr, &lastPos, true);
+		bool success = writeDeltaString(&points, featurePtr, &lastPos, true);
 		if (!success) continue;
 
 		InteriorRing interiors = geom::interior_rings(*it);
 		for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
-			scaledString.clear();
-			XYString scaledInterior;
+			points.clear();
 			for (auto jt = ii->begin(); jt != ii->end(); ++jt) {
-				pair<int,int> xy = bboxPtr->scaleLatpLon(jt->get<1>(), jt->get<0>());
-				scaledString.push_back(xy);
+				pair<int,int> xy(jt->get<1>(), jt->get<0>());
+				points.push_back(xy);
 			}
-			writeDeltaString(&scaledString, featurePtr, &lastPos, true);
+			writeDeltaString(&points, featurePtr, &lastPos, true);
 		}
 	}
 	featurePtr->set_type(vector_tile::Tile_GeomType_POLYGON);
