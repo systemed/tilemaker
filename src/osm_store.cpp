@@ -1,6 +1,7 @@
 
 #include "osm_store.h"
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <unordered_map>
 
@@ -116,7 +117,7 @@ void mmap_dir_t::open_mmap_file(std::string const &dir_filename, size_t file_siz
 
 	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_dir.files.size()) + ".dat";
 	std::cout << "Filename: " << new_filename << ", size: " << mmap_file_size << std::endl;
-	if(boost::filesystem::ofstream(new_filename.c_str()).fail())
+	if(std::ofstream(new_filename.c_str()).fail())
 		throw std::runtime_error("Failed to open mmap file");
 	boost::filesystem::resize_file(new_filename.c_str(), 0);
 	boost::filesystem::resize_file(new_filename.c_str(), mmap_file_size);
@@ -131,7 +132,7 @@ void mmap_dir_t::resize_mmap_file(size_t add_size)
 	auto size = increase + (add_size + alignment) - (add_size % alignment);
 
 	std::string new_filename = mmap_dir_filename + "/mmap_" + to_string(mmap_dir.files.size()) + ".dat";
-	if(boost::filesystem::ofstream(new_filename.c_str()).fail())
+	if(std::ofstream(new_filename.c_str()).fail())
 		throw std::runtime_error("Failed to open mmap file");
 	boost::filesystem::resize_file(new_filename.c_str(), size);
 	mmap_file_thread_ptr = std::make_shared<mmap_file>(new_filename.c_str(), 0);
