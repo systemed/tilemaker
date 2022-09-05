@@ -104,11 +104,14 @@ MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
 		// Copy the outer ring
 		Ring outer;
 		std::vector<Point> points;
+		int lastx=INT_MAX, lasty=INT_MAX;
 		for(auto &i: poly.outer()) {
 			auto scaled = scaleLatpLon(i.y(), i.x());
 			Point pt(scaled.second, scaled.first);
-			points.push_back(pt);
+			if (scaled.second!=lastx || scaled.first!=lasty) points.push_back(pt);
+			lastx=scaled.second; lasty=scaled.first;
 		}
+		if (points.size()<4) continue;
 		geom::append(outer,points);
 		geom::append(p,outer);
 
@@ -117,11 +120,14 @@ MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
 		for(auto &r: poly.inners()) {
 			Ring inner;
 			points.clear();
+			lastx=INT_MAX, lasty=INT_MAX;
 			for(auto &i: r) {
 				auto scaled = scaleLatpLon(i.y(), i.x());
 				Point pt(scaled.second, scaled.first);
-				points.push_back(pt);
+				if (scaled.second!=lastx || scaled.first!=lasty) points.push_back(pt);
+				lastx=scaled.second; lasty=scaled.first;
 			}
+			if (points.size()<4) continue;
 			geom::append(inner,points);
 			num_rings++;
 			geom::interior_rings(p).resize(num_rings);

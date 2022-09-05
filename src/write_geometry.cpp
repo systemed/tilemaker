@@ -30,6 +30,7 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current = bboxPtr->scaleGeometry(mp);
 	if (simplifyLevel>0) { current = simplify(current, simplifyLevel/bboxPtr->xscale); }
+	if (geom::is_empty(current)) return;
 
 #if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
