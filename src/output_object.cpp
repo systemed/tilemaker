@@ -170,6 +170,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 	
 			try {
 				MultiPolygon mp;
+				if (geom::within(input, clippingPolygon)) { geom::assign(mp, input); return mp; }
 				geom::intersection(input, clippingPolygon, mp);
 				return mp;
 			} catch (geom::overlay_invalid_input_exception &err) {
