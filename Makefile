@@ -101,8 +101,8 @@ tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf
 install:
 	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
 	install -m 0755 tilemaker $(DESTDIR)$(prefix)/bin/
-	install -d ${DESTDIR}${MANPREFIX}/man1/
-	-install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
+	install -m 0755 -d ${DESTDIR}${MANPREFIX}/man1/
+	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
 
 clean:
 	rm -f tilemaker src/*.o include/*.o include/*.pb.h

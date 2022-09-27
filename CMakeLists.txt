@@ -114,4 +114,6 @@ if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
 endif()
 
+install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
+
 install(TARGETS tilemaker RUNTIME DESTINATION bin)
