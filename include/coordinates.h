@@ -121,15 +121,12 @@ public:
 	TileBbox(TileCoordinates i, uint z, bool h);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
+	MultiPolygon scaleGeometry(MultiPolygon const &src) const;
 	std::pair<double, double> floorLatpLon(double latp, double lon) const;
 
 	Box getTileBox() const;
 	Box getExtendBox() const;
 };
-
-// Round coordinates to integer coordinates of bbox
-// TODO: This should be self-intersection aware!!
-MultiPolygon round_coordinates(TileBbox const &bbox, MultiPolygon const &mp);
 
 #endif //_COORDINATES_H
 

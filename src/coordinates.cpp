@@ -96,6 +96,50 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	return pair<int,int>(x,y);
 }
 
+MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
+	MultiPolygon dst;
+	for(auto poly: src) {
+		Polygon p;
+
+		// Copy the outer ring
+		Ring outer;
+		std::vector<Point> points;
+		int lastx=INT_MAX, lasty=INT_MAX;
+		for(auto &i: poly.outer()) {
+			auto scaled = scaleLatpLon(i.y(), i.x());
+			Point pt(scaled.second, scaled.first);
+			if (scaled.second!=lastx || scaled.first!=lasty) points.push_back(pt);
+			lastx=scaled.second; lasty=scaled.first;
+		}
+		if (points.size()<4) continue;
+		geom::append(outer,points);
+		geom::append(p,outer);
+
+		// Copy the inner rings
+		int num_rings = 0;
+		for(auto &r: poly.inners()) {
+			Ring inner;
+			points.clear();
+			lastx=INT_MAX, lasty=INT_MAX;
+			for(auto &i: r) {
+				auto scaled = scaleLatpLon(i.y(), i.x());
+				Point pt(scaled.second, scaled.first);
+				if (scaled.second!=lastx || scaled.first!=lasty) points.push_back(pt);
+				lastx=scaled.second; lasty=scaled.first;
+			}
+			if (points.size()<4) continue;
+			geom::append(inner,points);
+			num_rings++;
+			geom::interior_rings(p).resize(num_rings);
+			geom::append(p, inner, num_rings-1);
+		}
+
+		// Add to multipolygon
+		dst.push_back(p);
+	}
+	return dst;
+}
+
 pair<double, double> TileBbox::floorLatpLon(double latp, double lon) const {
 	auto p = scaleLatpLon(latp, lon);
 	return std::make_pair( -(p.second * yscale - maxLatp), p.first * xscale + minLon);
@@ -111,28 +155,6 @@ Box TileBbox::getExtendBox() const {
 	return Box(
     	geom::make<Point>( minLon-(maxLon-minLon)*2.0, minLatp-(maxLatp-minLatp)*(8191.0/8192.0)), 
 		geom::make<Point>( maxLon+(maxLon-minLon)*(8191.0/8192.0), maxLatp+(maxLatp-minLatp)*2.0));
-}
-
-MultiPolygon round_coordinates(TileBbox const &bbox, MultiPolygon const &mp) 
-{
-	MultiPolygon combined_mp;
-	for(auto new_p: mp) {
-		for(auto &i: new_p.outer()) {
-			auto round_i = bbox.floorLatpLon(i.y(), i.x());
-			i = Point(round_i.second, round_i.first);
-		}
-
-		for(auto &r: new_p.inners()) {
-			for(auto &i: r) {
-				auto round_i = bbox.floorLatpLon(i.y(), i.x());
-				i = Point(round_i.second, round_i.first);
-			}
-		}
-
-		boost::geometry::remove_spikes(new_p);
-		simplify_combine(combined_mp, std::move(new_p));
-	}
-	return combined_mp;
 }
 
 template<typename T>
