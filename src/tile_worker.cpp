@@ -259,7 +259,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 {
 	// Create tile
 	vector_tile::Tile tile;
-	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom);
+	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (sharedData.config.maxLon<=bbox.minLon 
 		|| sharedData.config.minLon>=bbox.maxLon || sharedData.config.maxLat<=bbox.minLat 
 		|| sharedData.config.minLat>=bbox.maxLat)) { return true; }

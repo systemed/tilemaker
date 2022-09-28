@@ -116,9 +116,10 @@ public:
 	TileCoordinates index;
 	uint zoom;
 	bool hires;
+	bool endZoom;
 	Box clippingBox;
 
-	TileBbox(TileCoordinates i, uint z, bool h);
+	TileBbox(TileCoordinates i, uint z, bool h, bool e);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 	MultiPolygon scaleGeometry(MultiPolygon const &src) const;
