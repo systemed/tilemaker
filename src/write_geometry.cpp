@@ -29,7 +29,7 @@ void WriteGeometryVisitor::operator()(const Point &p) const {
 // Multipolygon
 void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 	MultiPolygon current = bboxPtr->scaleGeometry(mp);
-	if (simplifyLevel>0) { current = simplify(current, simplifyLevel/bboxPtr->xscale); }
+	if (simplifyLevel>0) { current = simplify(current, simplifyLevel/bboxPtr->xscale); geom::remove_spikes(current); }
 	if (geom::is_empty(current)) return;
 
 #if BOOST_VERSION >= 105800
