@@ -124,12 +124,28 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 			Box box = bbox.clippingBox;
 			
-			for(auto const &p: input) {
-				for(auto const &inner: p.inners()) {
-					for(std::size_t i = 0; i < inner.size() - 1; ++i) 
-					{
-						Point p1 = inner[i];
-						Point p2 = inner[i + 1];
+			if (bbox.endZoom) {
+				for(auto const &p: input) {
+					for(auto const &inner: p.inners()) {
+						for(std::size_t i = 0; i < inner.size() - 1; ++i) 
+						{
+							Point p1 = inner[i];
+							Point p2 = inner[i + 1];
+
+							if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
+								box.min_corner() = Point(	
+									std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
+									std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+								box.max_corner() = Point(	
+									std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
+									std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+							}
+						}
+					}
+
+					for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
+						Point p1 = p.outer()[i];
+						Point p2 = p.outer()[i + 1];
 
 						if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
 							box.min_corner() = Point(	
@@ -142,28 +158,14 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 					}
 				}
 
-				for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
-					Point p1 = p.outer()[i];
-					Point p2 = p.outer()[i + 1];
-
-					if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
-						box.min_corner() = Point(	
-							std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
-							std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
-						box.max_corner() = Point(	
-							std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
-							std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
-					}
-				}
+				Box extBox = bbox.getExtendBox();
+				box.min_corner() = Point(	
+					std::max(box.min_corner().x(), extBox.min_corner().x()), 
+					std::max(box.min_corner().y(), extBox.min_corner().y()));
+				box.max_corner() = Point(	
+					std::min(box.max_corner().x(), extBox.max_corner().x()), 
+					std::min(box.max_corner().y(), extBox.max_corner().y()));
 			}
-
-			Box extBox = bbox.getExtendBox();
-			box.min_corner() = Point(	
-				std::max(box.min_corner().x(), extBox.min_corner().x()), 
-				std::max(box.min_corner().y(), extBox.min_corner().y()));
-			box.max_corner() = Point(	
-				std::min(box.max_corner().x(), extBox.max_corner().x()), 
-				std::min(box.max_corner().y(), extBox.max_corner().y()));
 
 			Polygon clippingPolygon;
 			geom::convert(box, clippingPolygon);

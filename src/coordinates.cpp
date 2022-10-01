@@ -72,10 +72,11 @@ void fillCoveredTiles(unordered_set<TileCoordinates> &tileSet) {
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles
 
-TileBbox::TileBbox(TileCoordinates i, uint z, bool h) {
+TileBbox::TileBbox(TileCoordinates i, uint z, bool h, bool e) {
 	zoom = z;
 	index = i;
 	hires = h;
+	endZoom = e;
 	minLon = tilex2lon(i.x  ,zoom);
 	minLat = tiley2lat(i.y+1,zoom);
 	maxLon = tilex2lon(i.x+1,zoom);
