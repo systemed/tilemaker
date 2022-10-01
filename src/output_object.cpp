@@ -173,7 +173,12 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			try {
 				MultiPolygon mp;
 				if (geom::within(input, clippingPolygon)) { geom::assign(mp, input); return mp; }
-				geom::intersection(input, clippingPolygon, mp);
+				// Work around boost::geometry intersection issues by doing each constituent polygon at a time
+				for (auto &p : input) {
+					MultiPolygon out;
+					geom::intersection(p, clippingPolygon, out);
+					for (auto &o : out) mp.emplace_back(move(o));
+				}
 				return mp;
 			} catch (geom::overlay_invalid_input_exception &err) {
 				std::cout << "Couldn't clip polygon (self-intersection)" << std::endl;
