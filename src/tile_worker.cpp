@@ -128,7 +128,7 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 			outer.inners().begin(), 
 			outer.inners().end(), 
 			[&](const Ring &inner) -> bool { 
-				return geom::area(inner) < filterArea;
+				return std::fabs(geom::area(inner)) < filterArea;
 			}),
 		outer.inners().end());
 	}
