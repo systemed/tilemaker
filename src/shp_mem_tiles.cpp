@@ -2,6 +2,7 @@
 #include <iostream>
 using namespace std;
 namespace geom = boost::geometry;
+extern bool verbose;
 
 ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
 	: TileDataSource(baseZoom), osmStore(osmStore)
@@ -20,7 +21,7 @@ vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool 
 	// Find the layer
 	auto f = indices.find(layerName); // f is an RTree
 	if (f==indices.end()) {
-		cerr << "Couldn't find indexed layer " << layerName << endl;
+		if (verbose) cerr << "Couldn't find indexed layer " << layerName << endl;
 		return vector<uint>();	// empty, relations not supported
 	}
 	

@@ -4,6 +4,8 @@
 
 #include "tile_data.h"
 
+extern bool verbose;
+
 class ShpMemTiles : public TileDataSource
 {
 public:
@@ -29,7 +31,10 @@ public:
 	template <typename GeometryT>
 	double AreaIntersecting(const std::string &layerName, GeometryT &g) const {
 		auto f = indices.find(layerName);
-		if (f==indices.end()) { std::cerr << "Couldn't find indexed layer " << layerName << std::endl; return false;  }
+		if (f==indices.end()) { 
+			if (verbose) std::cerr << "Couldn't find indexed layer " << layerName << std::endl; 
+			return false;
+		}
 		Box box; geom::envelope(g, box);
 		std::vector <IndexValue> results;
 		f->second.query(geom::index::intersects(box), back_inserter(results));
