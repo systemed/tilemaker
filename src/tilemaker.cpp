@@ -342,7 +342,7 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
-		osmStore.clear(); // no longer needed
+		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
 
 	// ----	Initialise SharedData
@@ -501,8 +501,6 @@ int main(int argc, char* argv[]) {
 		cout << "\nMemory used: " << r_usage.ru_maxrss << endl;
 	}
 #endif
-
-	void_mmap_allocator::shutdown();
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
