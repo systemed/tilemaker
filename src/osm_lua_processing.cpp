@@ -66,8 +66,9 @@ OsmLuaProcessing::OsmLuaProcessing(
 
 	// ---- Call init_function of Lua logic
 
-	luaState("if init_function~=nil then init_function() end");
-
+	if (!!luaState["init_function"]) {
+		luaState["init_function"](this->config.projectName);
+	}
 }
 
 OsmLuaProcessing::~OsmLuaProcessing() {
