@@ -126,7 +126,7 @@ public:
     bool CorrectGeometry(GeometryT &geom)
     {
 #if BOOST_VERSION >= 105800
-        geom::validity_failure_type failure;
+        geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
         if (isRelation && !geom::is_valid(geom,failure)) {
             if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
         } else if (isWay && !geom::is_valid(geom,failure)) {
