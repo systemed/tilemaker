@@ -325,14 +325,16 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	OutputGeometryType geomType = isRelation ? (area ? POLYGON_ : MULTILINESTRING_ ) :
 	                                   isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
+		uint layerIndex = layers.layerMap[layerName];
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
             if(!CorrectGeometry(p)) return;
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
-			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
-							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType,
+					layerIndex, osmID, layers.layers[layerIndex].sortZLevelAscending,
+					attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
             return;
 		}
@@ -362,7 +364,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
-							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+					layerIndex, osmID, layers.layers[layerIndex].sortZLevelAscending,
+					attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 		else if (geomType==MULTILINESTRING_) {
@@ -377,8 +380,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			if (!CorrectGeometry(mls)) return;
 
 			osmStore.store_multi_linestring(osmStore.osm(), osmID, mls);
-			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiLinestring(geomType, 
-							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiLinestring(geomType,
+					layerIndex, osmID, layers.layers[layerIndex].sortZLevelAscending,
+					attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 		else if (geomType==LINESTRING_) {
@@ -389,7 +393,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			osmStore.store_linestring(osmStore.osm(), osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreLinestring(geomType, 
-						layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+					layerIndex, osmID, layers.layers[layerIndex].sortZLevelAscending,
+					attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 		}
 	} catch (std::invalid_argument &err) {
@@ -423,8 +428,10 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	osmStore.store_point(osmStore.osm(), osmID, geomp);
+	uint layerIndex = layers.layerMap[layerName];
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(POINT_,
-					layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
+			layerIndex, osmID, layers.layers[layerIndex].sortZLevelAscending,
+			attributeStore.empty_set(), layerMinZoom));
 	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
 }
 

@@ -241,8 +241,9 @@ bool operator==(const OutputObjectRef x, const OutputObjectRef y) {
 bool operator<(const OutputObjectRef x, const OutputObjectRef y) {
 	if (x->layer < y->layer) return true;
 	if (x->layer > y->layer) return false;
-	if (x->z_order < y->z_order) return true;
-	if (x->z_order > y->z_order) return false;
+	// Sort direction is equal for all objects within a layer, therefore ignore what is set for the second one.
+	if (x->z_order < y->z_order) return x->ascendingSort;
+	if (x->z_order > y->z_order) return !(x->ascendingSort);
 	if (x->geomType < y->geomType) return true;
 	if (x->geomType > y->geomType) return false;
 	if (x->attributes.get() < y->attributes.get()) return true;

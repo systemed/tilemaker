@@ -76,7 +76,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				osmStore.store_point(osmStore.shp(), id, sp);
 				oo = CreateObject(OutputObjectOsmStorePoint(
-					geomType, layerNum, id, attributes, minzoom));
+					geomType, layerNum, id, true, attributes, minzoom));
 				cachedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -89,7 +89,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		{
 			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreLinestring(
-						geomType, layerNum, id, attributes, minzoom));
+						geomType, layerNum, id, true, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, &geometry);
@@ -99,7 +99,7 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 		{
 			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
-						geomType, layerNum, id, attributes, minzoom));
+						geomType, layerNum, id, true, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 			
 			// add to tile index
