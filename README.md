@@ -44,7 +44,7 @@ Then, to serve your tiles using the demonstration server:
 
 You can now navigate to http://localhost:8080/ and see your map!
 
-(If you don't already have them, you'll need to install Ruby and the required gems to run the demonstration server. On Ubuntu, for example, `sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev` and then `sudo gem install sqlite3 cgi glug rack`.)
+(If you don't already have them, you'll need to install Ruby and the required gems to run the demonstration server. On Ubuntu, for example, `sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev` and then `sudo gem install sqlite3 cgi glug rack rackup`.)
 
 ## Your own configuration
 
