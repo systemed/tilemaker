@@ -38,5 +38,6 @@ COPY --from=src /build/tilemaker .
 COPY resources /resources
 COPY process.lua .
 COPY config.json .
+RUN ln -s /tilemaker /usr/bin/tilemaker
 
 ENTRYPOINT ["/tilemaker"]
