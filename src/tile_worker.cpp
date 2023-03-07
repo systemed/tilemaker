@@ -152,7 +152,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
 			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
-			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID); }
+			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 		} else {
 			Geometry g;
 			try {
@@ -184,7 +184,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
-			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID); }
+			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 
 		}
 	}
