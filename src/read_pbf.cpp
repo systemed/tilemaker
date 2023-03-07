@@ -90,7 +90,11 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 				int64_t nodeId = 0;
 				for (int k=0; k<pbfWay.refs_size(); k++) {
 					nodeId += pbfWay.refs(k);
-					llVec.push_back(osmStore.nodes_at(static_cast<NodeID>(nodeId)));
+					try {
+						llVec.push_back(osmStore.nodes_at(static_cast<NodeID>(nodeId)));
+					} catch (std::out_of_range &err) {
+						if (osmStore.integrity_enforced()) throw err;
+					}
 				}
 			}
 
