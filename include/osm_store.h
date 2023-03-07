@@ -463,6 +463,7 @@ public:
 
 	void use_compact_store(bool use = true) { use_compact_nodes = use; }
 	void enforce_integrity(bool ei  = true) { require_integrity = ei; }
+	bool integrity_enforced() { return require_integrity; }
 
 	void shapes_sort(unsigned int threadNum = 1);
 	void generated_sort(unsigned int threadNum = 1);
