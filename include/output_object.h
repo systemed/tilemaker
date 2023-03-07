@@ -15,7 +15,14 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-enum OutputGeometryType { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
+enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
+
+#define OSMID_TYPE_OFFSET	40
+#define OSMID_MASK 		((1ULL<<OSMID_TYPE_OFFSET)-1)
+#define OSMID_SHAPE 	(0ULL<<OSMID_TYPE_OFFSET)
+#define OSMID_NODE 		(1ULL<<OSMID_TYPE_OFFSET)
+#define OSMID_WAY 		(2ULL<<OSMID_TYPE_OFFSET)
+#define OSMID_RELATION 	(3ULL<<OSMID_TYPE_OFFSET)
 
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
