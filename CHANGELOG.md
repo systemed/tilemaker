@@ -1,5 +1,29 @@
 # Changelog
 
+# [2.3.0] - 2023-03-08
+
+### Added
+- Send project name to init_function (@systemed)
+- Remove zero-width spikes after simplification (@systemed)
+- Remove multipolygon inners below filter area size (@systemed)
+
+### Changed
+- Move centroid and "no indexed layer" errors to verbose mode only (@systemed)
+- Report missing layers consistently (@akx)
+- Update Ruby server to Rack 3 (@typebrook)
+- Move mmap shutdown to end of PBF reading (@systemed)
+
+### Fixed
+- Use std::ofstream instead of boost::filesystem (@milovanderlinden)
+- Scale geometries before simplifying to avoid reintroducing self-intersections (@systemed)
+- Fix manpage in makefiles (@xamanu)
+- Intersect multipolygons part-by-part with clipping box to fix Boost.Geometry issue (@systemed)
+- Windows issues (@roundby)
+- Add libatomic for rare architectures (@xamanu)
+- Ignore nodes in ways with --skip-integrity (@systemed)
+- Correctly mask IDs for output with include_ids (@systemed)
+
+
 ## [2.2.0] - 2022-03-11
 
 ### Added
