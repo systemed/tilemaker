@@ -285,7 +285,6 @@ function way_function(way)
 	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if highway~="" then
 		local access = way:Find("access")
-		if access=="private" or access=="no" then return end
 
 		local h = highway
 		local minzoom = 99
@@ -332,6 +331,7 @@ function way_function(way)
 			way:Attribute("class", h)
 			SetBrunnelAttributes(way)
 			if ramp then way:AttributeNumeric("ramp",1) end
+			if access=="private" or access=="no" then way:Attribute("access", "no") end
 
 			-- Service
 			if highway == "service" and service ~="" then way:Attribute("service", service) end
