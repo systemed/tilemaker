@@ -19,6 +19,9 @@ protected:
 	std::mutex mutex;
 	TileIndex tileIndex;
 	std::deque<OutputObject> objects;
+	
+	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
+	boost::geometry::index::rtree< std::pair<Box,OutputObjectRef>, oo_rtree_param_type> box_rtree;
 
 	unsigned int baseZoom;
 

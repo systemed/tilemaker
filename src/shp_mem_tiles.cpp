@@ -116,11 +116,14 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
+// (only used for polygons)
 void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
 	uint minTileY = latp2tiley(minLatp, baseZoom);
 	uint maxTileY = latp2tiley(maxLatp, baseZoom);
+	uint size = (maxTileX - minTileX + 1) * (minTileY - maxTileY + 1);
+	if (size>=4) { std::cout << "Shapefile object size " << size << std::endl; }
 	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
 		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
 			TileCoordinates index(x, y);

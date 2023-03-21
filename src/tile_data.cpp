@@ -29,6 +29,7 @@ void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileI
 	}
 }
 
+// Copy objects from the tile at dstIndex (in the dataset srcTiles) into dstTile
 void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
