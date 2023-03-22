@@ -637,7 +637,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 					if (jt->first->geomType != POLYGON_) continue;
 					if (size>= 16) {
-						std::cout << "OSM object size " << size << std::endl;
+						std::cout << "OSM way " << originalOsmID << " size " << size << " minX " << minTileX << " minY " << minTileY << " maxX " << maxTileX << " maxY " << maxTileY << std::endl;
 						Box box = Box(geom::make<Point>(minTileX, minTileY),
 						              geom::make<Point>(maxTileX, maxTileY));
 						osmMemTiles.AddObjectToLargeIndex(box, jt->first);
@@ -719,7 +719,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 		}
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			if (tileSet.size()>=16) {
-				std::cout << "OSM multipolygon size " << tileSet.size() << std::endl;
+				std::cout << "OSM relation " << originalOsmID << " size " << tileSet.size() << " minX " << minTileX << " minY " << minTileY << " maxX " << maxTileX << " maxY " << maxTileY << std::endl;
 				Box box = Box(geom::make<Point>(minTileX, minTileY),
 				              geom::make<Point>(maxTileX, maxTileY));
 				osmMemTiles.AddObjectToLargeIndex(box, jt->first);
