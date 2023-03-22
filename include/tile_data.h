@@ -35,6 +35,8 @@ public:
 		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 	}
 
+	void MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
+
 	///This must be thread safe!
 	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
