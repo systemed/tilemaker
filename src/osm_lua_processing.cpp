@@ -691,28 +691,43 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			return;
 		}		
 
-		unordered_set<TileCoordinates> tileSet;
-		if (mp.size() == 1) {
-			insertIntermediateTiles(mp[0].outer(), this->config.baseZoom, tileSet);
-			fillCoveredTiles(tileSet);
-		} else {
-			for (Polygon poly: mp) {
-				unordered_set<TileCoordinates> tileSetTmp;
-				insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
-				fillCoveredTiles(tileSetTmp);
-				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
-			}
-		}
-
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			// Store the attributes of the generated geometry
 			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
 		}
 
+		unordered_set<TileCoordinates> tileSet;
+		bool singleOuter = mp.size()==1;
+		for (Polygon poly: mp) {
+			unordered_set<TileCoordinates> tileSetTmp;
+			insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
+			fillCoveredTiles(tileSetTmp);
+			if (singleOuter) {
+				tileSet = std::move(tileSetTmp);
+			} else {
+				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
+			}
+		}
+		
+		TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
-			for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-				osmMemTiles.AddObject(index, jt->first);
+			minTileX = std::min(index.x, minTileX);
+			minTileY = std::min(index.y, minTileY);
+			maxTileX = std::max(index.x, maxTileX);
+			maxTileY = std::max(index.y, maxTileY);
+		}
+		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+			if (tileSet.size()>=16) {
+				std::cout << "OSM multipolygon size " << tileSet.size() << std::endl;
+				Box box = Box(geom::make<Point>(minTileX, minTileY),
+				              geom::make<Point>(maxTileX, maxTileY));
+				osmMemTiles.AddObjectToLargeIndex(box, jt->first);
+			} else {
+				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+					TileCoordinates index = *it;
+					osmMemTiles.AddObject(index, jt->first);
+				}
 			}
 		}
 
