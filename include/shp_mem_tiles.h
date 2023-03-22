@@ -23,6 +23,10 @@ public:
 	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
 		tileIndex[index].push_back(oo);
 	}
+	void AddObjectToLargeIndex(Box const &envelope, OutputObjectRef const &oo) {
+		std::lock_guard<std::mutex> lock(mutex);
+		box_rtree.insert(std::make_pair(envelope, oo));
+	}
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 
 		std::function<bool(OutputObject const &oo)> checkQuery) const;

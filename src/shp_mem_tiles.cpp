@@ -123,11 +123,17 @@ void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, doubl
 	uint minTileY = latp2tiley(minLatp, baseZoom);
 	uint maxTileY = latp2tiley(maxLatp, baseZoom);
 	uint size = (maxTileX - minTileX + 1) * (minTileY - maxTileY + 1);
-	if (size>=4) { std::cout << "Shapefile object size " << size << std::endl; }
-	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-			TileCoordinates index(x, y);
-			AddObject(index, oo);
+	if (size>=16) { 
+		// Larger objects - add to rtree
+		std::cout << "Shapefile object size " << size << std::endl;
+		AddObjectToLargeIndex(Box(Point(minLon, minLatp), Point(maxLon, maxLatp)), oo);
+	} else {
+		// Smaller objects - add to each individual tile index
+		for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
+			for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
+				TileCoordinates index(x, y);
+				AddObject(index, oo);
+			}
 		}
 	}
 }

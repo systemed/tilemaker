@@ -51,6 +51,8 @@ public:
 		tileIndex[index].push_back(oo);
 	}
 
+	void MergeLargeObjects(Box const &box, std::vector<OutputObjectRef> &dstTile);
+
 private:	
 	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
 	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
