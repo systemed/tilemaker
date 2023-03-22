@@ -637,11 +637,12 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 					if (jt->first->geomType != POLYGON_) continue;
 					if (size>= 16) {
-						std::cout << "OSM way " << originalOsmID << " size " << size << " minX " << minTileX << " minY " << minTileY << " maxX " << maxTileX << " maxY " << maxTileY << std::endl;
+						// Larger objects - add to rtree
 						Box box = Box(geom::make<Point>(minTileX, minTileY),
 						              geom::make<Point>(maxTileX, maxTileY));
 						osmMemTiles.AddObjectToLargeIndex(box, jt->first);
 					} else {
+						// Smaller objects - add to each individual tile index
 						if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 							TileCoordinates index = *it;
@@ -719,11 +720,14 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 		}
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
 			if (tileSet.size()>=16) {
-				std::cout << "OSM relation " << originalOsmID << " size " << tileSet.size() << " minX " << minTileX << " minY " << minTileY << " maxX " << maxTileX << " maxY " << maxTileY << std::endl;
+				// Larger objects - add to rtree
+				// note that the bbox is currently the envelope of the entire multipolygon,
+				// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
 				Box box = Box(geom::make<Point>(minTileX, minTileY),
 				              geom::make<Point>(maxTileX, maxTileY));
 				osmMemTiles.AddObjectToLargeIndex(box, jt->first);
 			} else {
+				// Smaller objects - add to each individual tile index
 				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 					TileCoordinates index = *it;
 					osmMemTiles.AddObject(index, jt->first);

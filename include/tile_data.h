@@ -20,6 +20,7 @@ protected:
 	TileIndex tileIndex;
 	std::deque<OutputObject> objects;
 	
+	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
 	boost::geometry::index::rtree< std::pair<Box,OutputObjectRef>, oo_rtree_param_type> box_rtree;
 

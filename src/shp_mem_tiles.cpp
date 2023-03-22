@@ -125,7 +125,6 @@ void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, doubl
 	uint size = (maxTileX - minTileX + 1) * (minTileY - maxTileY + 1);
 	if (size>=16) { 
 		// Larger objects - add to rtree
-		std::cout << "Shapefile object size " << size << std::endl;
 		AddObjectToLargeIndex(Box(Point(minTileX, maxTileY), Point(maxTileX, minTileY)), oo);
 	} else {
 		// Smaller objects - add to each individual tile index

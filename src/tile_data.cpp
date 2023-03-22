@@ -29,6 +29,7 @@ void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileI
 	}
 }
 
+// Find the tiles used by the "large objects" from the rtree index
 void TileDataSource::MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
 	for(auto const &result: box_rtree) {
 		int scale = pow(2, baseZoom-zoom);
