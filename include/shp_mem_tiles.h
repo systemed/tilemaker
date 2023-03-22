@@ -14,7 +14,7 @@ public:
 	void CreateNamedLayerIndex(const std::string &layerName);
 
 	// Used in shape file loading
-	OutputObjectRef AddObject(uint_least8_t layerNum,
+	OutputObjectRef StoreShapefileGeometry(uint_least8_t layerNum,
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 

@@ -51,7 +51,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName) {
 	indices[layerName]=RTree();
 }
 
-OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
+OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	const std::string &layerName, enum OutputGeometryType geomType,
 	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom) {
 
