@@ -89,5 +89,10 @@ void make_valid(GeometryT &geom) { }
 
 void make_valid(MultiPolygon &mp);
 
+Point intersect_edge(Point const &a, Point const &b, char edge, Box const &bbox);
+char bit_code(Point const &p, Box const &bbox);
+void fast_clip(Ring &points, Box const &bbox);
+void fast_clip(MultiPolygon &mp, Box const &bbox);
+
 #endif //_GEOM_TYPES_H
 

@@ -142,3 +142,80 @@ void make_valid(MultiPolygon &mp)
 	}
 	mp = result;
 }
+
+// ---------------
+// Sutherland-Hodgeman clipper
+// ported from Volodymyr Agafonkin's https://github.com/mapbox/lineclip
+
+// intersect a segment against one of the 4 lines that make up the bbox
+Point intersect_edge(Point const &a, Point const &b, char edge, Box const &bbox) {
+	if (edge & 8) return Point(a.x() + (b.x() - a.x()) * (bbox.max_corner().y() - a.y()) / (b.y() - a.y()), bbox.max_corner().y()); // top
+	if (edge & 4) return Point(a.x() + (b.x() - a.x()) * (bbox.min_corner().y() - a.y()) / (b.y() - a.y()), bbox.min_corner().y()); // bottom
+	if (edge & 2) return Point(bbox.max_corner().x(), a.y() + (b.y() - a.y()) * (bbox.max_corner().x() - a.x()) / (b.x() - a.x())); // right
+	if (edge & 1) return Point(bbox.min_corner().x(), a.y() + (b.y() - a.y()) * (bbox.min_corner().x() - a.x()) / (b.x() - a.x())); // left
+	throw std::runtime_error("intersect called on non-intersection");
+}
+
+// bit code reflects the point position relative to the bbox:
+//         left  mid  right
+//    top  1001  1000  1010
+//    mid  0001  0000  0010
+// bottom  0101  0100  0110
+
+char bit_code(Point const &p, Box const &bbox) {
+	char code = 0;
+	if      (p.x() < bbox.min_corner().x()) code |= 1; // left
+	else if (p.x() > bbox.max_corner().x()) code |= 2; // right
+	if      (p.y() < bbox.min_corner().y()) code |= 4; // bottom
+	else if (p.y() > bbox.max_corner().y()) code |= 8; // top
+	return code;
+}
+
+// Sutherland-Hodgeman polygon clipping algorithm
+void fast_clip(Ring &points, Box const &bbox) {
+	// clip against each side of the clip rectangle
+	for (char edge = 1; edge <= 8; edge *= 2) {
+		Ring result;
+		Point prev = points[points.size() - 1];
+		bool prevInside = (bit_code(prev, bbox) & edge)==0;
+
+		for (unsigned int i = 0; i<points.size(); i++) {
+			Point p = points[i];
+			bool inside = (bit_code(p, bbox) & edge)==0;
+
+			// if segment goes through the clip window, add an intersection
+			if (inside!=prevInside) result.emplace_back(intersect_edge(prev, p, edge, bbox));
+			if (inside) result.emplace_back(p); // add a point if it's inside
+			prev = p;
+			prevInside = inside;
+		}
+		points = std::move(result);
+		if (points.size()==0) break;
+	}
+}
+
+// Wrappers for polygon/multipolygon
+void fast_clip(Polygon &polygon, Box const &bbox) {
+	fast_clip(polygon.outer(), bbox);
+	if (polygon.outer().empty()) {
+		polygon.inners().resize(0);
+		return;
+	}
+	for (auto &inner: polygon.inners()) {
+		fast_clip(inner, bbox);
+	}
+	polygon.inners().erase(std::remove_if(
+		polygon.inners().begin(), polygon.inners().end(), 
+		[](const Ring &inner) -> bool { return inner.empty(); }),
+		polygon.inners().end());
+}
+
+void fast_clip(MultiPolygon &mp, Box const &bbox) {
+	for (auto &polygon: mp) {
+		fast_clip(polygon, bbox);
+	}
+	mp.erase(std::remove_if(
+		mp.begin(), mp.end(), 
+		[](const Polygon &poly) -> bool { return poly.outer().empty(); }),
+		mp.end());
+}
