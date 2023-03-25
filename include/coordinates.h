@@ -9,8 +9,10 @@
 
 #ifdef FAT_TILE_INDEX
 typedef uint32_t TileCoordinate;
+#define TILE_COORDINATE_MAX UINT32_MAX
 #else
 typedef uint16_t TileCoordinate;
+#define TILE_COORDINATE_MAX UINT16_MAX
 #endif
 class TileCoordinates_ {
 

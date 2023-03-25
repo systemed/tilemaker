@@ -51,7 +51,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName) {
 	indices[layerName]=RTree();
 }
 
-OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
+OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	const std::string &layerName, enum OutputGeometryType geomType,
 	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom) {
 
@@ -116,15 +116,23 @@ OutputObjectRef ShpMemTiles::AddObject(uint_least8_t layerNum,
 }
 
 // Add an OutputObject to all tiles between min/max lat/lon
+// (only used for polygons)
 void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, double minLatp, double maxLon, double maxLatp) {
 	uint minTileX =  lon2tilex(minLon, baseZoom);
 	uint maxTileX =  lon2tilex(maxLon, baseZoom);
 	uint minTileY = latp2tiley(minLatp, baseZoom);
 	uint maxTileY = latp2tiley(maxLatp, baseZoom);
-	for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-		for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-			TileCoordinates index(x, y);
-			AddObject(index, oo);
+	uint size = (maxTileX - minTileX + 1) * (minTileY - maxTileY + 1);
+	if (size>=16) { 
+		// Larger objects - add to rtree
+		AddObjectToLargeIndex(Box(Point(minTileX, maxTileY), Point(maxTileX, minTileY)), oo);
+	} else {
+		// Smaller objects - add to each individual tile index
+		for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
+			for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
+				TileCoordinates index(x, y);
+				AddObject(index, oo);
+			}
 		}
 	}
 }

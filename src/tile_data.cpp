@@ -29,6 +29,24 @@ void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileI
 	}
 }
 
+// Find the tiles used by the "large objects" from the rtree index
+void TileDataSource::MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
+	for(auto const &result: box_rtree) {
+		int scale = pow(2, baseZoom-zoom);
+		TileCoordinate minx = result.first.min_corner().x() / scale;
+		TileCoordinate maxx = result.first.max_corner().x() / scale;
+		TileCoordinate miny = result.first.min_corner().y() / scale;
+		TileCoordinate maxy = result.first.max_corner().y() / scale;
+		for (int x=minx; x<=maxx; x++) {
+			for (int y=miny; y<=maxy; y++) {
+				TileCoordinates newIndex(x, y);
+				dstCoords.insert(newIndex);
+			}
+		}
+	}
+}
+
+// Copy objects from the tile at dstIndex (in the dataset srcTiles) into dstTile
 void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
@@ -59,13 +77,26 @@ void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zo
 	}
 }
 
+// Copy objects from the large index into dstTile
+void TileDataSource::MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+	int scale = pow(2, baseZoom - zoom);
+	TileCoordinates srcIndex1( dstIndex.x   *scale  ,  dstIndex.y   *scale  );
+	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
+	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
+	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
+	for(auto const &result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+		dstTile.push_back(result.second);
+}
+
 TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
 	TileCoordinatesSet tileCoordinates;
 
 	// Create list of tiles
 	tileCoordinates.clear();
-	for(size_t i=0; i<sources.size(); i++)
+	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
+		sources[i]->MergeLargeCoordsAtZoom(zoom, tileCoordinates);
+	}
 
 	return tileCoordinates;
 }
@@ -73,8 +104,10 @@ TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const 
 std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom)
 {
 	std::vector<OutputObjectRef> data;
-	for(size_t i=0; i<sources.size(); i++)
+	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
+		sources[i]->MergeLargeObjects(coordinates, zoom, data);
+	}
 
 	boost::sort::pdqsort(data.begin(), data.end());
 	data.erase(unique(data.begin(), data.end()), data.end());

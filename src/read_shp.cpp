@@ -177,7 +177,7 @@ void readShapefile(const Box &clippingBox,
 				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 				auto &attributeStore = osmLuaProcessing.getAttributeStore();
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, POINT_, p, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
+				OutputObjectRef oo = shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POINT_, p, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}
@@ -199,7 +199,7 @@ void readShapefile(const Box &clippingBox,
 					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
 
 					auto &attributeStore = osmLuaProcessing.getAttributeStore();
-					OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, LINESTRING_, *it, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
+					OutputObjectRef oo = shpMemTiles.StoreShapefileGeometry(layerNum, layerName, LINESTRING_, *it, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
 
 					addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 				}
@@ -272,7 +272,7 @@ void readShapefile(const Box &clippingBox,
 
 				// create OutputObject
 				auto &attributeStore = osmLuaProcessing.getAttributeStore();
-				OutputObjectRef oo = shpMemTiles.AddObject(layerNum, layerName, POLYGON_, out, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
+				OutputObjectRef oo = shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POLYGON_, out, isIndexed, hasName, name, attributeStore.empty_set(), layer.minzoom);
 
 				addShapefileAttributes(dbf, oo, i, columnMap, columnTypeMap, layers, osmLuaProcessing);
 			}

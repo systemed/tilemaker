@@ -19,6 +19,10 @@ protected:
 	std::mutex mutex;
 	TileIndex tileIndex;
 	std::deque<OutputObject> objects;
+	
+	// rtree index of large objects
+	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
+	boost::geometry::index::rtree< std::pair<Box,OutputObjectRef>, oo_rtree_param_type> box_rtree;
 
 	unsigned int baseZoom;
 
@@ -31,6 +35,8 @@ public:
 	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
 		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 	}
+
+	void MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
 
 	///This must be thread safe!
 	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
@@ -47,6 +53,13 @@ public:
 		std::lock_guard<std::mutex> lock(mutex);
 		tileIndex[index].push_back(oo);
 	}
+
+	void AddObjectToLargeIndex(Box const &envelope, OutputObjectRef const &oo) {
+		std::lock_guard<std::mutex> lock(mutex);
+		box_rtree.insert(std::make_pair(envelope, oo));
+	}
+
+	void MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile);
 
 private:	
 	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
