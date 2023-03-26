@@ -101,15 +101,31 @@ TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const 
 	return tileCoordinates;
 }
 
-std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom)
-{
+std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, 
+                                         std::vector<bool> const &sortOrders, TileCoordinates coordinates, 
+                                         unsigned int zoom) {
 	std::vector<OutputObjectRef> data;
 	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
 		sources[i]->MergeLargeObjects(coordinates, zoom, data);
 	}
 
-	boost::sort::pdqsort(data.begin(), data.end());
+	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
+	// Note that attributes is preferred to objectID.
+	// It is to arrange objects with the identical attributes continuously.
+	// Such objects will be merged into one object, to reduce the size of output.
+	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectRef x, const OutputObjectRef y) -> bool {
+		if (x->layer < y->layer) return true;
+		if (x->layer > y->layer) return false;
+		if (x->z_order < y->z_order) return  sortOrders[x->layer];
+		if (x->z_order > y->z_order) return !sortOrders[x->layer];
+		if (x->geomType < y->geomType) return true;
+		if (x->geomType > y->geomType) return false;
+		if (x->attributes.get() < y->attributes.get()) return true;
+		if (x->attributes.get() > y->attributes.get()) return false;
+		if (x->objectID < y->objectID) return true;
+		return false;
+	});
 	data.erase(unique(data.begin(), data.end()), data.end());
 	return data;
 }

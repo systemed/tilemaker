@@ -222,23 +222,6 @@ bool operator==(const OutputObjectRef x, const OutputObjectRef y) {
 		x->objectID == y->objectID;
 } 
 
-// Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-// Note that attributes is preffered to objectID.
-// It is to arrange objects with the identical attributes continuously.
-// Such objects will be merged into one object, to reduce the size of output.
-bool operator<(const OutputObjectRef x, const OutputObjectRef y) {
-	if (x->layer < y->layer) return true;
-	if (x->layer > y->layer) return false;
-	if (x->z_order < y->z_order) return true;
-	if (x->z_order > y->z_order) return false;
-	if (x->geomType < y->geomType) return true;
-	if (x->geomType > y->geomType) return false;
-	if (x->attributes.get() < y->attributes.get()) return true;
-	if (x->attributes.get() > y->attributes.get()) return false;
-	if (x->objectID < y->objectID) return true;
-	return false;
-} 
-
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {
 		std::string strx = x.SerializeAsString();

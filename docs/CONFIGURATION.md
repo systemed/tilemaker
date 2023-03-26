@@ -73,6 +73,7 @@ You can add optional parameters to layers:
 * `filter_below` - filter areas by minimum size below this zoom level
 * `filter_area` - minimum size (in square degrees of longitude) for the zoom level `filter_below-1`
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
+* `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
 
 Use these options to combine different layer specs within one outputted layer. For example:
 
