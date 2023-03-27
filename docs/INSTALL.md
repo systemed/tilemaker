@@ -63,3 +63,13 @@ The docker container can be run like this:
     docker run -v /Users/Local/Downloads/:/srv -i -t --rm tilemaker /srv/germany-latest.osm.pbf --output=/srv/germany.mbtiles
 
 Keep in mind to map the volume your .osm.pbf files are in to a path within your docker container, as seen in the example above. 
+
+### Compile-time options
+
+tilemaker has two compile-time options that increase memory usage but may be useful in certain circumstances. You can include them when building like this:
+
+    make "CONFIG=-DFLOAT_Z_ORDER"
+
+FLOAT_Z_ORDER allows you to use a full range of ZOrder values in your Lua script, rather than being restricted to single-byte integer (-127 to 127).
+
+FAT_TILE_INDEX allows you to generate vector tiles at zoom level 17 or greater. You almost certainly don't need to do this. Vector tiles are usually generated up to zoom 14 (sometimes 15), and then the browser/app client uses the vector data to scale up at subsequent zoom levels.
