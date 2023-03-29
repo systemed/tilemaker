@@ -58,10 +58,12 @@ public:
 
 	AttributeStoreRef attributes;
 
-	void setZOrder(const int z) {
+	void setZOrder(const ZOrder z) {
+#ifndef FLOAT_Z_ORDER
 		if (z <= -127 || z >= 127) {
 			throw std::runtime_error("z_order is limited to 1 byte signed integer.");
 		}
+#endif
 		z_order = z;
 	}
 
