@@ -134,6 +134,13 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		cerr << "\"compress\" should be any of \"gzip\",\"deflate\",\"none\" in JSON file." << endl;
 		exit (EXIT_FAILURE);
 	}
+	if (endZoom>15) {
+		cout << "**** WARNING ****" << endl;
+		cout << "You're generating tiles up to z" << endZoom << ". You probably don't want to do that." << endl;
+		cout << "Standard practice is to generate vector tiles up to z14. Your renderer will 'overzoom' the z14 tiles for higher resolutions." << endl;
+		cout << "tilemaker may have excessive memory, time, and space requirements at higher zooms. You can find more information in the docs/ folder." << endl;
+		cout << "**** WARNING ****" << endl;
+	}
 #ifndef FAT_TILE_INDEX
 	if (endZoom>16) {
 		cerr << "Compile tilemaker with -DFAT_TILE_INDEX to enable tile output at zoom level 17 or greater" << endl;
