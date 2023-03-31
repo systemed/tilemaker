@@ -156,14 +156,6 @@ LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 
 bool operator==(const OutputObjectRef x, const OutputObjectRef y);
 
-/**
- * Do lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
- * Note that attributes is preferred to objectID.
- * It is to arrange objects with the identical attributes continuously.
- * Such objects will be merged into one object, to reduce the size of output.
- */
-bool operator<(const OutputObjectRef x, const OutputObjectRef y);
-
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
 	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);

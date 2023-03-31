@@ -24,6 +24,7 @@ struct LayerDef {
 	uint filterBelow;
 	double filterArea;
 	uint combinePolygonsBelow;
+	bool sortZOrderAscending;
 	std::string source;
 	std::vector<std::string> sourceColumns;
 	bool allSourceColumns;
@@ -44,14 +45,14 @@ public:
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
 			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
-			uint filterBelow, double filterArea, uint combinePolygonsBelow,
+			uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
 			const std::string &source,
 			const std::vector<std::string> &sourceColumns,
 			bool allSourceColumns,
 			bool indexed,
 			const std::string &indexName,
 			const std::string &writeTo);
-
+	std::vector<bool> getSortOrders();
 	rapidjson::Value serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const;
 	std::string serialiseToJSON() const;
 };

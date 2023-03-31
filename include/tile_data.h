@@ -68,7 +68,9 @@ private:
 
 TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom);
 
-std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, TileCoordinates coordinates, unsigned int zoom);
+std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources,
+                                         std::vector<bool> const &sortOrders, 
+                                         TileCoordinates coordinates, unsigned int zoom);
 
 OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum);
 
