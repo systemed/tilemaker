@@ -1,6 +1,24 @@
 # Changelog
 
-# [2.3.0] - 2023-03-08
+
+## [2.4.0] - 2023-03-28
+
+### Added
+- Option to reverse object sort order (@Nakaner, @systemed)
+- Compile-time option to use floats for ZOrder (@Nakaner, @systemed)
+- Advisory note if user tries to generate tiles at z16+ (@systemed)
+
+### Changed
+- Faster tile clipping (@systemed based on code by @mourner)
+- Use rtree to index large polygons (@systemed, @kleunen)
+
+### Fixed
+- Update use of access in OpenMapTiles-compatible schema (@dschep)
+- Align path/track transportation classes with OpenMapTiles (@dschep)
+- Add missing paved/unpaved values as per OpenMapTiles (@dschep)
+
+
+## [2.3.0] - 2023-03-08
 
 ### Added
 - Send project name to init_function (@systemed)

@@ -90,4 +90,4 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 
 Tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
 
-Copyright tilemaker contributors, 2015-2021. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included sqlite_modern_cpp (Amin Roosta) is MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
+Copyright tilemaker contributors, 2015-2023. The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty. The included sqlite_modern_cpp (Amin Roosta) is MIT; [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence.
