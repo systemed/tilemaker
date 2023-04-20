@@ -337,6 +337,10 @@ function way_function(way)
 			if access=="private" or access=="no" then way:Attribute("access", "no") end
 			if pavedValues[surface] then way:Attribute("surface", "paved") end
 			if unpavedValues[surface] then way:Attribute("surface", "unpaved") end
+			if way:Holds("bicycle") then way:Attribute("bicycle", way:Find("bicycle")) end
+			if way:Holds("foot") then way:Attribute("foot", way:Find("foot")) end
+			if way:Holds("horse") then way:Attribute("horse", way:Find("horse")) end
+			if way:Holds("mtb:scale") then way:Attribute("mtb_scale", way:Find("mtb:scale")) end
 
 			-- Service
 			if highway == "service" and service ~="" then way:Attribute("service", service) end
