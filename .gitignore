@@ -11,3 +11,7 @@ tilemaker
 # protocol buffers generated headers
 include/osmformat.pb.h
 include/vector_tile.pb.h
+
+# cmake directories
+cmake-build-debug/
+test/cmake-build-debug/
