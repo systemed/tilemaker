@@ -151,15 +151,6 @@ public:
 	void reset() { oo = nullptr; }
 };
 
-/** \brief Assemble a linestring or polygon into a Boost geometry, and clip to bounding box
- * Returns a boost::variant -
- *	 POLYGON->MultiPolygon, CENTROID->Point, LINESTRING->MultiLinestring
- */
-Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox);
-
-//\brief Build a node geometry
-LatpLon buildNodeGeometry(OSMStore &osmStore, OutputObject const &oo, const TileBbox &bbox);
-
 // Comparison functions
 
 bool operator==(const OutputObjectRef x, const OutputObjectRef y);

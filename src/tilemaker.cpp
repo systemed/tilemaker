@@ -291,6 +291,8 @@ int main(int argc, char* argv[]) {
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
+	osmMemTiles.open();
+	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
@@ -316,7 +318,8 @@ int main(int argc, char* argv[]) {
 	}
 	
 	// ---- Sort the generated shapes
-	osmStore.shapes_sort(threadNum);
+	shpMemTiles.SortGeometries(threadNum);
+	shpMemTiles.reportSize();
 
 	// ----	Read significant node tags
 
@@ -343,11 +346,13 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
+		osmMemTiles.SortGeometries(threadNum);
+		osmMemTiles.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
 
 	// ----	Initialise SharedData
-	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
+	SourceList sources = {&osmMemTiles, &shpMemTiles};
 
 	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
@@ -465,12 +470,12 @@ int main(int argc, char* argv[]) {
 			if (zoom > 11) interval = 100;
 			if (zoom > 12) interval = 1000;
 
-			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &osmStore, &io_mutex, &tc, &zoomDisplay]() {
+			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &sources, &io_mutex, &tc, &zoomDisplay]() {
 				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
 					TileCoordinates coords = tile_coordinates[i].second;
-					outputProc(pool, sharedData, osmStore, GetTileData(sources, sortOrders, coords, zoom), coords, zoom);
+					outputProc(pool, sharedData, sources, GetTileData(sources, sortOrders, coords, zoom), coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);

@@ -74,7 +74,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			if (p != nullptr) {
 	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
-				osmStore.store_point(osmStore.shp(), id, sp);
+				store_point(id, sp);
 				oo = CreateObject(OutputObjectOsmStorePoint(
 					geomType, layerNum, id, attributes, minzoom));
 				cachedGeometries.push_back(oo);
@@ -87,7 +87,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 
 		case LINESTRING_:
 		{
-			osmStore.store_linestring(osmStore.shp(), id, boost::get<Linestring>(geometry));
+			store_linestring(id, boost::get<Linestring>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreLinestring(
 						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);
@@ -97,7 +97,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 
 		case POLYGON_:
 		{
-			osmStore.store_multi_polygon(osmStore.shp(), id, boost::get<MultiPolygon>(geometry));
+			store_multi_polygon(id, boost::get<MultiPolygon>(geometry));
 			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
 						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);

@@ -92,7 +92,7 @@ void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
 }
 
 template <typename T>
-void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
+void CheckNextObjectAndMerge(TileDataSource *source, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox &bbox, T &g) {
 
 	// If a object is a linestring/polygon that is followed by
@@ -113,7 +113,7 @@ void CheckNextObjectAndMerge(OSMStore &osmStore, OutputObjectsConstIt &jt, Outpu
 		else ooNext.reset();
 
 		try {
-			T to_merge = boost::get<T>(buildWayGeometry(osmStore, *oo, bbox));
+			T to_merge = boost::get<T>(source->buildWayGeometry(oo->geomType, oo->objectID, bbox));
 			MergeIntersecting(g, to_merge);
 		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
 		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
@@ -134,7 +134,7 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
-void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
+void ProcessObjects(SourceList const &sources, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
 	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
@@ -142,9 +142,10 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
+		TileDataSource *source = (oo->objectID >> OSMID_TYPE_OFFSET) > 0 ? sources[0] : sources[1];
 		if (oo->geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = buildNodeGeometry(osmStore, *oo, bbox);
+			LatpLon pos = source->buildNodeGeometry(oo->geomType, oo->objectID, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
@@ -156,7 +157,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 		} else {
 			Geometry g;
 			try {
-				g = buildWayGeometry(osmStore, *oo, bbox);
+				g = source->buildWayGeometry(oo->geomType, oo->objectID, bbox);
 			} catch (std::out_of_range &err) {
 				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
 				continue;
@@ -169,13 +170,13 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 
 			//This may increment the jt iterator
 			if (oo->geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
-				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
+				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
 			} else if (oo->geomType == POLYGON_ && combinePolygons) {
-				CheckNextObjectAndMerge(osmStore, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
+				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}
 
@@ -202,7 +203,7 @@ vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &l
 	return tile.add_layers();
 }
 
-void ProcessLayer(OSMStore &osmStore,
+void ProcessLayer(SourceList const &sources,
     TileCoordinates index, uint zoom, std::vector<OutputObjectRef> const &data, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData)
 {
@@ -238,7 +239,7 @@ void ProcessLayer(OSMStore &osmStore,
 
 		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
 		// Loop through output objects
-		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+		ProcessObjects(sources, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 	}
 	if (verbose && std::time(0)-start>3) {
@@ -268,7 +269,7 @@ void handleUserSignal(int signum) {
 	signalStop=true;
 }
 
-bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore &osmStore, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
+bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, SourceList const &sources, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
 {
 	// Create tile
 	vector_tile::Tile tile;
@@ -293,7 +294,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
 		if (signalStop) break;
-		ProcessLayer(osmStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
+		ProcessLayer(sources, coordinates, zoom, data, tile, bbox, *lt, sharedData);
 	}
 
 	// Write to file or sqlite

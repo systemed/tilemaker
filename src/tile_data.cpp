@@ -88,6 +88,164 @@ void TileDataSource::MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std:
 		dstTile.push_back(result.second);
 }
 
+// Sort all generated geometries
+void TileDataSource::SortGeometries(unsigned int threadNum) {
+	std::cout << "Sorting generated geometries" << std::endl;
+
+	std::lock_guard<std::mutex> lock_points(points_store_mutex);
+	boost::sort::block_indirect_sort(
+		points_store->begin(), points_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
+
+	std::lock_guard<std::mutex> lock_linestring(linestring_store_mutex);
+	boost::sort::block_indirect_sort(
+		linestring_store->begin(), linestring_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+
+	std::lock_guard<std::mutex> lock_multi_linestring(multi_linestring_store_mutex);
+	boost::sort::block_indirect_sort(
+		multi_linestring_store->begin(), multi_linestring_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+
+	std::lock_guard<std::mutex> lock_multi_polygon(multi_polygon_store_mutex);
+	boost::sort::block_indirect_sort(
+		multi_polygon_store->begin(), multi_polygon_store->end(), 
+		[](auto const &a, auto const &b) { return a.first < b.first; }, 
+		threadNum);
+}
+
+// Build node and way geometries
+Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) {
+	switch(geomType) {
+		case POINT_: {
+			auto p = retrieve_point(objectID);
+			if (geom::within(p, bbox.clippingBox)) {
+				return p;
+			} 
+			return MultiLinestring();
+		}
+
+		case LINESTRING_: {
+			auto const &ls = retrieve_linestring(objectID);
+
+			MultiLinestring out;
+			if(ls.empty())
+				return out;
+
+			Linestring current_ls;
+			geom::append(current_ls, ls[0]);
+
+			for(size_t i = 1; i < ls.size(); ++i) {
+				if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+					if(current_ls.size() > 1)
+						out.push_back(std::move(current_ls));
+					current_ls.clear();
+				}
+				geom::append(current_ls, ls[i]);
+			}
+
+			if(current_ls.size() > 1)
+				out.push_back(std::move(current_ls));
+
+			MultiLinestring result;
+			geom::intersection(out, bbox.getExtendBox(), result);
+			return result;
+		}
+
+		case MULTILINESTRING_: {
+			auto const &mls = retrieve_multi_linestring(objectID);
+			// investigate whether filtering the constituent linestrings improves performance
+			MultiLinestring result;
+			geom::intersection(mls, bbox.getExtendBox(), result);
+			return result;
+		}
+
+		case POLYGON_: {
+			auto const &input = retrieve_multi_polygon(objectID);
+
+			Box box = bbox.clippingBox;
+			
+			if (bbox.endZoom) {
+				for(auto const &p: input) {
+					for(auto const &inner: p.inners()) {
+						for(std::size_t i = 0; i < inner.size() - 1; ++i) 
+						{
+							Point p1 = inner[i];
+							Point p2 = inner[i + 1];
+
+							if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
+								box.min_corner() = Point(	
+									std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
+									std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+								box.max_corner() = Point(	
+									std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
+									std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+							}
+						}
+					}
+
+					for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
+						Point p1 = p.outer()[i];
+						Point p2 = p.outer()[i + 1];
+
+						if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
+							box.min_corner() = Point(	
+								std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
+								std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+							box.max_corner() = Point(	
+								std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
+								std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+						}
+					}
+				}
+
+				Box extBox = bbox.getExtendBox();
+				box.min_corner() = Point(	
+					std::max(box.min_corner().x(), extBox.min_corner().x()), 
+					std::max(box.min_corner().y(), extBox.min_corner().y()));
+				box.max_corner() = Point(	
+					std::min(box.max_corner().x(), extBox.max_corner().x()), 
+					std::min(box.max_corner().y(), extBox.max_corner().y()));
+			}
+
+			MultiPolygon mp;
+			geom::assign(mp, input);
+			fast_clip(mp, box);
+			geom::correct(mp);
+			return mp;
+		}
+
+		default:
+			throw std::runtime_error("Invalid output geometry");
+	}
+}
+
+LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox)
+{
+	switch(geomType) {
+		case POINT_: {
+			auto p = retrieve_point(objectID);
+			LatpLon out;
+			out.latp = p.y();
+			out.lon  = p.x();
+			return out;
+		}
+
+		default:
+			break;
+	}
+
+	throw std::runtime_error("Geometry type is not point");			
+}
+
+
+// Report number of stored geometries
+void TileDataSource::reportSize() const {
+	std::cout << "Generated points: " << points_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
+}
+
 TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
 	TileCoordinatesSet tileCoordinates;
 
