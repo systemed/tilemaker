@@ -9,7 +9,7 @@ extern bool verbose;
 class ShpMemTiles : public TileDataSource
 {
 public:
-	ShpMemTiles(OSMStore &osmStore, uint baseZoom);
+	ShpMemTiles(uint baseZoom);
 
 	void CreateNamedLayerIndex(const std::string &layerName);
 
@@ -60,8 +60,6 @@ private:
 
 	/// Add an OutputObject to all tiles along a polyline
 	void addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom);
-
-	OSMStore &osmStore;
 
 	std::vector<OutputObjectRef> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one

@@ -91,30 +91,30 @@ public:
 /**
  * \brief An OutputObject derived class that contains data originally from OsmMemTiles
 */
-class OutputObjectOsmStorePoint : public OutputObject
+class OutputObjectPoint : public OutputObject
 {
 public:
-	OutputObjectOsmStorePoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectPoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POINT_);
 	}
 }; 
 
-class OutputObjectOsmStoreLinestring : public OutputObject
+class OutputObjectLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == LINESTRING_);
 	}
 };
 
-class OutputObjectOsmStoreMultiLinestring : public OutputObject
+class OutputObjectMultiLinestring : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == MULTILINESTRING_);
@@ -122,10 +122,10 @@ public:
 };
 
 
-class OutputObjectOsmStoreMultiPolygon : public OutputObject
+class OutputObjectMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectOsmStoreMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POLYGON_);

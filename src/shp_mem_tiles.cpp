@@ -4,8 +4,8 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
-ShpMemTiles::ShpMemTiles(OSMStore &osmStore, uint baseZoom)
-	: TileDataSource(baseZoom), osmStore(osmStore)
+ShpMemTiles::ShpMemTiles(uint baseZoom)
+	: TileDataSource(baseZoom)
 { }
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
@@ -75,7 +75,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				store_point(id, sp);
-				oo = CreateObject(OutputObjectOsmStorePoint(
+				oo = CreateObject(OutputObjectPoint(
 					geomType, layerNum, id, attributes, minzoom));
 				cachedGeometries.push_back(oo);
 
@@ -88,7 +88,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case LINESTRING_:
 		{
 			store_linestring(id, boost::get<Linestring>(geometry));
-			oo = CreateObject(OutputObjectOsmStoreLinestring(
+			oo = CreateObject(OutputObjectLinestring(
 						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 
@@ -98,7 +98,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case POLYGON_:
 		{
 			store_multi_polygon(id, boost::get<MultiPolygon>(geometry));
-			oo = CreateObject(OutputObjectOsmStoreMultiPolygon(
+			oo = CreateObject(OutputObjectMultiPolygon(
 						geomType, layerNum, id, attributes, minzoom));
 			cachedGeometries.push_back(oo);
 			
