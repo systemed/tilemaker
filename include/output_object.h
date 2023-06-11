@@ -51,10 +51,10 @@ protected:
 
 public:
 	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point)
-	uint_least8_t layer 		: 8;					// what layer is it in?
-	ZOrder z_order				;						// z_order: used for sorting features within layers
 	OutputGeometryType geomType : 2;					// point, linestring, polygon
-	unsigned minZoom 			: 4;
+	unsigned minZoom 			: 4;					// minimum zoom level in which object is written
+	uint_least8_t layer 		: 8;					// what layer is it in?
+	ZOrder z_order				;						// used for sorting features within layers
 
 	AttributeStoreRef attributes;
 
