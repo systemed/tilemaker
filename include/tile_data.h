@@ -90,8 +90,11 @@ public:
 
 	void SortGeometries(unsigned int threadNum);
 
-	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
-	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+	std::vector<OutputObjectRef> getTileData(std::vector<bool> const &sortOrders, 
+	                                         TileCoordinates coordinates, unsigned int zoom);
+
+	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
+	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
 		points_store = std::make_unique<point_store_t>();
@@ -189,10 +192,6 @@ private:
 };
 
 TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom);
-
-std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources,
-                                         std::vector<bool> const &sortOrders, 
-                                         TileCoordinates coordinates, unsigned int zoom);
 
 OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum);
 

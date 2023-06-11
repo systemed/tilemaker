@@ -117,7 +117,8 @@ void TileDataSource::SortGeometries(unsigned int threadNum) {
 }
 
 // Build node and way geometries
-Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) {
+Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, 
+                                          NodeID const objectID, const TileBbox &bbox) const {
 	switch(geomType) {
 		case POINT_: {
 			auto p = retrieve_point(objectID);
@@ -222,8 +223,8 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, Nod
 	}
 }
 
-LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox)
-{
+LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, 
+                                          NodeID const objectID, const TileBbox &bbox) const {
 	switch(geomType) {
 		case POINT_: {
 			auto p = retrieve_point(objectID);
@@ -259,14 +260,11 @@ TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const 
 	return tileCoordinates;
 }
 
-std::vector<OutputObjectRef> GetTileData(std::vector<class TileDataSource *> const &sources, 
-                                         std::vector<bool> const &sortOrders, TileCoordinates coordinates, 
-                                         unsigned int zoom) {
+std::vector<OutputObjectRef> TileDataSource::getTileData(std::vector<bool> const &sortOrders, 
+	                                                     TileCoordinates coordinates, unsigned int zoom) {
 	std::vector<OutputObjectRef> data;
-	for(size_t i=0; i<sources.size(); i++) {
-		sources[i]->MergeSingleTileDataAtZoom(coordinates, zoom, data);
-		sources[i]->MergeLargeObjects(coordinates, zoom, data);
-	}
+	MergeSingleTileDataAtZoom(coordinates, zoom, data);
+	MergeLargeObjects(coordinates, zoom, data);
 
 	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
 	// Note that attributes is preferred to objectID.

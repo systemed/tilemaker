@@ -92,7 +92,7 @@ void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
 }
 
 template <typename T>
-void CheckNextObjectAndMerge(TileDataSource *source, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
+void CheckNextObjectAndMerge(TileDataSource const *source, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox &bbox, T &g) {
 
 	// If a object is a linestring/polygon that is followed by
@@ -134,7 +134,7 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
-void ProcessObjects(SourceList const &sources, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
+void ProcessObjects(TileDataSource const *source, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
 	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
@@ -142,7 +142,6 @@ void ProcessObjects(SourceList const &sources, OutputObjectsConstIt ooSameLayerB
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
 
-		TileDataSource *source = (oo->objectID >> OSMID_TYPE_OFFSET) > 0 ? sources[0] : sources[1];
 		if (oo->geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
 			LatpLon pos = source->buildNodeGeometry(oo->geomType, oo->objectID, bbox);
@@ -203,10 +202,10 @@ vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &l
 	return tile.add_layers();
 }
 
-void ProcessLayer(SourceList const &sources,
-    TileCoordinates index, uint zoom, std::vector<OutputObjectRef> const &data, vector_tile::Tile &tile, 
-	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData)
-{
+void ProcessLayer(SourceList const &sources, TileCoordinates index, uint zoom, 
+	std::vector<std::vector<OutputObjectRef>> const &data, vector_tile::Tile &tile, 
+	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData) {
+
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
@@ -237,10 +236,12 @@ void ProcessLayer(SourceList const &sources,
 			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
 		}
 
-		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
-		// Loop through output objects
-		ProcessObjects(sources, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
+		for (size_t i=0; i<sources.size(); i++) {
+			// Loop through output objects
+			auto ooListSameLayer = GetObjectsAtSubLayer(data[i], layerNum);
+			ProcessObjects(sources[i], ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
+		}
 	}
 	if (verbose && std::time(0)-start>3) {
 		std::cout << "Layer " << layerName << " at " << zoom << "/" << index.x << "/" << index.y << " took " << (std::time(0)-start) << " seconds" << std::endl;
@@ -269,8 +270,9 @@ void handleUserSignal(int signum) {
 	signalStop=true;
 }
 
-bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, SourceList const &sources, std::vector<OutputObjectRef> const &data, TileCoordinates coordinates, uint zoom)
-{
+bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, 
+                SourceList const &sources, std::vector<std::vector<OutputObjectRef>> const &data, 
+                TileCoordinates coordinates, uint zoom) {
 	// Create tile
 	vector_tile::Tile tile;
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);

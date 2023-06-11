@@ -475,7 +475,11 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
 					TileCoordinates coords = tile_coordinates[i].second;
-					outputProc(pool, sharedData, sources, GetTileData(sources, sortOrders, coords, zoom), coords, zoom);
+					std::vector<std::vector<OutputObjectRef>> data;
+					for (auto source : sources) {
+						data.emplace_back(source->getTileData(sortOrders,coords,zoom));
+					}
+					outputProc(pool, sharedData, sources, data, coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
