@@ -44,7 +44,7 @@ public:
 		f->second.query(geom::index::intersects(box), back_inserter(results));
 		MultiPolygon mp, tmp;
 		for (auto it : results) {
-			OutputObjectRef oo = cachedGeometries.at(it.second);
+			OutputObjectRef oo = indexedGeometries.at(it.second);
 			if (oo->geomType!=POLYGON_) continue;
 			geom::union_(mp, retrieve_multi_polygon(oo->objectID), tmp);
 			geom::assign(mp, tmp);
@@ -61,8 +61,8 @@ private:
 	/// Add an OutputObject to all tiles along a polyline
 	void addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom);
 
-	std::vector<OutputObjectRef> cachedGeometries;					// prepared boost::geometry objects (from shapefiles)
-	std::map<uint, std::string> cachedGeometryNames;			//  | optional names for each one
+	std::vector<OutputObjectRef> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
+	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 };
 

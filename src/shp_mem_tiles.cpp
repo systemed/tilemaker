@@ -32,7 +32,7 @@ vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool 
 	vector<uint> ids;
 	for (auto it: results) {
 		uint id = it.second;
-		if (checkQuery(*cachedGeometries.at(id))) { ids.push_back(id); if (once) break; }
+		if (checkQuery(*indexedGeometries.at(id))) { ids.push_back(id); if (once) break; }
 	}
 	return ids;
 }
@@ -40,8 +40,8 @@ vector<uint> ShpMemTiles::QueryMatchingGeometries(const string &layerName, bool 
 vector<string> ShpMemTiles::namesOfGeometries(const vector<uint> &ids) const {
 	vector<string> names;
 	for (uint i=0; i<ids.size(); i++) {
-		if (cachedGeometryNames.find(ids[i])!=cachedGeometryNames.end()) {
-			names.push_back(cachedGeometryNames.at(ids[i]));
+		if (indexedGeometryNames.find(ids[i])!=indexedGeometryNames.end()) {
+			names.push_back(indexedGeometryNames.at(ids[i]));
 		}
 	}
 	return names;
@@ -58,10 +58,10 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
 
-	uint id = cachedGeometries.size();
+	uint id = indexedGeometries.size();
 	if (isIndexed) {
 		indices.at(layerName).insert(std::make_pair(box, id));
-		if (hasName) cachedGeometryNames[id]=name;
+		if (hasName) indexedGeometryNames[id]=name;
 	}
 
 	OutputObjectRef oo;
@@ -77,7 +77,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 				store_point(id, sp);
 				oo = CreateObject(OutputObjectPoint(
 					geomType, layerNum, id, attributes, minzoom));
-				cachedGeometries.push_back(oo);
+				if (isIndexed) indexedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
@@ -90,7 +90,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			store_linestring(id, boost::get<Linestring>(geometry));
 			oo = CreateObject(OutputObjectLinestring(
 						geomType, layerNum, id, attributes, minzoom));
-			cachedGeometries.push_back(oo);
+			if (isIndexed) indexedGeometries.push_back(oo);
 
 			addToTileIndexPolyline(oo, &geometry);
 		} break;
@@ -100,7 +100,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			store_multi_polygon(id, boost::get<MultiPolygon>(geometry));
 			oo = CreateObject(OutputObjectMultiPolygon(
 						geomType, layerNum, id, attributes, minzoom));
-			cachedGeometries.push_back(oo);
+			if (isIndexed) indexedGeometries.push_back(oo);
 			
 			// add to tile index
 			addToTileIndexByBbox(oo, 
