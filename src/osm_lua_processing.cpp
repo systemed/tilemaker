@@ -619,14 +619,11 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 
 	if (!this->empty()) {
 		AddAttributesToOutputObjects();
-		Linestring ls = osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend());
-		osmMemTiles.AddGeometryToIndex(ls, outputs);
+		osmMemTiles.AddGeometryToIndex(linestringCached(), outputs);
 	}
 }
 
 // We are now processing a relation
-// (note that we store relations as ways with artificial IDs, and that
-//  we use decrementing positive IDs to give a bit more space for way IDs)
 void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP) {
 	reset();
 	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
@@ -650,29 +647,15 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 	AddAttributesToOutputObjects();
 
-	// Assemble multipolygon
-	if (isClosed) {
-		MultiPolygon mp;
-		try {
-			// for each tile the relation may cover, put the output objects.
-			mp = osmStore.wayListMultiPolygon(outerWayVecPtr->cbegin(), outerWayVecPtr->cend(), innerWayVecPtr->cbegin(), innerWayVecPtr->cend());
-		} catch(std::out_of_range &err) {
-			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
-			return;
-		}		
-		osmMemTiles.AddGeometryToIndex(mp, outputs);
-
-	// Assemble multilinestring
-	} else {
-		MultiLinestring mls;
-		try {
-			mls = osmStore.wayListMultiLinestring(outerWayVecPtr->cbegin(), outerWayVecPtr->cend());
-		} catch(std::out_of_range &err) {
-			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
-			return;
+	try {
+		if (isClosed) {
+			osmMemTiles.AddGeometryToIndex(multiPolygonCached(), outputs);
+		} else {
+			osmMemTiles.AddGeometryToIndex(multiLinestringCached(), outputs);
 		}
-		osmMemTiles.AddGeometryToIndex(mls, outputs);
-	}
+	} catch(std::out_of_range &err) {
+		cout << "In relation " << originalOsmID << ": " << err.what() << endl;
+	}		
 }
 
 vector<string> OsmLuaProcessing::GetSignificantNodeKeys() {

@@ -302,7 +302,7 @@ OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const
 // ------------------------------------
 // Add geometries to tile/large indices
 
-void TileDataSource::AddGeometryToIndex(Linestring &geom, std::deque<OutputObjectRef> &outputs) {
+void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::deque<OutputObjectRef> const &outputs) {
 	unordered_set<TileCoordinates> tileSet;
 	try {
 		insertIntermediateTiles(geom, baseZoom, tileSet);
@@ -350,7 +350,7 @@ void TileDataSource::AddGeometryToIndex(Linestring &geom, std::deque<OutputObjec
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiLinestring &geom, std::deque<OutputObjectRef> &outputs) {
+void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, std::deque<OutputObjectRef> const &outputs) {
 	for (Linestring ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, baseZoom, tileSet);
@@ -363,7 +363,7 @@ void TileDataSource::AddGeometryToIndex(MultiLinestring &geom, std::deque<Output
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiPolygon &geom, std::deque<OutputObjectRef> &outputs) {
+void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::deque<OutputObjectRef> const &outputs) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
 	for (Polygon poly : geom) {

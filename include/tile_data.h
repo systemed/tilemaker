@@ -76,9 +76,9 @@ public:
 		return &objects.back();
 	}
 
-	void AddGeometryToIndex(Linestring &geom, std::deque<OutputObjectRef> &outputs);
-	void AddGeometryToIndex(MultiLinestring &geom, std::deque<OutputObjectRef> &outputs);
-	void AddGeometryToIndex(MultiPolygon &geom, std::deque<OutputObjectRef> &outputs);
+	void AddGeometryToIndex(Linestring const &geom, std::deque<OutputObjectRef> const &outputs);
+	void AddGeometryToIndex(MultiLinestring const &geom, std::deque<OutputObjectRef> const &outputs);
+	void AddGeometryToIndex(MultiPolygon const &geom, std::deque<OutputObjectRef> const &outputs);
 
 	void AddObjectToTileIndex(TileCoordinates const &index, OutputObjectRef const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
