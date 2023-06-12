@@ -81,7 +81,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				AddObject(TileCoordinates(tilex, tiley), oo);
+				AddObjectToTileIndex(TileCoordinates(tilex, tiley), oo);
 			}
 		} break;
 
@@ -92,7 +92,9 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 						geomType, layerNum, id, attributes, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
-			addToTileIndexPolyline(oo, &geometry);
+			std::deque<OutputObjectRef> outputs = { oo };
+			AddGeometryToIndex(boost::get<Linestring>(geometry), outputs);
+
 		} break;
 
 		case POLYGON_:
@@ -101,11 +103,9 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			oo = CreateObject(OutputObjectMultiPolygon(
 						geomType, layerNum, id, attributes, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
-			
-			// add to tile index
-			addToTileIndexByBbox(oo, 
-				box.min_corner().get<0>(), box.min_corner().get<1>(), 
-				box.max_corner().get<0>(), box.max_corner().get<1>());
+
+			std::deque<OutputObjectRef> outputs = { oo };
+			AddGeometryToIndex(boost::get<MultiPolygon>(geometry), outputs);
 		} break;
 
 		default:
@@ -114,49 +114,3 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 
 	return oo;
 }
-
-// Add an OutputObject to all tiles between min/max lat/lon
-// (only used for polygons)
-void ShpMemTiles::addToTileIndexByBbox(OutputObjectRef &oo, double minLon, double minLatp, double maxLon, double maxLatp) {
-	uint minTileX =  lon2tilex(minLon, baseZoom);
-	uint maxTileX =  lon2tilex(maxLon, baseZoom);
-	uint minTileY = latp2tiley(minLatp, baseZoom);
-	uint maxTileY = latp2tiley(maxLatp, baseZoom);
-	uint size = (maxTileX - minTileX + 1) * (minTileY - maxTileY + 1);
-	if (size>=16) { 
-		// Larger objects - add to rtree
-		AddObjectToLargeIndex(Box(Point(minTileX, maxTileY), Point(maxTileX, minTileY)), oo);
-	} else {
-		// Smaller objects - add to each individual tile index
-		for (uint x=min(minTileX,maxTileX); x<=max(minTileX,maxTileX); x++) {
-			for (uint y=min(minTileY,maxTileY); y<=max(minTileY,maxTileY); y++) {
-				TileCoordinates index(x, y);
-				AddObject(index, oo);
-			}
-		}
-	}
-}
-
-// Add an OutputObject to all tiles along a polyline
-void ShpMemTiles::addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom) {
-
-	const Linestring *ls = boost::get<Linestring>(geom);
-	if(ls == nullptr) return;
-	uint lastx = UINT_MAX;
-	uint lasty;
-	for (Linestring::const_iterator jt = ls->begin(); jt != ls->end(); ++jt) {
-		uint tilex =  lon2tilex(jt->get<0>(), baseZoom);
-		uint tiley = latp2tiley(jt->get<1>(), baseZoom);
-		if (lastx==UINT_MAX) {
-			AddObject(TileCoordinates(tilex, tiley), oo);
-		} else if (lastx!=tilex || lasty!=tiley) {
-			for (uint x=min(tilex,lastx); x<=max(tilex,lastx); x++) {
-				for (uint y=min(tiley,lasty); y<=max(tiley,lasty); y++) {
-					AddObject(TileCoordinates(x, y), oo);
-				}
-			}
-		}
-		lastx=tilex; lasty=tiley;
-	}
-}
-

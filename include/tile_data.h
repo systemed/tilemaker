@@ -76,7 +76,11 @@ public:
 		return &objects.back();
 	}
 
-	void AddObject(TileCoordinates const &index, OutputObjectRef const &oo) {
+	void AddGeometryToIndex(Linestring &geom, std::deque<OutputObjectRef> &outputs);
+	void AddGeometryToIndex(MultiLinestring &geom, std::deque<OutputObjectRef> &outputs);
+	void AddGeometryToIndex(MultiPolygon &geom, std::deque<OutputObjectRef> &outputs);
+
+	void AddObjectToTileIndex(TileCoordinates const &index, OutputObjectRef const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		tileIndex[index].push_back(oo);
 	}

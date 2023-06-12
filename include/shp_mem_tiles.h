@@ -47,13 +47,6 @@ public:
 	}
 
 private:
-	/// Add an OutputObject to all tiles between min/max lat/lon
-	void addToTileIndexByBbox(OutputObjectRef &oo, 
-		double minLon, double minLatp, double maxLon, double maxLatp);
-
-	/// Add an OutputObject to all tiles along a polyline
-	void addToTileIndexPolyline(OutputObjectRef &oo, Geometry *geom);
-
 	std::vector<OutputObjectRef> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices

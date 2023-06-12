@@ -573,7 +573,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 		AddAttributesToOutputObjects();
 		for (auto output : outputs) {
-			osmMemTiles.AddObject(index, output);
+			osmMemTiles.AddObjectToTileIndex(index, output);
 		}
 	} 
 }
@@ -619,55 +619,8 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 
 	if (!this->empty()) {
 		AddAttributesToOutputObjects();
-
-		// create a list of tiles this way passes through (tileSet)
-		unordered_set<TileCoordinates> tileSet;
-		try {
-			Linestring ls = osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend());
-			insertIntermediateTiles(ls, this->config.baseZoom, tileSet);
-
-			// then, for each tile, store the OutputObject for each layer
-			bool polygonExists = false;
-			TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
-			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-				TileCoordinates index = *it;
-				minTileX = std::min(index.x, minTileX);
-				minTileY = std::min(index.y, minTileY);
-				maxTileX = std::max(index.x, maxTileX);
-				maxTileY = std::max(index.y, maxTileY);
-				for (auto output : outputs) {
-					if (output->geomType == POLYGON_) {
-						polygonExists = true;
-						continue;
-					}
-					osmMemTiles.AddObject(index, output); // not a polygon
-				}
-			}
-
-			// for polygon, fill inner tiles
-			if (polygonExists) {
-				bool tilesetFilled = false;
-				uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
-				for (auto output : outputs) {
-					if (output->geomType != POLYGON_) continue;
-					if (size>= 16) {
-						// Larger objects - add to rtree
-						Box box = Box(geom::make<Point>(minTileX, minTileY),
-						              geom::make<Point>(maxTileX, maxTileY));
-						osmMemTiles.AddObjectToLargeIndex(box, output);
-					} else {
-						// Smaller objects - add to each individual tile index
-						if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
-						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-							TileCoordinates index = *it;
-							osmMemTiles.AddObject(index, output);
-						}
-					}
-				}
-			}
-		} catch(std::out_of_range &err) {
-			cerr << "Error calculating intermediate tiles: " << err.what() << endl;
-		}
+		Linestring ls = osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend());
+		osmMemTiles.AddGeometryToIndex(ls, outputs);
 	}
 }
 
@@ -707,44 +660,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
 		}		
-
-		unordered_set<TileCoordinates> tileSet;
-		bool singleOuter = mp.size()==1;
-		for (Polygon poly: mp) {
-			unordered_set<TileCoordinates> tileSetTmp;
-			insertIntermediateTiles(poly.outer(), this->config.baseZoom, tileSetTmp);
-			fillCoveredTiles(tileSetTmp);
-			if (singleOuter) {
-				tileSet = std::move(tileSetTmp);
-			} else {
-				tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
-			}
-		}
-		
-		TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
-		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-			TileCoordinates index = *it;
-			minTileX = std::min(index.x, minTileX);
-			minTileY = std::min(index.y, minTileY);
-			maxTileX = std::max(index.x, maxTileX);
-			maxTileY = std::max(index.y, maxTileY);
-		}
-		for (auto output : outputs) {
-			if (tileSet.size()>=16) {
-				// Larger objects - add to rtree
-				// note that the bbox is currently the envelope of the entire multipolygon,
-				// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
-				Box box = Box(geom::make<Point>(minTileX, minTileY),
-				              geom::make<Point>(maxTileX, maxTileY));
-				osmMemTiles.AddObjectToLargeIndex(box, output);
-			} else {
-				// Smaller objects - add to each individual tile index
-				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-					TileCoordinates index = *it;
-					osmMemTiles.AddObject(index, output);
-				}
-			}
-		}
+		osmMemTiles.AddGeometryToIndex(mp, outputs);
 
 	// Assemble multilinestring
 	} else {
@@ -755,18 +671,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
 		}
-
-		// Calculate tileset and then insert outputobject for each one
-		for (Linestring ls : mls) {
-			unordered_set<TileCoordinates> tileSet;
-			insertIntermediateTiles(ls, this->config.baseZoom, tileSet);
-			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
-				TileCoordinates index = *it;
-				for (auto output : outputs) {
-					osmMemTiles.AddObject(index, output);
-				}
-			}
-		}
+		osmMemTiles.AddGeometryToIndex(mls, outputs);
 	}
 }
 

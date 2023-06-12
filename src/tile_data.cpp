@@ -298,3 +298,107 @@ OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const
 	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
 	return equal_range(data.begin(), data.end(), layerNum, layerComp());
 }
+
+// ------------------------------------
+// Add geometries to tile/large indices
+
+void TileDataSource::AddGeometryToIndex(Linestring &geom, std::deque<OutputObjectRef> &outputs) {
+	unordered_set<TileCoordinates> tileSet;
+	try {
+		insertIntermediateTiles(geom, baseZoom, tileSet);
+
+		bool polygonExists = false;
+		TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
+		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+			TileCoordinates index = *it;
+			minTileX = std::min(index.x, minTileX);
+			minTileY = std::min(index.y, minTileY);
+			maxTileX = std::max(index.x, maxTileX);
+			maxTileY = std::max(index.y, maxTileY);
+			for (auto output : outputs) {
+				if (output->geomType == POLYGON_) {
+					polygonExists = true;
+					continue;
+				}
+				AddObjectToTileIndex(index, output); // not a polygon
+			}
+		}
+
+		// for polygon, fill inner tiles
+		if (polygonExists) {
+			bool tilesetFilled = false;
+			uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
+			for (auto output : outputs) {
+				if (output->geomType != POLYGON_) continue;
+				if (size>= 16) {
+					// Larger objects - add to rtree
+					Box box = Box(geom::make<Point>(minTileX, minTileY),
+					              geom::make<Point>(maxTileX, maxTileY));
+					AddObjectToLargeIndex(box, output);
+				} else {
+					// Smaller objects - add to each individual tile index
+					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
+					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+						TileCoordinates index = *it;
+						AddObjectToTileIndex(index, output);
+					}
+				}
+			}
+		}
+	} catch(std::out_of_range &err) {
+		cerr << "Error calculating intermediate tiles: " << err.what() << endl;
+	}
+}
+
+void TileDataSource::AddGeometryToIndex(MultiLinestring &geom, std::deque<OutputObjectRef> &outputs) {
+	for (Linestring ls : geom) {
+		unordered_set<TileCoordinates> tileSet;
+		insertIntermediateTiles(ls, baseZoom, tileSet);
+		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+			TileCoordinates index = *it;
+			for (auto output : outputs) {
+				AddObjectToTileIndex(index, output);
+			}
+		}
+	}
+}
+
+void TileDataSource::AddGeometryToIndex(MultiPolygon &geom, std::deque<OutputObjectRef> &outputs) {
+	unordered_set<TileCoordinates> tileSet;
+	bool singleOuter = geom.size()==1;
+	for (Polygon poly : geom) {
+		unordered_set<TileCoordinates> tileSetTmp;
+		insertIntermediateTiles(poly.outer(), baseZoom, tileSetTmp);
+		fillCoveredTiles(tileSetTmp);
+		if (singleOuter) {
+			tileSet = std::move(tileSetTmp);
+		} else {
+			tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
+		}
+	}
+	
+	TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
+	for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+		TileCoordinates index = *it;
+		minTileX = std::min(index.x, minTileX);
+		minTileY = std::min(index.y, minTileY);
+		maxTileX = std::max(index.x, maxTileX);
+		maxTileY = std::max(index.y, maxTileY);
+	}
+	for (auto output : outputs) {
+		if (tileSet.size()>=16) {
+			// Larger objects - add to rtree
+			// note that the bbox is currently the envelope of the entire multipolygon,
+			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
+			Box box = Box(geom::make<Point>(minTileX, minTileY),
+			              geom::make<Point>(maxTileX, maxTileY));
+			AddObjectToLargeIndex(box, output);
+		} else {
+			// Smaller objects - add to each individual tile index
+			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
+				TileCoordinates index = *it;
+				AddObjectToTileIndex(index, output);
+			}
+		}
+	}
+}
