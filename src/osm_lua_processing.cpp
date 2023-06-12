@@ -333,7 +333,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_point(osmID, p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			outputs.push_back(oo);
+			attributeSets.push_back(attributeStore.empty_set());
             return;
 		}
 		else if (geomType==POLYGON_) {
@@ -363,7 +364,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_multi_polygon(osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiPolygon(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			outputs.push_back(oo);
+			attributeSets.push_back(attributeStore.empty_set());
 		}
 		else if (geomType==MULTILINESTRING_) {
 			// multilinestring
@@ -379,7 +381,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_multi_linestring(osmID, mls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiLinestring(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			outputs.push_back(oo);
+			attributeSets.push_back(attributeStore.empty_set());
 		}
 		else if (geomType==LINESTRING_) {
 			// linestring
@@ -390,7 +393,8 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_linestring(osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectLinestring(geomType, 
 						layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+			outputs.push_back(oo);
+			attributeSets.push_back(attributeStore.empty_set());
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObject constructor: " << err.what() << endl;
@@ -425,7 +429,8 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	osmMemTiles.store_point(osmID, geomp);
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-	outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
+	outputs.push_back(oo);
+	attributeSets.push_back(attributeStore.empty_set());
 }
 
 Point OsmLuaProcessing::calculateCentroid() {
@@ -463,8 +468,8 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	outputs.back().second->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back().first->layer, key, 0);
+	attributeSets.back()->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back()->layer, key, 0);
 }
 
 void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
@@ -472,8 +477,8 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	outputs.back().second->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
+	attributeSets.back()->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back()->layer, key, 1);
 }
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
@@ -481,8 +486,8 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	outputs.back().second->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
+	attributeSets.back()->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back()->layer, key, 2);
 }
 
 template<typename T>
@@ -495,16 +500,16 @@ static inline T make_valid(double v)
 // Set minimum zoom
 void OsmLuaProcessing::MinZoom(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
-	outputs.back().first->setMinZoom(make_valid<unsigned int>(z));
+	outputs.back()->setMinZoom(make_valid<unsigned int>(z));
 }
 
 // Set z_order
 void OsmLuaProcessing::ZOrder(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
 #ifdef FLOAT_Z_ORDER
-	outputs.back().first->setZOrder(make_valid<float>(z));
+	outputs.back()->setZOrder(make_valid<float>(z));
 #else
-	outputs.back().first->setZOrder(make_valid<int>(z));
+	outputs.back()->setZOrder(make_valid<int>(z));
 #endif
 }
 
@@ -512,9 +517,9 @@ void OsmLuaProcessing::ZOrder(const double z) {
 void OsmLuaProcessing::ZOrderWithScale(const double z, const double scale) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
 #ifdef FLOAT_Z_ORDER
-	outputs.back().first->setZOrder(make_valid<float>(z));
+	outputs.back()->setZOrder(make_valid<float>(z));
 #else
-	outputs.back().first->setZOrder(make_valid<int>(z/scale*127));
+	outputs.back()->setZOrder(make_valid<int>(z/scale*127));
 #endif
 }
 
@@ -566,11 +571,9 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			// Store the attributes of the generated geometry
-			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
-
-			osmMemTiles.AddObject(index, jt->first);
+		AddAttributesToOutputObjects();
+		for (auto output : outputs) {
+			osmMemTiles.AddObject(index, output);
 		}
 	} 
 }
@@ -615,10 +618,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	}
 
 	if (!this->empty()) {
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			// Store the attributes of the generated geometry
-			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
-		}
+		AddAttributesToOutputObjects();
 
 		// create a list of tiles this way passes through (tileSet)
 		unordered_set<TileCoordinates> tileSet;
@@ -635,12 +635,12 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 				minTileY = std::min(index.y, minTileY);
 				maxTileX = std::max(index.x, maxTileX);
 				maxTileY = std::max(index.y, maxTileY);
-				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->first->geomType == POLYGON_) {
+				for (auto output : outputs) {
+					if (output->geomType == POLYGON_) {
 						polygonExists = true;
 						continue;
 					}
-					osmMemTiles.AddObject(index, jt->first); // not a polygon
+					osmMemTiles.AddObject(index, output); // not a polygon
 				}
 			}
 
@@ -648,19 +648,19 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 			if (polygonExists) {
 				bool tilesetFilled = false;
 				uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
-				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					if (jt->first->geomType != POLYGON_) continue;
+				for (auto output : outputs) {
+					if (output->geomType != POLYGON_) continue;
 					if (size>= 16) {
 						// Larger objects - add to rtree
 						Box box = Box(geom::make<Point>(minTileX, minTileY),
 						              geom::make<Point>(maxTileX, maxTileY));
-						osmMemTiles.AddObjectToLargeIndex(box, jt->first);
+						osmMemTiles.AddObjectToLargeIndex(box, output);
 					} else {
 						// Smaller objects - add to each individual tile index
 						if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 						for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 							TileCoordinates index = *it;
-							osmMemTiles.AddObject(index, jt->first);
+							osmMemTiles.AddObject(index, output);
 						}
 					}
 				}
@@ -695,6 +695,8 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	
 	if (this->empty()) return;
 
+	AddAttributesToOutputObjects();
+
 	// Assemble multipolygon
 	if (isClosed) {
 		MultiPolygon mp;
@@ -705,11 +707,6 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 			return;
 		}		
-
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			// Store the attributes of the generated geometry
-			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
-		}
 
 		unordered_set<TileCoordinates> tileSet;
 		bool singleOuter = mp.size()==1;
@@ -732,19 +729,19 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
 		}
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+		for (auto output : outputs) {
 			if (tileSet.size()>=16) {
 				// Larger objects - add to rtree
 				// note that the bbox is currently the envelope of the entire multipolygon,
 				// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
 				Box box = Box(geom::make<Point>(minTileX, minTileY),
 				              geom::make<Point>(maxTileX, maxTileY));
-				osmMemTiles.AddObjectToLargeIndex(box, jt->first);
+				osmMemTiles.AddObjectToLargeIndex(box, output);
 			} else {
 				// Smaller objects - add to each individual tile index
 				for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 					TileCoordinates index = *it;
-					osmMemTiles.AddObject(index, jt->first);
+					osmMemTiles.AddObject(index, output);
 				}
 			}
 		}
@@ -759,19 +756,14 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 			return;
 		}
 
-		// Store attributes
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			jt->first->setAttributeSet(attributeStore.store_set(jt->second));		
-		}
-
 		// Calculate tileset and then insert outputobject for each one
 		for (Linestring ls : mls) {
 			unordered_set<TileCoordinates> tileSet;
 			insertIntermediateTiles(ls, this->config.baseZoom, tileSet);
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
-				for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-					osmMemTiles.AddObject(index, jt->first);
+				for (auto output : outputs) {
+					osmMemTiles.AddObject(index, output);
 				}
 			}
 		}

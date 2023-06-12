@@ -195,6 +195,7 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
+		attributeSets.clear();
 		llVecPtr = nullptr;
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
@@ -245,9 +246,15 @@ private:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	std::deque<std::pair<OutputObjectRef, AttributeStoreRef>> outputs;			///< All output objects that have been created
+	std::deque<OutputObjectRef> outputs;			// All output objects that have been created
+	std::deque<AttributeStoreRef> attributeSets;	// (these two lists must be kept in sync)
 	boost::container::flat_map<std::string, std::string> currentTags;
 
+	void AddAttributesToOutputObjects() {
+		for (size_t i=0; i<outputs.size(); i++) {
+			outputs[i]->setAttributeSet(attributeSets[i]);
+		}
+	}
 };
 
 #endif //_OSM_LUA_PROCESSING_H
