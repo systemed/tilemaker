@@ -36,7 +36,7 @@ public:
 		std::vector <IndexValue> results;
 		f->second.query(geom::index::intersects(box), back_inserter(results));
 		MultiPolygon mp, tmp;
-		for (auto it : results) {
+		for (auto &it : results) {
 			OutputObjectRef oo = indexedGeometries.at(it.second);
 			if (oo->geomType!=POLYGON_) continue;
 			geom::union_(mp, retrieve_multi_polygon(oo->objectID), tmp);

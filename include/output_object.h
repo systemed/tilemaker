@@ -151,6 +151,8 @@ public:
 	void reset() { oo = nullptr; }
 };
 
+typedef std::deque<std::pair<OutputObjectRef, AttributeStoreRef>> OutputRefsWithAttributes;
+
 // Comparison functions
 
 bool operator==(const OutputObjectRef x, const OutputObjectRef y);

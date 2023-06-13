@@ -333,8 +333,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_point(osmID, p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(oo);
-			attributeSets.push_back(attributeStore.empty_set());
+			outputs.push_back(std::make_pair(oo,attributeStore.empty_set()));
             return;
 		}
 		else if (geomType==POLYGON_) {
@@ -364,8 +363,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_multi_polygon(osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiPolygon(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(oo);
-			attributeSets.push_back(attributeStore.empty_set());
+			outputs.push_back(std::make_pair(oo,attributeStore.empty_set()));
 		}
 		else if (geomType==MULTILINESTRING_) {
 			// multilinestring
@@ -381,8 +379,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_multi_linestring(osmID, mls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiLinestring(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(oo);
-			attributeSets.push_back(attributeStore.empty_set());
+			outputs.push_back(std::make_pair(oo,attributeStore.empty_set()));
 		}
 		else if (geomType==LINESTRING_) {
 			// linestring
@@ -393,8 +390,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			osmMemTiles.store_linestring(osmID, ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectLinestring(geomType, 
 						layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-			outputs.push_back(oo);
-			attributeSets.push_back(attributeStore.empty_set());
+			outputs.push_back(std::make_pair(oo,attributeStore.empty_set()));
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObject constructor: " << err.what() << endl;
@@ -429,8 +425,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	osmMemTiles.store_point(osmID, geomp);
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(POINT_,
 					layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
-	outputs.push_back(oo);
-	attributeSets.push_back(attributeStore.empty_set());
+	outputs.push_back(std::make_pair(oo,attributeStore.empty_set()));
 }
 
 Point OsmLuaProcessing::calculateCentroid() {
@@ -468,8 +463,8 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_string_value(val);
-	attributeSets.back()->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back()->layer, key, 0);
+	outputs.back().second->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back().first->layer, key, 0);
 }
 
 void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
@@ -477,8 +472,8 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_float_value(val);
-	attributeSets.back()->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back()->layer, key, 1);
+	outputs.back().second->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
 }
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
@@ -486,8 +481,8 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	vector_tile::Tile_Value v;
 	v.set_bool_value(val);
-	attributeSets.back()->values.emplace(key, v, minzoom);
-	setVectorLayerMetadata(outputs.back()->layer, key, 2);
+	outputs.back().second->values.emplace(key, v, minzoom);
+	setVectorLayerMetadata(outputs.back().first->layer, key, 2);
 }
 
 template<typename T>
@@ -500,16 +495,16 @@ static inline T make_valid(double v)
 // Set minimum zoom
 void OsmLuaProcessing::MinZoom(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
-	outputs.back()->setMinZoom(make_valid<unsigned int>(z));
+	outputs.back().first->setMinZoom(make_valid<unsigned int>(z));
 }
 
 // Set z_order
 void OsmLuaProcessing::ZOrder(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
 #ifdef FLOAT_Z_ORDER
-	outputs.back()->setZOrder(make_valid<float>(z));
+	outputs.back().first->setZOrder(make_valid<float>(z));
 #else
-	outputs.back()->setZOrder(make_valid<int>(z));
+	outputs.back().first->setZOrder(make_valid<int>(z));
 #endif
 }
 
@@ -517,9 +512,9 @@ void OsmLuaProcessing::ZOrder(const double z) {
 void OsmLuaProcessing::ZOrderWithScale(const double z, const double scale) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
 #ifdef FLOAT_Z_ORDER
-	outputs.back()->setZOrder(make_valid<float>(z));
+	outputs.back().first->setZOrder(make_valid<float>(z));
 #else
-	outputs.back()->setZOrder(make_valid<int>(z/scale*127));
+	outputs.back().first->setZOrder(make_valid<int>(z/scale*127));
 #endif
 }
 
@@ -572,8 +567,8 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
 		AddAttributesToOutputObjects();
-		for (auto output : outputs) {
-			osmMemTiles.AddObjectToTileIndex(index, output);
+		for (auto &output : outputs) {
+			osmMemTiles.AddObjectToTileIndex(index, output.first);
 		}
 	} 
 }

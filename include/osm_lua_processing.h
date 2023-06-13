@@ -195,7 +195,6 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
-		attributeSets.clear();
 		llVecPtr = nullptr;
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
@@ -246,13 +245,12 @@ private:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	std::deque<OutputObjectRef> outputs;			// All output objects that have been created
-	std::deque<AttributeStoreRef> attributeSets;	// (these two lists must be kept in sync)
+	OutputRefsWithAttributes outputs;		// All output objects that have been created
 	boost::container::flat_map<std::string, std::string> currentTags;
 
 	void AddAttributesToOutputObjects() {
-		for (size_t i=0; i<outputs.size(); i++) {
-			outputs[i]->setAttributeSet(attributeSets[i]);
+		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+			jt->first->setAttributeSet(attributeStore.store_set(jt->second));
 		}
 	}
 };
