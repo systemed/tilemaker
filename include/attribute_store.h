@@ -3,144 +3,118 @@
 #define _ATTRIBUTE_STORE_H
 
 #include "vector_tile.pb.h"
-#include <boost/functional/hash.hpp>
-#include <boost/intrusive_ptr.hpp>
 #include <atomic>
+#include <boost/functional/hash.hpp>
+#include <vector>
+#include <unordered_map>
 
-/*	AttributeStore 
- *	global dictionaries for attributes
- *	We combine all similair keys/values pairs and sets
- *	- All the same key/value pairs are combined in key_values
- *	- All the same set of key/values are combined in set_list
- *
- *	Every key/value set gets an ID in set_list. If the ID of two attribute sets are the same
- *	this means these objects share the same set of attribute/values. Output objects store a 
- *	reference to the set of paremeters in set_list. 
-*/
+/* AttributeStore - global dictionary for attributes */
 
-struct AttributeStore
-{
-	struct kv_with_minzoom {
-		std::string key;
-		vector_tile::Tile_Value value;
-		char minzoom;
+typedef uint32_t AttributeIndex; // check this is enough
 
-		kv_with_minzoom(std::string const &key, vector_tile::Tile_Value const &value, char minzoom)
-			: key(key), value(value), minzoom(minzoom)
-		{ }  
-	};
+// AttributePair is a key/value pair (with minzoom)
+struct AttributePair {
+	std::string key;
+	vector_tile::Tile_Value value;
+	char minzoom;
 
-	enum class Index { BOOL, FLOAT, STRING };
+	AttributePair(std::string const &key, vector_tile::Tile_Value const &value, char minzoom)
+		: key(key), value(value), minzoom(minzoom)
+	{ }
 
-	static Index type_index(vector_tile::Tile_Value const &v)
-	{
-		if(v.has_string_value())
-			return Index::STRING;
-		else if(v.has_float_value())
-			return Index::FLOAT;
-		else
-			return Index::BOOL;
+	bool operator==(const AttributePair &other) const {
+		if (minzoom!=other.minzoom || key!=other.key) return false;
+		if (value.has_string_value()) return other.value.has_string_value() && other.value.string_value()==value.string_value();
+		if (value.has_bool_value())   return other.value.has_bool_value()   && other.value.bool_value()  ==value.bool_value();
+		if (value.has_float_value())  return other.value.has_float_value()  && other.value.float_value() ==value.float_value();
+		throw std::runtime_error("Invalid type in attribute store");
 	}
+};
 
+// AttributeSet is a set of AttributePairs
+// = the complete attributes for one object
+struct AttributeSet {
 	static bool compare(vector_tile::Tile_Value const &lhs, vector_tile::Tile_Value const &rhs) {
 		auto lhs_id = type_index(lhs);
 		auto rhs_id = type_index(lhs);
-
-		if(lhs_id < rhs_id)
-			return true;
-		if(lhs_id > rhs_id)
-			return false;
-
+		if(lhs_id < rhs_id) return true;
+		if(lhs_id > rhs_id) return false;
 		switch(lhs_id) {
-			case Index::BOOL:
-				return lhs.bool_value() < rhs.bool_value();
-			case Index::FLOAT:	
-				return lhs.float_value() < rhs.float_value();
-			case Index::STRING:	
-				return lhs.string_value() < rhs.string_value();
+			case Index::BOOL:    return lhs.bool_value() < rhs.bool_value();
+			case Index::FLOAT:   return lhs.float_value() < rhs.float_value();
+			case Index::STRING:  return lhs.string_value() < rhs.string_value();
 		}
-
 		throw std::runtime_error("Invalid type in attribute store");
 	}
-    
+
     struct key_value_less {
-        bool operator()(kv_with_minzoom const &lhs, kv_with_minzoom const& rhs) const {            
+        bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {            
 			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
 			     : (lhs.key != rhs.key) ? (lhs.key < rhs.key)
 			     : compare(lhs.value, rhs.value);
         }
     }; 
 
-	struct key_value_set {
-		std::set<kv_with_minzoom, key_value_less> values;
-		mutable std::atomic<uint64_t> references;
+	enum class Index { BOOL, FLOAT, STRING };
+	static Index type_index(vector_tile::Tile_Value const &v) {
+		if     (v.has_string_value()) return Index::STRING;
+		else if(v.has_float_value())  return Index::FLOAT;
+		else                          return Index::BOOL;
+	}
 
-		key_value_set() 
-			: references(0)
-		{ }
+	struct hash_function {
+		size_t operator()(const AttributeSet &attributes) const {
+			auto idx = attributes.values.size();
+			for(auto const &i: attributes.values) {
+				boost::hash_combine(idx, i.minzoom);
+				boost::hash_combine(idx, i.key);
+				boost::hash_combine(idx, type_index(i.value));
+
+				if(i.value.has_string_value())
+					boost::hash_combine(idx, i.value.string_value());
+				else if(i.value.has_float_value())
+					boost::hash_combine(idx, i.value.float_value());
+				else
+					boost::hash_combine(idx, i.value.bool_value());
+			}
+			return idx;
+		}
 	};
+	bool operator==(const AttributeSet &other) const {
+		return values==other.values;
+	}
 
-	using key_value_set_ref_t = boost::intrusive_ptr<key_value_set>;
+	std::set<AttributePair, key_value_less> values;
 
-    struct key_value_set_store_less {
-        bool operator()(key_value_set_ref_t const &lhs, key_value_set_ref_t const &rhs) const {  
-            if(lhs->values.size() < rhs->values.size()) return true;
-            if(lhs->values.size() > rhs->values.size()) return false;
-            
-            key_value_less compare;
-            for(auto i = lhs->values.begin(), j = rhs->values.begin(); i != lhs->values.end(); ++i, ++j) {
-                if(compare(*i, *j)) return true;
-                if(compare(*j, *i)) return false;
-            }
-            
-            return false;            
-        }
-    };     
+	void add(AttributePair const &kv);
+	void add(std::string const &key, vector_tile::Tile_Value const &v, char minzoom);
 
-    using key_value_set_t = std::set<key_value_set_ref_t, key_value_set_store_less>;
+	AttributeSet() { }
+	AttributeSet(const AttributeSet &a) { values = a.values; } // copy constructor, don't copy lock
 
-	using key_value_index_t = std::pair<Index, char>; 
-	using key_value_map_t = std::vector< std::pair<std::mutex, key_value_set_t> >;
+private:
+	std::atomic<bool> lock_ = { false };
+	void lock() { while(lock_.exchange(true, std::memory_order_acquire)); }
+	void unlock() { lock_.store(false, std::memory_order_release); }
+};
 
-	key_value_map_t set_list;
+// AttributeStore is the store for all AttributeSets
+struct AttributeStore {
+	std::vector<AttributeSet> attribute_sets;
+	std::unordered_map<AttributeSet, AttributeIndex, AttributeSet::hash_function> attribute_indices;
+	mutable std::mutex mutex;
 
-	AttributeStore(unsigned int threadNum) 
-		: set_list(threadNum * threadNum)
-	{ }
-
-	key_value_set_ref_t empty_set() const { return new key_value_set(); }
-
-    key_value_set_ref_t store_set(key_value_set_ref_t attributes) {
-		auto idx = attributes->values.size();
-		for(auto const &i: attributes->values) {
-			boost::hash_combine(idx, i.minzoom);
-			boost::hash_combine(idx, i.key);
-			boost::hash_combine(idx, type_index(i.value));
-
-			if(i.value.has_string_value())
-				boost::hash_combine(idx, i.value.string_value());
-			else if(i.value.has_float_value())
-				boost::hash_combine(idx, i.value.float_value());
-			else
-				boost::hash_combine(idx, i.value.bool_value());
-		} 
-		
-		std::lock_guard<std::mutex> lock(set_list[idx % set_list.size()].first);
-		return *set_list[idx % set_list.size()].second.insert(attributes).first;	
+	AttributeIndex add(AttributeSet const &attributes);
+	std::set<AttributePair, AttributeSet::key_value_less> get(AttributeIndex index) const;
+	void reportSize() const;
+	void doneReading();
+	
+	AttributeStore() {
+		// Initialise with an empty set at position 0
+		AttributeSet blank;
+		attribute_sets.emplace_back(blank);
+		attribute_indices.emplace(blank,0);
 	}
 };
 
-static inline void intrusive_ptr_add_ref(AttributeStore::key_value_set *kv_set){
-	auto result = kv_set->references.fetch_add(1, std::memory_order_relaxed);
-}
-
-static inline void intrusive_ptr_release(AttributeStore::key_value_set *kv_set) {
-	if (kv_set->references.fetch_sub(1, std::memory_order_release) == 1) {
-      std::atomic_thread_fence(std::memory_order_acquire);
-      delete kv_set;
-    }
-}
-
-using AttributeStoreRef = AttributeStore::key_value_set_ref_t;
-
-#endif //_COORDINATES_H
+#endif //_ATTRIBUTE_STORE_H

@@ -18,7 +18,8 @@ public:
 		const std::string &layerName, 
 		enum OutputGeometryType geomType,
 		Geometry geometry, 
-		bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom);
+		bool isIndexed, bool hasName, const std::string &name, uint minzoom,
+		AttributeIndex attrIdx);
 
 	std::vector<uint> QueryMatchingGeometries(const std::string &layerName, bool once, Box &box, 
 		std::function<std::vector<IndexValue>(const RTree &rtree)> indexQuery, 

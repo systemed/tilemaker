@@ -53,7 +53,8 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string &layerName) {
 
 OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	const std::string &layerName, enum OutputGeometryType geomType,
-	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, AttributeStoreRef attributes, uint minzoom) {
+	Geometry geometry, bool isIndexed, bool hasName, const std::string &name, 
+	uint minzoom, AttributeIndex attrIdx) {
 
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
@@ -75,8 +76,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				store_point(id, sp);
-				oo = CreateObject(OutputObjectPoint(
-					geomType, layerNum, id, attributes, minzoom));
+				oo = CreateObject(OutputObjectPoint(geomType, layerNum, id, attrIdx, minzoom));
 				if (isIndexed) indexedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -88,11 +88,10 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case LINESTRING_:
 		{
 			store_linestring(id, boost::get<Linestring>(geometry));
-			oo = CreateObject(OutputObjectLinestring(
-						geomType, layerNum, id, attributes, minzoom));
+			oo = CreateObject(OutputObjectLinestring(geomType, layerNum, id, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
-			OutputRefsWithAttributes oolist { std::make_pair(oo,oo->attributes) };
+			OutputRefsWithAttributes oolist { std::make_pair(oo, AttributeSet()) };
 			AddGeometryToIndex(boost::get<Linestring>(geometry), oolist);
 
 		} break;
@@ -100,11 +99,10 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case POLYGON_:
 		{
 			store_multi_polygon(id, boost::get<MultiPolygon>(geometry));
-			oo = CreateObject(OutputObjectMultiPolygon(
-						geomType, layerNum, id, attributes, minzoom));
+			oo = CreateObject(OutputObjectMultiPolygon(geomType, layerNum, id, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
-			OutputRefsWithAttributes oolist { std::make_pair(oo,oo->attributes) };
+			OutputRefsWithAttributes oolist { std::make_pair(oo, AttributeSet()) };
 			AddGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist);
 		} break;
 

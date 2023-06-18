@@ -128,7 +128,6 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 }
 
 double bboxElementFromStr(const string& number) {
-	char* endptr;
 	try {
 		return boost::lexical_cast<double>(number);
 	} catch (boost::bad_lexical_cast&) {
@@ -286,7 +285,7 @@ int main(int argc, char* argv[]) {
 		osmStore.open(osmStoreFile);
 	}
 
-	AttributeStore attributeStore(threadNum);
+	AttributeStore attributeStore;
 
 	class OsmMemTiles osmMemTiles(config.baseZoom);
 	class ShpMemTiles shpMemTiles(config.baseZoom);
@@ -346,8 +345,10 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
+		attributeStore.doneReading();
 		osmMemTiles.SortGeometries(threadNum);
 		osmMemTiles.reportSize();
+		attributeStore.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
 
@@ -470,7 +471,7 @@ int main(int argc, char* argv[]) {
 			if (zoom > 11) interval = 100;
 			if (zoom > 12) interval = 1000;
 
-			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &sources, &io_mutex, &tc, &zoomDisplay]() {
+			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tc, &zoomDisplay]() {
 				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
@@ -479,7 +480,7 @@ int main(int argc, char* argv[]) {
 					for (auto source : sources) {
 						data.emplace_back(source->getTileData(sortOrders,coords,zoom));
 					}
-					outputProc(pool, sharedData, sources, data, coords, zoom);
+					outputProc(pool, sharedData, sources, attributeStore, data, coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);

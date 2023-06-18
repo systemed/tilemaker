@@ -250,7 +250,7 @@ private:
 
 	void AddAttributesToOutputObjects() {
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			jt->first->setAttributeSet(attributeStore.store_set(jt->second));
+			jt->first->setAttributeSet(attributeStore.add(jt->second));
 		}
 	}
 };

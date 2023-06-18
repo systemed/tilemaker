@@ -35,10 +35,13 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 void OutputObject::writeAttributes(
 	vector<string> *keyList, 
 	vector<vector_tile::Tile_Value> *valueList, 
+	AttributeStore const &attributeStore,
 	vector_tile::Tile_Feature *featurePtr,
 	char zoom) const {
 
-	for(auto const &it: attributes->values) {
+	auto attr = attributeStore.get(attributes);
+
+	for(auto const &it: attr) {
 		if (it.minzoom > zoom) continue;
 
 		// Look for key

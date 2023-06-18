@@ -277,8 +277,8 @@ std::vector<OutputObjectRef> TileDataSource::getTileData(std::vector<bool> const
 		if (x->z_order > y->z_order) return !sortOrders[x->layer];
 		if (x->geomType < y->geomType) return true;
 		if (x->geomType > y->geomType) return false;
-		if (x->attributes.get() < y->attributes.get()) return true;
-		if (x->attributes.get() > y->attributes.get()) return false;
+		if (x->attributes < y->attributes) return true;
+		if (x->attributes > y->attributes) return false;
 		if (x->objectID < y->objectID) return true;
 		return false;
 	});

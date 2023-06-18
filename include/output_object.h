@@ -43,7 +43,7 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 class OutputObject {
 
 protected:	
-	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint mz) 
+	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint mz) 
 		: objectID(id), geomType(type), layer(l), z_order(0),
 		  minZoom(mz), attributes(attributes)
 	{ }
@@ -56,7 +56,7 @@ public:
 	uint_least8_t layer 		: 8;					// what layer is it in?
 	ZOrder z_order				;						// used for sorting features within layers
 
-	AttributeStoreRef attributes;
+	AttributeIndex attributes;
 
 	void setZOrder(const ZOrder z) {
 #ifndef FLOAT_Z_ORDER
@@ -71,13 +71,15 @@ public:
 		minZoom = z;
 	}
 
-	void setAttributeSet(AttributeStoreRef attributes) {
+	void setAttributeSet(AttributeIndex attributes) {
 		this->attributes = attributes;
 	}
 
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr, char zoom) const;
+		std::vector<vector_tile::Tile_Value> *valueList, 
+		AttributeStore const &attributeStore,
+		vector_tile::Tile_Feature *featurePtr, char zoom) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary
@@ -94,7 +96,7 @@ public:
 class OutputObjectPoint : public OutputObject
 {
 public:
-	OutputObjectPoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectPoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POINT_);
@@ -104,7 +106,7 @@ public:
 class OutputObjectLinestring : public OutputObject
 {
 public:
-	OutputObjectLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == LINESTRING_);
@@ -114,7 +116,7 @@ public:
 class OutputObjectMultiLinestring : public OutputObject
 {
 public:
-	OutputObjectMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == MULTILINESTRING_);
@@ -125,7 +127,7 @@ public:
 class OutputObjectMultiPolygon : public OutputObject
 {
 public:
-	OutputObjectMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeStoreRef attributes, uint minzoom)
+	OutputObjectMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
 		: OutputObject(type, l, id, attributes, minzoom)
 	{ 
 		assert(type == POLYGON_);
@@ -151,7 +153,7 @@ public:
 	void reset() { oo = nullptr; }
 };
 
-typedef std::deque<std::pair<OutputObjectRef, AttributeStoreRef>> OutputRefsWithAttributes;
+typedef std::deque<std::pair<OutputObjectRef, AttributeSet>> OutputRefsWithAttributes;
 
 // Comparison functions
 

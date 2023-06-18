@@ -134,7 +134,8 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
-void ProcessObjects(TileDataSource const *source, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
+void ProcessObjects(TileDataSource const *source, AttributeStore const &attributeStore,
+	OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
 	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
 
@@ -151,7 +152,7 @@ void ProcessObjects(TileDataSource const *source, OutputObjectsConstIt ooSameLay
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
+			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 		} else {
 			Geometry g;
@@ -183,7 +184,7 @@ void ProcessObjects(TileDataSource const *source, OutputObjectsConstIt ooSameLay
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
+			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 
 		}
@@ -202,7 +203,8 @@ vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &l
 	return tile.add_layers();
 }
 
-void ProcessLayer(SourceList const &sources, TileCoordinates index, uint zoom, 
+void ProcessLayer(SourceList const &sources, AttributeStore const &attributeStore,
+	TileCoordinates index, uint zoom, 
 	std::vector<std::vector<OutputObjectRef>> const &data, vector_tile::Tile &tile, 
 	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData) {
 
@@ -239,7 +241,8 @@ void ProcessLayer(SourceList const &sources, TileCoordinates index, uint zoom,
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
 			auto ooListSameLayer = GetObjectsAtSubLayer(data[i], layerNum);
-			ProcessObjects(sources[i], ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+			ProcessObjects(sources[i], attributeStore, 
+				ooListSameLayer.first, ooListSameLayer.second, sharedData, 
 				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 		}
 	}
@@ -271,7 +274,8 @@ void handleUserSignal(int signum) {
 }
 
 bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, 
-                SourceList const &sources, std::vector<std::vector<OutputObjectRef>> const &data, 
+                SourceList const &sources, AttributeStore const &attributeStore,
+                std::vector<std::vector<OutputObjectRef>> const &data, 
                 TileCoordinates coordinates, uint zoom) {
 	// Create tile
 	vector_tile::Tile tile;
@@ -296,7 +300,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData,
 
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
 		if (signalStop) break;
-		ProcessLayer(sources, coordinates, zoom, data, tile, bbox, *lt, sharedData);
+		ProcessLayer(sources, attributeStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
 	}
 
 	// Write to file or sqlite
