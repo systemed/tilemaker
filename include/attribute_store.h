@@ -5,6 +5,7 @@
 #include "vector_tile.pb.h"
 #include <boost/functional/hash.hpp>
 #include <boost/intrusive_ptr.hpp>
+#include <mutex>
 #include <atomic>
 
 /*	AttributeStore 
