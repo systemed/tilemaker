@@ -75,6 +75,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 		for (int j=0; j<pg.ways_size(); j++) {
 			pbfWay = pg.ways(j);
 			WayID wayId = static_cast<WayID>(pbfWay.id());
+			if (wayId > OSMID_MASK) throw std::runtime_error("Way ID negative or too large: "+std::to_string(wayId));
 
 			// Assemble nodelist
 			LatpLonVec llVec;
@@ -145,6 +146,7 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		for (int n=0; n < pbfRelation.memids_size(); n++) {
 			lastID += pbfRelation.memids(n);
 			if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+			if (lastID > OSMID_MASK) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
 			osmStore.mark_way_used(static_cast<WayID>(lastID));
 			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
 		}

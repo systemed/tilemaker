@@ -94,6 +94,10 @@ ignore missing nodes in ways with `--skip-integrity`, but it can't fix missing w
 multipolygon relations. Instead, tell your clipping utility to create a well-formed file using 
 `--strategy=smart` (Osmium) or `clipIncompleteEntities=true` (Osmosis).
 
+tilemaker is meant for use with OSM data. It will likely not work if you add your own data 
+to the .osm.pbf file with unusual IDs (e.g. negative IDs or very large numbers). If you must 
+do this, use a tool like `osmium renumber` first to get the IDs back to a normal range.
+
 ## Github Action
 
 You can integrate tilemaker as a Github Action into your [Github Workflow](https://help.github.com/en/actions).  
