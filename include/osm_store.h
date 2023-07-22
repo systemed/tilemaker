@@ -336,6 +336,7 @@ private:
 };
 
 // relation store
+// (this isn't currently used as we don't need to store relations for later processing, but may be needed for nested relations)
 
 class RelationStore {
 
@@ -384,7 +385,7 @@ private:
 	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
 	These functions are used by osm_output, and can be used by OsmLuaProcessing to provide the geometry information to Lua.
 
-	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
+	Internal data structures are encapsulated in NodeStore, WayStore and [unused] RelationStore classes.
 	These store can be altered for efficient memory use without global code changes.
 	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
 
@@ -429,7 +430,7 @@ protected:
 	bool require_integrity = true;
 
 	WayStore ways;
-	RelationStore relations;
+	RelationStore relations; // unused
 	UsedWays used_ways;
 	RelationScanStore scanned_relations;
 

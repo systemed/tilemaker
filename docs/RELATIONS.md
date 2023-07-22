@@ -7,7 +7,9 @@ Note that relation support is in its early stages and behaviour may change betwe
 
 ### Multipolygon relations
 
-Multipolygon and boundary relations are supported natively by tilemaker; you do not need to write special Lua code for them. When a multipolygon or boundary is read, tilemaker constructs the geometry as normal, and passes the tags to `way_function` just as it would a simple area.
+Multipolygon relations are supported natively by tilemaker; you do not need to write special Lua code for them. When a multipolygon is read, tilemaker constructs the geometry as normal, and passes the tags to `way_function` just as it would a simple area.
+
+Boundary relations also have automatic handling of inner/outer ways, but are otherwise processed as relations. This means that you can choose to treat boundaries as properties on ways (see "Stage 2" below) or as complete geometries (see "Writing relation geometries"). You will typically want the properties-on-ways approach for administrative boundaries, and the complete-geometries approach for filled areas such as forests or nature reserves.
 
 
 ### Reading relation memberships

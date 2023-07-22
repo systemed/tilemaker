@@ -674,25 +674,24 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 // We are now processing a relation
 // (note that we store relations as ways with artificial IDs, and that
 //  we use decrementing positive IDs to give a bit more space for way IDs)
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP) {
+void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, 
+                                   bool isNativeMP,      // only OSM type=multipolygon
+                                   bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
 	reset();
 	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
-	isClosed = isNativeMP;
+	isClosed = isNativeMP || isInnerOuter;
 
 	llVecPtr = nullptr;
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
 	currentTags = tags;
 
-	bool ok = true;
-	if (ok) {
-		//Start Lua processing for relation
-		luaState[isNativeMP ? "way_function" : "relation_function"](this);
-	}
-	
+	// Start Lua processing for relation
+	if (!isNativeMP && !supportsWritingRelations) return;
+	luaState[isNativeMP ? "way_function" : "relation_function"](this);
 	if (this->empty()) return;
 
 	// Assemble multipolygon

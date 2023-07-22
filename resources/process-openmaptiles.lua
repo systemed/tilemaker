@@ -207,6 +207,9 @@ waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 -- Scan relations for use in ways
 
 function relation_scan_function(relation)
+	if relation:Find("type")=="boundary" and relation:Find("boundary")=="administrative" then
+		relation:Accept()
+	end
 end
 
 -- Process way tags
@@ -243,9 +246,27 @@ function way_function(way)
 	if landuse == "field" then landuse = "farmland" end
 	if landuse == "meadow" and way:Find("meadow")=="agricultural" then landuse="farmland" end
 
+	-- Boundaries within relations
+	-- note that we process administrative boundaries as properties on ways, rather than as single relation geometries,
+	--  because otherwise we get multiple renderings where boundaries are coterminous
+	local admin_level = 11
+	local isBoundary = false
+	while true do
+		local rel = way:NextRelation()
+		if not rel then break end
+		isBoundary = true
+		admin_level = math.min(admin_level, tonumber(way:FindInRelation("admin_level")) or 11)
+	end
+
+	-- Boundaries in ways
+	if boundary=="administrative" then
+		admin_level = math.min(admin_level, tonumber(way:Find("admin_level")) or 11)
+		isBoundary = true
+	end
+
 	-- Administrative boundaries
 	-- https://openmaptiles.org/schema/#boundary
-	if boundary=="administrative" and isClosed and not (way:Find("maritime")=="yes") then
+	if isBoundary and not (way:Find("maritime")=="yes") then
 		local admin_level = math.min(11, tonumber(way:Find("admin_level")) or 11)
 		local mz = 0
 		if     admin_level>=3 and admin_level<5 then mz=4

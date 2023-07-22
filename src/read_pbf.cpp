@@ -131,15 +131,17 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
-		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey) || RelationIsType(pbfRelation, typeKey, boundaryKey);
+		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
+		bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
 		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id());
 		if (!isMultiPolygon) {
-			if (!output.canReadRelations()) continue;
-			tag_map_t tags;
-			readTags(pbfRelation, pb, tags);
-			isAccepted = output.scanRelation(relid, tags);
-			if (!isAccepted) continue;
+			if (output.canReadRelations()) {
+				tag_map_t tags;
+				readTags(pbfRelation, pb, tags);
+				isAccepted = output.scanRelation(relid, tags);
+			}
+			if (!isAccepted && !isBoundary) continue;
 		}
 		int64_t lastID = 0;
 		for (int n=0; n < pbfRelation.memids_size(); n++) {
@@ -162,22 +164,23 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		int mpKey   = findStringPosition(pb, "multipolygon");
 		int boundaryKey = findStringPosition(pb, "boundary");
 		int innerKey= findStringPosition(pb, "inner");
-		//int outerKey= findStringPosition(pb, "outer");
+		int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
-				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey) || RelationIsType(pbfRelation, typeKey, boundaryKey);
-				if (!isMultiPolygon && !output.canWriteRelations()) continue;
+				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
+				bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
+				if (!isMultiPolygon && !isBoundary && !output.canWriteRelations()) continue;
 
 				// Read relation members
 				WayVec outerWayVec, innerWayVec;
 				int64_t lastID = 0;
+				bool isInnerOuter = isBoundary || isMultiPolygon;
 				for (int n=0; n < pbfRelation.memids_size(); n++) {
 					lastID += pbfRelation.memids(n);
 					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 					int32_t role = pbfRelation.roles_sid(n);
-					// if (role != innerKey && role != outerKey) { continue; }
-					// ^^^^ commented out so that we don't die horribly when a relation has no outer way
+					if (role==innerKey || role==outerKey) isInnerOuter=true;
 					WayID wayId = static_cast<WayID>(lastID);
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
@@ -185,14 +188,7 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 				try {
 					tag_map_t tags;
 					readTags(pbfRelation, pb, tags);
-
-					// Store the relation members in the global relation store
-					relations.push_back(std::make_pair(pbfRelation.id(), 
-						std::make_pair(
-							RelationStore::wayid_vector_t(outerWayVec.begin(), outerWayVec.end()),
-							RelationStore::wayid_vector_t(innerWayVec.begin(), innerWayVec.end()))));
-
-					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags, isMultiPolygon);
+					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
 				} catch (std::out_of_range &err) {
 					// Relation is missing a member?
