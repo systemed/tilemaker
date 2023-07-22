@@ -127,11 +127,11 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
+	int boundaryKey = findStringPosition(pb, "boundary");
 
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
-		bool isMultiPolygon = (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) != pbfRelation.keys().end()) &&
-		                      (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) != pbfRelation.vals().end());
+		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey) || RelationIsType(pbfRelation, typeKey, boundaryKey);
 		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id());
 		if (!isMultiPolygon) {
@@ -160,13 +160,13 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 		int typeKey = findStringPosition(pb, "type");
 		int mpKey   = findStringPosition(pb, "multipolygon");
+		int boundaryKey = findStringPosition(pb, "boundary");
 		int innerKey= findStringPosition(pb, "inner");
 		//int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
 				Relation pbfRelation = pg.relations(j);
-				bool isMultiPolygon = (find(pbfRelation.keys().begin(), pbfRelation.keys().end(), typeKey) != pbfRelation.keys().end()) &&
-				                      (find(pbfRelation.vals().begin(), pbfRelation.vals().end(), mpKey  ) != pbfRelation.vals().end());
+				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey) || RelationIsType(pbfRelation, typeKey, boundaryKey);
 				if (!isMultiPolygon && !output.canWriteRelations()) continue;
 
 				// Read relation members
