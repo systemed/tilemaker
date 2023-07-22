@@ -127,12 +127,10 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
-	int boundaryKey = findStringPosition(pb, "boundary");
 
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
 		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
-		bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
 		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id());
 		if (!isMultiPolygon) {
@@ -141,7 +139,7 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 				readTags(pbfRelation, pb, tags);
 				isAccepted = output.scanRelation(relid, tags);
 			}
-			if (!isAccepted && !isBoundary) continue;
+			if (!isAccepted) continue;
 		}
 		int64_t lastID = 0;
 		for (int n=0; n < pbfRelation.memids_size(); n++) {
