@@ -53,6 +53,14 @@ private:
 	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 
+	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {
+		if (typeKey==-1 || val==-1) return false;
+		auto typeI = std::find(rel.keys().begin(), rel.keys().end(), typeKey);
+		if (typeI==rel.keys().end()) return false;
+		int typePos = typeI - rel.keys().begin();
+		return rel.vals().Get(typePos) == val;
+	}
+
 	/// Find a string in the dictionary
 	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
 	

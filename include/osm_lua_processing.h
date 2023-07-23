@@ -81,7 +81,7 @@ public:
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP, bool isInnerOuter);
 
 	// ----	Metadata queries called from Lua
 

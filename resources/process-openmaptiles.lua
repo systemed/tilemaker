@@ -247,6 +247,8 @@ function way_function(way)
 	if landuse == "meadow" and way:Find("meadow")=="agricultural" then landuse="farmland" end
 
 	-- Boundaries within relations
+	-- note that we process administrative boundaries as properties on ways, rather than as single relation geometries,
+	--  because otherwise we get multiple renderings where boundaries are coterminous
 	local admin_level = 11
 	local isBoundary = false
 	while true do
@@ -261,10 +263,11 @@ function way_function(way)
 		admin_level = math.min(admin_level, tonumber(way:Find("admin_level")) or 11)
 		isBoundary = true
 	end
-	
+
 	-- Administrative boundaries
 	-- https://openmaptiles.org/schema/#boundary
 	if isBoundary and not (way:Find("maritime")=="yes") then
+		local admin_level = math.min(11, tonumber(way:Find("admin_level")) or 11)
 		local mz = 0
 		if     admin_level>=3 and admin_level<5 then mz=4
 		elseif admin_level>=5 and admin_level<7 then mz=8
