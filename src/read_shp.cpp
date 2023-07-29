@@ -85,7 +85,7 @@ AttributeIndex readShapefileAttributes(
 				case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
 				         layer.attributeMap[key] = 1;
 				         break;
-				case 2:  v.set_double_value(DBFReadDoubleAttribute(dbf, recordNum, pos));
+				case 2:  v.set_float_value(static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)));
 				         layer.attributeMap[key] = 1;
 				         break;
 				default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
