@@ -12,7 +12,7 @@ To create vector tiles from an OpenStreetMap .pbf extract, tilemaker's standard 
 
     tilemaker --input oxfordshire.osm.pbf \
               --output oxfordshire.mbtiles \
-              --config resources/config-openmaptiles.lua \
+              --config resources/config-openmaptiles.json \
               --process resources/process-openmaptiles.lua
 
 The `--config` and `--process` arguments are the paths of your JSON config file and Lua 
