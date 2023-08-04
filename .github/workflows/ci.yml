@@ -30,7 +30,7 @@ jobs:
 
     - name: Build tilemaker
       run: |
-        mkdir ${{ github.workspace }}\build        
+        mkdir ${{ github.workspace }}\build
         cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="c:\vcpkg\scripts\buildsystems\vcpkg.cmake"  ..
         cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
 
@@ -48,9 +48,9 @@ jobs:
           ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe
           ${{ github.workspace }}\build\RelWithDebInfo\*.pdb
 
-  unix-build:  
-    strategy:  
-      matrix: 
+  unix-build:
+    strategy:
+      matrix:
         include:
           - os: ubuntu-22.04
             triplet: x64-linux
@@ -82,10 +82,10 @@ jobs:
 
     - name: Build tilemaker
       run: |
-        mkdir build        
-        cd build        
+        mkdir build
+        cd build
         cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
-        cmake --build . 
+        cmake --build .
         strip tilemaker
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
@@ -115,5 +115,35 @@ jobs:
     - name: Build openmaptiles-compatible mbtiles files of given area
       uses: ./
       with:
-        input: ${{ env.AREA }}.osm.pbf 
+        input: ${{ env.AREA }}.osm.pbf
         output: ${{ env.AREA }}.mbtiles
+
+  dockerhub:
+    # we only want to push to dockerhub on the main repo
+    if: github.repository_owner == 'systemed' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    name: Push container image to Dockerhub
+
+    runs-on: ubuntu-latest
+    needs: Github-Action # this job also uses docker and contains a simple test
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v1
+      with:
+        username: tilemakerbot
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build image
+      run: |
+        docker build . \
+          -t lehrenfried/tilemaker:${{ github.sha }} \
+          -t lehrenfried/tilemaker:latest
+
+    - name: Push image
+      run: docker push lehrenfried/tilemaker --all-tags
+
+
