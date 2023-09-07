@@ -39,4 +39,5 @@ COPY resources /resources
 COPY process.lua .
 COPY config.json .
 
-ENTRYPOINT ["/tilemaker"]
+# Entrypoint for docker, wrapped with /bin/sh to remove requirement for executable permissions on script
+ENTRYPOINT ["/bin/sh", "/resources/docker-entrypoint.sh"]
