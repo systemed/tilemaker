@@ -52,6 +52,11 @@ else ifneq ("$(wildcard /usr/include/lua5.1/lua.h)","")
   LUA_CFLAGS := -I/usr/include/lua5.1
   LUA_LIBS := -llua5.1
 
+else ifneq ("$(wildcard /usr/include/lua5.3/lua.h)","")
+  LUA_VER := Lua 5.3
+  LUA_CFLAGS := -I/usr/include/lua5.3
+  LUA_LIBS := -llua5.3
+
 else ifneq ("$(wildcard /opt/homebrew/include/lua5.1/lua.h)","")
   LUA_VER := Lua 5.1
   LUA_CFLAGS := -I/opt/homebrew/include/lua5.1
