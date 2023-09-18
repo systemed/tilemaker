@@ -17,12 +17,13 @@ void AttributeSet::add(std::string const &key, vector_tile::Tile_Value const &v,
 // AttributeStore
 
 AttributeIndex AttributeStore::add(AttributeSet const &attributes) {
+	std::lock_guard<std::mutex> lock(mutex);
+
 	// Do we already have it?
 	auto existing = attribute_indices.find(attributes);
 	if (existing != attribute_indices.end()) return existing->second;
 
 	// No, so add and return the index
-	std::lock_guard<std::mutex> lock(mutex);
 	AttributeIndex idx = static_cast<AttributeIndex>(attribute_sets.size());
 	attribute_sets.emplace_back(attributes);
 	attribute_indices.emplace(attributes, idx);
