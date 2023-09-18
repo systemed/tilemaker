@@ -191,6 +191,8 @@ public:
 
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
 
+	struct luaProcessingException :std::exception {};
+
 private:
 	/// Internal: clear current cached state
 	inline void reset() {
@@ -247,7 +249,6 @@ private:
 	
 	std::deque<std::pair<OutputObjectRef, AttributeStoreRef>> outputs;			///< All output objects that have been created
 	boost::container::flat_map<std::string, std::string> currentTags;
-
 };
 
 #endif //_OSM_LUA_PROCESSING_H

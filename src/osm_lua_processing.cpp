@@ -10,10 +10,10 @@ bool supportsRemappingShapefiles = false;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
-	cerr << "lua runtime error: " << errMessage << endl;
-	std::string traceback = (*g_luaState)["debug"]["traceback"];
-	cerr << "traceback: " << traceback << endl;
-	exit(0);
+	std::cerr << "lua runtime error: " << std::endl;
+	kaguya::util::traceBack(g_luaState->state(), errMessage); // full traceback on 5.2+
+	kaguya::util::stackDump(g_luaState->state());
+	throw OsmLuaProcessing::luaProcessingException();
 }
 
 // ----	initialization routines
@@ -542,7 +542,12 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	isWay = false;
 	isRelation = true;
 	currentTags = tags;
-	luaState["relation_scan_function"](this);
+	try {
+		luaState["relation_scan_function"](this);
+	} catch(luaProcessingException &e) {
+		std::cerr << "Lua error on scanning relation " << originalOsmID << std::endl;
+		exit(1);
+	}
 	if (!relationAccepted) return false;
 	
 	osmStore.store_relation_tags(id, tags);
@@ -561,7 +566,12 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	currentTags = tags;
 
 	//Start Lua processing for node
-	luaState["node_function"](this);
+	try {
+		luaState["node_function"](this);
+	} catch(luaProcessingException &e) {
+		std::cerr << "Lua error on node " << originalOsmID << std::endl;
+		exit(1);
+	}
 
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
@@ -606,12 +616,15 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 
 	bool ok = true;
 	if (ok) {
-		luaState.setErrorHandler(kaguya::ErrorHandler::throwDefaultError);
-
 		//Start Lua processing for way
-		kaguya::LuaFunction way_function = luaState["way_function"];
-		kaguya::LuaRef ret = way_function(this);
-		assert(!ret);
+		try {
+			kaguya::LuaFunction way_function = luaState["way_function"];
+			kaguya::LuaRef ret = way_function(this);
+			assert(!ret);
+		} catch(luaProcessingException &e) {
+			std::cerr << "Lua error on way " << originalOsmID << std::endl;
+			exit(1);
+		}
 	}
 
 	if (!this->empty()) {
@@ -691,7 +704,12 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
-	luaState[isNativeMP ? "way_function" : "relation_function"](this);
+	try {
+		luaState[isNativeMP ? "way_function" : "relation_function"](this);
+	} catch(luaProcessingException &e) {
+		std::cerr << "Lua error on relation " << originalOsmID << std::endl;
+		exit(1);
+	}
 	if (this->empty()) return;
 
 	// Assemble multipolygon
