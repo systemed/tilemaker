@@ -3,6 +3,7 @@
 #define _ATTRIBUTE_STORE_H
 
 #include "vector_tile.pb.h"
+#include <mutex>
 #include <atomic>
 #include <boost/functional/hash.hpp>
 #include <vector>

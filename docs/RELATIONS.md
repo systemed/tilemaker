@@ -1,6 +1,6 @@
 ## Relations
 
-Tilemaker has (as yet not complete) support for reading relations in the Lua process scripts. This means you can support route and boundary relations when creating your vector tiles.
+Tilemaker has (as yet not complete) support for reading relations in the Lua process scripts. This means you can support objects like route relations when creating your vector tiles.
 
 Note that relation support is in its early stages and behaviour may change between point versions.
 
@@ -8,6 +8,8 @@ Note that relation support is in its early stages and behaviour may change betwe
 ### Multipolygon relations
 
 Multipolygon relations are supported natively by tilemaker; you do not need to write special Lua code for them. When a multipolygon is read, tilemaker constructs the geometry as normal, and passes the tags to `way_function` just as it would a simple area.
+
+Boundary relations also have automatic handling of inner/outer ways, but are otherwise processed as relations. This means that you can choose to treat boundaries as properties on ways (see "Stage 2" below) or as complete geometries (see "Writing relation geometries"). You will typically want the properties-on-ways approach for administrative boundaries, and the complete-geometries approach for filled areas such as forests or nature reserves.
 
 
 ### Reading relation memberships

@@ -336,6 +336,7 @@ private:
 };
 
 // relation store
+// (this isn't currently used as we don't need to store relations for later processing, but may be needed for nested relations)
 
 class RelationStore {
 
@@ -399,7 +400,7 @@ protected:
 	bool require_integrity = true;
 
 	WayStore ways;
-	RelationStore relations;
+	RelationStore relations; // unused
 	UsedWays used_ways;
 	RelationScanStore scanned_relations;
 
