@@ -8,6 +8,7 @@
 #include <boost/functional/hash.hpp>
 #include <vector>
 #include <unordered_map>
+#include <tsl/ordered_set.h>
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -101,9 +102,9 @@ private:
 
 // AttributeStore is the store for all AttributeSets
 struct AttributeStore {
-	std::vector<AttributeSet> attribute_sets;
-	std::unordered_map<AttributeSet, AttributeIndex, AttributeSet::hash_function> attribute_indices;
+	tsl::ordered_set<AttributeSet, AttributeSet::hash_function> attribute_sets;
 	mutable std::mutex mutex;
+	int lookups=0;
 
 	AttributeIndex add(AttributeSet const &attributes);
 	std::set<AttributePair, AttributeSet::key_value_less> get(AttributeIndex index) const;
@@ -113,8 +114,7 @@ struct AttributeStore {
 	AttributeStore() {
 		// Initialise with an empty set at position 0
 		AttributeSet blank;
-		attribute_sets.emplace_back(blank);
-		attribute_indices.emplace(blank,0);
+		attribute_sets.insert(blank);
 	}
 };
 
