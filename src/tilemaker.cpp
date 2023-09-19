@@ -315,9 +315,6 @@ int main(int argc, char* argv[]) {
 						  shpMemTiles, osmLuaProcessing);
 		}
 	}
-	
-	// ---- Sort the generated shapes
-	shpMemTiles.SortGeometries(threadNum);
 	shpMemTiles.reportSize();
 
 	// ----	Read significant node tags
@@ -346,7 +343,6 @@ int main(int argc, char* argv[]) {
 			if (ret != 0) return ret;
 		} 
 		attributeStore.doneReading();
-		osmMemTiles.SortGeometries(threadNum);
 		osmMemTiles.reportSize();
 		attributeStore.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)

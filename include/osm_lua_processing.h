@@ -222,7 +222,6 @@ private:
 	class OsmMemTiles &osmMemTiles;
 	AttributeStore &attributeStore;			// key/value store
 
-	uint64_t osmID;							///< ID of OSM object (relations have decrementing way IDs)
 	int64_t originalOsmID;					///< Original OSM object ID
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 

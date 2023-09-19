@@ -23,13 +23,6 @@ typedef int8_t ZOrder;
 
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
 
-#define OSMID_TYPE_OFFSET	40
-#define OSMID_MASK 		((1ULL<<OSMID_TYPE_OFFSET)-1)
-#define OSMID_SHAPE 	(0ULL<<OSMID_TYPE_OFFSET)
-#define OSMID_NODE 		(1ULL<<OSMID_TYPE_OFFSET)
-#define OSMID_WAY 		(2ULL<<OSMID_TYPE_OFFSET)
-#define OSMID_RELATION 	(3ULL<<OSMID_TYPE_OFFSET)
-
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
@@ -50,7 +43,7 @@ protected:
 
 
 public:
-	NodeID objectID 			: 42;					// id of way (linestring/polygon) or node (point)
+	NodeID objectID 			: 42;					// id of point/linestring/polygon
 	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	unsigned minZoom 			: 4;					// minimum zoom level in which object is written
 	uint_least8_t layer 		: 8;					// what layer is it in?

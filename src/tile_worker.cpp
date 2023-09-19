@@ -153,7 +153,8 @@ void ProcessObjects(TileDataSource const *source, AttributeStore const &attribut
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
 			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
+			// not currently supported:
+			// if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 		} else {
 			Geometry g;
 			try {
@@ -185,7 +186,8 @@ void ProcessObjects(TileDataSource const *source, AttributeStore const &attribut
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
 			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
+			// not currently supported:
+			// if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 
 		}
 	}

@@ -29,20 +29,20 @@ protected:
 	unsigned int baseZoom;
 
 	// Store for generated geometries
-	using point_store_t = std::deque<std::pair<NodeID, Point>>;
+	using point_store_t = std::vector<Point>;
 
 	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
-	using linestring_store_t = std::deque<std::pair<NodeID, linestring_t>>;
+	using linestring_store_t = std::vector<linestring_t>;
 
 	using multi_linestring_t = boost::geometry::model::multi_linestring<linestring_t, std::vector, mmap_allocator>;
-	using multi_linestring_store_t = std::deque<std::pair<NodeID, multi_linestring_t>>;
+	using multi_linestring_store_t = std::vector<multi_linestring_t>;
 
 	using polygon_t = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, mmap_allocator, mmap_allocator>;
 	using multi_polygon_t = boost::geometry::model::multi_polygon<polygon_t, std::vector, mmap_allocator>;
-	using multi_polygon_store_t = std::deque<std::pair<NodeID, multi_polygon_t>>;
+	using multi_polygon_store_t = std::vector<multi_polygon_t>;
 
-	std::mutex points_store_mutex;
-	std::unique_ptr<point_store_t> points_store;
+	std::mutex point_store_mutex;
+	std::unique_ptr<point_store_t> point_store;
 	
 	std::mutex linestring_store_mutex;
 	std::unique_ptr<linestring_store_t> linestring_store;
@@ -92,8 +92,6 @@ public:
 
 	void MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile);
 
-	void SortGeometries(unsigned int threadNum);
-
 	std::vector<OutputObjectRef> getTileData(std::vector<bool> const &sortOrders, 
 	                                         TileCoordinates coordinates, unsigned int zoom);
 
@@ -101,7 +99,7 @@ public:
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
-		points_store = std::make_unique<point_store_t>();
+		point_store = std::make_unique<point_store_t>();
 		linestring_store = std::make_unique<linestring_store_t>();
 		multi_polygon_store = std::make_unique<multi_polygon_store_t>();
 		multi_linestring_store = std::make_unique<multi_linestring_store_t>();
@@ -112,58 +110,52 @@ public:
 	using handle_t = void *;
 
 	template<typename T>
-	void store_point(NodeID id, T const &input) {	
-		std::lock_guard<std::mutex> lock(points_store_mutex);
-		points_store->emplace_back(id, input);		   	
+	NodeID store_point(T const &input) {
+		std::lock_guard<std::mutex> lock(point_store_mutex);
+		NodeID id = point_store->size();
+		point_store->emplace_back(input);
+		return id;
 	}
 
 	Point const &retrieve_point(NodeID id) const {
-		auto iter = std::lower_bound(points_store->begin(), points_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-		if(iter == points_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated node with id " + std::to_string(id));
-		return iter->second;
+		if (id > point_store->size()) throw std::out_of_range("Could not find generated node with id " + std::to_string(id));
+		return point_store->at(id);
 	}
 	
 	template<typename Input>
-	void store_linestring(NodeID id, Input const &src) {
+	NodeID store_linestring(Input const &src) {
 		linestring_t dst(src.begin(), src.end());
 		std::lock_guard<std::mutex> lock(linestring_store_mutex);
-		linestring_store->emplace_back(id, std::move(dst));
+		NodeID id = linestring_store->size();
+		linestring_store->emplace_back(std::move(dst));
+		return id;
 	}
 
 	linestring_t const &retrieve_linestring(NodeID id) const {
-		auto iter = std::lower_bound(linestring_store->begin(), linestring_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-		if(iter == linestring_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id));
-		return iter->second;
+		if (id > linestring_store->size()) throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id));
+		return linestring_store->at(id);
 	}
 	
 	template<typename Input>
-	void store_multi_linestring(NodeID id, Input const &src) {
+	NodeID store_multi_linestring(Input const &src) {
 		multi_linestring_t dst;
 		dst.resize(src.size());
 		for (std::size_t i=0; i<src.size(); ++i) {
 			boost::geometry::assign(dst[i], src[i]);
 		}
 		std::lock_guard<std::mutex> lock(multi_linestring_store_mutex);
-		multi_linestring_store->emplace_back(id, std::move(dst));
+		NodeID id = multi_linestring_store->size();
+		multi_linestring_store->emplace_back(std::move(dst));
+		return id;
 	}
 
 	multi_linestring_t const &retrieve_multi_linestring(NodeID id) const {
-		auto iter = std::lower_bound(multi_linestring_store->begin(), multi_linestring_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-		if(iter == multi_linestring_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id));
-		return iter->second;
+		if (id > multi_linestring_store->size()) throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id));
+		return multi_linestring_store->at(id);
 	}
 
 	template<typename Input>
-	void store_multi_polygon(NodeID id, Input const &src) {
+	NodeID store_multi_polygon(Input const &src) {
 		multi_polygon_t dst;
 		dst.resize(src.size());
 		for(std::size_t i = 0; i < src.size(); ++i) {
@@ -177,16 +169,14 @@ public:
 			}
 		}
 		std::lock_guard<std::mutex> lock(multi_polygon_store_mutex);
-		multi_polygon_store->emplace_back(id, std::move(dst));
+		NodeID id = multi_polygon_store->size();
+		multi_polygon_store->emplace_back(std::move(dst));
+		return id;
 	}
 
 	multi_polygon_t const &retrieve_multi_polygon(NodeID id) const {
-		auto iter = std::lower_bound(multi_polygon_store->begin(), multi_polygon_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-		if(iter == multi_polygon_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated multi polygon with id " + std::to_string(id));
-		return iter->second;
+		if (id > multi_polygon_store->size()) throw std::out_of_range("Could not find generated multi-polygon with id " + std::to_string(id));
+		return multi_polygon_store->at(id);
 	}
 
 

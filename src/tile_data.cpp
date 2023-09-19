@@ -88,34 +88,6 @@ void TileDataSource::MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std:
 		dstTile.push_back(result.second);
 }
 
-// Sort all generated geometries
-void TileDataSource::SortGeometries(unsigned int threadNum) {
-	std::cout << "Sorting generated geometries" << std::endl;
-
-	std::lock_guard<std::mutex> lock_points(points_store_mutex);
-	boost::sort::block_indirect_sort(
-		points_store->begin(), points_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
-
-	std::lock_guard<std::mutex> lock_linestring(linestring_store_mutex);
-	boost::sort::block_indirect_sort(
-		linestring_store->begin(), linestring_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-
-	std::lock_guard<std::mutex> lock_multi_linestring(multi_linestring_store_mutex);
-	boost::sort::block_indirect_sort(
-		multi_linestring_store->begin(), multi_linestring_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-
-	std::lock_guard<std::mutex> lock_multi_polygon(multi_polygon_store_mutex);
-	boost::sort::block_indirect_sort(
-		multi_polygon_store->begin(), multi_polygon_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-}
-
 // Build node and way geometries
 Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, 
                                           NodeID const objectID, const TileBbox &bbox) const {
@@ -244,7 +216,7 @@ LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType,
 
 // Report number of stored geometries
 void TileDataSource::reportSize() const {
-	std::cout << "Generated points: " << points_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
+	std::cout << "Generated points: " << point_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
 }
 
 TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {

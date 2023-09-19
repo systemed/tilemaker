@@ -331,9 +331,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(p)) return;
 
-			osmMemTiles.store_point(osmID, p);
+			NodeID id = osmMemTiles.store_point(p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(geomType, 
-							layers.layerMap[layerName], osmID, 0, layerMinZoom));
+							layers.layerMap[layerName], id, 0, layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributes));
             return;
 		}
@@ -361,9 +361,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(mp)) return;
 
-			osmMemTiles.store_multi_polygon(osmID, mp);
+			NodeID id = osmMemTiles.store_multi_polygon(mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiPolygon(geomType, 
-							layers.layerMap[layerName], osmID, 0, layerMinZoom));
+							layers.layerMap[layerName], id, 0, layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributes));
 		}
 		else if (geomType==MULTILINESTRING_) {
@@ -377,9 +377,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			if (!CorrectGeometry(mls)) return;
 
-			osmMemTiles.store_multi_linestring(osmID, mls);
+			NodeID id = osmMemTiles.store_multi_linestring(mls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectMultiLinestring(geomType, 
-							layers.layerMap[layerName], osmID, 0, layerMinZoom));
+							layers.layerMap[layerName], id, 0, layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributes));
 		}
 		else if (geomType==LINESTRING_) {
@@ -388,9 +388,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
             if(!CorrectGeometry(ls)) return;
 
-			osmMemTiles.store_linestring(osmID, ls);
+			NodeID id = osmMemTiles.store_linestring(ls);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectLinestring(geomType, 
-						layers.layerMap[layerName], osmID, 0, layerMinZoom));
+						layers.layerMap[layerName], id, 0, layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributes));
 		}
 	} catch (std::invalid_argument &err) {
@@ -424,9 +424,9 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-	osmMemTiles.store_point(osmID, geomp);
+	NodeID id = osmMemTiles.store_point(geomp);
 	OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectPoint(POINT_,
-					layers.layerMap[layerName], osmID, 0, layerMinZoom));
+					layers.layerMap[layerName], id, 0, layerMinZoom));
 	outputs.push_back(std::make_pair(oo, attributes));
 }
 
@@ -559,7 +559,6 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 	reset();
-	osmID = (id & OSMID_MASK) | OSMID_NODE;
 	originalOsmID = id;
 	isWay = false;
 	isRelation = false;
@@ -588,7 +587,6 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 // We are now processing a way
 void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
 	reset();
-	osmID = (wayId & OSMID_MASK) | OSMID_WAY;
 	originalOsmID = wayId;
 	isWay = true;
 	isRelation = false;
@@ -638,7 +636,6 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
                                    bool isNativeMP,      // only OSM type=multipolygon
                                    bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
 	reset();
-	osmID = (relationId & OSMID_MASK) | OSMID_RELATION;
 	originalOsmID = relationId;
 	isWay = true;
 	isRelation = true;
