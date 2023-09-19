@@ -246,13 +246,16 @@ private:
 	const class Config &config;
 	class LayerDefinition &layers;
 	
-	OutputRefsWithAttributes outputs;		// All output objects that have been created
+	OutputObjectsWithAttributes outputs;		// All output objects that have been created
 	boost::container::flat_map<std::string, std::string> currentTags;
 
-	void AddAttributesToOutputObjects() {
+	std::vector<OutputObjectRef> OutputsAsOORefs() {
+		std::vector<OutputObjectRef> list;
 		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			jt->first->setAttributeSet(attributeStore.add(jt->second));
+			jt->first.setAttributeSet(attributeStore.add(jt->second));
+			list.emplace_back(osmMemTiles.CreateObject(jt->first));
 		}
+		return list;
 	}
 };
 

@@ -91,7 +91,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			oo = CreateObject(OutputObjectLinestring(geomType, layerNum, oid, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
-			OutputRefsWithAttributes oolist { std::make_pair(oo, AttributeSet()) };
+			std::vector<OutputObjectRef> oolist { oo };
 			AddGeometryToIndex(boost::get<Linestring>(geometry), oolist);
 
 		} break;
@@ -102,7 +102,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 			oo = CreateObject(OutputObjectMultiPolygon(geomType, layerNum, oid, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
-			OutputRefsWithAttributes oolist { std::make_pair(oo, AttributeSet()) };
+			std::vector<OutputObjectRef> oolist { oo };
 			AddGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist);
 		} break;
 

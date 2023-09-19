@@ -274,7 +274,7 @@ OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const
 // ------------------------------------
 // Add geometries to tile/large indices
 
-void TileDataSource::AddGeometryToIndex(Linestring const &geom, OutputRefsWithAttributes const &outputs) {
+void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs) {
 	unordered_set<TileCoordinates> tileSet;
 	try {
 		insertIntermediateTiles(geom, baseZoom, tileSet);
@@ -288,11 +288,11 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, OutputRefsWithAt
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
 			for (auto &output : outputs) {
-				if (output.first->geomType == POLYGON_) {
+				if (output->geomType == POLYGON_) {
 					polygonExists = true;
 					continue;
 				}
-				AddObjectToTileIndex(index, output.first); // not a polygon
+				AddObjectToTileIndex(index, output); // not a polygon
 			}
 		}
 
@@ -301,18 +301,18 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, OutputRefsWithAt
 			bool tilesetFilled = false;
 			uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
 			for (auto &output : outputs) {
-				if (output.first->geomType != POLYGON_) continue;
+				if (output->geomType != POLYGON_) continue;
 				if (size>= 16) {
 					// Larger objects - add to rtree
 					Box box = Box(geom::make<Point>(minTileX, minTileY),
 					              geom::make<Point>(maxTileX, maxTileY));
-					AddObjectToLargeIndex(box, output.first);
+					AddObjectToLargeIndex(box, output);
 				} else {
 					// Smaller objects - add to each individual tile index
 					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						TileCoordinates index = *it;
-						AddObjectToTileIndex(index, output.first);
+						AddObjectToTileIndex(index, output);
 					}
 				}
 			}
@@ -322,20 +322,20 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, OutputRefsWithAt
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, OutputRefsWithAttributes const &outputs) {
+void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs) {
 	for (Linestring ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, baseZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto &output : outputs) {
-				AddObjectToTileIndex(index, output.first);
+				AddObjectToTileIndex(index, output);
 			}
 		}
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, OutputRefsWithAttributes const &outputs) {
+void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
 	for (Polygon poly : geom) {
@@ -364,12 +364,12 @@ void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, OutputRefsWith
 			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
 			Box box = Box(geom::make<Point>(minTileX, minTileY),
 			              geom::make<Point>(maxTileX, maxTileY));
-			AddObjectToLargeIndex(box, output.first);
+			AddObjectToLargeIndex(box, output);
 		} else {
 			// Smaller objects - add to each individual tile index
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
-				AddObjectToTileIndex(index, output.first);
+				AddObjectToTileIndex(index, output);
 			}
 		}
 	}

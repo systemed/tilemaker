@@ -146,7 +146,7 @@ public:
 	void reset() { oo = nullptr; }
 };
 
-typedef std::deque<std::pair<OutputObjectRef, AttributeSet>> OutputRefsWithAttributes;
+typedef std::deque<std::pair<OutputObject, AttributeSet>> OutputObjectsWithAttributes;
 
 // Comparison functions
 
