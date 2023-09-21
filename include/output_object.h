@@ -57,6 +57,7 @@ public:
 	unsigned minZoom 			: 4;
 
 	AttributeStoreRef attributes;
+	float_t rankValue = std::numeric_limits<float_t>::infinity();
 
 	void setZOrder(const ZOrder z) {
 #ifndef FLOAT_Z_ORDER
@@ -75,9 +76,12 @@ public:
 		this->attributes = attributes;
 	}
 
+	void setRankValue(const float_t value);
+
 	//\brief Write attribute key/value pairs (dictionary-encoded)
 	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr, char zoom) const;
+		std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Feature *featurePtr, 
+		AttributeStoreRef extraAttributes, char zoom) const;
 	
 	/**
 	 * \brief Find a value in the value dictionary

@@ -157,6 +157,7 @@ public:
 	void AttributeWithMinZoom(const std::string &key, const std::string &val, const char minzoom);
 	void AttributeNumeric(const std::string &key, const float val);
 	void AttributeNumericWithMinZoom(const std::string &key, const float val, const char minzoom);
+	void SetRank(const float val);
 	void AttributeBoolean(const std::string &key, const bool val);
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);

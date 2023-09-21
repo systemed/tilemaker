@@ -31,6 +31,7 @@ struct LayerDef {
 	bool indexed;
 	std::string indexName;
 	std::map<std::string, uint> attributeMap;
+	uint64_t rankMax;
 	bool writeTo;
 };
 
@@ -51,6 +52,7 @@ public:
 			bool allSourceColumns,
 			bool indexed,
 			const std::string &indexName,
+			const uint64_t rankMax,
 			const std::string &writeTo);
 	std::vector<bool> getSortOrders();
 	rapidjson::Value serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const;

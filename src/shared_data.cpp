@@ -25,13 +25,14 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		bool allSourceColumns,
 		bool indexed,
 		const std::string &indexName,
+		const uint64_t rankMax,
 		const std::string &writeTo)  {
 
 	bool isWriteTo = !writeTo.empty();
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 		filterBelow, filterArea, combinePolygonsBelow, sortZOrderAscending,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
-		std::map<std::string,uint>(), isWriteTo };
+		std::map<std::string,uint>(), rankMax, isWriteTo };
 	layers.push_back(layer);
 	uint layerNum = layers.size()-1;
 	layerMap[name] = layerNum;
@@ -221,11 +222,17 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		}
 		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 
+		uint64_t rankMax = std::numeric_limits<uint64_t>::max();
+		if (it->value.HasMember("rank_max")) {
+			rankMax = it->value["rank_max"].GetUint64();
+			if (rankMax == 0) rankMax = std::numeric_limits<uint64_t>::max();
+		}
+
 		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
 				filterBelow, filterArea, combinePolyBelow, sortZOrderAscending,
 				source, sourceColumns, allSourceColumns, indexed, indexName,
-				writeTo);
+				rankMax, writeTo);
 
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }

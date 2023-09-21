@@ -1,6 +1,7 @@
 /*! \file */ 
 #include "tile_worker.h"
 #include <fstream>
+#include <numeric>
 #include <boost/filesystem.hpp>
 #include <signal.h>
 #include "helpers.h"
@@ -134,13 +135,57 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
+void ProcessTileRelativeObjects(OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
+	std::map<NodeID, uint64_t> *ooRankMap) {
+
+	std::vector<OutputObjectRef> tileRelativeObjectsForSort;
+	std::copy_if(ooSameLayerBegin, ooSameLayerEnd, std::back_inserter(tileRelativeObjectsForSort), 
+		[](OutputObjectRef const &oo) -> bool {
+			// TODO: support multiple ranked attributes
+			return oo->rankValue < std::numeric_limits<float_t>::infinity();
+		});
+
+	uint64_t currentSortIdx = 0;
+	std::sort(tileRelativeObjectsForSort.begin(), tileRelativeObjectsForSort.end(), 
+		[](const OutputObjectRef &lhs, const OutputObjectRef &rhs) -> bool {
+			return lhs->rankValue < rhs->rankValue;
+		});
+
+	for (auto jt = tileRelativeObjectsForSort.begin(); jt != tileRelativeObjectsForSort.end(); ++jt) {
+		// rank is a 1-indexed value
+		uint64_t index = distance(tileRelativeObjectsForSort.begin(), jt) + 1;
+		OutputObjectRef oo = *jt;
+		ooRankMap->emplace(oo->objectID & OSMID_MASK, index);
+	}
+}
+
 void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
-	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
+	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, 
+	uint64_t rankMax, const TileBbox &bbox,
 	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
+
+	std::map<NodeID, uint64_t> ooRankMap = std::map<NodeID, uint64_t>();
+	ProcessTileRelativeObjects(ooSameLayerBegin, ooSameLayerEnd, &ooRankMap);
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectRef oo = *jt;
 		if (zoom < oo->minZoom) { continue; }
+
+		AttributeStoreRef extraAttributes = new AttributeStore::key_value_set();
+
+		auto ooRank = ooRankMap.find(oo->objectID & OSMID_MASK);
+		if (ooRank != ooRankMap.end()) {
+			uint64_t rankInt = ooRank->second;
+
+			if (rankInt > rankMax) {
+				// Do not write the object to the tile if it is greater than the maximum allowed rank in the layer config
+				continue;
+			}
+
+			vector_tile::Tile_Value v;
+			v.set_uint_value(rankInt);
+			extraAttributes->values.emplace("rank", v, 0);
+		}
 
 		if (oo->geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
@@ -151,7 +196,7 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, extraAttributes, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
 		} else {
 			Geometry g;
@@ -183,9 +228,8 @@ void ProcessObjects(OSMStore &osmStore, OutputObjectsConstIt ooSameLayerBegin, O
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo->writeAttributes(&keyList, &valueList, featurePtr, zoom);
+			oo->writeAttributes(&keyList, &valueList, featurePtr, extraAttributes, zoom);
 			if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
-
 		}
 	}
 }
@@ -237,9 +281,10 @@ void ProcessLayer(OSMStore &osmStore,
 		}
 
 		auto ooListSameLayer = GetObjectsAtSubLayer(data, layerNum);
+
 		// Loop through output objects
 		ProcessObjects(osmStore, ooListSameLayer.first, ooListSameLayer.second, sharedData, 
-			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
+			simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, ld.rankMax, bbox, vtLayer, keyList, valueList);
 	}
 	if (verbose && std::time(0)-start>3) {
 		std::cout << "Layer " << layerName << " at " << zoom << "/" << index.x << "/" << index.y << " took " << (std::time(0)-start) << " seconds" << std::endl;

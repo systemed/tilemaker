@@ -76,15 +76,14 @@ function node_function(node)
 	--   we could potentially approximate it for cities based on the population tag
 	local place = node:Find("place")
 	if place ~= "" then
-		local rank = nil
 		local mz = 13
 		local pop = tonumber(node:Find("population")) or 0
 
 		if     place == "continent"     then mz=0
 		elseif place == "country"       then
-			if     pop>50000000 then rank=1; mz=1
-			elseif pop>20000000 then rank=2; mz=2
-			else                     rank=3; mz=3 end
+			if     pop>50000000 then           mz=1
+			elseif pop>20000000 then           mz=2
+			else                               mz=3 end
 		elseif place == "state"         then mz=4
 		elseif place == "city"          then mz=5
 		elseif place == "town" and pop>8000 then mz=7
@@ -100,7 +99,7 @@ function node_function(node)
 		node:Layer("place", false)
 		node:Attribute("class", place)
 		node:MinZoom(mz)
-		if rank then node:AttributeNumeric("rank", rank) end
+		node:SetRank(pop)
 		if place=="country" then node:Attribute("iso_a2", node:Find("ISO3166-1:alpha2")) end
 		SetNameAttributes(node)
 		return
@@ -579,7 +578,7 @@ function WritePOI(obj,class,subclass,rank)
 	if rank>4 then layer="poi_detail" end
 	obj:LayerAsCentroid(layer)
 	SetNameAttributes(obj)
-	obj:AttributeNumeric("rank", rank)
+	obj:SetRank(rank)
 	obj:Attribute("class", class)
 	obj:Attribute("subclass", subclass)
 end

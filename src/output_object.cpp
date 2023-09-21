@@ -30,42 +30,49 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 	return os;
 }
 
+void OutputObject::setRankValue(const float_t value) {
+	rankValue = value;
+}
 
 // Write attribute key/value pairs (dictionary-encoded)
 void OutputObject::writeAttributes(
 	vector<string> *keyList, 
 	vector<vector_tile::Tile_Value> *valueList, 
 	vector_tile::Tile_Feature *featurePtr,
+	AttributeStoreRef extraAttributes,
 	char zoom) const {
 
-	for(auto const &it: attributes->values) {
-		if (it.minzoom > zoom) continue;
+	auto attributeList = { attributes, extraAttributes };
+	for (auto const attributes: attributeList) {
+		for(auto const &it: attributes->values) {
+			if (it.minzoom > zoom) continue;
 
-		// Look for key
-		std::string const &key = it.key;
-		auto kt = find(keyList->begin(), keyList->end(), key);
-		if (kt != keyList->end()) {
-			uint32_t subscript = kt - keyList->begin();
-			featurePtr->add_tags(subscript);
-		} else {
-			uint32_t subscript = keyList->size();
-			keyList->push_back(key);
-			featurePtr->add_tags(subscript);
-		}
-		
-		// Look for value
-		vector_tile::Tile_Value const &value = it.value;
-		int subscript = findValue(valueList, value);
-		if (subscript>-1) {
-			featurePtr->add_tags(subscript);
-		} else {
-			uint32_t subscript = valueList->size();
-			valueList->push_back(value);
-			featurePtr->add_tags(subscript);
-		}
+			// Look for key
+			std::string const &key = it.key;
+			auto kt = find(keyList->begin(), keyList->end(), key);
+			if (kt != keyList->end()) {
+				uint32_t subscript = kt - keyList->begin();
+				featurePtr->add_tags(subscript);
+			} else {
+				uint32_t subscript = keyList->size();
+				keyList->push_back(key);
+				featurePtr->add_tags(subscript);
+			}
+			
+			// Look for value
+			vector_tile::Tile_Value const &value = it.value;
+			int subscript = findValue(valueList, value);
+			if (subscript>-1) {
+				featurePtr->add_tags(subscript);
+			} else {
+				uint32_t subscript = valueList->size();
+				valueList->push_back(value);
+				featurePtr->add_tags(subscript);
+			}
 
-		//if(value.has_string_value())
-		//	std::cout << "Write attr: " << key << " " << value.string_value() << std::endl;	
+			//if(value.has_string_value())
+			//	std::cout << "Write attr: " << key << " " << value.string_value() << std::endl;	
+		}
 	}
 }
 

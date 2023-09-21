@@ -55,9 +55,9 @@ struct AttributeStore
 		switch(lhs_id) {
 			case Index::BOOL:
 				return lhs.bool_value() < rhs.bool_value();
-			case Index::FLOAT:	
+			case Index::FLOAT:
 				return lhs.float_value() < rhs.float_value();
-			case Index::STRING:	
+			case Index::STRING:
 				return lhs.string_value() < rhs.string_value();
 		}
 
@@ -111,7 +111,7 @@ struct AttributeStore
 
 	key_value_set_ref_t empty_set() const { return new key_value_set(); }
 
-    key_value_set_ref_t store_set(key_value_set_ref_t attributes) {
+	key_value_set_ref_t store_set(key_value_set_ref_t attributes) {
 		auto idx = attributes->values.size();
 		for(auto const &i: attributes->values) {
 			boost::hash_combine(idx, i.minzoom);

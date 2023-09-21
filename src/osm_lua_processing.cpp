@@ -53,6 +53,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
 		.addOverloadedFunctions("Attribute", &OsmLuaProcessing::Attribute, &OsmLuaProcessing::AttributeWithMinZoom)
 		.addOverloadedFunctions("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric, &OsmLuaProcessing::AttributeNumericWithMinZoom)
+		.addFunction("SetRank", &OsmLuaProcessing::SetRank)
 		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 		.addOverloadedFunctions("ZOrder", &OsmLuaProcessing::ZOrder, &OsmLuaProcessing::ZOrderWithScale)
@@ -328,13 +329,13 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
-            if(!CorrectGeometry(p)) return;
+			if(!CorrectGeometry(p)) return;
 
 			osmStore.store_point(osmStore.osm(), osmID, p);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStorePoint(geomType, 
 							layers.layerMap[layerName], osmID, attributeStore.empty_set(), layerMinZoom));
 			outputs.push_back(std::make_pair(oo, attributeStore.empty_set()));
-            return;
+			return;
 		}
 		else if (geomType==POLYGON_) {
 			// polygon
@@ -358,7 +359,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				mp.push_back(p);
 			}
 
-            if(!CorrectGeometry(mp)) return;
+			if(!CorrectGeometry(mp)) return;
 
 			osmStore.store_multi_polygon(osmStore.osm(), osmID, mp);
 			OutputObjectRef oo = osmMemTiles.CreateObject(OutputObjectOsmStoreMultiPolygon(geomType, 
@@ -474,6 +475,16 @@ void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const floa
 	v.set_float_value(val);
 	outputs.back().second->values.emplace(key, v, minzoom);
 	setVectorLayerMetadata(outputs.back().first->layer, key, 1);
+}
+
+void OsmLuaProcessing::SetRank(const float val) {
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
+
+	// First, set the attribute so it will be registered in the metadata
+	setVectorLayerMetadata(outputs.back().first->layer, "rank", 1);
+	
+	// Set the ranked attribute, used for relative processing during output.
+	outputs.back().first->setRankValue(val);
 }
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
