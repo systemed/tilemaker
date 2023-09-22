@@ -45,6 +45,8 @@ BUILDING_FLOOR_HEIGHT = 3.66
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
+pavedValues = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
+unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 
 -- Process node tags
 
@@ -212,6 +214,53 @@ function relation_scan_function(relation)
 	end
 end
 
+function write_to_transportation_layer(way, minzoom, zoom, highway_class)
+	if minzoom > zoom then
+		return
+	end
+	local layer = "transportation_" .. tostring(zoom)
+	if zoom == 14 then
+		layer = "transportation"
+	end
+	way:Layer(layer, false)
+	way:MinZoom(minzoom)
+	SetZOrder(way)
+	way:Attribute("class", highway_class)
+	SetBrunnelAttributes(way)
+	if ramp then way:AttributeNumeric("ramp",1) end
+
+	-- Service
+	if highway == "service" and service ~="" then way:Attribute("service", service) end
+
+	local oneway = way:Find("oneway")
+	if oneway == "yes" or oneway == "1" then
+		way:AttributeNumeric("oneway",1)
+	end
+	if oneway == "-1" then
+		-- **** TODO
+	end
+	local surface = way:Find("surface")
+	if zoom >= 12 and pavedValues[surface] then
+		way:Attribute("surface", "paved")
+	elseif zoom >= 12 and unpavedValues[surface] then
+		way:Attribute("surface", "unpaved")
+	end
+	if zoom >= 9 then
+		if way:Holds("access") then way:Attribute("access", way:Find("access")) end
+		if way:Holds("bicycle") then way:Attribute("bicycle", way:Find("bicycle")) end
+		if way:Holds("foot") then way:Attribute("foot", way:Find("foot")) end
+		if way:Holds("horse") then way:Attribute("horse", way:Find("horse")) end
+		way:AttributeBoolean("toll", way:Find("toll") == "yes")
+		way:AttributeNumeric("layer", tonumber(way:Find("layer")) or 0)
+	end
+	if zoom >= 7 then
+		way:AttributeBoolean("expressway", way:Find("expressway"))
+	end
+	if zoom >= 10 and way:Holds("mtb:scale") then
+		way:Attribute("mtb_scale", way:Find("mtb:scale"))
+	end
+end
+
 -- Process way tags
 
 function way_function(way)
@@ -331,30 +380,11 @@ function way_function(way)
 
 		-- Write to layer
 		if minzoom <= 14 then
-			way:Layer(layer, false)
-			way:MinZoom(minzoom)
-			SetZOrder(way)
-			way:Attribute("class", h)
-			SetBrunnelAttributes(way)
-			if ramp then way:AttributeNumeric("ramp",1) end
-			if access=="private" or access=="no" then way:Attribute("access", "no") end
-			if pavedValues[surface] then way:Attribute("surface", "paved") end
-			if unpavedValues[surface] then way:Attribute("surface", "unpaved") end
-			if way:Holds("bicycle") then way:Attribute("bicycle", way:Find("bicycle")) end
-			if way:Holds("foot") then way:Attribute("foot", way:Find("foot")) end
-			if way:Holds("horse") then way:Attribute("horse", way:Find("horse")) end
-			if way:Holds("mtb:scale") then way:Attribute("mtb_scale", way:Find("mtb:scale")) end
-
-			-- Service
-			if highway == "service" and service ~="" then way:Attribute("service", service) end
-
-			local oneway = way:Find("oneway")
-			if oneway == "yes" or oneway == "1" then
-				way:AttributeNumeric("oneway",1)
-			end
-			if oneway == "-1" then
-				-- **** TODO
-			end
+			write_to_transportation_layer(way, minzoom, 4, h)
+			write_to_transportation_layer(way, minzoom, 7, h)
+			write_to_transportation_layer(way, minzoom, 9, h)
+			write_to_transportation_layer(way, minzoom, 10, h)
+			write_to_transportation_layer(way, minzoom, 14, h)
 
 			-- Write names
 			if minzoom < 8 then
