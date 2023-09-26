@@ -51,6 +51,73 @@ unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "g
 -- Process node tags
 
 node_keys = { "addr:housenumber","aerialway","aeroway","amenity","barrier","highway","historic","leisure","natural","office","place","railway","shop","sport","tourism","waterway" }
+
+-- Get admin level which the place node is capital of.
+-- Returns nil in case of invalid capital and for places which are not capitals.
+function capitalLevel(capital)
+	local capital_al = tonumber(capital) or 0
+	if capital == "yes" then
+		capital_al = 2
+	end
+	if capital_al == 0 then
+		return nil
+	end
+        return capital_al
+end
+
+-- Calculate rank for place nodes
+-- place: value of place=*
+-- popuplation: population as number
+-- capital_al: result of capitalLevel()
+function calcRank(place, population, capital_al)
+	local rank = 0
+	if capital_al and capital_al >= 2 and capital_al <= 4 then
+		rank = capital_al
+		if population > 3 * 10^6 then
+			rank = rank - 2
+		elseif population > 1 * 10^6 then
+			rank = rank - 1
+		elseif population < 100000 then
+			rank = rank + 2
+		elseif population < 50000 then
+			rank = rank + 3
+		end
+		-- Safety measure to avoid place=village/farm/... appear early (as important capital) because a mapper added capital=yes/2/3/4
+		if place ~= "city" then
+			rank = rank + 3
+			-- Decrease rank further if it is not even a town.
+			if place ~= "town" then
+				rank = rank + 2
+			end
+		end
+		return rank
+	end
+	if place ~= "city" and place ~= "town" then
+		return nil
+        end
+	if population > 3 * 10^6 then
+		return 1
+	elseif population > 1 * 10^6 then
+		return 2
+	elseif population > 500000 then
+		return 3
+	elseif population > 200000 then
+		return 4
+	elseif population > 100000 then
+		return 5
+	elseif population > 75000 then
+		return 6
+	elseif population > 50000 then
+		return 7
+	elseif population > 25000 then
+		return 8
+	elseif population > 10000 then
+		return 9
+	end
+	return 10
+end
+
+
 function node_function(node)
 	-- Write 'aerodrome_label'
 	local aeroway = node:Find("aeroway")
@@ -78,9 +145,10 @@ function node_function(node)
 	--   we could potentially approximate it for cities based on the population tag
 	local place = node:Find("place")
 	if place ~= "" then
-		local rank = nil
 		local mz = 13
 		local pop = tonumber(node:Find("population")) or 0
+		local capital = capitalLevel(node:Find("capital"))
+		local rank = calcRank(place, pop, capital)
 
 		if     place == "continent"     then mz=0
 		elseif place == "country"       then
@@ -103,6 +171,7 @@ function node_function(node)
 		node:Attribute("class", place)
 		node:MinZoom(mz)
 		if rank then node:AttributeNumeric("rank", rank) end
+		if capital then node:AttributeNumeric("capital", capital) end
 		if place=="country" then node:Attribute("iso_a2", node:Find("ISO3166-1:alpha2")) end
 		SetNameAttributes(node)
 		return
