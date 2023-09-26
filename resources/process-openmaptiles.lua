@@ -584,6 +584,15 @@ function WritePOI(obj,class,subclass,rank)
 	obj:AttributeNumeric("rank", rank)
 	obj:Attribute("class", class)
 	obj:Attribute("subclass", subclass)
+	-- layer defaults to 0
+	obj:AttributeNumeric("layer", tonumber(obj:Find("layer")) or 0)
+	-- indoor defaults to false
+	obj:AttributeBoolean("indoor", (obj:Find("indoor") == "yes"))
+	-- level has no default
+	local level = tonumber(obj:Find("level"))
+	if level then
+		obj:AttributeNumeric("level", level)
+	end
 end
 
 -- Set name attributes on any object
