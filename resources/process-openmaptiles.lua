@@ -197,6 +197,8 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
 					castle="castle", ruins="castle" }
+-- POI classes where class is the matching value and subclass is the value of a separate key
+poiSubClasses = { information="information", place_of_worship="religion", pitch="sport" }
 poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6,
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
@@ -649,6 +651,11 @@ function GetPOIRank(obj)
 			v = obj:Find(k)	-- k/v are the OSM tag pair
 			class = poiClasses[v] or k
 			rank  = poiClassRanks[class] or 25
+			subclassKey = poiSubClasses[v]
+			if subclassKey then
+				class = v
+				v = obj:Find(subclassKey)
+			end
 			return rank, class, v
 		end
 	end
