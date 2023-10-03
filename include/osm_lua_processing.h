@@ -161,7 +161,6 @@ public:
 	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
-	void ZOrderWithScale(const double z, const double scale);
 	
 	// Relation scan support
 	kaguya::optional<int> NextRelation();

@@ -55,7 +55,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addOverloadedFunctions("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric, &OsmLuaProcessing::AttributeNumericWithMinZoom)
 		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
-		.addOverloadedFunctions("ZOrder", &OsmLuaProcessing::ZOrder, &OsmLuaProcessing::ZOrderWithScale)
+		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
 		.addFunction("Accept", &OsmLuaProcessing::Accept)
 		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
 		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
@@ -482,37 +482,16 @@ void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool
 	setVectorLayerMetadata(outputs.back().first.layer, key, 2);
 }
 
-template<typename T>
-static inline T make_valid(double v)
-{
-	if(!std::isfinite(v)) return 0;
-	return static_cast<T>(std::floor(v));
-}
-
 // Set minimum zoom
 void OsmLuaProcessing::MinZoom(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
-	outputs.back().first.setMinZoom(make_valid<unsigned int>(z));
+	outputs.back().first.setMinZoom(z);
 }
 
 // Set z_order
 void OsmLuaProcessing::ZOrder(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
-#ifdef FLOAT_Z_ORDER
-	outputs.back().first.setZOrder(make_valid<float>(z));
-#else
-	outputs.back().first.setZOrder(make_valid<int>(z));
-#endif
-}
-
-// Set z_order (variant with scaling)
-void OsmLuaProcessing::ZOrderWithScale(const double z, const double scale) {
-	if (outputs.size()==0) { ProcessingError("Can't set z_order if no Layer set"); return; }
-#ifdef FLOAT_Z_ORDER
-	outputs.back().first.setZOrder(make_valid<float>(z));
-#else
-	outputs.back().first.setZOrder(make_valid<int>(z/scale*127));
-#endif
+	outputs.back().first.setZOrder(z);
 }
 
 // Read scanned relations

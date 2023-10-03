@@ -25,6 +25,7 @@ struct LayerDef {
 	double filterArea;
 	uint combinePolygonsBelow;
 	bool sortZOrderAscending;
+	uint featureLimit;
 	std::string source;
 	std::vector<std::string> sourceColumns;
 	bool allSourceColumns;
@@ -46,6 +47,7 @@ public:
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
 			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
 			uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
+			uint featureLimit,
 			const std::string &source,
 			const std::vector<std::string> &sourceColumns,
 			bool allSourceColumns,

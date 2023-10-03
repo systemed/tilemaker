@@ -243,8 +243,10 @@ void ProcessLayer(SourceList const &sources, AttributeStore const &attributeStor
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
 			auto ooListSameLayer = GetObjectsAtSubLayer(data[i], layerNum);
+			auto end = ooListSameLayer.second;
+			if (ld.featureLimit > 0 && end-ooListSameLayer.first > ld.featureLimit) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
-				ooListSameLayer.first, ooListSameLayer.second, sharedData, 
+				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
 		}
 	}

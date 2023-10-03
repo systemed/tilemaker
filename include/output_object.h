@@ -15,12 +15,6 @@
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
-#ifdef FLOAT_Z_ORDER
-typedef float ZOrder;
-#else
-typedef int8_t ZOrder;
-#endif
-
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
 
 //\brief Display the geometry type
@@ -43,25 +37,31 @@ protected:
 
 
 public:
-	NodeID objectID 			: 42;					// id of point/linestring/polygon
-	OutputGeometryType geomType : 2;					// point, linestring, polygon
+	NodeID objectID 			: 36;					// id of point/linestring/polygon
 	unsigned minZoom 			: 4;					// minimum zoom level in which object is written
+	AttributeIndex attributes   : 30;					// index in attribute storage
+	OutputGeometryType geomType : 2;					// point, linestring, polygon
 	uint_least8_t layer 		: 8;					// what layer is it in?
-	ZOrder z_order				;						// used for sorting features within layers
+	short z_order				: 16;					// used for sorting features within layers
 
-	AttributeIndex attributes;
-
-	void setZOrder(const ZOrder z) {
-#ifndef FLOAT_Z_ORDER
-		if (z <= -127 || z >= 127) {
-			throw std::runtime_error("z_order is limited to 1 byte signed integer.");
-		}
-#endif
-		z_order = z;
+	template<typename T>
+	static inline T finite_cast(double v) {
+		if(!std::isfinite(v)) return 0;
+		return static_cast<T>(std::floor(v));
 	}
 
-	void setMinZoom(unsigned z) {
-		minZoom = z;
+	void setZOrder(const double z) {
+		if (z>1000) {
+			z_order = finite_cast<short>(std::sqrt((z-1000)*10)+10000);
+		} else if (z<-1000) {
+			z_order = finite_cast<short>(-10000 - std::sqrt((std::fabs(z)-1000)*10));
+		} else {
+			z_order = finite_cast<short>(z*10);
+		}
+	}
+
+	void setMinZoom(const double z) {
+		minZoom = finite_cast<unsigned int>(z);
 	}
 
 	void setAttributeSet(AttributeIndex attributes) {
