@@ -20,7 +20,7 @@ SharedData::~SharedData() { }
 uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
 		uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
-		uint featureLimit,
+		uint featureLimit, uint featureLimitBelow,
 		const std::string &source,
 		const std::vector<std::string> &sourceColumns,
 		bool allSourceColumns,
@@ -30,7 +30,7 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 
 	bool isWriteTo = !writeTo.empty();
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-		filterBelow, filterArea, combinePolygonsBelow, sortZOrderAscending, featureLimit,
+		filterBelow, filterArea, combinePolygonsBelow, sortZOrderAscending, featureLimit, featureLimitBelow,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>(), isWriteTo };
 	layers.push_back(layer);
@@ -205,6 +205,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		double filterArea     = it->value.HasMember("filter_area"    ) ? it->value["filter_area"    ].GetDouble() : 0.5;
 		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
 		int    featureLimit   = it->value.HasMember("feature_limit"  ) ? it->value["feature_limit"  ].GetInt()    : 0;
+		int  featureLimitBelow= it->value.HasMember("feature_limit_below") ? it->value["feature_limit_below"].GetInt() : (maxZoom+1);
 		bool sortZOrderAscending = it->value.HasMember("z_order_ascending") ? it->value["z_order_ascending"].GetBool() : (featureLimit==0);
 		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
 		vector<string> sourceColumns;
@@ -225,7 +226,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
-				filterBelow, filterArea, combinePolyBelow, sortZOrderAscending, featureLimit,
+				filterBelow, filterArea, combinePolyBelow, sortZOrderAscending, featureLimit, featureLimitBelow,
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
