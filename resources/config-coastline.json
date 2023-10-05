@@ -1,0 +1,24 @@
+{
+	"layers": {
+		"water": { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_length": 1, "simplify_ratio": 2},
+		"ocean": { "minzoom": 0,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2, "write_to": "water", "index": true, "source_columns": true }
+	},
+	"settings": {
+		"minzoom": 0,
+		"maxzoom": 6,
+		"basezoom": 14,
+		"include_ids": false,
+		"combine_below": 14,
+		"name": "Coastline",
+		"version": "3.0",
+		"description": "Coastline, low-resolution urban areas and ice shelves/glaciers",
+		"compress": "gzip",
+		"filemetadata": {
+			"tilejson": "2.0.0", 
+			"scheme": "xyz", 
+			"type": "baselayer", 
+			"format": "pbf", 
+            "tiles": ["https://example.com/liechtenstein/{z}/{x}/{y}.pbf"]
+		}
+	}
+}
