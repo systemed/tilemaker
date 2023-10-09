@@ -41,6 +41,8 @@ Now that you've accepted the relations, they will be available from `way_functio
       print ("Part of route "..way:FindInRelation("ref"))
     end
 
+(Should you need to re-read the relations, you can reset the iterator with `way:RestartRelations()`.)
+
 
 ### Writing relation geometries
 
