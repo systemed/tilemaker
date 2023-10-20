@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
@@ -18,9 +18,6 @@ if (POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 
-include_directories(include)
-include_directories(${CMAKE_BINARY_DIR}) # for generated files
-
 IF (TILEMAKER_BUILD_STATIC)
     MESSAGE (STATUS "Staticly linking with Boost")
     SET (Boost_USE_STATIC_LIBS TRUE)
@@ -35,16 +32,12 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 ENDIF ()
 
 find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
-find_package(Protobuf REQUIRED)
-include_directories(${PROTOBUF_INCLUDE_DIR})
+find_package(Protobuf CONFIG REQUIRED)
 
 find_package(libshp REQUIRED)
-include_directories(${LIBSHP_INCLUDE_DIR})
 
 find_package(Rapidjson REQUIRED)
-include_directories(${RAPIDJSON_INCLUDEDIR})
 
 find_package(Lua)
 
@@ -57,7 +50,6 @@ else()
 endif()
 
 find_package(ZLIB REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIR})
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -74,9 +66,13 @@ if(MSVC)
   	set(THREAD_LIB "")
 else()
 	find_package(SQLite3 REQUIRED)
-	include_directories(${SQLITE3_INCLUDE_DIRS})
   	set(THREAD_LIB pthread)
 endif()
+
+if(NOT PROTOBUF_PROTOC_EXECUTABLE)
+	set (PROTOBUF_PROTOC_EXECUTABLE "protobuf::protoc")
+endif()
+
 
 ADD_CUSTOM_COMMAND(OUTPUT vector_tile.pb.cc vector_tile.pb.h
                    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
@@ -107,8 +103,16 @@ file(GLOB tilemaker_src_files
 	src/write_geometry.cpp
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
-target_link_libraries(tilemaker ${PROTOBUF_LIBRARY} ${LIBSHP_LIBRARIES} ${SQLITE3_LIBRARIES} ${LUAJIT_LIBRARY} ${LUA_LIBRARIES} ${ZLIB_LIBRARY} ${THREAD_LIB} ${CMAKE_DL_LIBS}
-	Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
+target_include_directories(tilemaker PRIVATE include)
+target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
+target_link_libraries(tilemaker
+		${LUA_LIBRARIES}
+		protobuf::libprotobuf
+		shapelib::shp
+		SQLite::SQLite3
+		ZLIB::ZLIB
+		Rapidjson::rapidjson
+		Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
 
 include(CheckCxxAtomic)
 if(NOT HAVE_CXX11_ATOMIC)
