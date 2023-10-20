@@ -45,7 +45,7 @@ A typical config file would look like this:
         "maxzoom": 14,
         "basezoom": 14,
         "include_ids": false,
-        "compress": true,
+        "compress": "gzip",
         "name": "Tilemaker example",
         "version": "0.1",
         "description": "Sample vector tiles for tilemaker"
