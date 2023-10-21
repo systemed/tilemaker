@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
@@ -62,6 +62,7 @@ endif()
 
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
+	add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
 	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI)
   	set(THREAD_LIB "")
 else()
@@ -109,6 +110,7 @@ target_link_libraries(tilemaker
 		${LUA_LIBRARIES}
 		protobuf::libprotobuf
 		shapelib::shp
+		SQLite::SQLite3
 		ZLIB::ZLIB
 		Rapidjson::rapidjson
 		Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
@@ -117,12 +119,6 @@ include(CheckCxxAtomic)
 if(NOT HAVE_CXX11_ATOMIC)
 	string(APPEND CMAKE_CXX_STANDARD_LIBRARIES
 	" ${LIBATOMIC_LINK_FLAGS}")
-endif()
-
-if(MSVC)
-    target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
-else()
-	target_link_libraries(tilemaker SQLite::SQLite3)
 endif()
 
 install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
