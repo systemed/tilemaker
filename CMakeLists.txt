@@ -109,7 +109,6 @@ target_link_libraries(tilemaker
 		${LUA_LIBRARIES}
 		protobuf::libprotobuf
 		shapelib::shp
-		SQLite::SQLite3
 		ZLIB::ZLIB
 		Rapidjson::rapidjson
 		Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
@@ -122,6 +121,8 @@ endif()
 
 if(MSVC)
     target_link_libraries(tilemaker unofficial::sqlite3::sqlite3)
+else()
+	target_link_libraries(tilemaker SQLite::SQLite3)
 endif()
 
 install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
