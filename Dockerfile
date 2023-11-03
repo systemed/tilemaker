@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim AS src
+FROM ubuntu:22.04 AS src
 LABEL Description="Tilemaker" Version="1.4.0"
 
 ARG DEBIAN_FRONTEND=noninteractive
