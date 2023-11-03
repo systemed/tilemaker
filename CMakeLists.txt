@@ -33,7 +33,9 @@ ENDIF ()
 
 find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
 
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
 find_package(Protobuf REQUIRED)
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
 
 find_package(libshp REQUIRED)
 
