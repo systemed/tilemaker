@@ -33,7 +33,7 @@ ENDIF ()
 
 find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
 
-find_package(Protobuf CONFIG REQUIRED)
+find_package(Protobuf REQUIRED)
 
 find_package(libshp REQUIRED)
 
