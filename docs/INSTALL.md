@@ -2,12 +2,15 @@
 
 ### macOS
 
-Install all dependencies with Homebrew:
+Install dependencies with Homebrew (or another package manager):
 
-    brew install protobuf boost lua51 shapelib rapidjson
+    brew install cmake protobuf boost lua@5.3 shapelib rapidjson
 
-Then:
+Then use cmake to build:
 
+    mkdir build
+    cd build
+    cmake ..
     make
     sudo make install
 
