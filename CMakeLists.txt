@@ -107,6 +107,7 @@ add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files
 target_include_directories(tilemaker PRIVATE include)
 target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
 target_link_libraries(tilemaker
+		${THREAD_LIB} ${CMAKE_DL_LIBS}
 		${LUA_LIBRARIES}
 		protobuf::libprotobuf
 		shapelib::shp
