@@ -28,7 +28,7 @@ COPY include /include
 
 WORKDIR /build
 
-RUN cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
 RUN cmake --build .
 RUN strip tilemaker
 
