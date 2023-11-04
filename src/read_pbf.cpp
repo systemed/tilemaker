@@ -98,6 +98,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 					}
 				}
 			}
+			if (llVec.empty()) continue;
 
 			try {
 				tag_map_t tags;

@@ -58,6 +58,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
 		.addFunction("Accept", &OsmLuaProcessing::Accept)
 		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
+		.addFunction("RestartRelations", &OsmLuaProcessing::RestartRelations)
 		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
 	);
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
@@ -499,6 +500,10 @@ kaguya::optional<int> OsmLuaProcessing::NextRelation() {
 	relationSubscript++;
 	if (relationSubscript >= relationList.size()) return kaguya::nullopt_t();
 	return relationList[relationSubscript];
+}
+
+void OsmLuaProcessing::RestartRelations() {
+	relationSubscript = -1;
 }
 
 std::string OsmLuaProcessing::FindInRelation(const std::string &key) {

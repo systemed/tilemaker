@@ -1,0 +1,45 @@
+{
+	"layers": {
+		"place":            { "minzoom": 4,  "maxzoom": 14 },
+
+		"poi":              { "minzoom": 12, "maxzoom": 14 },
+		"poi_detail":       { "minzoom": 14, "maxzoom": 14, "write_to": "poi"},
+
+		"housenumber":      { "minzoom": 14, "maxzoom": 14 },
+
+		"waterway":         { "minzoom":  8,  "maxzoom": 14, "simplify_below": 12, "simplify_level": 0.0003, "simplify_ratio": 2 },
+		"waterway_detail":  { "minzoom": 12,  "maxzoom": 14, "write_to": "waterway" },
+
+		"transportation":             { "minzoom": 8,  "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003 },
+		"transportation_main":        { "minzoom": 9,  "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "write_to": "transportation" },
+		"transportation_mid":         { "minzoom": 11, "maxzoom": 14, "write_to": "transportation" },
+		"transportation_detail":      { "minzoom": 13, "maxzoom": 14, "write_to": "transportation" },
+		"transportation_name":        { "minzoom": 8,  "maxzoom": 14 },
+		"transportation_name_mid":    { "minzoom": 12, "maxzoom": 14, "write_to": "transportation_name" },
+		"transportation_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "transportation_name" },
+
+		"building":          { "minzoom": 13, "maxzoom": 14 },
+
+		"water":             { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_length": 1, "simplify_ratio": 2},
+		"water_name":        { "minzoom": 14, "maxzoom": 14 },
+		"water_name_detail": { "minzoom": 14, "maxzoom": 14, "write_to": "water_name" },
+
+		"aeroway":           { "minzoom": 11, "maxzoom": 14 },
+		"aerodrome_label":   { "minzoom": 10,  "maxzoom": 14 },
+		"park":              { "minzoom": 11, "maxzoom": 14 },
+		"landuse":           { "minzoom": 11, "maxzoom": 14 },
+		"landcover":         { "minzoom": 6, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "simplify_ratio": 2 },
+		"mountain_peak":     { "minzoom": 11, "maxzoom": 14 }
+	},
+	"settings": {
+		"minzoom": 4,
+		"maxzoom": 14,
+		"basezoom": 14,
+		"include_ids": false,
+		"name": "Tilemaker to OpenMapTiles schema",
+		"version": "3.0",
+		"description": "Tile config based on OpenMapTiles schema",
+		"compress": "gzip"
+	}
+}
+

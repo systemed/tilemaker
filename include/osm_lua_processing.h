@@ -164,6 +164,7 @@ public:
 	
 	// Relation scan support
 	kaguya::optional<int> NextRelation();
+	void RestartRelations();
 	std::string FindInRelation(const std::string &key);
 	void Accept();
 
