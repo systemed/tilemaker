@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS src
+FROM debian:bullseye-slim AS src
 LABEL Description="Tilemaker" Version="1.4.0"
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -33,6 +33,15 @@ RUN cmake --build .
 RUN strip tilemaker
 
 FROM debian:bullseye-slim
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      liblua5.1-0 \
+      libprotobuf-dev \
+      libshp-dev \
+      libsqlite3-dev \
+      libboost-filesystem-dev \
+      libboost-program-options-dev \
+      libboost-iostreams-dev
 WORKDIR /
 COPY --from=src /build/tilemaker .
 COPY resources /resources
