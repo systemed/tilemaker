@@ -505,6 +505,7 @@ public:
 	void ensure_used_ways_inited() {
 		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
 	}
+	void clear_used_ways() { used_ways.clear(); }
 	
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }

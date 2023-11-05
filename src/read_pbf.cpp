@@ -236,7 +236,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			std::cout.flush();
 		};
 
-		if(phase == ReadPhase::Nodes || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Nodes) {
 			bool done = ReadNodes(output, pg, pb, nodeKeyPositions);
 			if(done) { 
 				output_progress();
@@ -245,7 +245,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			}
 		}
 
-		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
+		if(phase == ReadPhase::RelationScan) {
 			osmStore.ensure_used_ways_inited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
@@ -255,7 +255,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			}
 		}
 	
-		if(phase == ReadPhase::Ways || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Ways) {
 			bool done = ReadWays(output, pg, pb, locationsOnWays);
 			if(done) { 
 				output_progress();
@@ -264,7 +264,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			}
 		}
 
-		if(phase == ReadPhase::Relations || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Relations) {
 			bool done = ReadRelations(output, pg, pb);
 			if(done) { 
 				output_progress();
@@ -352,6 +352,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			osmStore.nodes_sort(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
+			osmStore.clear_used_ways();
 			osmStore.ways_sort(threadNum);
 		}
 	}

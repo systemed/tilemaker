@@ -22,7 +22,7 @@ class OsmLuaProcessing;
 class PbfReader
 {
 public:	
-	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8, All = 15 };
+	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8 };
 
 	PbfReader(OSMStore &osmStore);
 
@@ -46,7 +46,7 @@ public:
 
 private:
 	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
-	               std::unordered_set<std::string> const &nodeKeys, bool locationsOnWays, ReadPhase phase = ReadPhase::All);
+	               std::unordered_set<std::string> const &nodeKeys, bool locationsOnWays, ReadPhase phase);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
 	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays);
