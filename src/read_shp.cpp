@@ -165,7 +165,10 @@ void readShapefile(const Box &clippingBox,
 		if (shapeBox.min_corner().get<0>() > clippingBox.max_corner().get<0>() ||
 		    shapeBox.max_corner().get<0>() < clippingBox.min_corner().get<0>() ||
 		    shapeBox.min_corner().get<1>() > clippingBox.max_corner().get<1>() ||
-		    shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>()) { continue; }
+		    shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>()) {
+			SHPDestroyObject(shape);
+			continue;
+		}
 
 		if (shapeType==1) {
 			// Points
@@ -281,6 +284,7 @@ void readShapefile(const Box &clippingBox,
 			// Not supported
 			cerr << "Shapefile entity #" << i << " type " << shapeType << " not supported" << endl;
 		}
+		SHPDestroyObject(shape);
 	}
 
 	SHPClose(shp);
