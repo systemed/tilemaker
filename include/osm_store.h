@@ -79,12 +79,19 @@ class NodeStore
 
 public:
 	using element_t = std::pair<NodeID, LatpLon>;
+	using internal_element_t = std::pair<ShardedNodeID, LatpLon>;
 	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
 
 	void reopen()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLons = std::make_unique<map_t>();
+		for (auto i = 0; i < mLatpLons.size(); i++)
+			mLatpLons[i]->clear();
+
+		mLatpLons.clear();
+		for (auto i = 0; i < NODE_SHARDS; i++) {
+			mLatpLons.push_back(std::make_unique<map_t>());
+		}
 	}
 
 	// @brief Lookup a latp/lon pair
@@ -92,11 +99,14 @@ public:
 	// @return Latp/lon pair
 	// @exception NotFound
 	LatpLon at(NodeID i) const {
-		auto iter = std::lower_bound(mLatpLons->begin(), mLatpLons->end(), i, [](auto const &e, auto i) { 
+		auto shard = mLatpLons[shardPart(i)];
+		auto id = idPart(i);
+
+		auto iter = std::lower_bound(shard->begin(), shard->end(), id, [](auto const &e, auto i) { 
 			return e.first < i; 
 		});
 
-		if(iter == mLatpLons->end() || iter->first != i)
+		if(iter == shard->end() || iter->first != id)
 			throw std::out_of_range("Could not find node with id " + std::to_string(i));
 
 		return iter->second;
@@ -105,7 +115,11 @@ public:
 	// @brief Return the number of stored items
 	size_t size() const { 
 		std::lock_guard<std::mutex> lock(mutex);
-		return mLatpLons->size(); 
+		uint64_t size = 0;
+		for (auto i = 0; i < mLatpLons.size(); i++)
+			size += mLatpLons[i]->size(); 
+
+		return size;
 	}
 
 	// @brief Insert a latp/lon pair.
@@ -114,27 +128,49 @@ public:
 	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
 	//			  (though unnecessarily for current impl, future impl may impose that)
 	void insert_back(NodeID i, LatpLon coord) {
-		mLatpLons->push_back(std::make_pair(i, coord));
+		mLatpLons[shardPart(i)]->push_back(std::make_pair(idPart(i), coord));
 	}
 
 	void insert_back(std::vector<element_t> const &element) {
+		uint32_t newEntries[NODE_SHARDS] = {};
+
+		// Before taking the lock, do a pass to find out how much
+		// to grow each backing collection
+		for (auto it = element.begin(); it != element.end(); it++) {
+			newEntries[shardPart(it->first)]++;
+		}
+
 		std::lock_guard<std::mutex> lock(mutex);
-		auto i = mLatpLons->size();
-		mLatpLons->resize(i + element.size());
-		std::copy(element.begin(), element.end(), mLatpLons->begin() + i);
+		for (auto i = 0; i < NODE_SHARDS; i++) {
+			if (newEntries[i] == 0) continue;
+			auto size = mLatpLons[i]->size();
+			mLatpLons[i]->resize(size + newEntries[i]);
+		}
+
+		for (auto it = element.begin(); it != element.end(); it++) {
+			insert_back(it->first, it->second);
+		}
 	}
 
 	// @brief Make the store empty
 	void clear() { 
-		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLons->clear(); 
+		reopen();
 	}
 
 	void sort(unsigned int threadNum);
 
 private: 
 	mutable std::mutex mutex;
-	std::shared_ptr<map_t> mLatpLons;
+	std::vector<std::shared_ptr<map_t>> mLatpLons;
+
+	uint32_t shardPart(NodeID id) const {
+		uint32_t rv = id >> 32;
+		return rv;
+	}
+
+	uint32_t idPart(NodeID id) const {
+		return id;
+	}
 };
 
 class CompactNodeStore
