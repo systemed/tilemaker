@@ -80,7 +80,7 @@ class NodeStore
 public:
 	using element_t = std::pair<NodeID, LatpLon>;
 	using internal_element_t = std::pair<ShardedNodeID, LatpLon>;
-	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
+	using map_t = std::deque<internal_element_t, mmap_allocator<internal_element_t>>;
 
 	void reopen()
 	{
@@ -122,17 +122,9 @@ public:
 		return size;
 	}
 
-	// @brief Insert a latp/lon pair.
-	// @param i OSM ID of a node
-	// @param coord a latp/lon pair to be inserted
-	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
-	//			  (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(NodeID i, LatpLon coord) {
-		mLatpLons[shardPart(i)]->push_back(std::make_pair(idPart(i), coord));
-	}
-
 	void insert_back(std::vector<element_t> const &element) {
 		uint32_t newEntries[NODE_SHARDS] = {};
+		std::vector<map_t::iterator> iterators;
 
 		// Before taking the lock, do a pass to find out how much
 		// to grow each backing collection
@@ -142,13 +134,17 @@ public:
 
 		std::lock_guard<std::mutex> lock(mutex);
 		for (auto i = 0; i < NODE_SHARDS; i++) {
-			if (newEntries[i] == 0) continue;
 			auto size = mLatpLons[i]->size();
 			mLatpLons[i]->resize(size + newEntries[i]);
+			iterators.push_back(mLatpLons[i]->begin() + size);
 		}
 
 		for (auto it = element.begin(); it != element.end(); it++) {
-			insert_back(it->first, it->second);
+			uint32_t shard = shardPart(it->first);
+			uint32_t id = idPart(it->first);
+
+			*iterators[shard] = std::make_pair(id, it->second);
+			iterators[shard]++;
 		}
 	}
 
@@ -505,12 +501,6 @@ public:
 	void shapes_sort(unsigned int threadNum = 1);
 	void generated_sort(unsigned int threadNum = 1);
 
-	void nodes_insert_back(NodeID i, LatpLon coord) {
-		if(!use_compact_nodes)
-			nodes.insert_back(i, coord);
-		else
-			compact_nodes.insert_back(i, coord);
-	}
 	void nodes_insert_back(std::vector<NodeStore::element_t> const &new_nodes) {
 		if(!use_compact_nodes)
 			nodes.insert_back(new_nodes);
