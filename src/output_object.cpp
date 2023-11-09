@@ -171,6 +171,7 @@ Geometry buildWayGeometry(OSMStore &osmStore, OutputObject const &oo, const Tile
 			geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
+			if (!geom::is_valid(mp)) make_valid(mp);
 			return mp;
 		}
 
