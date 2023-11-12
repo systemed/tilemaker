@@ -16,20 +16,61 @@ typedef uint32_t AttributeIndex; // check this is enough
 
 // AttributePair is a key/value pair (with minzoom)
 struct AttributePair {
-	std::string key;
 	vector_tile::Tile_Value value;
+	short keyIndex;
 	char minzoom;
 
 	AttributePair(std::string const &key, vector_tile::Tile_Value const &value, char minzoom)
-		: key(key), value(value), minzoom(minzoom)
+		: keyIndex(key2index(key)), value(value), minzoom(minzoom)
 	{ }
 
 	bool operator==(const AttributePair &other) const {
-		if (minzoom!=other.minzoom || key!=other.key) return false;
+		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex) return false;
 		if (value.has_string_value()) return other.value.has_string_value() && other.value.string_value()==value.string_value();
 		if (value.has_bool_value())   return other.value.has_bool_value()   && other.value.bool_value()  ==value.bool_value();
 		if (value.has_float_value())  return other.value.has_float_value()  && other.value.float_value() ==value.float_value();
 		throw std::runtime_error("Invalid type in attribute store");
+	}
+
+	const std::string& key() const {
+		// To be thread-safe, you must only read the actual string value after all
+		// attribute sets have been constructed, e.g. when writing output values.
+		//
+		// In general, prefer to use keyIndex for equality checking when building
+		// up the sets of AttributePairs.
+		return keys[keyIndex];
+	}
+
+private:
+	static std::map<std::string, uint16_t> keys2index;
+	static std::vector<std::string> keys;
+	static std::mutex rw_mutex;
+
+	// TODO: the set of unique keys is relatively stable, like ~50 or so.
+	//
+	// Forcing all readers to take a lock might be expensive. Currently,
+	// other locks dominate processing. Once PR #578 lands, revisit to see
+	// if this is a bottleneck.
+	//
+	// If it is, re-write to have lock-free reads: publish a pointer to
+	// an immutable map/vector for lookups.
+	//
+	// If a reader fails to find the key it wants, it could then grab a lock,
+	// clone the map/vector, check again for its entry, insert if missing,
+	// and swap the pointer to the immutable map/vector.
+	static uint16_t key2index(const std::string& key) {
+		std::lock_guard<std::mutex> lock(rw_mutex);
+
+		try {
+			return keys2index.at(key);
+		} catch (std::out_of_range &err) {
+			uint32_t newIndex = keys.size();
+			if (newIndex > 65535)
+				throw std::out_of_range("more than 65,536 unique keys");
+			keys2index[key] = newIndex;
+			keys.push_back(key);
+			return newIndex;
+		}
 	}
 };
 
@@ -52,7 +93,7 @@ struct AttributeSet {
     struct key_value_less {
         bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {            
 			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
-			     : (lhs.key != rhs.key) ? (lhs.key < rhs.key)
+			     : (lhs.keyIndex != rhs.keyIndex) ? (lhs.keyIndex < rhs.keyIndex)
 			     : compare(lhs.value, rhs.value);
         }
     }; 
@@ -69,7 +110,7 @@ struct AttributeSet {
 			auto idx = attributes.values.size();
 			for(auto const &i: attributes.values) {
 				boost::hash_combine(idx, i.minzoom);
-				boost::hash_combine(idx, i.key);
+				boost::hash_combine(idx, i.keyIndex);
 				boost::hash_combine(idx, type_index(i.value));
 
 				if(i.value.has_string_value())

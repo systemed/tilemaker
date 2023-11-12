@@ -1,5 +1,11 @@
 #include "attribute_store.h"
 
+// AttributePair
+std::map<std::string, uint16_t> AttributePair::keys2index;
+std::vector<std::string> AttributePair::keys;
+std::mutex AttributePair::rw_mutex;
+
+
 // AttributeSet
 
 void AttributeSet::add(AttributePair const &kv) {
