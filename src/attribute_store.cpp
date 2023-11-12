@@ -30,7 +30,7 @@ AttributeIndex AttributeStore::add(AttributeSet const &attributes) {
 	return idx;
 }
 
-std::set<AttributePair, AttributeSet::key_value_less> AttributeStore::get(AttributeIndex index) const {
+const std::set<AttributePair, AttributeSet::key_value_less>& AttributeStore::get(AttributeIndex index) const {
 	try {
 		return attribute_sets.nth(index).key().values;
 	} catch (std::out_of_range &err) {

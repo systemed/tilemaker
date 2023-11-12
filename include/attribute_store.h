@@ -107,7 +107,7 @@ struct AttributeStore {
 	int lookups=0;
 
 	AttributeIndex add(AttributeSet const &attributes);
-	std::set<AttributePair, AttributeSet::key_value_less> get(AttributeIndex index) const;
+	const std::set<AttributePair, AttributeSet::key_value_less>& get(AttributeIndex index) const;
 	void reportSize() const;
 	void doneReading();
 	
