@@ -262,10 +262,12 @@ void void_mmap_allocator::destroy(void *p)
 
 void NodeStore::sort(unsigned int threadNum) { 
 	std::lock_guard<std::mutex> lock(mutex);
-	boost::sort::block_indirect_sort(
-		mLatpLons->begin(), mLatpLons->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
+	for (auto i = 0; i < NODE_SHARDS; i++) {
+		boost::sort::block_indirect_sort(
+			mLatpLons[i]->begin(), mLatpLons[i]->end(), 
+			[](auto const &a, auto const &b) { return a.first < b.first; }, 
+			threadNum);
+	}
 }
 
 void WayStore::sort(unsigned int threadNum) { 
