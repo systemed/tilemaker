@@ -26,8 +26,8 @@ public:
 
 	PbfReader(OSMStore &osmStore);
 
-	using pbfreader_generate_output = std::function< std::unique_ptr<OsmLuaProcessing> () >;
-	using pbfreader_generate_stream = std::function< std::unique_ptr<std::istream> () >;
+	using pbfreader_generate_output = std::function< std::shared_ptr<OsmLuaProcessing> () >;
+	using pbfreader_generate_stream = std::function< std::shared_ptr<std::istream> () >;
 
 	int ReadPbfFile(std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, 
 			pbfreader_generate_stream const &generate_stream,
