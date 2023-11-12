@@ -44,12 +44,14 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 				}
 				kvPos++;
 			}
-			// For tagged nodes, call Lua, then save the OutputObject
-			boost::container::flat_map<std::string, std::string> tags;
 
 			nodes.push_back(std::make_pair(static_cast<NodeID>(nodeId), node));
 
 			if (significant) {
+				// For tagged nodes, call Lua, then save the OutputObject
+				boost::container::flat_map<std::string, std::string> tags;
+				tags.reserve(kvPos / 2);
+
 				for (uint n=kvStart; n<kvPos-1; n+=2) {
 					tags[pb.stringtable().s(dense.keys_vals(n))] = pb.stringtable().s(dense.keys_vals(n+1));
 				}

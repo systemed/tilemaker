@@ -37,6 +37,7 @@ public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	template<typename T>
 	void readTags(T &pbfObject, PrimitiveBlock const &pb, tag_map_t &tags) {
+		tags.reserve(pbfObject.keys_size());
 		auto keysPtr = pbfObject.mutable_keys();
 		auto valsPtr = pbfObject.mutable_vals();
 		for (uint n=0; n < pbfObject.keys_size(); n++) {
