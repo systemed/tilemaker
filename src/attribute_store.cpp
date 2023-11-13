@@ -16,8 +16,8 @@ thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(
 
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
 std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
-std::vector<std::map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);
-std::shared_ptr<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::hotMap(new std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>());
+std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);
+std::shared_ptr<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::hotMap(new boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>());
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	const bool hot = pair.hot();
@@ -47,11 +47,11 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 				pairs[0].push_back(AttributePair("", vector_tile::Tile_Value(), 0));
 
 			uint16_t newIndex = pairs[0].size();
-			std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr> newMap(hotMap->begin(), hotMap->end());
+			boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr> newMap(hotMap->begin(), hotMap->end());
 			pairs[0].push_back(pair);
 			const AttributePair* ptr = &pairs[0][newIndex];
 			newMap[ptr] = newIndex;
-			hotMap = std::make_shared<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>>(newMap);
+			hotMap = std::make_shared<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>>(newMap);
 			return newIndex;
 		}
 	}
@@ -186,7 +186,7 @@ void AttributeStore::reportSize() const {
 	std::cout << "Attributes: " << attribute_sets.size() << " sets from " << lookups << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
-	if (true) {
+	if (false) {
 		std::map<uint32_t, uint32_t> tagCountDist;
 
 		for (size_t i = 0; i < AttributePairStore::pairs.size(); i++) {

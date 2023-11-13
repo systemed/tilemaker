@@ -6,6 +6,7 @@
 #include <mutex>
 #include <atomic>
 #include <boost/functional/hash.hpp>
+#include <boost/container/flat_map.hpp>
 #include <vector>
 #include <unordered_map>
 #include <tsl/ordered_set.h>
@@ -263,11 +264,11 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	static std::vector<std::mutex> pairsMutex;
-	static std::vector<std::map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
+	static std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 
 	// The hot pool requires the ability to look up index by
 	// pair value.
-	static std::shared_ptr<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> hotMap;
+	static std::shared_ptr<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> hotMap;
 };
 
 // AttributeSet is a set of AttributePairs
