@@ -244,6 +244,14 @@ public:
 		}
 	}; 
 
+	struct key_value_less_ptr {
+		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
+			return (lhs->minzoom != rhs->minzoom) ? (lhs->minzoom < rhs->minzoom)
+			 : (lhs->keyIndex != rhs->keyIndex) ? (lhs->keyIndex < rhs->keyIndex)
+			 : compare(lhs->value, rhs->value);
+		}
+	}; 
+
 	static std::vector<std::deque<AttributePair>> pairs;
 
 private:
@@ -255,11 +263,11 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	static std::vector<std::mutex> pairsMutex;
-	static std::vector<std::map<const AttributePair, uint32_t, AttributePairStore::key_value_less>> pairsMaps;
+	static std::vector<std::map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 
 	// The hot pool requires the ability to look up index by
 	// pair value.
-	static std::shared_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> hotMap;
+	static std::shared_ptr<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> hotMap;
 };
 
 // AttributeSet is a set of AttributePairs

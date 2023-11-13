@@ -16,8 +16,8 @@ thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(
 
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
 std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
-std::vector<std::map<const AttributePair, uint32_t, AttributePairStore::key_value_less>> AttributePairStore::pairsMaps(PAIR_SHARDS);
-std::shared_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> AttributePairStore::hotMap(new std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>());
+std::vector<std::map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);
+std::shared_ptr<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::hotMap(new std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>());
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	const bool hot = pair.hot();
@@ -27,14 +27,14 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 		// Have we already assigned it a hot ID?
 
 		auto captured = hotMap;
-		auto entry = captured->find(pair);
+		auto entry = captured->find(&pair);
 
 		if (entry != captured->end())
 			return entry->second;
 
 		// See if someone else inserted it while we were faffing about.
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		entry = hotMap->find(pair);
+		entry = hotMap->find(&pair);
 
 		if (entry != hotMap->end())
 			return entry->second;
@@ -47,10 +47,11 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 				pairs[0].push_back(AttributePair("", vector_tile::Tile_Value(), 0));
 
 			uint16_t newIndex = pairs[0].size();
-			std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less> newMap(hotMap->begin(), hotMap->end());
-			newMap[pair] = newIndex;
-			hotMap = std::make_shared<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>>(newMap);
+			std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr> newMap(hotMap->begin(), hotMap->end());
 			pairs[0].push_back(pair);
+			const AttributePair* ptr = &pairs[0][newIndex];
+			newMap[ptr] = newIndex;
+			hotMap = std::make_shared<std::map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>>(newMap);
 			return newIndex;
 		}
 	}
@@ -70,15 +71,16 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 	// TODO: do this without exceptions, good enough for measuring memory
 	try {
-		uint32_t rv = pairsMaps[shard].at(pair);
+		uint32_t rv = pairsMaps[shard].at(&pair);
 		return rv;
 	} catch (std::out_of_range &e) {
 		uint32_t offset = pairs[shard].size();
 		pairs[shard].push_back(pair);
+		const AttributePair* ptr = &pairs[shard][offset];
 		uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
 
 //		std::cout << "addPair(" << rv << ") shard=" << shard << " offset=" << offset << std::endl;
-		pairsMaps[shard][pair] = rv;
+		pairsMaps[shard][ptr] = rv;
 		return rv;
 	}
 };
@@ -184,7 +186,7 @@ void AttributeStore::reportSize() const {
 	std::cout << "Attributes: " << attribute_sets.size() << " sets from " << lookups << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
-	if (false) {
+	if (true) {
 		std::map<uint32_t, uint32_t> tagCountDist;
 
 		for (size_t i = 0; i < AttributePairStore::pairs.size(); i++) {
@@ -197,7 +199,7 @@ void AttributeStore::reportSize() const {
 			}
 		}
 		size_t pairs = 0;
-		std::map<AttributePair, size_t, AttributePairStore::key_value_less> uniques;
+		std::map<uint32_t, size_t> uniques;
 		for (const auto attr_set: attribute_sets) {
 			pairs += attr_set.values.size();
 
@@ -209,9 +211,9 @@ void AttributeStore::reportSize() const {
 
 			for (const auto attr: attr_set.values) {
 				try {
-					uniques[AttributePairStore::getPair(attr)]++;
+					uniques[attr]++;
 				} catch (std::out_of_range &err) {
-					uniques[AttributePairStore::getPair(attr)] = 1;
+					uniques[attr] = 1;
 				}
 			}
 		}
@@ -222,7 +224,8 @@ void AttributeStore::reportSize() const {
 		}
 
 		for (const auto entry: uniques) {
-			std::cout << "attrpair freq= " << entry.second << " key=" << entry.first.key() <<" value=" << entry.first.value << std::endl;
+			const auto& pair = AttributePairStore::getPair(entry.first);
+			std::cout << "attrpair freq= " << entry.second << " key=" << pair.key() <<" value=" << pair.value << std::endl;
 		}
 	}
 }
