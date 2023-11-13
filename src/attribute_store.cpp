@@ -39,6 +39,11 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 		// OK, it's definitely not there. Is there room to add it?
 		if (pairs[0].size() < 1 << 16) {
+
+			// We use 0 as a sentinel, so ensure there's at least one entry in the shard.
+			if (pairs[0].size() == 0)
+				pairs[0].push_back(AttributePair("", vector_tile::Tile_Value(), 0));
+
 			uint16_t newIndex = pairs[0].size();
 			std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less> newMap(hotMap->begin(), hotMap->end());
 			newMap[pair] = newIndex;
