@@ -10,38 +10,53 @@ std::unique_ptr<AttributeKeyStoreImmutable> AttributeKeyStore::immutable(
 );
 
 // AttributePairStore
-// TODO: can we use a hash instead of an RNG for assigning? For now, we have hot spots
-// until we handle "hot" attribute pairs (eg tunnel=0).
 thread_local std::random_device dev;
 thread_local std::mt19937 rng(dev());
 thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(0, PAIR_SHARDS-1);
 
-std::vector<std::deque<AttributePair>> AttributePairStore::pairRefs(PAIR_SHARDS);
-std::vector<std::mutex> AttributePairStore::pairRefs_mutex(PAIR_SHARDS);
+std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
+std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
+std::unique_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> AttributePairStore::hotMap(new std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>());
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair) {
-	// TODO: is it worth using a hash? We could also randomly assign pairs
-	// to shards.
-	// The pair has a `keyIndex`, so subsequent runs of the program will
-	// likely have a different hash value for the pair anyway, so there's
-	// no reproduceability benefit.
-	//
-	// Oh, yeah, until we do hot/cold, random assignment is probably needed...
-//		uint32_t hashValue = pair.hash();
-//		size_t shard = hashValue >> (32 - SHARD_BITS);
-//	timespec start, end;
-//	clock_gettime(CLOCK_MONOTONIC, &start);
+	const bool hot = pair.hot();
+
+	if (hot) {
+		// This might be a popular pair, worth re-using.
+		// Have we already assigned it a hot ID?
+
+		auto entry = hotMap->find(pair);
+
+		if (entry != hotMap->end())
+			return entry->second;
+
+		// See if someone else inserted it while we were faffing about.
+		std::lock_guard<std::mutex> lock(pairsMutex[0]);
+		entry = hotMap->find(pair);
+
+		if (entry != hotMap->end())
+			return entry->second;
+
+		// OK, it's definitely not there. Is there room to add it?
+		if (pairs[0].size() < 1 << 16) {
+			uint16_t newIndex = pairs[0].size();
+			std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less> newMap(hotMap->begin(), hotMap->end());
+			newMap[pair] = newIndex;
+			hotMap = std::make_unique<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>>(newMap);
+			pairs[0].push_back(pair);
+		}
+	}
+
+	// This is either not a hot key, or there's no room for in the hot shard.
+	// Throw it on the pile with the rest of the pairs.
 
 	size_t shard = nextShard(rng);
-//	uint64_t shardy = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
-//	size_t shard = shardy % PAIR_SHARDS;
-//	std::cout << "nextShard=" << shard << std::endl << std::flush;
-	std::lock_guard<std::mutex> lock(pairRefs_mutex[shard]);
-//		std::cout << "pairRefs_mutex[" << shard << "]=" << pairRefs_mutex[shard].native_handle() << std::endl;
-	uint32_t offset = pairRefs[shard].size();
-	pairRefs[shard].push_back(pair);
+	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
+	while (shard == 0) shard = nextShard(rng);
+	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+	uint32_t offset = pairs[shard].size();
+	pairs[shard].push_back(pair);
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
-//		std::cout << "adding pair to shard=" << shard << ", offset=" << offset << ", index=" << rv;
 	return rv;
 };
 
@@ -49,7 +64,6 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 // AttributeSet
 
 void AttributeSet::add(AttributePair const &kv) {
-	// TODO: implement hot/cold strategy to re-use popular pairs
 	uint32_t index = AttributePairStore::addPair(kv);
 	values.push_back(index);
 }
@@ -125,11 +139,11 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 
 // TODO: consider implementing this as an iterator, or returning a cheaper
 //       container than a set (vector?)
-std::set<AttributePair, AttributeSet::key_value_less> AttributeStore::get(AttributeIndex index) const {
+std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(AttributeIndex index) const {
 	try {
 		const auto pairIds = attribute_sets.nth(index).key().values;
 
-		std::set<AttributePair, AttributeSet::key_value_less> rv;
+		std::set<AttributePair, AttributePairStore::key_value_less> rv;
 		for (const auto& id: pairIds) {
 			rv.insert(AttributePairStore::getPair(id));
 		}
@@ -148,7 +162,7 @@ void AttributeStore::reportSize() const {
 		std::map<uint32_t, uint32_t> tagCountDist;
 
 		size_t pairs = 0;
-		std::map<AttributePair, size_t, AttributeSet::key_value_less> uniques;
+		std::map<AttributePair, size_t, AttributePairStore::key_value_less> uniques;
 		for (const auto attr_set: attribute_sets) {
 			pairs += attr_set.values.size();
 

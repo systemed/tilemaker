@@ -19,6 +19,12 @@ inline std::ostream& operator<<(std::ostream& os, const vector_tile::Tile_Value&
 	return os;
 }
 
+// TODO: the PairStore and KeyStore have static scope. Should probably
+// do the work to move them into AttributeStore, and change how
+// AttributeSet is interacted with?
+//
+// OTOH, AttributeStore's lifetime is the process's lifetime, so it'd
+// just be a good coding style thing, not actually preventing a leak.
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -85,6 +91,13 @@ public:
 	}
 
 	static const std::string& getKey(uint16_t index) {
+		// TODO: is this safe? I suspect it might be in practice because
+		// we only have ~50 keys, which is smaller than the initial size of
+		// a deque. But I think if the deque ever grew concurrently
+		// with a read, we'd be in trouble.
+		//
+		// We should either wrap this in a futex, or access it through
+		// the immutable key score.
 		return keys[index];
 	}
 
@@ -112,6 +125,46 @@ struct AttributePair {
 		if (value.has_bool_value())   return other.value.has_bool_value()   && other.value.bool_value()  ==value.bool_value();
 		if (value.has_float_value())  return other.value.has_float_value()  && other.value.float_value() ==value.float_value();
 		throw std::runtime_error("Invalid type in attribute store");
+	}
+
+	bool hot() const {
+		// Is this pair a candidate for the hot pool?
+
+		// Hot pairs are pairs that we think are likely to be re-used, like
+		// tunnel=0, highway=yes, and so on.
+		//
+		// The trick is that we commit to putting them in the hot pool
+		// before we know if we were right.
+
+		// All boolean pairs are eligible.
+		if (value.has_bool_value())
+			return true;
+
+		// Single digit integers are eligible.
+		if (value.has_float_value()) {
+			float v = value.float_value();
+
+			if (v >= 0 && v <= 9 && (v == 0 || v == 1 || v == 2 || v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 || v == 9))
+				return true;
+		}
+
+		// The remaining things should be strings, but just in case...
+		if (!value.has_string_value())
+			return false;
+
+		// Only strings that are IDish are eligible: only lowercase letters.
+		bool ok = true;
+		for (const auto& c: value.string_value()) {
+			if (c < 'a' || c > 'z')
+				return false;
+		}
+
+		// Keys that sound like name, name:en, etc, aren't eligible.
+		const auto& keyName = AttributeKeyStore::getKey(keyIndex);
+		if (keyName.size() >= 4 && keyName[0] == 'n' && keyName[1] == 'a' && keyName[2] == 'm' && keyName[3])
+			return false;
+
+		return true;
 	}
 
 	const std::string& key() const {
@@ -142,10 +195,15 @@ struct AttributePair {
 };
 
 
-// Pick SHARD_BITS such that PAIR_SHARDS is at least 2x your number of cores.
-// This reduces the odds of lock contention on inserting/retrieving the "cold" pairs.
-// For now, it's hardcoded, perhaps it should be a function of the numThreads argument.
-#define SHARD_BITS 7
+// We shard the cold pools to reduce the odds of lock contention on
+// inserting/retrieving the "cold" pairs.
+//
+// It should be at least 2x the number of your cores -- 256 shards is probably
+// reasonable for most people.
+//
+// We also reserve the bottom shard for the hot pool. Since a shard is 16M entries,
+// but the hot pool is only 64KB entries, we're wasting a little bit of key space.
+#define SHARD_BITS 8
 #define PAIR_SHARDS (1 << SHARD_BITS)
 
 class AttributePairStore {
@@ -154,26 +212,13 @@ public:
 		uint32_t shard = i >> (32 - SHARD_BITS);
 		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
-		std::lock_guard<std::mutex> lock(pairRefs_mutex[shard]);
-		return pairRefs[shard][offset];
+		// TODO: do we need this lock? I suspect the answer is yes
+		std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+		return pairs[shard][offset];
 	};
 
 	static uint32_t addPair(const AttributePair& pair);
 
-private:
-	// We refer to all attribute pairs by index. To avoid contention,
-	// we shard the deques containing the pairs. If there are two shards,
-	// shard 1 starts from 0, shard 2 starts from 2^31, and so on.
-	// TODO: optimize for "hot" pairs, which will be stored in the first 64K entries,
-	//       so that we can refer to them by a short.
-	static std::vector<std::deque<AttributePair>> pairRefs;
-	static std::vector<std::mutex> pairRefs_mutex;
-
-};
-
-// AttributeSet is a set of AttributePairs
-// = the complete attributes for one object
-struct AttributeSet {
 	static bool compare(vector_tile::Tile_Value const &lhs, vector_tile::Tile_Value const &rhs) {
 		auto lhs_id = AttributePair::type_index(lhs);
 		auto rhs_id = AttributePair::type_index(lhs);
@@ -187,13 +232,34 @@ struct AttributeSet {
 		throw std::runtime_error("Invalid type in attribute store");
 	}
 
-    struct key_value_less {
-        bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {            
+	struct key_value_less {
+		bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {            
 			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
-			     : (lhs.keyIndex != rhs.keyIndex) ? (lhs.keyIndex < rhs.keyIndex)
-			     : compare(lhs.value, rhs.value);
-        }
-    }; 
+			 : (lhs.keyIndex != rhs.keyIndex) ? (lhs.keyIndex < rhs.keyIndex)
+			 : compare(lhs.value, rhs.value);
+		}
+	}; 
+
+
+private:
+	// We refer to all attribute pairs by index.
+	//
+	// Each shard is responsible for a portion of the key space.
+	// 
+	// The 0th shard is special: it's the hot shard, for pairs
+	// we suspect will be popular. It only ever has 64KB items,
+	// so that we can reference it with a short.
+	static std::vector<std::deque<AttributePair>> pairs;
+	static std::vector<std::mutex> pairsMutex;
+
+	// The hot pool requires the ability to look up index by
+	// pair value.
+	static std::unique_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> hotMap;
+};
+
+// AttributeSet is a set of AttributePairs
+// = the complete attributes for one object
+struct AttributeSet {
 
 	struct hash_function {
 		// Calculating the hash value requires indirection and locks, so
@@ -276,7 +342,7 @@ struct AttributeStore {
 	int lookups=0;
 
 	AttributeIndex add(AttributeSet &attributes);
-	std::set<AttributePair, AttributeSet::key_value_less> get(AttributeIndex index) const;
+	std::set<AttributePair, AttributePairStore::key_value_less> get(AttributeIndex index) const;
 	void reportSize() const;
 	void doneReading();
 	
