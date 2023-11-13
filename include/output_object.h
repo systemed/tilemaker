@@ -79,7 +79,7 @@ public:
 	 * (we can't easily use find() because of the different value-type encoding - 
 	 *	should be possible to improve this though)
 	 */
-	int findValue(std::vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const;
+	int findValue(const std::vector<vector_tile::Tile_Value>* valueList, const vector_tile::Tile_Value &value) const;
 };
 #pragma pack(pop)
 

@@ -57,7 +57,7 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value const &value = it.value;
+		const vector_tile::Tile_Value& value = it.value;
 		int subscript = findValue(valueList, value);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
@@ -75,9 +75,9 @@ void OutputObject::writeAttributes(
 // Find a value in the value dictionary
 // (we can't easily use find() because of the different value-type encoding - 
 //	should be possible to improve this though)
-int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const {
+int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, const vector_tile::Tile_Value &value) const {
 	for (size_t i=0; i<valueList->size(); i++) {
-		vector_tile::Tile_Value v = valueList->at(i);
+		const vector_tile::Tile_Value& v = valueList->at(i);
 		if (v.has_string_value() && value.has_string_value() && v.string_value()==value.string_value()) { return i; }
 		if (v.has_float_value()  && value.has_float_value()  && v.float_value() ==value.float_value() ) { return i; }
 		if (v.has_bool_value()	 && value.has_bool_value()   && v.bool_value()  ==value.bool_value()	) { return i; }
