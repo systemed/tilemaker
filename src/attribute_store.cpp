@@ -111,38 +111,9 @@ bool sortFn(const AttributePair* a, const AttributePair* b) {
 }
 
 void AttributeSet::finalize_set() {
-	// Memoize the hash value of this set so we don't repeatedly calculate it
-	// when inserting/querying sets.
-	//
-	// TODO: sort its attribute pairs so == tests can do a simple pairwise comparisons
-	auto idx = values.size();
-
-	std::vector<const AttributePair*> pairs;
-	for(auto const &j: values) {
-		// NB: getPair takes a lock
-		const auto& i = AttributePairStore::getPair(j);
-		pairs.push_back(&i);
-	}
-	
-	// Sort pairs in a stable way, so that we produce the same hash
-	std::sort (pairs.begin(), pairs.end(), sortFn);
-
-	for (auto const &i: pairs) {
-		boost::hash_combine(idx, i->minzoom);
-		boost::hash_combine(idx, i->keyIndex);
-		boost::hash_combine(idx, AttributePair::type_index(i->value));
-
-		if(i->value.has_string_value())
-			boost::hash_combine(idx, i->value.string_value());
-		else if(i->value.has_float_value())
-			boost::hash_combine(idx, i->value.float_value());
-		else if(i->value.has_bool_value())
-			boost::hash_combine(idx, i->value.bool_value());
-		else {
-			std::cout << "unknown Tile_Value in finalize_set, keyIndex was " << i->keyIndex << std::endl;
-		}
-	}
-	hash_value = idx;
+	// Ensure that values are sorted, so we have a canonical representation of
+	// an attribute set.
+	sort(values.begin(), values.end());
 }
 
 // AttributeStore

@@ -276,45 +276,30 @@ private:
 struct AttributeSet {
 
 	struct hash_function {
-		// Calculating the hash value requires indirection and locks, so
-		// we use a memoized version calculated once the AttributeSet is finalized.
 		size_t operator()(const AttributeSet &attributes) const {
-			return attributes.hash_value;
+			// Values are in canonical form after finalize_set is called, so
+			// can hash them in the order they're stored.
+			size_t idx = attributes.values.size();
+			for (auto const &i: attributes.values)
+				boost::hash_combine(idx, i);
+
+			return idx;
+
 		}
 	};
 	bool operator==(const AttributeSet &other) const {
-		if (hash_value == 0 && values.size() != 0)
-			std::cout << "unexpected hash value of 0 for this, values.size()=" << values.size() << std::endl;
-		if (other.hash_value == 0 && other.values.size() != 0) {
-			std::cout << "unexpected hash value of 0 for other, other.values.size()=" << other.values.size() << std::endl;
-		}
-
-		if (hash_value != other.hash_value)
-			return false;
-
 		if (values.size() != other.values.size())
 			return false;
 
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
-		// TODO: finalize_set ought to ensure that everyone's values are sorted such
-		//  that we can just do a pairwise comparison.
+		//
+		// NB: finalize_set ensures values are in canonical order, so we can just
+		// do a pairwise comparison.
 
-		for (const auto& myValue: values) {
-			bool ok = false;
-			const auto& myPair = AttributePairStore::getPair(myValue);
-			for (const auto& theirValue: other.values) {
-				const auto& theirPair = AttributePairStore::getPair(theirValue);
-
-				if (myPair == theirPair) {
-					ok = true;
-					break;
-				}
-			}
-
-			if (!ok)
+		for (size_t i = 0; i < values.size(); i++)
+			if (values[i] != other.values[i])
 				return false;
-		}
 
 		return true;
 	}
@@ -331,16 +316,10 @@ struct AttributeSet {
 		// TODO: can we just use the default copy constructor?
 		// This was needed to avoid copying the atomic<bool> which I am currently
 		// discarding.
-		hash_value = a.hash_value;
 		values = a.values;
 	}
 
 private:
-	// hash_value is memoized when AttributeStore tries to add it.
-	// Storing this costs us 4 bytes, but we make that back via shenanigans
-	// that require a fast hash_value computation.
-	size_t hash_value;
-
 // TODO: Chesterton's (memory?) fence... is this being used to impose
 //   memory read barriers?
 // Maybe it ought not be quietly discarded?
