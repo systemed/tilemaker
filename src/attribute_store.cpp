@@ -16,7 +16,8 @@ thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(
 
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
 std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
-std::unique_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> AttributePairStore::hotMap(new std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>());
+std::vector<std::map<const AttributePair, uint32_t, AttributePairStore::key_value_less>> AttributePairStore::pairsMaps(PAIR_SHARDS);
+std::shared_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> AttributePairStore::hotMap(new std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>());
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	const bool hot = pair.hot();
@@ -25,9 +26,10 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 
-		auto entry = hotMap->find(pair);
+		auto captured = hotMap;
+		auto entry = captured->find(pair);
 
-		if (entry != hotMap->end())
+		if (entry != captured->end())
 			return entry->second;
 
 		// See if someone else inserted it while we were faffing about.
@@ -47,22 +49,38 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 			uint16_t newIndex = pairs[0].size();
 			std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less> newMap(hotMap->begin(), hotMap->end());
 			newMap[pair] = newIndex;
-			hotMap = std::make_unique<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>>(newMap);
+			hotMap = std::make_shared<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>>(newMap);
 			pairs[0].push_back(pair);
+			return newIndex;
 		}
 	}
 
 	// This is either not a hot key, or there's no room for in the hot shard.
 	// Throw it on the pile with the rest of the pairs.
-
-	size_t shard = nextShard(rng);
+	size_t hash = pair.hash();
+	size_t shard = hash % PAIR_SHARDS;
 	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
-	while (shard == 0) shard = nextShard(rng);
+	// TODO: do some other transformation that distributes it better, this is OK
+	// for dev.
+	if (shard == 0) shard++;
+
+	//size_t shard = nextShard(rng);
+	//while (shard == 0) shard = nextShard(rng);
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-	uint32_t offset = pairs[shard].size();
-	pairs[shard].push_back(pair);
-	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
-	return rv;
+
+	// TODO: do this without exceptions, good enough for measuring memory
+	try {
+		uint32_t rv = pairsMaps[shard].at(pair);
+		return rv;
+	} catch (std::out_of_range &e) {
+		uint32_t offset = pairs[shard].size();
+		pairs[shard].push_back(pair);
+		uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
+
+//		std::cout << "addPair(" << rv << ") shard=" << shard << " offset=" << offset << std::endl;
+		pairsMaps[shard][pair] = rv;
+		return rv;
+	}
 };
 
 
@@ -116,8 +134,11 @@ void AttributeSet::finalize_set() {
 			boost::hash_combine(idx, i->value.string_value());
 		else if(i->value.has_float_value())
 			boost::hash_combine(idx, i->value.float_value());
-		else
+		else if(i->value.has_bool_value())
 			boost::hash_combine(idx, i->value.bool_value());
+		else {
+			std::cout << "unknown Tile_Value in finalize_set, keyIndex was " << i->keyIndex << std::endl;
+		}
 	}
 	hash_value = idx;
 }
@@ -166,6 +187,15 @@ void AttributeStore::reportSize() const {
 	if (false) {
 		std::map<uint32_t, uint32_t> tagCountDist;
 
+		for (size_t i = 0; i < AttributePairStore::pairs.size(); i++) {
+			std::cout << "pairs[" << i << "] has size " << AttributePairStore::pairs[i].size() << std::endl;
+			size_t j = 0;
+			for (const auto& ap: AttributePairStore::pairs[i]) {
+				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " value=" << ap.value << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
+				j++;
+
+			}
+		}
 		size_t pairs = 0;
 		std::map<AttributePair, size_t, AttributePairStore::key_value_less> uniques;
 		for (const auto attr_set: attribute_sets) {

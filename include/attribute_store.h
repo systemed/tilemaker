@@ -98,6 +98,7 @@ public:
 		//
 		// We should either wrap this in a futex, or access it through
 		// the immutable key score.
+		std::lock_guard<std::mutex> lock(keys2index_mutex);
 		return keys[index];
 	}
 
@@ -155,7 +156,7 @@ struct AttributePair {
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
 		for (const auto& c: value.string_value()) {
-			if (c < 'a' || c > 'z')
+			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
 
@@ -187,8 +188,11 @@ struct AttributePair {
 			boost::hash_combine(rv, value.string_value());
 		else if(value.has_float_value())
 			boost::hash_combine(rv, value.float_value());
-		else
+		else if(value.has_bool_value())
 			boost::hash_combine(rv, value.bool_value());
+		else {
+			std::cout << "cannot hash pair, unknown Tile_Value, keyIndex=" << keyIndex << std::endl;
+		}
 
 		return rv;
 	}
@@ -212,9 +216,9 @@ public:
 		uint32_t shard = i >> (32 - SHARD_BITS);
 		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
-		// TODO: do we need this lock? I suspect the answer is yes
 		std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-		return pairs[shard][offset];
+		//return pairs[shard][offset];
+		return pairs[shard].at(offset);
 	};
 
 	static uint32_t addPair(const AttributePair& pair);
@@ -240,6 +244,7 @@ public:
 		}
 	}; 
 
+	static std::vector<std::deque<AttributePair>> pairs;
 
 private:
 	// We refer to all attribute pairs by index.
@@ -249,12 +254,12 @@ private:
 	// The 0th shard is special: it's the hot shard, for pairs
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
-	static std::vector<std::deque<AttributePair>> pairs;
 	static std::vector<std::mutex> pairsMutex;
+	static std::vector<std::map<const AttributePair, uint32_t, AttributePairStore::key_value_less>> pairsMaps;
 
 	// The hot pool requires the ability to look up index by
 	// pair value.
-	static std::unique_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> hotMap;
+	static std::shared_ptr<std::map<const AttributePair, uint16_t, AttributePairStore::key_value_less>> hotMap;
 };
 
 // AttributeSet is a set of AttributePairs
