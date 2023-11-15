@@ -57,12 +57,20 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		const vector_tile::Tile_Value& value = it.value;
-		int subscript = findValue(valueList, value);
+		int subscript = findValue(valueList, it);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
 		} else {
 			uint32_t subscript = valueList->size();
+			vector_tile::Tile_Value value;
+			if (it.has_string_value()) {
+				value.set_string_value(it.string_value());
+			} else if (it.has_bool_value()) {
+				value.set_bool_value(it.bool_value());
+			} else if (it.has_float_value()) {
+				value.set_float_value(it.float_value());
+			}
+			
 			valueList->push_back(value);
 			featurePtr->add_tags(subscript);
 		}
@@ -75,7 +83,7 @@ void OutputObject::writeAttributes(
 // Find a value in the value dictionary
 // (we can't easily use find() because of the different value-type encoding - 
 //	should be possible to improve this though)
-int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, const vector_tile::Tile_Value &value) const {
+int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, const AttributePair& value) const {
 	for (size_t i=0; i<valueList->size(); i++) {
 		const vector_tile::Tile_Value& v = valueList->at(i);
 		if (v.has_string_value() && value.has_string_value() && v.string_value()==value.string_value()) { return i; }

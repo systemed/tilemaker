@@ -56,25 +56,23 @@ AttributeIndex readShapefileAttributes(
 		// Write values to vector tiles
 		for (auto key : out_table.keys()) {
 			kaguya::LuaRef val = out_table[key];
-			vector_tile::Tile_Value v;
 			if (val.isType<std::string>()) {
-				v.set_string_value(static_cast<std::string const&>(val));
+				attributes.add(key, static_cast<const std::string&>(val), 0);
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
-				v.set_float_value(val);
+				attributes.add(key, (float)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				v.set_float_value(val);
+				attributes.add(key, (float)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
-				v.set_bool_value(val);
+				attributes.add(key, (bool)val, 0);
 				layer.attributeMap[key] = 2;
 			} else {
 				// don't even think about trying to write nested tables, thank you
 				std::cout << "Didn't recognise Lua output type: " << val << std::endl;
 			}
-			attributes.add(key, v, 0);
 		}
 	} else {
 		for (auto it : columnMap) {
@@ -82,17 +80,16 @@ AttributeIndex readShapefileAttributes(
 			string key = it.second;
 			vector_tile::Tile_Value v;
 			switch (columnTypeMap[pos]) {
-				case 1:  v.set_int_value(DBFReadIntegerAttribute(dbf, recordNum, pos));
+				case 1:  attributes.add(key, (float)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				case 2:  v.set_float_value(static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)));
+				case 2:  attributes.add(key, static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				default: v.set_string_value(DBFReadStringAttribute(dbf, recordNum, pos));
+				default: attributes.add(key, DBFReadStringAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 0;
 				         break;
 			}
-			attributes.add(key, v, 0);
 		}
 	}
 	return osmLuaProcessing.getAttributeStore().add(attributes);

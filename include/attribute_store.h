@@ -13,13 +13,6 @@
 #include <random>
 #include <iostream>
 
-inline std::ostream& operator<<(std::ostream& os, const vector_tile::Tile_Value& value) {
-	if (value.has_string_value()) os << "[str]" << value.string_value();
-	if (value.has_bool_value()) os << "[bool]" << value.bool_value();
-	if (value.has_float_value()) os << "[float]" << value.float_value();
-	return os;
-}
-
 // TODO: the PairStore and KeyStore have static scope. Should probably
 // do the work to move them into AttributeStore, and change how
 // AttributeSet is interacted with?
@@ -111,23 +104,49 @@ private:
 	static std::deque<std::string> keys;
 };
 
+#define AP_TYPE_FALSE 0
+#define AP_TYPE_TRUE 1
+#define AP_TYPE_FLOAT 2
+#define AP_TYPE_STRING 3
 // AttributePair is a key/value pair (with minzoom)
 struct AttributePair {
-	vector_tile::Tile_Value value;
+	std::string stringValue;
+	float floatValue;
 	short keyIndex;
 	char minzoom;
+	char valueType;
 
-	AttributePair(std::string const &key, vector_tile::Tile_Value const &value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), value(value), minzoom(minzoom)
-	{ }
+	AttributePair(std::string const &key, bool value, char minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(value ? AP_TYPE_TRUE : AP_TYPE_FALSE), minzoom(minzoom)
+	{
+	}
+	AttributePair(std::string const &key, const std::string& value, char minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AP_TYPE_STRING), stringValue(value), minzoom(minzoom)
+	{
+	}
+	AttributePair(std::string const &key, float value, char minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AP_TYPE_FLOAT), floatValue(value), minzoom(minzoom)
+	{
+	}
 
 	bool operator==(const AttributePair &other) const {
-		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex) return false;
-		if (value.has_string_value()) return other.value.has_string_value() && other.value.string_value()==value.string_value();
-		if (value.has_bool_value())   return other.value.has_bool_value()   && other.value.bool_value()  ==value.bool_value();
-		if (value.has_float_value())  return other.value.has_float_value()  && other.value.float_value() ==value.float_value();
-		throw std::runtime_error("Invalid type in attribute store");
+		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex || valueType!=other.valueType) return false;
+		if (valueType == AP_TYPE_STRING)
+			return stringValue == other.stringValue;
+
+		if (valueType == AP_TYPE_FLOAT)
+			return floatValue == other.floatValue;
+
+		return true;
 	}
+
+	bool has_string_value() const { return valueType == AP_TYPE_STRING; }
+	bool has_float_value() const { return valueType == AP_TYPE_FLOAT; }
+	bool has_bool_value() const { return valueType == AP_TYPE_TRUE || valueType == AP_TYPE_FALSE; };
+
+	const std::string& string_value() const { return stringValue; }
+	float float_value() const { return floatValue; }
+	bool bool_value() const { return valueType == AP_TYPE_TRUE; }
 
 	bool hot() const {
 		// Is this pair a candidate for the hot pool?
@@ -139,24 +158,24 @@ struct AttributePair {
 		// before we know if we were right.
 
 		// All boolean pairs are eligible.
-		if (value.has_bool_value())
+		if (has_bool_value())
 			return true;
 
 		// Single digit integers are eligible.
-		if (value.has_float_value()) {
-			float v = value.float_value();
+		if (has_float_value()) {
+			float v = float_value();
 
 			if (v >= 0 && v <= 9 && (v == 0 || v == 1 || v == 2 || v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 || v == 9))
 				return true;
 		}
 
 		// The remaining things should be strings, but just in case...
-		if (!value.has_string_value())
+		if (!has_string_value())
 			return false;
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: value.string_value()) {
+		for (const auto& c: string_value()) {
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
@@ -173,26 +192,18 @@ struct AttributePair {
 		return AttributeKeyStore::getKey(keyIndex);
 	}
 
-	enum class Index { BOOL, FLOAT, STRING };
-	static Index type_index(vector_tile::Tile_Value const &v) {
-		if     (v.has_string_value()) return Index::STRING;
-		else if(v.has_float_value())  return Index::FLOAT;
-		else                          return Index::BOOL;
-	}
-
 	size_t hash() const {
 		std::size_t rv = minzoom;
 		boost::hash_combine(rv, keyIndex);
-		boost::hash_combine(rv, type_index(value));
 
-		if(value.has_string_value())
-			boost::hash_combine(rv, value.string_value());
-		else if(value.has_float_value())
-			boost::hash_combine(rv, value.float_value());
-		else if(value.has_bool_value())
-			boost::hash_combine(rv, value.bool_value());
+		if(has_string_value())
+			boost::hash_combine(rv, string_value());
+		else if(has_float_value())
+			boost::hash_combine(rv, float_value());
+		else if(has_bool_value())
+			boost::hash_combine(rv, bool_value());
 		else {
-			std::cout << "cannot hash pair, unknown Tile_Value, keyIndex=" << keyIndex << std::endl;
+			std::cout << "cannot hash pair, unknown value, keyIndex=" << keyIndex << std::endl;
 		}
 
 		return rv;
@@ -224,32 +235,35 @@ public:
 
 	static uint32_t addPair(const AttributePair& pair);
 
-	static bool compare(vector_tile::Tile_Value const &lhs, vector_tile::Tile_Value const &rhs) {
-		auto lhs_id = AttributePair::type_index(lhs);
-		auto rhs_id = AttributePair::type_index(lhs);
-		if(lhs_id < rhs_id) return true;
-		if(lhs_id > rhs_id) return false;
-		switch(lhs_id) {
-			case AttributePair::Index::BOOL:    return lhs.bool_value() < rhs.bool_value();
-			case AttributePair::Index::FLOAT:   return lhs.float_value() < rhs.float_value();
-			case AttributePair::Index::STRING:  return lhs.string_value() < rhs.string_value();
-		}
-		throw std::runtime_error("Invalid type in attribute store");
-	}
-
 	struct key_value_less {
-		bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {            
-			return (lhs.minzoom != rhs.minzoom) ? (lhs.minzoom < rhs.minzoom)
-			 : (lhs.keyIndex != rhs.keyIndex) ? (lhs.keyIndex < rhs.keyIndex)
-			 : compare(lhs.value, rhs.value);
+		bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {
+			if (lhs.minzoom != rhs.minzoom)
+				return lhs.minzoom < rhs.minzoom;
+			if (lhs.keyIndex != rhs.keyIndex)
+				return lhs.keyIndex < rhs.keyIndex;
+			if (lhs.valueType < rhs.valueType) return true;
+			if (lhs.valueType > rhs.valueType) return false;
+
+			if (lhs.has_string_value()) return lhs.string_value() < rhs.string_value();
+			if (lhs.has_bool_value()) return lhs.bool_value() < rhs.bool_value();
+			if (lhs.has_float_value()) return lhs.float_value() < rhs.float_value();
+			throw std::runtime_error("Invalid type in attribute store");
 		}
 	}; 
 
 	struct key_value_less_ptr {
 		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
-			return (lhs->minzoom != rhs->minzoom) ? (lhs->minzoom < rhs->minzoom)
-			 : (lhs->keyIndex != rhs->keyIndex) ? (lhs->keyIndex < rhs->keyIndex)
-			 : compare(lhs->value, rhs->value);
+			if (lhs->minzoom != rhs->minzoom)
+				return lhs->minzoom < rhs->minzoom;
+			if (lhs->keyIndex != rhs->keyIndex)
+				return lhs->keyIndex < rhs->keyIndex;
+			if (lhs->valueType < rhs->valueType) return true;
+			if (lhs->valueType > rhs->valueType) return false;
+
+			if (lhs->has_string_value()) return lhs->string_value() < rhs->string_value();
+			if (lhs->has_bool_value()) return lhs->bool_value() < rhs->bool_value();
+			if (lhs->has_float_value()) return lhs->float_value() < rhs->float_value();
+			throw std::runtime_error("Invalid type in attribute store");
 		}
 	}; 
 
@@ -265,10 +279,6 @@ private:
 	// so that we can reference it with a short.
 	static std::vector<std::mutex> pairsMutex;
 	static std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
-
-	// The hot pool requires the ability to look up index by
-	// pair value.
-	static std::shared_ptr<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> hotMap;
 };
 
 // AttributeSet is a set of AttributePairs
@@ -308,8 +318,9 @@ struct AttributeSet {
 
 	std::vector<uint32_t> values;
 
-	void add(AttributePair const &kv);
-	void add(std::string const &key, vector_tile::Tile_Value const &v, char minzoom);
+	void add(std::string const &key, const std::string& v, char minzoom);
+	void add(std::string const &key, float v, char minzoom);
+	void add(std::string const &key, bool v, char minzoom);
 
 	AttributeSet() { }
 	AttributeSet(const AttributeSet &a) {
@@ -320,6 +331,8 @@ struct AttributeSet {
 	}
 
 private:
+	void add(AttributePair const &kv);
+
 // TODO: Chesterton's (memory?) fence... is this being used to impose
 //   memory read barriers?
 // Maybe it ought not be quietly discarded?

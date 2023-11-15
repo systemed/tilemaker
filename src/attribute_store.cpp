@@ -17,7 +17,6 @@ thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
 std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
 std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);
-std::shared_ptr<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::hotMap(new boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>());
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	const bool hot = pair.hot();
@@ -25,34 +24,23 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	if (hot) {
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
-
-		auto captured = hotMap;
-		auto entry = captured->find(&pair);
-
-		if (entry != captured->end())
-			return entry->second;
-
-		// See if someone else inserted it while we were faffing about.
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		entry = hotMap->find(&pair);
+		const auto& it = pairsMaps[0].find(&pair);
+		if (it != pairsMaps[0].end())
+			return it->second;
 
-		if (entry != hotMap->end())
-			return entry->second;
+		// We use 0 as a sentinel, so ensure there's at least one entry in the shard.
+		if (pairs[0].size() == 0)
+			pairs[0].push_back(AttributePair("", false, 0));
 
-		// OK, it's definitely not there. Is there room to add it?
-		if (pairs[0].size() < 1 << 16) {
+		uint32_t offset = pairs[0].size();
 
-			// We use 0 as a sentinel, so ensure there's at least one entry in the shard.
-			if (pairs[0].size() == 0)
-				pairs[0].push_back(AttributePair("", vector_tile::Tile_Value(), 0));
-
-			uint16_t newIndex = pairs[0].size();
-			boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr> newMap(hotMap->begin(), hotMap->end());
+		if (offset < 1 << 16) {
 			pairs[0].push_back(pair);
-			const AttributePair* ptr = &pairs[0][newIndex];
-			newMap[ptr] = newIndex;
-			hotMap = std::make_shared<boost::container::flat_map<const AttributePair*, uint16_t, AttributePairStore::key_value_less_ptr>>(newMap);
-			return newIndex;
+			const AttributePair* ptr = &pairs[0][offset];
+			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
+			pairsMaps[0][ptr] = rv;
+			return rv;
 		}
 	}
 
@@ -65,24 +53,18 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	// for dev.
 	if (shard == 0) shard++;
 
-	//size_t shard = nextShard(rng);
-	//while (shard == 0) shard = nextShard(rng);
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+	const auto& it = pairsMaps[shard].find(&pair);
+	if (it != pairsMaps[shard].end())
+		return it->second;
 
-	// TODO: do this without exceptions, good enough for measuring memory
-	try {
-		uint32_t rv = pairsMaps[shard].at(&pair);
-		return rv;
-	} catch (std::out_of_range &e) {
-		uint32_t offset = pairs[shard].size();
-		pairs[shard].push_back(pair);
-		const AttributePair* ptr = &pairs[shard][offset];
-		uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
+	uint32_t offset = pairs[shard].size();
+	pairs[shard].push_back(pair);
+	const AttributePair* ptr = &pairs[shard][offset];
+	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
 
-//		std::cout << "addPair(" << rv << ") shard=" << shard << " offset=" << offset << std::endl;
-		pairsMaps[shard][ptr] = rv;
-		return rv;
-	}
+	pairsMaps[shard][ptr] = rv;
+	return rv;
 };
 
 
@@ -92,7 +74,15 @@ void AttributeSet::add(AttributePair const &kv) {
 	uint32_t index = AttributePairStore::addPair(kv);
 	values.push_back(index);
 }
-void AttributeSet::add(std::string const &key, vector_tile::Tile_Value const &v, char minzoom) {
+void AttributeSet::add(std::string const &key, const std::string& v, char minzoom) {
+	AttributePair kv(key,v,minzoom);
+	add(kv);
+}
+void AttributeSet::add(std::string const &key, bool v, char minzoom) {
+	AttributePair kv(key,v,minzoom);
+	add(kv);
+}
+void AttributeSet::add(std::string const &key, float v, char minzoom) {
 	AttributePair kv(key,v,minzoom);
 	add(kv);
 }
@@ -104,9 +94,9 @@ bool sortFn(const AttributePair* a, const AttributePair* b) {
 	if (a->keyIndex != b->keyIndex)
 		return a->keyIndex < b->keyIndex;
 
-	if (a->value.has_string_value()) return b->value.has_string_value() && a->value.string_value() < b->value.string_value();
-	if (a->value.has_bool_value()) return b->value.has_bool_value() && a->value.bool_value() < b->value.bool_value();
-	if (a->value.has_float_value()) return b->value.has_float_value() && a->value.float_value() < b->value.float_value();
+	if (a->has_string_value()) return b->has_string_value() && a->string_value() < b->string_value();
+	if (a->has_bool_value()) return b->has_bool_value() && a->bool_value() < b->bool_value();
+	if (a->has_float_value()) return b->has_float_value() && a->float_value() < b->float_value();
 	throw std::runtime_error("Invalid type in AttributeSet");
 }
 
@@ -164,7 +154,7 @@ void AttributeStore::reportSize() const {
 			std::cout << "pairs[" << i << "] has size " << AttributePairStore::pairs[i].size() << std::endl;
 			size_t j = 0;
 			for (const auto& ap: AttributePairStore::pairs[i]) {
-				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " value=" << ap.value << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
+				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " string_value=" << ap.string_value() << " float_value=" << ap.float_value() << " bool_value=" << ap.bool_value() << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
 				j++;
 
 			}
@@ -196,7 +186,9 @@ void AttributeStore::reportSize() const {
 
 		for (const auto entry: uniques) {
 			const auto& pair = AttributePairStore::getPair(entry.first);
-			std::cout << "attrpair freq= " << entry.second << " key=" << pair.key() <<" value=" << pair.value << std::endl;
+			// It's useful to occasionally confirm that anything with high freq has hot=1,
+			// and also that things with hot=1 have high freq.
+			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << pair.key() <<" string_value=" << pair.string_value() << " float_value=" << pair.float_value() << " bool_value=" << pair.bool_value() << std::endl;
 		}
 	}
 }
