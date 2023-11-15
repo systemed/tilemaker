@@ -1,5 +1,7 @@
 #include "attribute_store.h"
 
+#include <iostream>
+
 // AttributeKeyStore
 std::deque<std::string> AttributeKeyStore::keys;
 std::mutex AttributeKeyStore::keys2index_mutex;
@@ -10,10 +12,6 @@ std::unique_ptr<AttributeKeyStoreImmutable> AttributeKeyStore::immutable(
 );
 
 // AttributePairStore
-thread_local std::random_device dev;
-thread_local std::mt19937 rng(dev());
-thread_local std::uniform_int_distribution<std::mt19937::result_type> nextShard(0, PAIR_SHARDS-1);
-
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
 std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
 std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);

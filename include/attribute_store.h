@@ -2,7 +2,6 @@
 #ifndef _ATTRIBUTE_STORE_H
 #define _ATTRIBUTE_STORE_H
 
-#include "vector_tile.pb.h"
 #include <mutex>
 #include <atomic>
 #include <boost/functional/hash.hpp>
@@ -10,8 +9,6 @@
 #include <vector>
 #include <unordered_map>
 #include <tsl/ordered_set.h>
-#include <random>
-#include <iostream>
 
 // TODO: the PairStore and KeyStore have static scope. Should probably
 // do the work to move them into AttributeStore, and change how
@@ -203,7 +200,7 @@ struct AttributePair {
 		else if(has_bool_value())
 			boost::hash_combine(rv, bool_value());
 		else {
-			std::cout << "cannot hash pair, unknown value, keyIndex=" << keyIndex << std::endl;
+			throw new std::out_of_range("cannot hash pair, unknown value");
 		}
 
 		return rv;
