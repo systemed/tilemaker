@@ -335,10 +335,12 @@ int main(int argc, char* argv[]) {
 			
 			int ret = pbfReader.ReadPbfFile(nodeKeys, threadNum, 
 				[&]() { 
-					return std::make_unique<ifstream>(inputFile, ios::in | ios::binary);
+					thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
+					return pbfStream;
 				},
 				[&]() {
-					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore));
+					return osmLuaProcessing;
 				});	
 			if (ret != 0) return ret;
 		} 

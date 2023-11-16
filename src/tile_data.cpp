@@ -187,6 +187,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
+			if (!geom::is_valid(mp)) make_valid(mp);
 			return mp;
 		}
 

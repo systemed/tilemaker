@@ -92,7 +92,7 @@ public:
 	bool Holds(const std::string& key) const;
 
 	// Get an OSM tag for a given key (or return empty string if none)
-	std::string Find(const std::string& key) const;
+	const std::string& Find(const std::string& key) const;
 
 	// ----	Spatial queries called from Lua
 
@@ -247,7 +247,7 @@ private:
 	class LayerDefinition &layers;
 	
 	OutputObjectsWithAttributes outputs;		// All output objects that have been created
-	boost::container::flat_map<std::string, std::string> currentTags;
+	const boost::container::flat_map<std::string, std::string>* currentTags;
 
 	std::vector<OutputObjectRef> OutputsAsOORefs() {
 		std::vector<OutputObjectRef> list;

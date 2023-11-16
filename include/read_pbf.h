@@ -26,8 +26,8 @@ public:
 
 	PbfReader(OSMStore &osmStore);
 
-	using pbfreader_generate_output = std::function< std::unique_ptr<OsmLuaProcessing> () >;
-	using pbfreader_generate_stream = std::function< std::unique_ptr<std::istream> () >;
+	using pbfreader_generate_output = std::function< std::shared_ptr<OsmLuaProcessing> () >;
+	using pbfreader_generate_stream = std::function< std::shared_ptr<std::istream> () >;
 
 	int ReadPbfFile(std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, 
 			pbfreader_generate_stream const &generate_stream,
@@ -37,6 +37,7 @@ public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	template<typename T>
 	void readTags(T &pbfObject, PrimitiveBlock const &pb, tag_map_t &tags) {
+		tags.reserve(pbfObject.keys_size());
 		auto keysPtr = pbfObject.mutable_keys();
 		auto valsPtr = pbfObject.mutable_vals();
 		for (uint n=0; n < pbfObject.keys_size(); n++) {

@@ -7,6 +7,7 @@ using namespace std;
 
 thread_local kaguya::State *g_luaState = nullptr;
 bool supportsRemappingShapefiles = false;
+const std::string EMPTY_STRING = "";
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -30,6 +31,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),
 	config(configIn),
+	currentTags(NULL),
 	layers(layers) {
 
 	// ----	Initialise Lua
@@ -114,13 +116,13 @@ string OsmLuaProcessing::Id() const {
 
 // Check if there's a value for a given key
 bool OsmLuaProcessing::Holds(const string& key) const {
-	return currentTags.find(key) != currentTags.end();
+	return currentTags->find(key) != currentTags->end();
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
-string OsmLuaProcessing::Find(const string& key) const {
-	auto it = currentTags.find(key);
-	if(it == currentTags.end()) return "";
+const string& OsmLuaProcessing::Find(const string& key) const {
+	auto it = currentTags->find(key);
+	if(it == currentTags->end()) return EMPTY_STRING;
 	return it->second;
 }
 
@@ -522,7 +524,7 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	originalOsmID = id;
 	isWay = false;
 	isRelation = true;
-	currentTags = tags;
+	currentTags = &tags;
 	try {
 		luaState["relation_scan_function"](this);
 	} catch(luaProcessingException &e) {
@@ -543,7 +545,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	isRelation = false;
 	lon = node.lon;
 	latp= node.latp;
-	currentTags = tags;
+	currentTags = &tags;
 
 	//Start Lua processing for node
 	try {
@@ -588,7 +590,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 		throw std::out_of_range(ss.str());
 	}
 
-	currentTags = tags;
+	currentTags = &tags;
 
 	bool ok = true;
 	if (ok) {
@@ -621,7 +623,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	llVecPtr = nullptr;
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
-	currentTags = tags;
+	currentTags = &tags;
 
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
