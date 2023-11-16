@@ -162,7 +162,7 @@ struct AttributePair {
 		if (has_float_value()) {
 			float v = float_value();
 
-			if (v >= 0 && v <= 9 && (v == 0 || v == 1 || v == 2 || v == 3 || v == 4 || v == 5 || v == 6 || v == 7 || v == 8 || v == 9))
+			if (ceil(v) == v && v >= 0 && v <= 25)
 				return true;
 		}
 
