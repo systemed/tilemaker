@@ -119,12 +119,20 @@ static inline void dissolve_find_intersections(
 
 	// Detect intersections and generate pseudo-vertices
 	//	boost::geometry::strategies::relate::cartesian<> strategy;
+	typedef boost::geometry::detail::no_rescale_policy rescale_policy_type;
+#if BOOST_VERSION < 107400
 	typename boost::geometry::strategy::relate::services::default_strategy<Polygon, Polygon>::type strategy;
-    typedef boost::geometry::detail::no_rescale_policy rescale_policy_type;
-    typedef boost::geometry::detail::overlay::turn_info
-        <
-            point_t, boost::geometry::segment_ratio<double>
-        > turn_info;
+	typedef boost::geometry::detail::overlay::turn_info
+		<
+			point_t, boost::geometry::segment_ratio<double>
+		> turn_info;
+#else
+	boost::geometry::strategies::cartesian<> strategy;
+	typedef boost::geometry::detail::overlay::turn_info
+		<
+			point_t
+		> turn_info;
+#endif
 
     std::vector<turn_info> turns;
 
