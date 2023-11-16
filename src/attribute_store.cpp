@@ -5,11 +5,7 @@
 // AttributeKeyStore
 std::deque<std::string> AttributeKeyStore::keys;
 std::mutex AttributeKeyStore::keys2index_mutex;
-std::unique_ptr<AttributeKeyStoreImmutable> AttributeKeyStore::immutable(
-	new AttributeKeyStoreImmutable(
-		std::map<const std::string, uint16_t>()
-	)
-);
+std::map<const std::string, uint16_t> AttributeKeyStore::keys2index;
 
 // AttributePairStore
 std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
@@ -59,6 +55,10 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 		return it->second;
 
 	uint32_t offset = pairs[shard].size();
+
+	if (offset >= 1 << (32 - PAIR_SHARDS))
+		throw std::out_of_range("pair shard overflow");
+
 	pairs[shard].push_back(pair);
 	const AttributePair* ptr = &pairs[shard][offset];
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;

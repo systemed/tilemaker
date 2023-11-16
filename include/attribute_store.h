@@ -22,52 +22,20 @@
 
 typedef uint32_t AttributeIndex; // check this is enough
 
-// All members of this class are thread-safe.
-//
-// AttributeKeyStore maintains a pointer to the live version.
-// Lookup misses will result in a new version being published.
-class AttributeKeyStoreImmutable {
-public:
-	AttributeKeyStoreImmutable(std::map<const std::string, uint16_t> keys2index): keys2index(keys2index) {
-	}
-
-	uint16_t key2index(const std::string& key) {
-		auto rv = keys2index.find(key);
-
-		if (rv == keys2index.end())
-			// 0 acts as a sentinel to say that it's missing.
-			return 0;
-
-		return rv->second;
-	}
-
-	const std::map<const std::string, uint16_t> getKeys2IndexMap() { return keys2index; }
-
-private:
-	std::map<const std::string, uint16_t> keys2index;
-};
-
 class AttributeKeyStore {
 public:
 	// We jump through some hoops to have no locks for most readers,
 	// locking only if we need to add the value.
 	static uint16_t key2index(const std::string& key) {
-		// TODO: rip out AttributeKeyStoreImmutable - rw locks in boost aren't
-		// very good.
 		std::lock_guard<std::mutex> lock(keys2index_mutex);
-		auto index = immutable->key2index(key);
+		const auto& rv = keys2index.find(key);
 
-		if (index != 0)
-			return index;
+		if (rv != keys2index.end())
+			return rv->second;
 
 		// 0 is used as a sentinel, so ensure that the 0th element is just a dummy element.
 		if (keys.size() == 0)
 			keys.push_back("");
-
-		// Double-check that it's not there - maybe we were in a race
-		auto reallyMissing = immutable->key2index(key);
-		if (reallyMissing != 0)
-			return reallyMissing;
 
 		uint16_t newIndex = keys.size();
 
@@ -75,11 +43,8 @@ public:
 		if (newIndex >= 65535)
 			throw std::out_of_range("more than 65,536 unique keys");
 
-		std::map<const std::string, uint16_t> newMap(immutable->getKeys2IndexMap());
-		newMap[key] = newIndex;
+		keys2index[key] = newIndex;
 		keys.push_back(key);
-
-		immutable = std::make_unique<AttributeKeyStoreImmutable>(newMap);
 		return newIndex;
 	}
 
@@ -97,55 +62,52 @@ public:
 
 private:
 	static std::mutex keys2index_mutex;
-	static std::unique_ptr<AttributeKeyStoreImmutable> immutable;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
 	static std::deque<std::string> keys;
+	static std::map<const std::string, uint16_t> keys2index;
 };
 
-#define AP_TYPE_FALSE 0
-#define AP_TYPE_TRUE 1
-#define AP_TYPE_FLOAT 2
-#define AP_TYPE_STRING 3
+enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
 // AttributePair is a key/value pair (with minzoom)
 struct AttributePair {
 	std::string stringValue;
 	float floatValue;
 	short keyIndex;
 	char minzoom;
-	char valueType;
+	AttributePairType valueType;
 
 	AttributePair(std::string const &key, bool value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(value ? AP_TYPE_TRUE : AP_TYPE_FALSE), minzoom(minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(value ? AttributePairType::True : AttributePairType::False), minzoom(minzoom)
 	{
 	}
 	AttributePair(std::string const &key, const std::string& value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AP_TYPE_STRING), stringValue(value), minzoom(minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::String), stringValue(value), minzoom(minzoom)
 	{
 	}
 	AttributePair(std::string const &key, float value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AP_TYPE_FLOAT), floatValue(value), minzoom(minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::Float), floatValue(value), minzoom(minzoom)
 	{
 	}
 
 	bool operator==(const AttributePair &other) const {
 		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex || valueType!=other.valueType) return false;
-		if (valueType == AP_TYPE_STRING)
+		if (valueType == AttributePairType::String)
 			return stringValue == other.stringValue;
 
-		if (valueType == AP_TYPE_FLOAT)
+		if (valueType == AttributePairType::Float)
 			return floatValue == other.floatValue;
 
 		return true;
 	}
 
-	bool has_string_value() const { return valueType == AP_TYPE_STRING; }
-	bool has_float_value() const { return valueType == AP_TYPE_FLOAT; }
-	bool has_bool_value() const { return valueType == AP_TYPE_TRUE || valueType == AP_TYPE_FALSE; };
+	bool has_string_value() const { return valueType == AttributePairType::String; }
+	bool has_float_value() const { return valueType == AttributePairType::Float; }
+	bool has_bool_value() const { return valueType == AttributePairType::True || valueType == AttributePairType::False; };
 
 	const std::string& string_value() const { return stringValue; }
 	float float_value() const { return floatValue; }
-	bool bool_value() const { return valueType == AP_TYPE_TRUE; }
+	bool bool_value() const { return valueType == AttributePairType::True; }
 
 	bool hot() const {
 		// Is this pair a candidate for the hot pool?
