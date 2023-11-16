@@ -45,11 +45,13 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 	// This is either not a hot key, or there's no room for in the hot shard.
 	// Throw it on the pile with the rest of the pairs.
 	size_t hash = pair.hash();
+
 	size_t shard = hash % PAIR_SHARDS;
 	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
-	// TODO: do some other transformation that distributes it better, this is OK
-	// for dev.
-	if (shard == 0) shard++;
+	if (shard == 0) shard = (hash >> 8) % PAIR_SHARDS;
+	if (shard == 0) shard = (hash >> 16) % PAIR_SHARDS;
+	if (shard == 0) shard = (hash >> 24) % PAIR_SHARDS;
+	if (shard == 0) shard = 1;
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
 	const auto& it = pairsMaps[shard].find(&pair);
@@ -70,7 +72,32 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 void AttributeSet::add(AttributePair const &kv) {
 	uint32_t index = AttributePairStore::addPair(kv);
-	values.push_back(index);
+	add(index);
+}
+
+void AttributeSet::add(uint32_t pairIndex) {
+	if (useVector) {
+		intValues.push_back(pairIndex);
+	} else {
+		for (size_t i = (pairIndex < (1 << 16)) ? 0 : 4; i < 8; i++) {
+			if (!is_set(i)) {
+				set_value_at_index(i, pairIndex);
+				return;
+			}
+		}
+
+		// Switch to a vector -- copy our existing values + add the new one.
+		std::vector<uint32_t> tmp;
+		for (int i = 0; i < num_pairs(); i++) {
+			tmp.push_back(get_pair(i));
+		}
+
+		tmp.push_back(pairIndex);
+
+		new (&intValues) std::vector<uint32_t>;
+		useVector = true;
+		intValues = tmp;
+	}
 }
 void AttributeSet::add(std::string const &key, const std::string& v, char minzoom) {
 	AttributePair kv(key,v,minzoom);
@@ -99,9 +126,39 @@ bool sortFn(const AttributePair* a, const AttributePair* b) {
 }
 
 void AttributeSet::finalize_set() {
-	// Ensure that values are sorted, so we have a canonical representation of
-	// an attribute set.
-	sort(values.begin(), values.end());
+	// Ensure that values are sorted, giving us a canonical representation,
+	// so that we can have fast hash/equality functions.
+	if (useVector) {
+		sort(intValues.begin(), intValues.end());
+	} else {
+		uint32_t sortMe[8];
+		sortMe[0] = shortValues[0];
+		sortMe[1] = shortValues[1];
+		sortMe[2] = shortValues[2];
+		sortMe[3] = shortValues[3];
+		uint32_t* intPtrs = (uint32_t*)(&shortValues[4]);
+		sortMe[4] = intPtrs[0];
+		sortMe[5] = intPtrs[1];
+		sortMe[6] = intPtrs[2];
+		sortMe[7] = intPtrs[3];
+		shortValues[0] = 0;
+		shortValues[1] = 0;
+		shortValues[2] = 0;
+		shortValues[3] = 0;
+		shortValues[4] = 0;
+		shortValues[5] = 0;
+		shortValues[6] = 0;
+		shortValues[7] = 0;
+		shortValues[8] = 0;
+		shortValues[9] = 0;
+		shortValues[10] = 0;
+		shortValues[11] = 0;
+		std::sort(sortMe, &sortMe[8]);
+
+		for (int i = 0; i < 8; i++)
+			if (sortMe[i] != 0)
+				add(sortMe[i]);
+	}
 }
 
 // AttributeStore
@@ -110,7 +167,6 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
 	attributes.finalize_set();
-
 	std::lock_guard<std::mutex> lock(mutex);
 	lookups++;
 
@@ -128,12 +184,13 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 //       container than a set (vector?)
 std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(AttributeIndex index) const {
 	try {
-		const auto pairIds = attribute_sets.nth(index).key().values;
+		const auto& attr_set = attribute_sets.nth(index).key();
+
+		const size_t n = attr_set.num_pairs();
 
 		std::set<AttributePair, AttributePairStore::key_value_less> rv;
-		for (const auto& id: pairIds) {
-			rv.insert(AttributePairStore::getPair(id));
-		}
+		for (size_t i = 0; i < n; i++)
+			rv.insert(AttributePairStore::getPair(attr_set.get_pair(i)));
 
 		return rv;
 	} catch (std::out_of_range &err) {
@@ -146,6 +203,10 @@ void AttributeStore::reportSize() const {
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
+		for (int i = 0; i < PAIR_SHARDS; i++) {
+			std::cout << "pairsMaps[" << i << "] has " << AttributePairStore::pairsMaps[i].size() << " entries" << std::endl;
+		}
+
 		std::map<uint32_t, uint32_t> tagCountDist;
 
 		for (size_t i = 0; i < AttributePairStore::pairs.size(); i++) {
@@ -159,16 +220,18 @@ void AttributeStore::reportSize() const {
 		}
 		size_t pairs = 0;
 		std::map<uint32_t, size_t> uniques;
-		for (const auto attr_set: attribute_sets) {
-			pairs += attr_set.values.size();
+		for (const auto& attr_set: attribute_sets) {
+			pairs += attr_set.num_pairs();
 
 			try {
-				tagCountDist[attr_set.values.size()]++;
+				tagCountDist[attr_set.num_pairs()]++;
 			} catch (std::out_of_range &err) {
-				tagCountDist[attr_set.values.size()] = 1;
+				tagCountDist[attr_set.num_pairs()] = 1;
 			}
 
-			for (const auto attr: attr_set.values) {
+			const size_t n = attr_set.num_pairs();
+			for (size_t i = 0; i < n; i++) {
+				uint32_t attr = attr_set.get_pair(i);
 				try {
 					uniques[attr]++;
 				} catch (std::out_of_range &err) {

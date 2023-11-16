@@ -3,6 +3,7 @@
 #define _ATTRIBUTE_STORE_H
 
 #include <mutex>
+#include <iostream>
 #include <atomic>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
@@ -51,12 +52,13 @@ public:
 	// We jump through some hoops to have no locks for most readers,
 	// locking only if we need to add the value.
 	static uint16_t key2index(const std::string& key) {
+		// TODO: rip out AttributeKeyStoreImmutable - rw locks in boost aren't
+		// very good.
+		std::lock_guard<std::mutex> lock(keys2index_mutex);
 		auto index = immutable->key2index(key);
 
 		if (index != 0)
 			return index;
-
-		std::lock_guard<std::mutex> lock(keys2index_mutex);
 
 		// 0 is used as a sentinel, so ensure that the 0th element is just a dummy element.
 		if (keys.size() == 0)
@@ -158,7 +160,7 @@ struct AttributePair {
 		if (has_bool_value())
 			return true;
 
-		// Single digit integers are eligible.
+		// Small integers are eligible.
 		if (has_float_value()) {
 			float v = float_value();
 
@@ -192,6 +194,7 @@ struct AttributePair {
 	size_t hash() const {
 		std::size_t rv = minzoom;
 		boost::hash_combine(rv, keyIndex);
+		boost::hash_combine(rv, valueType);
 
 		if(has_string_value())
 			boost::hash_combine(rv, string_value());
@@ -226,8 +229,8 @@ public:
 		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
 		std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-		//return pairs[shard][offset];
-		return pairs[shard].at(offset);
+		return pairs[shard][offset];
+		//return pairs[shard].at(offset);
 	};
 
 	static uint32_t addPair(const AttributePair& pair);
@@ -254,8 +257,7 @@ public:
 				return lhs->minzoom < rhs->minzoom;
 			if (lhs->keyIndex != rhs->keyIndex)
 				return lhs->keyIndex < rhs->keyIndex;
-			if (lhs->valueType < rhs->valueType) return true;
-			if (lhs->valueType > rhs->valueType) return false;
+			if (lhs->valueType != rhs->valueType) return lhs->valueType < rhs->valueType;
 
 			if (lhs->has_string_value()) return lhs->string_value() < rhs->string_value();
 			if (lhs->has_bool_value()) return lhs->bool_value() < rhs->bool_value();
@@ -265,6 +267,7 @@ public:
 	}; 
 
 	static std::vector<std::deque<AttributePair>> pairs;
+	static std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 
 private:
 	// We refer to all attribute pairs by index.
@@ -275,7 +278,6 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	static std::vector<std::mutex> pairsMutex;
-	static std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 };
 
 // AttributeSet is a set of AttributePairs
@@ -286,56 +288,146 @@ struct AttributeSet {
 		size_t operator()(const AttributeSet &attributes) const {
 			// Values are in canonical form after finalize_set is called, so
 			// can hash them in the order they're stored.
-			size_t idx = attributes.values.size();
-			for (auto const &i: attributes.values)
-				boost::hash_combine(idx, i);
+			if (attributes.useVector) {
+				const size_t n = attributes.intValues.size();
+				size_t idx = n;
+				for (int i = 0; i < n; i++)
+					boost::hash_combine(idx, attributes.intValues[i]);
+
+				return idx;
+			}
+
+			size_t idx = 0;
+			for (int i = 0; i < 12; i++)
+				boost::hash_combine(idx, attributes.shortValues[i]);
 
 			return idx;
-
 		}
 	};
 	bool operator==(const AttributeSet &other) const {
-		if (values.size() != other.values.size())
-			return false;
-
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
 		//
 		// NB: finalize_set ensures values are in canonical order, so we can just
 		// do a pairwise comparison.
 
-		for (size_t i = 0; i < values.size(); i++)
-			if (values[i] != other.values[i])
-				return false;
+		if (useVector != other.useVector)
+			return false;
 
-		return true;
+		if (useVector) {
+			const size_t n = intValues.size();
+			const size_t otherN = other.intValues.size();
+			if (n != otherN)
+				return false;
+			for (size_t i = 0; i < n; i++)
+				if (intValues[i] != other.intValues[i])
+					return false;
+
+			return true;
+		}
+
+		return memcmp(shortValues, other.shortValues, sizeof(shortValues)) == 0;
 	}
 
 	void finalize_set();
 
-	std::vector<uint32_t> values;
+	// We store references to AttributePairs either in an array of shorts
+	// or a vector of 32-bit ints.
+	//
+	// The array of shorts is not _really_ an array of shorts. It's meant
+	// to be interpreted as 4 shorts, and then 4 ints.
+	bool useVector;
+	union {
+		short shortValues[12];
+		std::vector<uint32_t> intValues;
+	};
+
+	size_t num_pairs() const {
+		if (useVector)
+			return intValues.size();
+
+		size_t rv = 0;
+		for (int i = 0; i < 8; i++)
+			if (is_set(i))
+				rv++;
+
+		return rv;
+	}
+
+	const uint32_t get_pair(size_t i) const {
+		if (useVector)
+			return intValues[i];
+
+		size_t j = 0;
+		size_t actualIndex = 0;
+		// Advance actualIndex to the first non-zero entry, e.g. if
+		// the first thing added has a 4-byte index, our first entry
+		// is at location 4, not 0.
+		while(!is_set(actualIndex)) actualIndex++;
+
+		while (j < i) {
+			j++;
+			actualIndex++;
+			while(!is_set(actualIndex)) actualIndex++;
+		}
+
+		return get_value_at_index(actualIndex);
+	}
 
 	void add(std::string const &key, const std::string& v, char minzoom);
 	void add(std::string const &key, float v, char minzoom);
 	void add(std::string const &key, bool v, char minzoom);
 
-	AttributeSet() { }
+	AttributeSet(): useVector(false), shortValues({}) {}
+	AttributeSet(const AttributeSet &&a) = delete;
+
 	AttributeSet(const AttributeSet &a) {
-		// TODO: can we just use the default copy constructor?
-		// This was needed to avoid copying the atomic<bool> which I am currently
-		// discarding.
-		values = a.values;
+		useVector = a.useVector;
+
+		if (useVector) {
+			new (&intValues) std::vector<uint32_t>;
+			intValues = a.intValues;
+			for (int i = 0; i < 12; i++)
+				shortValues[i] = 0;
+		} else {
+			for (int i = 0; i < 12; i++)
+				shortValues[i] = a.shortValues[i];
+		}
+	}
+
+	~AttributeSet() {
+		if (useVector)
+			intValues.~vector();
 	}
 
 private:
 	void add(AttributePair const &kv);
+	void add(uint32_t index);
+	void set_value_at_index(size_t index, uint32_t value) {
+		if (useVector) {
+			throw std::out_of_range("set_value_at_index called for useVector=true");
+		}
 
-// TODO: Chesterton's (memory?) fence... is this being used to impose
-//   memory read barriers?
-// Maybe it ought not be quietly discarded?
-//	std::atomic<bool> lock_ = { false };
-//	void lock() { while(lock_.exchange(true, std::memory_order_acquire)); }
-//	void unlock() { lock_.store(false, std::memory_order_release); }
+		if (index < 4 && value < (1 << 16)) {
+			shortValues[index] = (uint16_t)value;
+		} else if (index >= 4 && index < 8) {
+			((uint32_t*)(&shortValues[4]))[index - 4] = value;
+		} else {
+			throw std::out_of_range("set_value_at_index out of bounds");
+		}
+	}
+	uint32_t get_value_at_index(size_t index) const {
+		if (index < 4)
+			return shortValues[index];
+
+		return ((uint32_t*)(&shortValues[4]))[index - 4];
+	}
+	bool is_set(size_t index) const {
+		if (index < 4) return shortValues[index] != 0;
+
+		const size_t newIndex = 4 + 2 * (index - 4);
+		return shortValues[newIndex] != 0 || shortValues[newIndex + 1] != 0;
+	}
 };
 
 // AttributeStore is the store for all AttributeSets
