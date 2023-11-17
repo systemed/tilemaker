@@ -45,10 +45,79 @@ BUILDING_FLOOR_HEIGHT = 3.66
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
+pavedValues = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
+unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 
 -- Process node tags
 
 node_keys = { "addr:housenumber","aerialway","aeroway","amenity","barrier","highway","historic","leisure","natural","office","place","railway","shop","sport","tourism","waterway" }
+
+-- Get admin level which the place node is capital of.
+-- Returns nil in case of invalid capital and for places which are not capitals.
+function capitalLevel(capital)
+	local capital_al = tonumber(capital) or 0
+	if capital == "yes" then
+		capital_al = 2
+	end
+	if capital_al == 0 then
+		return nil
+	end
+        return capital_al
+end
+
+-- Calculate rank for place nodes
+-- place: value of place=*
+-- popuplation: population as number
+-- capital_al: result of capitalLevel()
+function calcRank(place, population, capital_al)
+	local rank = 0
+	if capital_al and capital_al >= 2 and capital_al <= 4 then
+		rank = capital_al
+		if population > 3 * 10^6 then
+			rank = rank - 2
+		elseif population > 1 * 10^6 then
+			rank = rank - 1
+		elseif population < 100000 then
+			rank = rank + 2
+		elseif population < 50000 then
+			rank = rank + 3
+		end
+		-- Safety measure to avoid place=village/farm/... appear early (as important capital) because a mapper added capital=yes/2/3/4
+		if place ~= "city" then
+			rank = rank + 3
+			-- Decrease rank further if it is not even a town.
+			if place ~= "town" then
+				rank = rank + 2
+			end
+		end
+		return rank
+	end
+	if place ~= "city" and place ~= "town" then
+		return nil
+        end
+	if population > 3 * 10^6 then
+		return 1
+	elseif population > 1 * 10^6 then
+		return 2
+	elseif population > 500000 then
+		return 3
+	elseif population > 200000 then
+		return 4
+	elseif population > 100000 then
+		return 5
+	elseif population > 75000 then
+		return 6
+	elseif population > 50000 then
+		return 7
+	elseif population > 25000 then
+		return 8
+	elseif population > 10000 then
+		return 9
+	end
+	return 10
+end
+
+
 function node_function(node)
 	-- Write 'aerodrome_label'
 	local aeroway = node:Find("aeroway")
@@ -76,9 +145,10 @@ function node_function(node)
 	--   we could potentially approximate it for cities based on the population tag
 	local place = node:Find("place")
 	if place ~= "" then
-		local rank = nil
 		local mz = 13
 		local pop = tonumber(node:Find("population")) or 0
+		local capital = capitalLevel(node:Find("capital"))
+		local rank = calcRank(place, pop, capital)
 
 		if     place == "continent"     then mz=0
 		elseif place == "country"       then
@@ -101,6 +171,7 @@ function node_function(node)
 		node:Attribute("class", place)
 		node:MinZoom(mz)
 		if rank then node:AttributeNumeric("rank", rank) end
+		if capital then node:AttributeNumeric("capital", capital) end
 		if place=="country" then node:Attribute("iso_a2", node:Find("ISO3166-1:alpha2")) end
 		SetNameAttributes(node)
 		return
@@ -212,6 +283,42 @@ function relation_scan_function(relation)
 	if relation:Find("type")=="boundary" and relation:Find("boundary")=="administrative" then
 		relation:Accept()
 	end
+end
+
+function write_to_transportation_layer(way, minzoom, highway_class)
+	way:Layer("transportation", false)
+	way:MinZoom(minzoom)
+	SetZOrder(way)
+	way:Attribute("class", highway_class)
+	SetBrunnelAttributes(way)
+	if ramp then way:AttributeNumeric("ramp",1) end
+
+	-- Service
+	if highway == "service" and service ~="" then way:Attribute("service", service) end
+
+	local oneway = way:Find("oneway")
+	if oneway == "yes" or oneway == "1" then
+		way:AttributeNumeric("oneway",1)
+	end
+	if oneway == "-1" then
+		-- **** TODO
+	end
+	local surface = way:Find("surface")
+        local surfaceMinzoom = 12
+	if pavedValues[surface] then
+		way:Attribute("surface", "paved", surfaceMinzoom)
+	elseif unpavedValues[surface] then
+		way:Attribute("surface", "unpaved", surfaceMinzoom)
+	end
+        local accessMinzoom = 9
+	if way:Holds("access") then way:Attribute("access", way:Find("access"), accessMinzoom) end
+	if way:Holds("bicycle") then way:Attribute("bicycle", way:Find("bicycle"), accessMinzoom) end
+	if way:Holds("foot") then way:Attribute("foot", way:Find("foot"), accessMinzoom) end
+	if way:Holds("horse") then way:Attribute("horse", way:Find("horse"), accessMinzoom) end
+	way:AttributeBoolean("toll", way:Find("toll") == "yes", accessMinzoom)
+	way:AttributeNumeric("layer", tonumber(way:Find("layer")) or 0, accessMinzoom)
+	way:AttributeBoolean("expressway", way:Find("expressway"), 7)
+	way:Attribute("mtb_scale", way:Find("mtb:scale"), 10)
 end
 
 -- Process way tags
@@ -332,30 +439,7 @@ function way_function(way)
 
 		-- Write to layer
 		if minzoom <= 14 then
-			way:Layer(layer, false)
-			way:MinZoom(minzoom)
-			SetZOrder(way)
-			way:Attribute("class", h)
-			SetBrunnelAttributes(way)
-			if ramp then way:AttributeNumeric("ramp",1) end
-			if access=="private" or access=="no" then way:Attribute("access", "no") end
-			if pavedValues[surface] then way:Attribute("surface", "paved") end
-			if unpavedValues[surface] then way:Attribute("surface", "unpaved") end
-			if way:Holds("bicycle") then way:Attribute("bicycle", way:Find("bicycle")) end
-			if way:Holds("foot") then way:Attribute("foot", way:Find("foot")) end
-			if way:Holds("horse") then way:Attribute("horse", way:Find("horse")) end
-			if way:Holds("mtb:scale") then way:Attribute("mtb_scale", way:Find("mtb:scale")) end
-
-			-- Service
-			if highway == "service" and service ~="" then way:Attribute("service", service) end
-
-			local oneway = way:Find("oneway")
-			if oneway == "yes" or oneway == "1" then
-				way:AttributeNumeric("oneway",1)
-			end
-			if oneway == "-1" then
-				-- **** TODO
-			end
+			write_to_transportation_layer(way, minzoom, h)
 
 			-- Write names
 			if minzoom < 8 then
