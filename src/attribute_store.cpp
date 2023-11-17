@@ -2,20 +2,8 @@
 
 #include <iostream>
 
-// AttributeKeyStore
-std::deque<std::string> AttributeKeyStore::keys;
-std::mutex AttributeKeyStore::keys2indexMutex;
-std::map<const std::string, uint16_t> AttributeKeyStore::keys2index;
-
-// AttributePairStore
-std::vector<std::deque<AttributePair>> AttributePairStore::pairs(PAIR_SHARDS);
-std::vector<std::mutex> AttributePairStore::pairsMutex(PAIR_SHARDS);
-std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> AttributePairStore::pairsMaps(PAIR_SHARDS);
-
-uint32_t AttributePairStore::addPair(const AttributePair& pair) {
-	const bool hot = pair.hot();
-
-	if (hot) {
+uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
+	if (isHot) {
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
@@ -25,7 +13,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 		// We use 0 as a sentinel, so ensure there's at least one entry in the shard.
 		if (pairs[0].size() == 0)
-			pairs[0].push_back(AttributePair("", false, 0));
+			pairs[0].push_back(AttributePair(1, false, 0));
 
 		uint32_t offset = pairs[0].size();
 
@@ -69,13 +57,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 
 // AttributeSet
-
-void AttributeSet::add(AttributePair const &kv) {
-	uint32_t index = AttributePairStore::addPair(kv);
-	add(index);
-}
-
-void AttributeSet::add(uint32_t pairIndex) {
+void AttributeSet::addPair(uint32_t pairIndex) {
 	if (useVector) {
 		intValues.push_back(pairIndex);
 	} else {
@@ -99,17 +81,20 @@ void AttributeSet::add(uint32_t pairIndex) {
 		intValues = tmp;
 	}
 }
-void AttributeSet::add(std::string const &key, const std::string& v, char minzoom) {
-	AttributePair kv(key,v,minzoom);
-	add(kv);
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
+	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	bool isHot = AttributePair::isHot(kv, keyStore);
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
-void AttributeSet::add(std::string const &key, bool v, char minzoom) {
-	AttributePair kv(key,v,minzoom);
-	add(kv);
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom) {
+	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	bool isHot = AttributePair::isHot(kv, keyStore);
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
-void AttributeSet::add(std::string const &key, float v, char minzoom) {
-	AttributePair kv(key,v,minzoom);
-	add(kv);
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
+	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	bool isHot = AttributePair::isHot(kv, keyStore);
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 
 bool sortFn(const AttributePair* a, const AttributePair* b) {
@@ -157,11 +142,10 @@ void AttributeSet::finalizeSet() {
 
 		for (int i = 0; i < 8; i++)
 			if (sortMe[i] != 0)
-				add(sortMe[i]);
+				addPair(sortMe[i]);
 	}
 }
 
-// AttributeStore
 
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
@@ -190,7 +174,7 @@ std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(
 
 		std::set<AttributePair, AttributePairStore::key_value_less> rv;
 		for (size_t i = 0; i < n; i++)
-			rv.insert(AttributePairStore::getPair(attrSet.getPair(i)));
+			rv.insert(pairStore.getPair(attrSet.getPair(i)));
 
 		return rv;
 	} catch (std::out_of_range &err) {
@@ -204,16 +188,16 @@ void AttributeStore::reportSize() const {
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
 		for (int i = 0; i < PAIR_SHARDS; i++) {
-			std::cout << "pairsMaps[" << i << "] has " << AttributePairStore::pairsMaps[i].size() << " entries" << std::endl;
+			std::cout << "pairsMaps[" << i << "] has " << pairStore.pairsMaps[i].size() << " entries" << std::endl;
 		}
 
 		std::map<uint32_t, uint32_t> tagCountDist;
 
-		for (size_t i = 0; i < AttributePairStore::pairs.size(); i++) {
-			std::cout << "pairs[" << i << "] has size " << AttributePairStore::pairs[i].size() << std::endl;
+		for (size_t i = 0; i < pairStore.pairs.size(); i++) {
+			std::cout << "pairs[" << i << "] has size " << pairStore.pairs[i].size() << std::endl;
 			size_t j = 0;
-			for (const auto& ap: AttributePairStore::pairs[i]) {
-				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " stringValue=" << ap.stringValue() << " floatValue=" << ap.floatValue() << " boolValue=" << ap.boolValue() << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
+			for (const auto& ap: pairStore.pairs[i]) {
+				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " stringValue=" << ap.stringValue() << " floatValue=" << ap.floatValue() << " boolValue=" << ap.boolValue() << " key=" << keyStore.getKey(ap.keyIndex) << std::endl;
 				j++;
 
 			}
@@ -246,10 +230,10 @@ void AttributeStore::reportSize() const {
 		}
 
 		for (const auto entry: uniques) {
-			const auto& pair = AttributePairStore::getPair(entry.first);
+			const auto& pair = pairStore.getPair(entry.first);
 			// It's useful to occasionally confirm that anything with high freq has hot=1,
 			// and also that things with hot=1 have high freq.
-			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << pair.key() <<" stringValue=" << pair.stringValue() << " floatValue=" << pair.floatValue() << " boolValue=" << pair.boolValue() << std::endl;
+			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << keyStore.getKey(pair.keyIndex) <<" stringValue=" << pair.stringValue() << " floatValue=" << pair.floatValue() << " boolValue=" << pair.boolValue() << std::endl;
 		}
 	}
 }

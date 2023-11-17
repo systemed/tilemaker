@@ -36,6 +36,8 @@ AttributeIndex readShapefileAttributes(
 		LayerDef &layer,
 		OsmLuaProcessing &osmLuaProcessing, int &minzoom) {
 
+	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
+
 	AttributeSet attributes;
 	if (osmLuaProcessing.canRemapShapefiles()) {
 		// Create table object
@@ -57,17 +59,17 @@ AttributeIndex readShapefileAttributes(
 		for (auto key : out_table.keys()) {
 			kaguya::LuaRef val = out_table[key];
 			if (val.isType<std::string>()) {
-				attributes.add(key, static_cast<const std::string&>(val), 0);
+				attributeStore.addAttribute(attributes, key, static_cast<const std::string&>(val), 0);
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
-				attributes.add(key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (float)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				attributes.add(key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (float)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
-				attributes.add(key, (bool)val, 0);
+				attributeStore.addAttribute(attributes, key, (bool)val, 0);
 				layer.attributeMap[key] = 2;
 			} else {
 				// don't even think about trying to write nested tables, thank you
@@ -80,19 +82,19 @@ AttributeIndex readShapefileAttributes(
 			string key = it.second;
 			vector_tile::Tile_Value v;
 			switch (columnTypeMap[pos]) {
-				case 1:  attributes.add(key, (float)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
+				case 1:  attributeStore.addAttribute(attributes, key, (float)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				case 2:  attributes.add(key, static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)), 0);
+				case 2:  attributeStore.addAttribute(attributes, key, static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				default: attributes.add(key, DBFReadStringAttribute(dbf, recordNum, pos), 0);
+				default: attributeStore.addAttribute(attributes, key, DBFReadStringAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 0;
 				         break;
 			}
 		}
 	}
-	return osmLuaProcessing.getAttributeStore().add(attributes);
+	return attributeStore.add(attributes);
 }
 
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box

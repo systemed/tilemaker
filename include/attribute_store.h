@@ -26,7 +26,7 @@ class AttributeKeyStore {
 public:
 	// We jump through some hoops to have no locks for most readers,
 	// locking only if we need to add the value.
-	static uint16_t key2index(const std::string& key) {
+	uint16_t key2index(const std::string& key) {
 		std::lock_guard<std::mutex> lock(keys2indexMutex);
 		const auto& rv = keys2index.find(key);
 
@@ -48,17 +48,17 @@ public:
 		return newIndex;
 	}
 
-	static const std::string& getKey(uint16_t index) {
+	const std::string& getKey(uint16_t index) const {
 		std::lock_guard<std::mutex> lock(keys2indexMutex);
 		return keys[index];
 	}
 
 private:
-	static std::mutex keys2indexMutex;
+	mutable std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
-	static std::deque<std::string> keys;
-	static std::map<const std::string, uint16_t> keys2index;
+	std::deque<std::string> keys;
+	std::map<const std::string, uint16_t> keys2index;
 };
 
 enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
@@ -70,16 +70,16 @@ struct AttributePair {
 	char minzoom;
 	AttributePairType valueType;
 
-	AttributePair(std::string const &key, bool value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(value ? AttributePairType::True : AttributePairType::False), minzoom(minzoom)
+	AttributePair(uint32_t keyIndex, bool value, char minzoom)
+		: keyIndex(keyIndex), valueType(value ? AttributePairType::True : AttributePairType::False), minzoom(minzoom)
 	{
 	}
-	AttributePair(std::string const &key, const std::string& value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
+	AttributePair(uint32_t keyIndex, const std::string& value, char minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
 	{
 	}
-	AttributePair(std::string const &key, float value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::Float), floatValue_(value), minzoom(minzoom)
+	AttributePair(uint32_t keyIndex, float value, char minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Float), floatValue_(value), minzoom(minzoom)
 	{
 	}
 
@@ -102,7 +102,7 @@ struct AttributePair {
 	float floatValue() const { return floatValue_; }
 	bool boolValue() const { return valueType == AttributePairType::True; }
 
-	bool hot() const {
+	static bool isHot(const AttributePair& pair, const AttributeKeyStore& keyStore) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -112,38 +112,34 @@ struct AttributePair {
 		// before we know if we were right.
 
 		// All boolean pairs are eligible.
-		if (hasBoolValue())
+		if (pair.hasBoolValue())
 			return true;
 
 		// Small integers are eligible.
-		if (hasFloatValue()) {
-			float v = floatValue();
+		if (pair.hasFloatValue()) {
+			float v = pair.floatValue();
 
 			if (ceil(v) == v && v >= 0 && v <= 25)
 				return true;
 		}
 
 		// The remaining things should be strings, but just in case...
-		if (!hasStringValue())
+		if (!pair.hasStringValue())
 			return false;
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: stringValue()) {
+		for (const auto& c: pair.stringValue()) {
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
 
 		// Keys that sound like name, name:en, etc, aren't eligible.
-		const auto& keyName = AttributeKeyStore::getKey(keyIndex);
+		const auto& keyName = keyStore.getKey(pair.keyIndex);
 		if (keyName.size() >= 4 && keyName[0] == 'n' && keyName[1] == 'a' && keyName[2] == 'm' && keyName[3])
 			return false;
 
 		return true;
-	}
-
-	const std::string& key() const {
-		return AttributeKeyStore::getKey(keyIndex);
 	}
 
 	size_t hash() const {
@@ -179,7 +175,13 @@ struct AttributePair {
 
 class AttributePairStore {
 public:
-	static const AttributePair& getPair(uint32_t i) {
+	AttributePairStore():
+		pairs(PAIR_SHARDS),
+		pairsMaps(PAIR_SHARDS),
+		pairsMutex(PAIR_SHARDS) {
+	}
+
+	const AttributePair& getPair(uint32_t i) const {
 		uint32_t shard = i >> (32 - SHARD_BITS);
 		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
@@ -188,7 +190,7 @@ public:
 		//return pairs[shard].at(offset);
 	};
 
-	static uint32_t addPair(const AttributePair& pair);
+	uint32_t addPair(const AttributePair& pair, bool isHot);
 
 	struct key_value_less {
 		bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {
@@ -221,8 +223,8 @@ public:
 		}
 	}; 
 
-	static std::vector<std::deque<AttributePair>> pairs;
-	static std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
+	std::vector<std::deque<AttributePair>> pairs;
+	std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 
 private:
 	// We refer to all attribute pairs by index.
@@ -232,7 +234,7 @@ private:
 	// The 0th shard is special: it's the hot shard, for pairs
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
-	static std::vector<std::mutex> pairsMutex;
+	mutable std::vector<std::mutex> pairsMutex;
 };
 
 // AttributeSet is a set of AttributePairs
@@ -329,10 +331,6 @@ struct AttributeSet {
 		return getValueAtIndex(actualIndex);
 	}
 
-	void add(std::string const &key, const std::string& v, char minzoom);
-	void add(std::string const &key, float v, char minzoom);
-	void add(std::string const &key, bool v, char minzoom);
-
 	AttributeSet(): useVector(false), shortValues({}) {}
 	AttributeSet(const AttributeSet &&a) = delete;
 
@@ -355,9 +353,8 @@ struct AttributeSet {
 			intValues.~vector();
 	}
 
+	void addPair(uint32_t index);
 private:
-	void add(AttributePair const &kv);
-	void add(uint32_t index);
 	void setValueAtIndex(size_t index, uint32_t value) {
 		if (useVector) {
 			throw std::out_of_range("setValueAtIndex called for useVector=true");
@@ -388,6 +385,8 @@ private:
 // AttributeStore is the store for all AttributeSets
 struct AttributeStore {
 	tsl::ordered_set<AttributeSet, AttributeSet::hash_function> attributeSets;
+	AttributeKeyStore keyStore;
+	AttributePairStore pairStore;
 	mutable std::mutex mutex;
 	int lookups=0;
 
@@ -395,6 +394,10 @@ struct AttributeStore {
 	std::set<AttributePair, AttributePairStore::key_value_less> get(AttributeIndex index) const;
 	void reportSize() const;
 	void doneReading();
+
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	
 	AttributeStore() {
 		// Initialise with an empty set at position 0

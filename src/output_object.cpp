@@ -45,7 +45,7 @@ void OutputObject::writeAttributes(
 		if (it.minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = it.key();
+		std::string const &key = attributeStore.keyStore.getKey(it.keyIndex);
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
