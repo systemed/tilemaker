@@ -131,8 +131,8 @@ To do that, you use these methods:
 * `node:Holds(key)` or `way:Holds(key)`: returns true if that key exists, false otherwise.
 * `node:Layer("layer_name", false)` or `way:Layer("layer_name", is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
 * `way:LayerAsCentroid("layer_name")`: write a single centroid point for this way to the named layer (useful for labels and POIs).
-* `node:Attribute(key,value)` or `node:Attribute(key,value)`: add an attribute to the most recently written layer.
-* `node:AttributeNumeric(key,value)`, `node:AttributeBoolean(key,value)` (and `way:`...): for numeric/boolean columns.
+* `node:Attribute(key,value,minzoom)` or `node:Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
+* `node:AttributeNumeric(key,value,minzoom)`, `node:AttributeBoolean(key,value,minzoom)` (and `way:`...): for numeric/boolean columns.
 * `node:Id()` or `way:Id()`: get the OSM ID of the current object.
 * `node:ZOrder(number)` or `way:ZOrder(number)`: Set a numeric value (default 0, 1-byte signed integer) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used.
 * `node:MinZoom(zoom)` or `way:MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
