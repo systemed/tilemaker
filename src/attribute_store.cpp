@@ -4,7 +4,7 @@
 
 // AttributeKeyStore
 std::deque<std::string> AttributeKeyStore::keys;
-std::mutex AttributeKeyStore::keys2index_mutex;
+std::mutex AttributeKeyStore::keys2indexMutex;
 std::map<const std::string, uint16_t> AttributeKeyStore::keys2index;
 
 // AttributePairStore
@@ -56,7 +56,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair) {
 
 	uint32_t offset = pairs[shard].size();
 
-	if (offset >= 1 << (32 - PAIR_SHARDS))
+	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("pair shard overflow");
 
 	pairs[shard].push_back(pair);
@@ -80,16 +80,16 @@ void AttributeSet::add(uint32_t pairIndex) {
 		intValues.push_back(pairIndex);
 	} else {
 		for (size_t i = (pairIndex < (1 << 16)) ? 0 : 4; i < 8; i++) {
-			if (!is_set(i)) {
-				set_value_at_index(i, pairIndex);
+			if (!isSet(i)) {
+				setValueAtIndex(i, pairIndex);
 				return;
 			}
 		}
 
 		// Switch to a vector -- copy our existing values + add the new one.
 		std::vector<uint32_t> tmp;
-		for (int i = 0; i < num_pairs(); i++) {
-			tmp.push_back(get_pair(i));
+		for (int i = 0; i < numPairs(); i++) {
+			tmp.push_back(getPair(i));
 		}
 
 		tmp.push_back(pairIndex);
@@ -119,13 +119,13 @@ bool sortFn(const AttributePair* a, const AttributePair* b) {
 	if (a->keyIndex != b->keyIndex)
 		return a->keyIndex < b->keyIndex;
 
-	if (a->has_string_value()) return b->has_string_value() && a->string_value() < b->string_value();
-	if (a->has_bool_value()) return b->has_bool_value() && a->bool_value() < b->bool_value();
-	if (a->has_float_value()) return b->has_float_value() && a->float_value() < b->float_value();
+	if (a->hasStringValue()) return b->hasStringValue() && a->stringValue() < b->stringValue();
+	if (a->hasBoolValue()) return b->hasBoolValue() && a->boolValue() < b->boolValue();
+	if (a->hasFloatValue()) return b->hasFloatValue() && a->floatValue() < b->floatValue();
 	throw std::runtime_error("Invalid type in AttributeSet");
 }
 
-void AttributeSet::finalize_set() {
+void AttributeSet::finalizeSet() {
 	// Ensure that values are sorted, giving us a canonical representation,
 	// so that we can have fast hash/equality functions.
 	if (useVector) {
@@ -166,17 +166,17 @@ void AttributeSet::finalize_set() {
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
-	attributes.finalize_set();
+	attributes.finalizeSet();
 	std::lock_guard<std::mutex> lock(mutex);
 	lookups++;
 
 	// Do we already have it?
-	auto existing = attribute_sets.find(attributes);
-	if (existing != attribute_sets.end()) return existing - attribute_sets.begin();
+	auto existing = attributeSets.find(attributes);
+	if (existing != attributeSets.end()) return existing - attributeSets.begin();
 
 	// No, so add and return the index
-	AttributeIndex idx = static_cast<AttributeIndex>(attribute_sets.size());
-	attribute_sets.insert(attributes);
+	AttributeIndex idx = static_cast<AttributeIndex>(attributeSets.size());
+	attributeSets.insert(attributes);
 	return idx;
 }
 
@@ -184,22 +184,22 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 //       container than a set (vector?)
 std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(AttributeIndex index) const {
 	try {
-		const auto& attr_set = attribute_sets.nth(index).key();
+		const auto& attrSet = attributeSets.nth(index).key();
 
-		const size_t n = attr_set.num_pairs();
+		const size_t n = attrSet.numPairs();
 
 		std::set<AttributePair, AttributePairStore::key_value_less> rv;
 		for (size_t i = 0; i < n; i++)
-			rv.insert(AttributePairStore::getPair(attr_set.get_pair(i)));
+			rv.insert(AttributePairStore::getPair(attrSet.getPair(i)));
 
 		return rv;
 	} catch (std::out_of_range &err) {
-		throw std::runtime_error("Failed to fetch attributes at index "+std::to_string(index)+" - size is "+std::to_string(attribute_sets.size()));
+		throw std::runtime_error("Failed to fetch attributes at index "+std::to_string(index)+" - size is "+std::to_string(attributeSets.size()));
 	}
 }
 
 void AttributeStore::reportSize() const {
-	std::cout << "Attributes: " << attribute_sets.size() << " sets from " << lookups << " objects" << std::endl;
+	std::cout << "Attributes: " << attributeSets.size() << " sets from " << lookups << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
@@ -213,25 +213,25 @@ void AttributeStore::reportSize() const {
 			std::cout << "pairs[" << i << "] has size " << AttributePairStore::pairs[i].size() << std::endl;
 			size_t j = 0;
 			for (const auto& ap: AttributePairStore::pairs[i]) {
-				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " string_value=" << ap.string_value() << " float_value=" << ap.float_value() << " bool_value=" << ap.bool_value() << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
+				std::cout << "pairs[" << i << "][" << j << "] keyIndex=" << ap.keyIndex << " minzoom=" << (65+ap.minzoom) << " stringValue=" << ap.stringValue() << " floatValue=" << ap.floatValue() << " boolValue=" << ap.boolValue() << " key=" << AttributeKeyStore::getKey(ap.keyIndex) << std::endl;
 				j++;
 
 			}
 		}
 		size_t pairs = 0;
 		std::map<uint32_t, size_t> uniques;
-		for (const auto& attr_set: attribute_sets) {
-			pairs += attr_set.num_pairs();
+		for (const auto& attrSet: attributeSets) {
+			pairs += attrSet.numPairs();
 
 			try {
-				tagCountDist[attr_set.num_pairs()]++;
+				tagCountDist[attrSet.numPairs()]++;
 			} catch (std::out_of_range &err) {
-				tagCountDist[attr_set.num_pairs()] = 1;
+				tagCountDist[attrSet.numPairs()] = 1;
 			}
 
-			const size_t n = attr_set.num_pairs();
+			const size_t n = attrSet.numPairs();
 			for (size_t i = 0; i < n; i++) {
-				uint32_t attr = attr_set.get_pair(i);
+				uint32_t attr = attrSet.getPair(i);
 				try {
 					uniques[attr]++;
 				} catch (std::out_of_range &err) {
@@ -249,7 +249,7 @@ void AttributeStore::reportSize() const {
 			const auto& pair = AttributePairStore::getPair(entry.first);
 			// It's useful to occasionally confirm that anything with high freq has hot=1,
 			// and also that things with hot=1 have high freq.
-			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << pair.key() <<" string_value=" << pair.string_value() << " float_value=" << pair.float_value() << " bool_value=" << pair.bool_value() << std::endl;
+			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << pair.key() <<" stringValue=" << pair.stringValue() << " floatValue=" << pair.floatValue() << " boolValue=" << pair.boolValue() << std::endl;
 		}
 	}
 }

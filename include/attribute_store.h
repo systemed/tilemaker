@@ -27,7 +27,7 @@ public:
 	// We jump through some hoops to have no locks for most readers,
 	// locking only if we need to add the value.
 	static uint16_t key2index(const std::string& key) {
-		std::lock_guard<std::mutex> lock(keys2index_mutex);
+		std::lock_guard<std::mutex> lock(keys2indexMutex);
 		const auto& rv = keys2index.find(key);
 
 		if (rv != keys2index.end())
@@ -49,19 +49,12 @@ public:
 	}
 
 	static const std::string& getKey(uint16_t index) {
-		// TODO: is this safe? I suspect it might be in practice because
-		// we only have ~50 keys, which is smaller than the initial size of
-		// a deque. But I think if the deque ever grew concurrently
-		// with a read, we'd be in trouble.
-		//
-		// We should either wrap this in a futex, or access it through
-		// the immutable key score.
-		std::lock_guard<std::mutex> lock(keys2index_mutex);
+		std::lock_guard<std::mutex> lock(keys2indexMutex);
 		return keys[index];
 	}
 
 private:
-	static std::mutex keys2index_mutex;
+	static std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
 	static std::deque<std::string> keys;
@@ -71,8 +64,8 @@ private:
 enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
 // AttributePair is a key/value pair (with minzoom)
 struct AttributePair {
-	std::string stringValue;
-	float floatValue;
+	std::string stringValue_;
+	float floatValue_;
 	short keyIndex;
 	char minzoom;
 	AttributePairType valueType;
@@ -82,32 +75,32 @@ struct AttributePair {
 	{
 	}
 	AttributePair(std::string const &key, const std::string& value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::String), stringValue(value), minzoom(minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
 	{
 	}
 	AttributePair(std::string const &key, float value, char minzoom)
-		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::Float), floatValue(value), minzoom(minzoom)
+		: keyIndex(AttributeKeyStore::key2index(key)), valueType(AttributePairType::Float), floatValue_(value), minzoom(minzoom)
 	{
 	}
 
 	bool operator==(const AttributePair &other) const {
 		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex || valueType!=other.valueType) return false;
 		if (valueType == AttributePairType::String)
-			return stringValue == other.stringValue;
+			return stringValue_ == other.stringValue_;
 
 		if (valueType == AttributePairType::Float)
-			return floatValue == other.floatValue;
+			return floatValue_ == other.floatValue_;
 
 		return true;
 	}
 
-	bool has_string_value() const { return valueType == AttributePairType::String; }
-	bool has_float_value() const { return valueType == AttributePairType::Float; }
-	bool has_bool_value() const { return valueType == AttributePairType::True || valueType == AttributePairType::False; };
+	bool hasStringValue() const { return valueType == AttributePairType::String; }
+	bool hasFloatValue() const { return valueType == AttributePairType::Float; }
+	bool hasBoolValue() const { return valueType == AttributePairType::True || valueType == AttributePairType::False; };
 
-	const std::string& string_value() const { return stringValue; }
-	float float_value() const { return floatValue; }
-	bool bool_value() const { return valueType == AttributePairType::True; }
+	const std::string& stringValue() const { return stringValue_; }
+	float floatValue() const { return floatValue_; }
+	bool boolValue() const { return valueType == AttributePairType::True; }
 
 	bool hot() const {
 		// Is this pair a candidate for the hot pool?
@@ -119,24 +112,24 @@ struct AttributePair {
 		// before we know if we were right.
 
 		// All boolean pairs are eligible.
-		if (has_bool_value())
+		if (hasBoolValue())
 			return true;
 
 		// Small integers are eligible.
-		if (has_float_value()) {
-			float v = float_value();
+		if (hasFloatValue()) {
+			float v = floatValue();
 
 			if (ceil(v) == v && v >= 0 && v <= 25)
 				return true;
 		}
 
 		// The remaining things should be strings, but just in case...
-		if (!has_string_value())
+		if (!hasStringValue())
 			return false;
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: string_value()) {
+		for (const auto& c: stringValue()) {
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
@@ -158,12 +151,12 @@ struct AttributePair {
 		boost::hash_combine(rv, keyIndex);
 		boost::hash_combine(rv, valueType);
 
-		if(has_string_value())
-			boost::hash_combine(rv, string_value());
-		else if(has_float_value())
-			boost::hash_combine(rv, float_value());
-		else if(has_bool_value())
-			boost::hash_combine(rv, bool_value());
+		if(hasStringValue())
+			boost::hash_combine(rv, stringValue());
+		else if(hasFloatValue())
+			boost::hash_combine(rv, floatValue());
+		else if(hasBoolValue())
+			boost::hash_combine(rv, boolValue());
 		else {
 			throw new std::out_of_range("cannot hash pair, unknown value");
 		}
@@ -206,9 +199,9 @@ public:
 			if (lhs.valueType < rhs.valueType) return true;
 			if (lhs.valueType > rhs.valueType) return false;
 
-			if (lhs.has_string_value()) return lhs.string_value() < rhs.string_value();
-			if (lhs.has_bool_value()) return lhs.bool_value() < rhs.bool_value();
-			if (lhs.has_float_value()) return lhs.float_value() < rhs.float_value();
+			if (lhs.hasStringValue()) return lhs.stringValue() < rhs.stringValue();
+			if (lhs.hasBoolValue()) return lhs.boolValue() < rhs.boolValue();
+			if (lhs.hasFloatValue()) return lhs.floatValue() < rhs.floatValue();
 			throw std::runtime_error("Invalid type in attribute store");
 		}
 	}; 
@@ -221,9 +214,9 @@ public:
 				return lhs->keyIndex < rhs->keyIndex;
 			if (lhs->valueType != rhs->valueType) return lhs->valueType < rhs->valueType;
 
-			if (lhs->has_string_value()) return lhs->string_value() < rhs->string_value();
-			if (lhs->has_bool_value()) return lhs->bool_value() < rhs->bool_value();
-			if (lhs->has_float_value()) return lhs->float_value() < rhs->float_value();
+			if (lhs->hasStringValue()) return lhs->stringValue() < rhs->stringValue();
+			if (lhs->hasBoolValue()) return lhs->boolValue() < rhs->boolValue();
+			if (lhs->hasFloatValue()) return lhs->floatValue() < rhs->floatValue();
 			throw std::runtime_error("Invalid type in attribute store");
 		}
 	}; 
@@ -248,7 +241,7 @@ struct AttributeSet {
 
 	struct hash_function {
 		size_t operator()(const AttributeSet &attributes) const {
-			// Values are in canonical form after finalize_set is called, so
+			// Values are in canonical form after finalizeSet is called, so
 			// can hash them in the order they're stored.
 			if (attributes.useVector) {
 				const size_t n = attributes.intValues.size();
@@ -270,7 +263,7 @@ struct AttributeSet {
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
 		//
-		// NB: finalize_set ensures values are in canonical order, so we can just
+		// NB: finalizeSet ensures values are in canonical order, so we can just
 		// do a pairwise comparison.
 
 		if (useVector != other.useVector)
@@ -291,7 +284,7 @@ struct AttributeSet {
 		return memcmp(shortValues, other.shortValues, sizeof(shortValues)) == 0;
 	}
 
-	void finalize_set();
+	void finalizeSet();
 
 	// We store references to AttributePairs either in an array of shorts
 	// or a vector of 32-bit ints.
@@ -304,19 +297,19 @@ struct AttributeSet {
 		std::vector<uint32_t> intValues;
 	};
 
-	size_t num_pairs() const {
+	size_t numPairs() const {
 		if (useVector)
 			return intValues.size();
 
 		size_t rv = 0;
 		for (int i = 0; i < 8; i++)
-			if (is_set(i))
+			if (isSet(i))
 				rv++;
 
 		return rv;
 	}
 
-	const uint32_t get_pair(size_t i) const {
+	const uint32_t getPair(size_t i) const {
 		if (useVector)
 			return intValues[i];
 
@@ -325,15 +318,15 @@ struct AttributeSet {
 		// Advance actualIndex to the first non-zero entry, e.g. if
 		// the first thing added has a 4-byte index, our first entry
 		// is at location 4, not 0.
-		while(!is_set(actualIndex)) actualIndex++;
+		while(!isSet(actualIndex)) actualIndex++;
 
 		while (j < i) {
 			j++;
 			actualIndex++;
-			while(!is_set(actualIndex)) actualIndex++;
+			while(!isSet(actualIndex)) actualIndex++;
 		}
 
-		return get_value_at_index(actualIndex);
+		return getValueAtIndex(actualIndex);
 	}
 
 	void add(std::string const &key, const std::string& v, char minzoom);
@@ -365,9 +358,9 @@ struct AttributeSet {
 private:
 	void add(AttributePair const &kv);
 	void add(uint32_t index);
-	void set_value_at_index(size_t index, uint32_t value) {
+	void setValueAtIndex(size_t index, uint32_t value) {
 		if (useVector) {
-			throw std::out_of_range("set_value_at_index called for useVector=true");
+			throw std::out_of_range("setValueAtIndex called for useVector=true");
 		}
 
 		if (index < 4 && value < (1 << 16)) {
@@ -375,16 +368,16 @@ private:
 		} else if (index >= 4 && index < 8) {
 			((uint32_t*)(&shortValues[4]))[index - 4] = value;
 		} else {
-			throw std::out_of_range("set_value_at_index out of bounds");
+			throw std::out_of_range("setValueAtIndex out of bounds");
 		}
 	}
-	uint32_t get_value_at_index(size_t index) const {
+	uint32_t getValueAtIndex(size_t index) const {
 		if (index < 4)
 			return shortValues[index];
 
 		return ((uint32_t*)(&shortValues[4]))[index - 4];
 	}
-	bool is_set(size_t index) const {
+	bool isSet(size_t index) const {
 		if (index < 4) return shortValues[index] != 0;
 
 		const size_t newIndex = 4 + 2 * (index - 4);
@@ -394,7 +387,7 @@ private:
 
 // AttributeStore is the store for all AttributeSets
 struct AttributeStore {
-	tsl::ordered_set<AttributeSet, AttributeSet::hash_function> attribute_sets;
+	tsl::ordered_set<AttributeSet, AttributeSet::hash_function> attributeSets;
 	mutable std::mutex mutex;
 	int lookups=0;
 
@@ -406,7 +399,7 @@ struct AttributeStore {
 	AttributeStore() {
 		// Initialise with an empty set at position 0
 		AttributeSet blank;
-		attribute_sets.insert(blank);
+		attributeSets.insert(blank);
 	}
 };
 
