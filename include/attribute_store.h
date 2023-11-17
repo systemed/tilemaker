@@ -4,19 +4,9 @@
 
 #include <mutex>
 #include <iostream>
-#include <atomic>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
-#include <unordered_map>
-#include <tsl/ordered_set.h>
-
-// TODO: the PairStore and KeyStore have static scope. Should probably
-// do the work to move them into AttributeStore, and change how
-// AttributeSet is interacted with?
-//
-// OTOH, AttributeStore's lifetime is the process's lifetime, so it'd
-// just be a good coding style thing, not actually preventing a leak.
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -171,14 +161,14 @@ struct AttributePair {
 // We also reserve the bottom shard for the hot pool. Since a shard is 16M entries,
 // but the hot pool is only 64KB entries, we're wasting a little bit of key space.
 #define SHARD_BITS 8
-#define PAIR_SHARDS (1 << SHARD_BITS)
+#define ATTRIBUTE_SHARDS (1 << SHARD_BITS)
 
 class AttributePairStore {
 public:
 	AttributePairStore():
-		pairs(PAIR_SHARDS),
-		pairsMaps(PAIR_SHARDS),
-		pairsMutex(PAIR_SHARDS) {
+		pairs(ATTRIBUTE_SHARDS),
+		pairsMaps(ATTRIBUTE_SHARDS),
+		pairsMutex(ATTRIBUTE_SHARDS) {
 	}
 
 	const AttributePair& getPair(uint32_t i) const {
@@ -186,8 +176,8 @@ public:
 		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
 		std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-		return pairs[shard][offset];
-		//return pairs[shard].at(offset);
+		//return pairs[shard][offset];
+		return pairs[shard].at(offset);
 	};
 
 	uint32_t addPair(const AttributePair& pair, bool isHot);
@@ -241,26 +231,53 @@ private:
 // = the complete attributes for one object
 struct AttributeSet {
 
-	struct hash_function {
-		size_t operator()(const AttributeSet &attributes) const {
-			// Values are in canonical form after finalizeSet is called, so
-			// can hash them in the order they're stored.
-			if (attributes.useVector) {
-				const size_t n = attributes.intValues.size();
-				size_t idx = n;
-				for (int i = 0; i < n; i++)
-					boost::hash_combine(idx, attributes.intValues[i]);
+	struct less_ptr {
+		bool operator()(const AttributeSet* lhs, const AttributeSet* rhs) const {            
+			if (lhs->useVector != rhs->useVector)
+				return lhs->useVector < rhs->useVector;
 
-				return idx;
+			if (lhs->useVector) {
+				if (lhs->intValues.size() != rhs->intValues.size())
+					return lhs->intValues.size() < rhs->intValues.size();
+
+				for (int i = 0; i < lhs->intValues.size(); i++) {
+					if (lhs->intValues[i] != rhs->intValues[i]) {
+						return lhs->intValues[i] < rhs->intValues[i];
+					}
+				}
+
+				return false;
 			}
 
-			size_t idx = 0;
-			for (int i = 0; i < 12; i++)
-				boost::hash_combine(idx, attributes.shortValues[i]);
+			for (int i = 0; i < 12; i++) {
+				if (lhs->shortValues[i] != rhs->shortValues[i]) {
+					return lhs->shortValues[i] < rhs->shortValues[i];
+				}
+			}
+
+			return false;
+		}
+	}; 
+
+	size_t hash() const {
+		// Values are in canonical form after finalizeSet is called, so
+		// can hash them in the order they're stored.
+		if (useVector) {
+			const size_t n = intValues.size();
+			size_t idx = n;
+			for (int i = 0; i < n; i++)
+				boost::hash_combine(idx, intValues[i]);
 
 			return idx;
 		}
-	};
+
+		size_t idx = 0;
+		for (int i = 0; i < 12; i++)
+			boost::hash_combine(idx, shortValues[i]);
+
+		return idx;
+	}
+
 	bool operator==(const AttributeSet &other) const {
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
@@ -384,7 +401,10 @@ private:
 
 // AttributeStore is the store for all AttributeSets
 struct AttributeStore {
-	tsl::ordered_set<AttributeSet, AttributeSet::hash_function> attributeSets;
+	std::vector<std::deque<AttributeSet>> sets;
+	std::vector<boost::container::flat_map<const AttributeSet*, uint32_t, AttributeSet::less_ptr>> setsMaps;
+	mutable std::vector<std::mutex> setsMutex;
+
 	AttributeKeyStore keyStore;
 	AttributePairStore pairStore;
 	mutable std::mutex mutex;
@@ -399,10 +419,10 @@ struct AttributeStore {
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	
-	AttributeStore() {
-		// Initialise with an empty set at position 0
-		AttributeSet blank;
-		attributeSets.insert(blank);
+	AttributeStore():
+		sets(ATTRIBUTE_SHARDS),
+		setsMaps(ATTRIBUTE_SHARDS),
+		setsMutex(ATTRIBUTE_SHARDS) {
 	}
 };
 

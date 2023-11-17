@@ -20,7 +20,8 @@ class TileDataSource {
 protected:	
 	std::mutex mutex;
 	TileIndex tileIndex;
-	std::deque<OutputObject> objects;
+	std::vector<std::deque<OutputObject>> objects;
+	std::vector<std::mutex> objectsMutex;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
@@ -55,7 +56,7 @@ protected:
 
 public:
 	TileDataSource(unsigned int baseZoom) 
-		: baseZoom(baseZoom) 
+		: baseZoom(baseZoom), objects(16), objectsMutex(16)
 	{ }
 
 	///This must be thread safe!
@@ -71,9 +72,11 @@ public:
 	}
 
 	OutputObjectRef CreateObject(OutputObject const &oo) {
-		std::lock_guard<std::mutex> lock(mutex);
-		objects.push_back(oo);
-		return &objects.back();
+		size_t hash = (uint64_t)&oo ^ 0x9e3779b97f4a7c16;
+		size_t shard = hash % objectsMutex.size();
+		std::lock_guard<std::mutex> lock(objectsMutex[shard]);
+		objects[shard].push_back(oo);
+		return &objects[shard].back();
 	}
 
 	void AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs);

@@ -1,6 +1,7 @@
 #include "attribute_store.h"
 
 #include <iostream>
+#include <algorithm>
 
 uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	if (isHot) {
@@ -30,11 +31,11 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	// Throw it on the pile with the rest of the pairs.
 	size_t hash = pair.hash();
 
-	size_t shard = hash % PAIR_SHARDS;
+	size_t shard = hash % ATTRIBUTE_SHARDS;
 	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
-	if (shard == 0) shard = (hash >> 8) % PAIR_SHARDS;
-	if (shard == 0) shard = (hash >> 16) % PAIR_SHARDS;
-	if (shard == 0) shard = (hash >> 24) % PAIR_SHARDS;
+	if (shard == 0) shard = (hash >> 8) % ATTRIBUTE_SHARDS;
+	if (shard == 0) shard = (hash >> 16) % ATTRIBUTE_SHARDS;
+	if (shard == 0) shard = (hash >> 24) % ATTRIBUTE_SHARDS;
 	if (shard == 0) shard = 1;
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
@@ -151,43 +152,65 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
 	attributes.finalizeSet();
-	std::lock_guard<std::mutex> lock(mutex);
+
+	size_t hash = attributes.hash();
+	size_t shard = hash % ATTRIBUTE_SHARDS;
+
+	// We can't use the top 2 bits (see OutputObject's bitfields)
+	shard = shard >> 2;
+
+	std::lock_guard<std::mutex> lock(setsMutex[shard]);
 	lookups++;
 
 	// Do we already have it?
-	auto existing = attributeSets.find(attributes);
-	if (existing != attributeSets.end()) return existing - attributeSets.begin();
+	const auto& existing = setsMaps[shard].find(&attributes);
+	if (existing != setsMaps[shard].end()) return existing->second;
 
 	// No, so add and return the index
-	AttributeIndex idx = static_cast<AttributeIndex>(attributeSets.size());
-	attributeSets.insert(attributes);
-	return idx;
+	uint32_t offset = sets[shard].size();
+	if (offset >= (1 << (32 - SHARD_BITS)))
+		throw std::out_of_range("set shard overflow");
+	sets[shard].push_back(attributes);
+
+	const AttributeSet* ptr = &sets[shard][offset];
+	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
+	setsMaps[shard][ptr] = rv;
+	return rv;
 }
 
 // TODO: consider implementing this as an iterator, or returning a cheaper
 //       container than a set (vector?)
 std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(AttributeIndex index) const {
 	try {
-		const auto& attrSet = attributeSets.nth(index).key();
+		uint32_t shard = index >> (32 - SHARD_BITS);
+		uint32_t offset = index & (~(~0u << (32 - SHARD_BITS)));
+
+		std::lock_guard<std::mutex> lock(setsMutex[shard]);
+
+		const AttributeSet& attrSet = sets[shard].at(offset);
 
 		const size_t n = attrSet.numPairs();
 
 		std::set<AttributePair, AttributePairStore::key_value_less> rv;
-		for (size_t i = 0; i < n; i++)
+		for (size_t i = 0; i < n; i++) {
 			rv.insert(pairStore.getPair(attrSet.getPair(i)));
+		}
 
 		return rv;
 	} catch (std::out_of_range &err) {
-		throw std::runtime_error("Failed to fetch attributes at index "+std::to_string(index)+" - size is "+std::to_string(attributeSets.size()));
+		throw std::runtime_error("Failed to fetch attributes at index "+std::to_string(index));
 	}
 }
 
 void AttributeStore::reportSize() const {
-	std::cout << "Attributes: " << attributeSets.size() << " sets from " << lookups << " objects" << std::endl;
+	size_t numAttributeSets = 0;
+	for (int i = 0; i < ATTRIBUTE_SHARDS; i++)
+		numAttributeSets += sets[i].size();
+	std::cout << "Attributes: " << numAttributeSets << " sets from " << lookups << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
-		for (int i = 0; i < PAIR_SHARDS; i++) {
+		for (int i = 0; i < ATTRIBUTE_SHARDS; i++) {
 			std::cout << "pairsMaps[" << i << "] has " << pairStore.pairsMaps[i].size() << " entries" << std::endl;
 		}
 
@@ -204,22 +227,24 @@ void AttributeStore::reportSize() const {
 		}
 		size_t pairs = 0;
 		std::map<uint32_t, size_t> uniques;
-		for (const auto& attrSet: attributeSets) {
-			pairs += attrSet.numPairs();
+		for (const auto& attributeSetSet: sets) {
+			for (const auto& attrSet: attributeSetSet) {
+				pairs += attrSet.numPairs();
 
-			try {
-				tagCountDist[attrSet.numPairs()]++;
-			} catch (std::out_of_range &err) {
-				tagCountDist[attrSet.numPairs()] = 1;
-			}
-
-			const size_t n = attrSet.numPairs();
-			for (size_t i = 0; i < n; i++) {
-				uint32_t attr = attrSet.getPair(i);
 				try {
-					uniques[attr]++;
+					tagCountDist[attrSet.numPairs()]++;
 				} catch (std::out_of_range &err) {
-					uniques[attr] = 1;
+					tagCountDist[attrSet.numPairs()] = 1;
+				}
+
+				const size_t n = attrSet.numPairs();
+				for (size_t i = 0; i < n; i++) {
+					uint32_t attr = attrSet.getPair(i);
+					try {
+						uniques[attr]++;
+					} catch (std::out_of_range &err) {
+						uniques[attr] = 1;
+					}
 				}
 			}
 		}
