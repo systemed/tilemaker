@@ -248,7 +248,7 @@ struct AttributeSet {
 				return false;
 			}
 
-			for (int i = 0; i < 12; i++) {
+			for (int i = 0; i < sizeof(lhs->shortValues)/sizeof(lhs->shortValues[0]); i++) {
 				if (lhs->shortValues[i] != rhs->shortValues[i]) {
 					return lhs->shortValues[i] < rhs->shortValues[i];
 				}
@@ -271,7 +271,7 @@ struct AttributeSet {
 		}
 
 		size_t idx = 0;
-		for (int i = 0; i < 12; i++)
+		for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 			boost::hash_combine(idx, shortValues[i]);
 
 		return idx;
@@ -347,7 +347,10 @@ struct AttributeSet {
 		return getValueAtIndex(actualIndex);
 	}
 
-	AttributeSet(): useVector(false), shortValues({}) {}
+	AttributeSet(): useVector(false) {
+		for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
+			shortValues[i] = 0;
+	}
 	AttributeSet(const AttributeSet &&a) = delete;
 
 	AttributeSet(const AttributeSet &a) {
@@ -356,10 +359,10 @@ struct AttributeSet {
 		if (useVector) {
 			new (&intValues) std::vector<uint32_t>;
 			intValues = a.intValues;
-			for (int i = 0; i < 12; i++)
+			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 				shortValues[i] = 0;
 		} else {
-			for (int i = 0; i < 12; i++)
+			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 				shortValues[i] = a.shortValues[i];
 		}
 	}
