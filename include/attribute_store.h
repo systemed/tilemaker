@@ -4,6 +4,7 @@
 
 #include <mutex>
 #include <deque>
+#include <map>
 #include <iostream>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
