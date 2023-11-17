@@ -3,6 +3,7 @@
 #define _ATTRIBUTE_STORE_H
 
 #include <mutex>
+#include <deque>
 #include <iostream>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
