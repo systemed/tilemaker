@@ -14,8 +14,6 @@ typedef uint32_t AttributeIndex; // check this is enough
 
 class AttributeKeyStore {
 public:
-	// We jump through some hoops to have no locks for most readers,
-	// locking only if we need to add the value.
 	uint16_t key2index(const std::string& key) {
 		std::lock_guard<std::mutex> lock(keys2indexMutex);
 		const auto& rv = keys2index.find(key);
