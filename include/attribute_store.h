@@ -411,7 +411,7 @@ struct AttributeStore {
 	int lookups=0;
 
 	AttributeIndex add(AttributeSet &attributes);
-	std::set<AttributePair, AttributePairStore::key_value_less> get(AttributeIndex index) const;
+	std::vector<AttributePair> get(AttributeIndex index) const;
 	void reportSize() const;
 	void doneReading();
 

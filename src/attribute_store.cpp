@@ -207,9 +207,7 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	return rv;
 }
 
-// TODO: consider implementing this as an iterator, or returning a cheaper
-//       container than a set (vector?)
-std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(AttributeIndex index) const {
+std::vector<AttributePair> AttributeStore::get(AttributeIndex index) const {
 	try {
 		uint32_t shard = index >> (32 - SHARD_BITS);
 		uint32_t offset = index & (~(~0u << (32 - SHARD_BITS)));
@@ -220,9 +218,9 @@ std::set<AttributePair, AttributePairStore::key_value_less> AttributeStore::get(
 
 		const size_t n = attrSet.numPairs();
 
-		std::set<AttributePair, AttributePairStore::key_value_less> rv;
+		std::vector<AttributePair> rv;
 		for (size_t i = 0; i < n; i++) {
-			rv.insert(pairStore.getPair(attrSet.getPair(i)));
+			rv.push_back(pairStore.getPair(attrSet.getPair(i)));
 		}
 
 		return rv;
