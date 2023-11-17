@@ -370,6 +370,7 @@ struct AttributeSet {
 	}
 
 	void addPair(uint32_t index);
+	void removePairWithKey(const AttributePairStore& pairStore, uint32_t keyIndex);
 private:
 	void setValueAtIndex(size_t index, uint32_t value) {
 		if (useVector) {

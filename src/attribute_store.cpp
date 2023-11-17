@@ -82,19 +82,48 @@ void AttributeSet::addPair(uint32_t pairIndex) {
 		intValues = tmp;
 	}
 }
+void AttributeSet::removePairWithKey(const AttributePairStore& pairStore, uint32_t keyIndex) {
+	// When adding a new key/value, we need to remove any existing pair that has that key.
+	if (useVector) {
+		for (int i = 0; i < intValues.size(); i++) {
+			const AttributePair& p = pairStore.getPair(intValues[i]);
+			if (p.keyIndex == keyIndex) {
+				intValues.erase(intValues.begin() + i);
+				return;
+			}
+		}
+
+		return;
+	}
+
+	for (int i = 0; i < 8; i++) {
+		const uint32_t pairIndex = getValueAtIndex(i);
+		if (pairIndex != 0) {
+			const AttributePair& p = pairStore.getPair(pairIndex);
+			if (p.keyIndex == keyIndex) {
+				setValueAtIndex(i, 0);
+				return;
+			}
+		}
+	}
+}
+
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = AttributePair::isHot(kv, key);
+	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = AttributePair::isHot(kv, key);
+	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = AttributePair::isHot(kv, key);
+	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 
