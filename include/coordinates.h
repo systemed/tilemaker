@@ -6,7 +6,6 @@
 #include "geom.h"
 #include <utility>
 #include <unordered_set>
-#include <boost/functional/hash.hpp>
 
 #ifdef FAT_TILE_INDEX
 typedef uint32_t TileCoordinate;
@@ -43,9 +42,7 @@ typedef class TileCoordinates_ TileCoordinates;
 namespace std {
 	template<> struct hash<TileCoordinates> {
 		size_t operator()(const TileCoordinates & obj) const {
-			size_t rv = obj.x;
-			boost::hash_combine(rv, obj.y);
-			return rv;
+			return hash<TileCoordinate>()(obj.x) ^ hash<TileCoordinate>()(obj.y);
 		}
 	};
 }
