@@ -84,17 +84,17 @@ void AttributeSet::addPair(uint32_t pairIndex) {
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, keyStore);
+	bool isHot = AttributePair::isHot(kv, key);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, keyStore);
+	bool isHot = AttributePair::isHot(kv, key);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, keyStore);
+	bool isHot = AttributePair::isHot(kv, key);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 

@@ -92,7 +92,7 @@ struct AttributePair {
 	float floatValue() const { return floatValue_; }
 	bool boolValue() const { return valueType == AttributePairType::True; }
 
-	static bool isHot(const AttributePair& pair, const AttributeKeyStore& keyStore) {
+	static bool isHot(const AttributePair& pair, const std::string& keyName) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -125,7 +125,6 @@ struct AttributePair {
 		}
 
 		// Keys that sound like name, name:en, etc, aren't eligible.
-		const auto& keyName = keyStore.getKey(pair.keyIndex);
 		if (keyName.size() >= 4 && keyName[0] == 'n' && keyName[1] == 'a' && keyName[2] == 'm' && keyName[3])
 			return false;
 
