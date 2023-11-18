@@ -7,6 +7,31 @@
 using namespace std;
 
 thread_local kaguya::State *g_luaState = nullptr;
+thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
+
+std::string rawId() { return osmLuaProcessing->Id(); }
+bool rawHolds(const std::string& key) { return osmLuaProcessing->Holds(key); }
+const std::string& rawFind(const std::string& key) { return osmLuaProcessing->Find(key); }
+std::vector<std::string> rawFindIntersecting(const std::string &layerName) { return osmLuaProcessing->FindIntersecting(layerName); }
+bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Intersects(layerName); }
+std::vector<std::string> rawFindCovering(const std::string& layerName) { return osmLuaProcessing->FindCovering(layerName); }
+bool rawCoveredBy(const std::string& layerName) { return osmLuaProcessing->CoveredBy(layerName); }
+bool rawIsClosed() { return osmLuaProcessing->IsClosed(); }
+double rawArea() { return osmLuaProcessing->Area(); }
+double rawLength() { return osmLuaProcessing->Length(); }
+std::vector<double> Centroid() { return osmLuaProcessing->Centroid(); }
+void rawLayer(const std::string& layerName, bool area) { return osmLuaProcessing->Layer(layerName, area); }
+void rawLayerAsCentroid(const std::string &layerName) { return osmLuaProcessing->LayerAsCentroid(layerName); }
+void rawMinZoom(const double z) { return osmLuaProcessing->MinZoom(z); }
+void rawZOrder(const double z) { return osmLuaProcessing->ZOrder(z); }
+kaguya::optional<int> rawNextRelation() { return osmLuaProcessing->NextRelation(); }
+void rawRestartRelations() { return osmLuaProcessing->RestartRelations(); }
+std::string rawFindInRelation(const std::string& key) { return osmLuaProcessing->FindInRelation(key); }
+void rawAccept() { return osmLuaProcessing->Accept(); }
+double rawAreaIntersecting(const std::string& layerName) { return osmLuaProcessing->AreaIntersecting(layerName); }
+std::vector<double> rawCentroid() { return osmLuaProcessing->Centroid(); }
+
+
 bool supportsRemappingShapefiles = false;
 const std::string EMPTY_STRING = "";
 
@@ -39,31 +64,41 @@ OsmLuaProcessing::OsmLuaProcessing(
 	g_luaState = &luaState;
 	luaState.setErrorHandler(lua_error_handler);
 	luaState.dofile(luaFile.c_str());
-	luaState["OSM"].setClass(kaguya::UserdataMetatable<OsmLuaProcessing>()
-		.addFunction("Id", &OsmLuaProcessing::Id)
-		.addFunction("Holds", &OsmLuaProcessing::Holds)
-		.addFunction("Find", &OsmLuaProcessing::Find)
-		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
-		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
-		.addFunction("FindCovering", &OsmLuaProcessing::FindCovering)
-		.addFunction("CoveredBy", &OsmLuaProcessing::CoveredBy)
-		.addFunction("IsClosed", &OsmLuaProcessing::IsClosed)
-		.addFunction("Area", &OsmLuaProcessing::Area)
-		.addFunction("AreaIntersecting", &OsmLuaProcessing::AreaIntersecting)
-		.addFunction("Length", &OsmLuaProcessing::Length)
-		.addFunction("Centroid", &OsmLuaProcessing::Centroid)
-		.addFunction("Layer", &OsmLuaProcessing::Layer)
-		.addFunction("LayerAsCentroid", &OsmLuaProcessing::LayerAsCentroid)
-		.addOverloadedFunctions("Attribute", &OsmLuaProcessing::Attribute, &OsmLuaProcessing::AttributeWithMinZoom)
-		.addOverloadedFunctions("AttributeNumeric", &OsmLuaProcessing::AttributeNumeric, &OsmLuaProcessing::AttributeNumericWithMinZoom)
-		.addOverloadedFunctions("AttributeBoolean", &OsmLuaProcessing::AttributeBoolean, &OsmLuaProcessing::AttributeBooleanWithMinZoom)
-		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
-		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
-		.addFunction("Accept", &OsmLuaProcessing::Accept)
-		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
-		.addFunction("RestartRelations", &OsmLuaProcessing::RestartRelations)
-		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
+
+	osmLuaProcessing = this;
+	luaState["Id"] = &rawId;
+	luaState["Holds"] = &rawHolds;
+	luaState["Find"] = &rawFind;
+	luaState["FindIntersecting"] = &rawFindIntersecting;
+	luaState["Intersects"] = &rawIntersects;
+	luaState["FindCovering"] = &rawFindCovering;
+	luaState["CoveredBy"] = &rawCoveredBy;
+	luaState["IsClosed"] = &rawIsClosed;
+	luaState["Area"] = &rawArea;
+	luaState["AreaIntersecting"] = &rawAreaIntersecting;
+	luaState["Length"] = &rawLength;
+	luaState["Centroid"] = &rawCentroid;
+	luaState["Layer"] = &rawLayer;
+	luaState["LayerAsCentroid"] = &rawLayerAsCentroid;
+	luaState["Attribute"] = kaguya::overload(
+			[](const std::string &key, const std::string& val) { osmLuaProcessing->Attribute(key, val); },
+			[](const std::string &key, const std::string& val, const char minzoom) { osmLuaProcessing->AttributeWithMinZoom(key, val, minzoom); }
 	);
+	luaState["AttributeNumeric"] = kaguya::overload(
+			[](const std::string &key, const float val) { osmLuaProcessing->AttributeNumeric(key, val); },
+			[](const std::string &key, const float val, const char minzoom) { osmLuaProcessing->AttributeNumericWithMinZoom(key, val, minzoom); }
+	);
+	luaState["AttributeBoolean"] = kaguya::overload(
+			[](const std::string &key, const bool val) { osmLuaProcessing->AttributeBoolean(key, val); },
+			[](const std::string &key, const bool val, const char minzoom) { osmLuaProcessing->AttributeBooleanWithMinZoom(key, val, minzoom); }
+	);
+
+	luaState["MinZoom"] = &rawMinZoom;
+	luaState["ZOrder"] = &rawZOrder;
+	luaState["Accept"] = &rawAccept;
+	luaState["NextRelation"] = &rawNextRelation;
+	luaState["RestartRelations"] = &rawRestartRelations;
+	luaState["FindInRelation"] = &rawFindInRelation;
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
@@ -534,7 +569,7 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	isRelation = true;
 	currentTags = &tags;
 	try {
-		luaState["relation_scan_function"](this);
+		luaState["relation_scan_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on scanning relation " << originalOsmID << std::endl;
 		exit(1);
@@ -557,7 +592,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 	//Start Lua processing for node
 	try {
-		luaState["node_function"](this);
+		luaState["node_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on node " << originalOsmID << std::endl;
 		exit(1);
@@ -605,7 +640,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 		//Start Lua processing for way
 		try {
 			kaguya::LuaFunction way_function = luaState["way_function"];
-			kaguya::LuaRef ret = way_function(this);
+			kaguya::LuaRef ret = way_function();
 			assert(!ret);
 		} catch(luaProcessingException &e) {
 			std::cerr << "Lua error on way " << originalOsmID << std::endl;
@@ -636,7 +671,7 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
 	try {
-		luaState[isNativeMP ? "way_function" : "relation_function"](this);
+		luaState[isNativeMP ? "way_function" : "relation_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on relation " << originalOsmID << std::endl;
 		exit(1);
