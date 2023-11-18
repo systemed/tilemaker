@@ -152,17 +152,14 @@ public:
 		pairs(ATTRIBUTE_SHARDS),
 		pairsMaps(ATTRIBUTE_SHARDS),
 		pairsMutex(ATTRIBUTE_SHARDS) {
+		// NB: the hot shard is stored in its own, pre-allocated vector.
+		// pairs[0] is _not_ the hot shard
+		hotShard.reserve(1 << 16);
+		for (size_t i = 0; i < 1 << 16; i++)
+			hotShard.push_back(AttributePair(0, false, 0));
 	}
 
-	const AttributePair& getPair(uint32_t i) const {
-		uint32_t shard = i >> (32 - SHARD_BITS);
-		uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
-
-		std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-		//return pairs[shard][offset];
-		return pairs[shard].at(offset);
-	};
-
+	const AttributePair& getPair(uint32_t i) const;
 	uint32_t addPair(const AttributePair& pair, bool isHot);
 
 	struct key_value_less_ptr {
@@ -192,6 +189,8 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	mutable std::vector<std::mutex> pairsMutex;
+	std::atomic<uint32_t> hotShardSize;
+	std::vector<AttributePair> hotShard;
 };
 
 // AttributeSet is a set of AttributePairs

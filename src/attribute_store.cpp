@@ -14,8 +14,8 @@ uint16_t AttributeKeyStore::key2index(const std::string& key) {
 			return rv->second;
 	}
 
-	// Not found, ensure our local map is up-to-date and fall through
-	// to the main map.
+	// Not found, ensure our local map is up-to-date for future calls,
+	// and fall through to the main map.
 	//
 	// Note that we can read `keys` without a lock
 	while (tlsKeys2IndexSize < keys2indexSize) {
@@ -50,8 +50,37 @@ const std::string& AttributeKeyStore::getKey(uint16_t index) const {
 }
 
 // AttributePairStore
+thread_local boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr> tlsHotShardMap;
+thread_local uint16_t tlsHotShardSize = 0;
+const AttributePair& AttributePairStore::getPair(uint32_t i) const {
+	uint32_t shard = i >> (32 - SHARD_BITS);
+	uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
+
+	if (shard == 0)
+		return hotShard[offset];
+
+	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+	//return pairs[shard][offset];
+	return pairs[shard].at(offset);
+};
+
 uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	if (isHot) {
+		{
+			// First, check our thread-local map.
+			const auto& it = tlsHotShardMap.find(&pair);
+			if (it != tlsHotShardMap.end())
+				return it->second;
+		}
+		// Not found, ensure our local map is up-to-date for future calls,
+		// and fall through to the main map.
+		//
+		// Note that we can read `hotShard` without a lock
+		while (tlsHotShardSize < hotShardSize.load()) {
+			tlsHotShardSize++;
+			tlsHotShardMap[&hotShard[tlsHotShardSize]] = tlsHotShardSize;
+		}
+
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
@@ -59,15 +88,12 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 		if (it != pairsMaps[0].end())
 			return it->second;
 
-		// We use 0 as a sentinel, so ensure there's at least one entry in the shard.
-		if (pairs[0].size() == 0)
-			pairs[0].push_back(AttributePair(1, false, 0));
+		if (hotShardSize.load() < 1 << 16) {
+			hotShardSize++;
+			uint32_t offset = hotShardSize.load();
 
-		uint32_t offset = pairs[0].size();
-
-		if (offset < 1 << 16) {
-			pairs[0].push_back(pair);
-			const AttributePair* ptr = &pairs[0][offset];
+			hotShard[offset] = pair;
+			const AttributePair* ptr = &hotShard[offset];
 			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
 			pairsMaps[0][ptr] = rv;
 			return rv;
