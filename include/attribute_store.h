@@ -23,6 +23,7 @@ struct string_ptr_less_than {
 
 class AttributeKeyStore {
 public:
+	AttributeKeyStore(): keys2indexSize(0) {}
 	uint16_t key2index(const std::string& key);
 	const std::string& getKey(uint16_t index) const;
 	std::atomic<uint32_t> keys2indexSize;
@@ -151,7 +152,9 @@ public:
 	AttributePairStore():
 		pairs(ATTRIBUTE_SHARDS),
 		pairsMaps(ATTRIBUTE_SHARDS),
-		pairsMutex(ATTRIBUTE_SHARDS) {
+		pairsMutex(ATTRIBUTE_SHARDS),
+		hotShardSize(0)
+	{
 		// NB: the hot shard is stored in its own, pre-allocated vector.
 		// pairs[0] is _not_ the hot shard
 		hotShard.reserve(1 << 16);
