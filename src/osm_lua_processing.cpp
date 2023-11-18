@@ -329,13 +329,22 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	OutputGeometryType geomType = isRelation ? (area ? POLYGON_ : MULTILINESTRING_ ) :
 	                                   isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
+		// Lua profiles often write the same geometry twice, e.g. a river and its name,
+		// a highway and its name. Avoid duplicating geometry processing and storage
+		// when this occurs.
+		if (lastStoredGeometryId != 0 && lastStoredGeometryType == geomType) {
+			OutputObject oo(geomType, layers.layerMap[layerName], lastStoredGeometryId, 0, layerMinZoom);
+			outputs.push_back(std::make_pair(std::move(oo), attributes));
+			return;
+		}
+
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
             if(!CorrectGeometry(p)) return;
 
 			NodeID id = osmMemTiles.store_point(p);
-			OutputObject oo = OutputObjectPoint(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
             return;
 		}
@@ -364,7 +373,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(mp)) return;
 
 			NodeID id = osmMemTiles.store_multi_polygon(mp);
-			OutputObject oo = OutputObjectMultiPolygon(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 		else if (geomType==MULTILINESTRING_) {
@@ -379,7 +388,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			if (!CorrectGeometry(mls)) return;
 
 			NodeID id = osmMemTiles.store_multi_linestring(mls);
-			OutputObject oo = OutputObjectMultiLinestring(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			lastStoredGeometryId = id;
+			lastStoredGeometryType = geomType;
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 		else if (geomType==LINESTRING_) {
@@ -389,7 +400,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(ls)) return;
 
 			NodeID id = osmMemTiles.store_linestring(ls);
-			OutputObject oo = OutputObjectLinestring(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			lastStoredGeometryId = id;
+			lastStoredGeometryType = geomType;
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 	} catch (std::invalid_argument &err) {
@@ -424,7 +437,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	NodeID id = osmMemTiles.store_point(geomp);
-	OutputObject oo = OutputObjectPoint(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
+	OutputObject oo(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }
 

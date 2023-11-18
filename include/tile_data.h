@@ -98,6 +98,13 @@ public:
 		linestring_store = std::make_unique<linestring_store_t>();
 		multi_polygon_store = std::make_unique<multi_polygon_store_t>();
 		multi_linestring_store = std::make_unique<multi_linestring_store_t>();
+
+		// Put something at index 0 of all stores so that 0 can be used
+		// as a sentinel.
+		point_store->push_back(Point(0,0));
+		linestring_store->push_back(linestring_t());
+		multi_polygon_store->push_back(multi_polygon_t());
+		multi_linestring_store->push_back(multi_linestring_t());
 	}
 	void reportSize() const;
 	

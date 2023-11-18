@@ -29,14 +29,13 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 #pragma pack(push, 4)
 class OutputObject {
 
-protected:	
+public:
 	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint mz) 
 		: objectID(id), geomType(type), layer(l), z_order(0),
 		  minZoom(mz), attributes(attributes)
 	{ }
 
 
-public:
 	NodeID objectID 			: 36;					// id of point/linestring/polygon
 	unsigned minZoom 			: 4;					// minimum zoom level in which object is written
 	AttributeIndex attributes   : 30;					// index in attribute storage
@@ -82,50 +81,6 @@ public:
 	int findValue(const std::vector<vector_tile::Tile_Value>* valueList, const AttributePair& value) const;
 };
 #pragma pack(pop)
-
-/**
- * \brief An OutputObject derived class that contains data originally from OsmMemTiles
-*/
-class OutputObjectPoint : public OutputObject
-{
-public:
-	OutputObjectPoint(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
-		: OutputObject(type, l, id, attributes, minzoom)
-	{ 
-		assert(type == POINT_);
-	}
-}; 
-
-class OutputObjectLinestring : public OutputObject
-{
-public:
-	OutputObjectLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
-		: OutputObject(type, l, id, attributes, minzoom)
-	{ 
-		assert(type == LINESTRING_);
-	}
-};
-
-class OutputObjectMultiLinestring : public OutputObject
-{
-public:
-	OutputObjectMultiLinestring(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
-		: OutputObject(type, l, id, attributes, minzoom)
-	{ 
-		assert(type == MULTILINESTRING_);
-	}
-};
-
-
-class OutputObjectMultiPolygon : public OutputObject
-{
-public:
-	OutputObjectMultiPolygon(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint minzoom)
-		: OutputObject(type, l, id, attributes, minzoom)
-	{ 
-		assert(type == POLYGON_);
-	}
-};
 
 class OutputObjectRef
 {
