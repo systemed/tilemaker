@@ -20,8 +20,7 @@ class TileDataSource {
 protected:	
 	std::mutex mutex;
 	TileIndex tileIndex;
-	std::vector<std::deque<OutputObject>> objects;
-	std::vector<std::mutex> objectsMutex;
+	std::deque<std::deque<OutputObject>> objects;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
@@ -56,7 +55,7 @@ protected:
 
 public:
 	TileDataSource(unsigned int baseZoom) 
-		: baseZoom(baseZoom), objects(16), objectsMutex(16)
+		: baseZoom(baseZoom)
 	{ }
 
 	///This must be thread safe!
@@ -71,14 +70,7 @@ public:
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
-	OutputObjectRef CreateObject(OutputObject const &oo) {
-		size_t hash = (uint64_t)&oo ^ 0x9e3779b97f4a7c16;
-		size_t shard = hash % objectsMutex.size();
-		std::lock_guard<std::mutex> lock(objectsMutex[shard]);
-		objects[shard].push_back(oo);
-		return &objects[shard].back();
-	}
-
+	OutputObjectRef CreateObject(OutputObject const &oo);
 	void AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs);
 	void AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs);
 	void AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs);
