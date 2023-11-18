@@ -14,6 +14,16 @@
 
 class OsmLuaProcessing;
 
+struct BlockData {
+	uint64_t offset;
+	google::protobuf::int32 length;
+	// For Phase::Relations -- only process the entries in the block if
+	// index % denominator == modulo. This allows us to use multiple cores
+	// to process the same block, which can be useful for smaller extracts.
+	size_t modulo;
+	size_t denominator;
+};
+
 /**
  *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from OsmLuaProcessing
  *
@@ -46,13 +56,22 @@ public:
 	}
 
 private:
-	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
-	               std::unordered_set<std::string> const &nodeKeys, bool locationsOnWays, ReadPhase phase = ReadPhase::All);
+	bool ReadBlock(
+		std::istream &infile,
+		OsmLuaProcessing &output,
+		std::pair<std::size_t, std::size_t> progress,
+		std::size_t datasize, 
+		std::size_t modulo,
+		std::size_t denominator,
+		std::unordered_set<std::string> const &nodeKeys,
+		bool locationsOnWays,
+		ReadPhase phase = ReadPhase::All
+	);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
 	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays);
 	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
-	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
+	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, size_t modulo, size_t denominator);
 
 	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {
 		if (typeKey==-1 || val==-1) return false;

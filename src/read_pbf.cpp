@@ -157,7 +157,7 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	return true;
 }
 
-bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, size_t modulo, size_t denominator) {
 	// ----	Read relations
 
 	if (pg.relations_size() > 0) {
@@ -170,6 +170,9 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
+				if (j % denominator != modulo)
+					continue;
+
 				Relation pbfRelation = pg.relations(j);
 				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
 				bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
@@ -207,8 +210,17 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
-                          unordered_set<string> const &nodeKeys, bool locationsOnWays, ReadPhase phase) 
+bool PbfReader::ReadBlock(
+	std::istream &infile,
+	OsmLuaProcessing &output,
+	std::pair<std::size_t, std::size_t> progress,
+	std::size_t datasize, 
+	std::size_t modulo,
+	std::size_t denominator,
+	unordered_set<string> const &nodeKeys,
+	bool locationsOnWays,
+	ReadPhase phase
+) 
 {
 	PrimitiveBlock pb;
 	readBlock(&pb, datasize, infile);
@@ -267,7 +279,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		}
 
 		if(phase == ReadPhase::Relations || phase == ReadPhase::All) {
-			bool done = ReadRelations(output, pg, pb);
+			bool done = ReadRelations(output, pg, pb, modulo, denominator);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -288,7 +300,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		return false;
 	}
 
-	return true;
+	return modulo == denominator - 1;
 }
 
 int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
@@ -309,7 +321,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		}
 	}
 
-	std::map<std::size_t, std::pair< std::size_t, std::size_t> > blocks;
+	std::map<std::size_t, BlockData> blocks;
 
 	while (true) {
 		BlobHeader bh = readHeader(*infile);
@@ -317,7 +329,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			break;
 		}
 
-		blocks[blocks.size()] = std::make_pair(infile->tellg(), bh.datasize());
+		blocks[blocks.size()] = { infile->tellg(), bh.datasize(), 0, 1 };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
 		
 	}
@@ -332,6 +344,20 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
 
+		if (phase == ReadPhase::Relations) {
+			if (blocks.size() < 2 * threadNum) {
+				std::cout << "not enough relation blocks (" << blocks.size() << "); creating artificial ones for parallelism" << std::endl;
+				const auto copied = blocks;
+				blocks.clear();
+
+				for (const auto& actualBlock: copied) {
+					for (int i = 0; i < threadNum; i++) {
+						blocks[blocks.size()] = { actualBlock.second.offset, actualBlock.second.length, i, threadNum };
+					}
+				}
+			}
+		}
+
 		{
 			const std::lock_guard<std::mutex> lock(block_mutex);
 			for(auto const &block: blocks) {
@@ -339,8 +365,8 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 					auto infile = generate_stream();
 					auto output = generate_output();
 
-					infile->seekg(block.first);
-					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, locationsOnWays, phase)) {
+					infile->seekg(block.offset);
+					if(ReadBlock(*infile, *output, progress, block.length, block.modulo, block.denominator, nodeKeys, locationsOnWays, phase)) {
 						const std::lock_guard<std::mutex> lock(block_mutex);
 						blocks.erase(progress.first);	
 					}
