@@ -127,19 +127,6 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 
-bool sortFn(const AttributePair* a, const AttributePair* b) {
-	if (a->minzoom != b->minzoom)
-		return a->minzoom < b->minzoom;
-
-	if (a->keyIndex != b->keyIndex)
-		return a->keyIndex < b->keyIndex;
-
-	if (a->hasStringValue()) return b->hasStringValue() && a->stringValue() < b->stringValue();
-	if (a->hasBoolValue()) return b->hasBoolValue() && a->boolValue() < b->boolValue();
-	if (a->hasFloatValue()) return b->hasFloatValue() && a->floatValue() < b->floatValue();
-	throw std::runtime_error("Invalid type in AttributeSet");
-}
-
 void AttributeSet::finalizeSet() {
 	// Ensure that values are sorted, giving us a canonical representation,
 	// so that we can have fast hash/equality functions.
