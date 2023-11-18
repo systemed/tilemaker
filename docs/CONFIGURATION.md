@@ -107,13 +107,16 @@ For example:
 	
 ### Lua processing
 
-Your Lua file needs to supply 5 things:
+Your Lua file needs to supply a few things:
 
 1. `node_keys`, a list of those OSM keys which indicate that a node should be processed
-2. `init_function(name)` (optional), a function to initialize Lua logic
-2. `node_function(node)`, a function to process an OSM node and add it to layers
-3. `way_function(way)`, a function to process an OSM way and add it to layers
-3. `exit_function` (optional), a function to finalize Lua logic (useful to show statistics)
+2. `node_function()`, a function to process an OSM node and add it to layers
+3. `way_function()`, a function to process an OSM way and add it to layers
+4. (optional) `init_function(name)`, a function to initialize Lua logic
+5. (optional) `exit_function`, a function to finalize Lua logic (useful to show statistics)
+6. (optional) `relation_scan_function`, a function to determine whether your Lua file wishes to process the given relation 
+7. (optional) `relation_function`, a function to process an OSM relation and add it to layers
+8. (optional) `attribute_function`, a function to remap attributes from shapefiles
 
 `node_keys` is a simple list (or in Lua parlance, a 'table') of OSM tag keys. If a node has one of those keys, it will be processed by `node_function`; if not, it'll be skipped. For example, if you wanted to show highway crossings and railway stations, it should be `{ "highway", "railway" }`. (This avoids the need to process the vast majority of nodes which contain no important tags at all.)
 
@@ -127,28 +130,30 @@ Note the order: you write to a layer first, then set attributes after.
 
 To do that, you use these methods:
 
-* `node:Find(key)` or `way:Find(key)`: get the value for a tag, or the empty string if not present. For example, `way:Find("railway")` might return "rail" for a railway, "siding" for a siding, or "" if it isn't a railway at all.
-* `node:Holds(key)` or `way:Holds(key)`: returns true if that key exists, false otherwise.
-* `node:Layer("layer_name", false)` or `way:Layer("layer_name", is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
-* `way:LayerAsCentroid("layer_name")`: write a single centroid point for this way to the named layer (useful for labels and POIs).
-* `node:Attribute(key,value,minzoom)` or `node:Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
-* `node:AttributeNumeric(key,value,minzoom)`, `node:AttributeBoolean(key,value,minzoom)` (and `way:`...): for numeric/boolean columns.
-* `node:Id()` or `way:Id()`: get the OSM ID of the current object.
-* `node:ZOrder(number)` or `way:ZOrder(number)`: Set a numeric value (default 0, 1-byte signed integer) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used.
-* `node:MinZoom(zoom)` or `way:MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
-* `way:Length()` and `way:Area()`: return the length (metres)/area (square metres) of the current object. Requires recent Boost.
-* `way:Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
+* `Find(key)`: get the value for a tag, or the empty string if not present. For example, `Find("railway")` might return "rail" for a railway, "siding" for a siding, or "" if it isn't a railway at all.
+* `Holds(key)`: returns true if that key exists, false otherwise.
+* `Layer("layer_name", is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
+* `LayerAsCentroid("layer_name")`: write a single centroid point for this way to the named layer (useful for labels and POIs).
+* `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
+* `AttributeNumeric(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric/boolean columns.
+* `Id()`: get the OSM ID of the current object.
+* `ZOrder(number)`: Set a numeric value (default 0, 1-byte signed integer) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used.
+* `MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
+* `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires recent Boost.
+* `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
 
 The simplest possible function, to include roads/paths and nothing else, might look like this:
 
-    function way_function(way)
-      local highway = way:Find("highway")
+```lua
+    function way_function()
+      local highway = Find("highway")
       if highway~="" then
-        way:Layer("roads", false)
-        way:Attribute("name", way:Find("name"))
-        way:Attribute("type", highway)
+        Layer("roads", false)
+        Attribute("name", Find("name"))
+        Attribute("type", highway)
       end
     end
+```
 
 Take a look at the supplied process.lua for a simple example, or the more complex OpenMapTiles-compatible script in `resources/`. You can specify another filename with the `--process` option.
 
@@ -197,11 +202,11 @@ When processing OSM objects with your Lua script, you can perform simple spatial
 
 You can then find out whether a node is within one of these polygons using the `Intersects` method:
 
-    if node:Intersects("countries") then print("Looks like it's on land"); end
+    if Intersects("countries") then print("Looks like it's on land"); end
 
 Or you can find out what country(/ies) the node is within using `FindIntersecting`, which returns a table:
 
-    names = node:FindIntersecting("countries")
+    names = FindIntersecting("countries")
     print(table.concat(name,","))
 
 To enable these functions, set `index` to true in your shapefile layer definition. `index_column` is not needed for `Intersects` but required for `FindIntersecting`.
