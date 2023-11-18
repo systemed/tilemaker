@@ -3,6 +3,53 @@
 #include <iostream>
 #include <algorithm>
 
+// AttributeKeyStore
+thread_local std::map<const std::string*, uint16_t, string_ptr_less_than> tlsKeys2Index;
+thread_local uint16_t tlsKeys2IndexSize = 0;
+uint16_t AttributeKeyStore::key2index(const std::string& key) {
+	// First, try to find the key in our thread-local copy.
+	{
+		const auto& rv = tlsKeys2Index.find(&key);
+		if (rv != tlsKeys2Index.end())
+			return rv->second;
+	}
+
+	// Not found, ensure our local map is up-to-date and fall through
+	// to the main map.
+	//
+	// Note that we can read `keys` without a lock
+	while (tlsKeys2IndexSize < keys2indexSize) {
+		tlsKeys2IndexSize++;
+		tlsKeys2Index[&keys[tlsKeys2IndexSize]] = tlsKeys2IndexSize;
+	}
+	std::lock_guard<std::mutex> lock(keys2indexMutex);
+	const auto& rv = keys2index.find(&key);
+
+	if (rv != keys2index.end())
+		return rv->second;
+
+	// 0 is used as a sentinel, so ensure that the 0th element is just a dummy element.
+	if (keys.size() == 0)
+		keys.push_back("");
+
+	uint16_t newIndex = keys.size();
+
+	// This is very unlikely. We expect more like 50-100 keys.
+	if (newIndex >= 65535)
+		throw std::out_of_range("more than 65,536 unique keys");
+
+	keys2indexSize++;
+	keys.push_back(key);
+	keys2index[&keys[newIndex]] = newIndex;
+	return newIndex;
+}
+
+const std::string& AttributeKeyStore::getKey(uint16_t index) const {
+	std::lock_guard<std::mutex> lock(keys2indexMutex);
+	return keys[index];
+}
+
+// AttributePairStore
 uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	if (isHot) {
 		// This might be a popular pair, worth re-using.

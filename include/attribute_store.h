@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <iostream>
+#include <atomic>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
@@ -14,41 +15,24 @@
 
 typedef uint32_t AttributeIndex; // check this is enough
 
+struct string_ptr_less_than {
+	bool operator()(const std::string* lhs, const std::string* rhs) const {            
+		return *lhs < *rhs;
+	}
+}; 
+
 class AttributeKeyStore {
 public:
-	uint16_t key2index(const std::string& key) {
-		std::lock_guard<std::mutex> lock(keys2indexMutex);
-		const auto& rv = keys2index.find(key);
-
-		if (rv != keys2index.end())
-			return rv->second;
-
-		// 0 is used as a sentinel, so ensure that the 0th element is just a dummy element.
-		if (keys.size() == 0)
-			keys.push_back("");
-
-		uint16_t newIndex = keys.size();
-
-		// This is very unlikely. We expect more like 50-100 keys.
-		if (newIndex >= 65535)
-			throw std::out_of_range("more than 65,536 unique keys");
-
-		keys2index[key] = newIndex;
-		keys.push_back(key);
-		return newIndex;
-	}
-
-	const std::string& getKey(uint16_t index) const {
-		std::lock_guard<std::mutex> lock(keys2indexMutex);
-		return keys[index];
-	}
+	uint16_t key2index(const std::string& key);
+	const std::string& getKey(uint16_t index) const;
+	std::atomic<uint32_t> keys2indexSize;
 
 private:
 	mutable std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
 	std::deque<std::string> keys;
-	std::map<const std::string, uint16_t> keys2index;
+	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
 enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
@@ -180,22 +164,6 @@ public:
 	};
 
 	uint32_t addPair(const AttributePair& pair, bool isHot);
-
-	struct key_value_less {
-		bool operator()(AttributePair const &lhs, AttributePair const& rhs) const {
-			if (lhs.minzoom != rhs.minzoom)
-				return lhs.minzoom < rhs.minzoom;
-			if (lhs.keyIndex != rhs.keyIndex)
-				return lhs.keyIndex < rhs.keyIndex;
-			if (lhs.valueType < rhs.valueType) return true;
-			if (lhs.valueType > rhs.valueType) return false;
-
-			if (lhs.hasStringValue()) return lhs.stringValue() < rhs.stringValue();
-			if (lhs.hasBoolValue()) return lhs.boolValue() < rhs.boolValue();
-			if (lhs.hasFloatValue()) return lhs.floatValue() < rhs.floatValue();
-			throw std::runtime_error("Invalid type in attribute store");
-		}
-	}; 
 
 	struct key_value_less_ptr {
 		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
