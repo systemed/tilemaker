@@ -414,7 +414,7 @@ struct AttributeStore {
 	int lookups=0;
 
 	AttributeIndex add(AttributeSet &attributes);
-	std::vector<AttributePair> get(AttributeIndex index) const;
+	std::vector<const AttributePair*> get(AttributeIndex index) const;
 	void reportSize() const;
 	void doneReading();
 

@@ -194,7 +194,7 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	return rv;
 }
 
-std::vector<AttributePair> AttributeStore::get(AttributeIndex index) const {
+std::vector<const AttributePair*> AttributeStore::get(AttributeIndex index) const {
 	try {
 		uint32_t shard = index >> (32 - SHARD_BITS);
 		uint32_t offset = index & (~(~0u << (32 - SHARD_BITS)));
@@ -205,9 +205,9 @@ std::vector<AttributePair> AttributeStore::get(AttributeIndex index) const {
 
 		const size_t n = attrSet.numPairs();
 
-		std::vector<AttributePair> rv;
+		std::vector<const AttributePair*> rv;
 		for (size_t i = 0; i < n; i++) {
-			rv.push_back(pairStore.getPair(attrSet.getPair(i)));
+			rv.push_back(&pairStore.getPair(attrSet.getPair(i)));
 		}
 
 		return rv;

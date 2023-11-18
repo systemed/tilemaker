@@ -42,10 +42,10 @@ void OutputObject::writeAttributes(
 	auto attr = attributeStore.get(attributes);
 
 	for(auto const &it: attr) {
-		if (it.minzoom > zoom) continue;
+		if (it->minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = attributeStore.keyStore.getKey(it.keyIndex);
+		std::string const &key = attributeStore.keyStore.getKey(it->keyIndex);
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -57,18 +57,18 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		int subscript = findValue(valueList, it);
+		int subscript = findValue(valueList, *it);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
 		} else {
 			uint32_t subscript = valueList->size();
 			vector_tile::Tile_Value value;
-			if (it.hasStringValue()) {
-				value.set_string_value(it.stringValue());
-			} else if (it.hasBoolValue()) {
-				value.set_bool_value(it.boolValue());
-			} else if (it.hasFloatValue()) {
-				value.set_float_value(it.floatValue());
+			if (it->hasStringValue()) {
+				value.set_string_value(it->stringValue());
+			} else if (it->hasBoolValue()) {
+				value.set_bool_value(it->boolValue());
+			} else if (it->hasFloatValue()) {
+				value.set_float_value(it->floatValue());
 			}
 			
 			valueList->push_back(value);
