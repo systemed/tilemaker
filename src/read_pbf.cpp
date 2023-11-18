@@ -329,7 +329,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			break;
 		}
 
-		blocks[blocks.size()] = { infile->tellg(), bh.datasize(), 0, 1 };
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), 0, 1 };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
 		
 	}
