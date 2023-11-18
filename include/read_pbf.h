@@ -15,7 +15,7 @@
 class OsmLuaProcessing;
 
 struct BlockData {
-	uint64_t offset;
+	long int offset;
 	google::protobuf::int32 length;
 	// For Phase::Relations -- only process the entries in the block if
 	// index % denominator == modulo. This allows us to use multiple cores

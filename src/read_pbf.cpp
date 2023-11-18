@@ -351,7 +351,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 				blocks.clear();
 
 				for (const auto& actualBlock: copied) {
-					for (int i = 0; i < threadNum; i++) {
+					for (size_t i = 0; i < threadNum; i++) {
 						blocks[blocks.size()] = { actualBlock.second.offset, actualBlock.second.length, i, threadNum };
 					}
 				}
