@@ -20,7 +20,7 @@ class TileDataSource {
 protected:	
 	std::mutex mutex;
 	TileIndex tileIndex;
-	std::deque<OutputObject> objects;
+	std::deque<std::deque<OutputObject>> objects;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
@@ -55,7 +55,7 @@ protected:
 
 public:
 	TileDataSource(unsigned int baseZoom) 
-		: baseZoom(baseZoom) 
+		: baseZoom(baseZoom)
 	{ }
 
 	///This must be thread safe!
@@ -70,12 +70,7 @@ public:
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
-	OutputObjectRef CreateObject(OutputObject const &oo) {
-		std::lock_guard<std::mutex> lock(mutex);
-		objects.push_back(oo);
-		return &objects.back();
-	}
-
+	OutputObjectRef CreateObject(OutputObject const &oo);
 	void AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs);
 	void AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs);
 	void AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs);
@@ -103,6 +98,13 @@ public:
 		linestring_store = std::make_unique<linestring_store_t>();
 		multi_polygon_store = std::make_unique<multi_polygon_store_t>();
 		multi_linestring_store = std::make_unique<multi_linestring_store_t>();
+
+		// Put something at index 0 of all stores so that 0 can be used
+		// as a sentinel.
+		point_store->push_back(Point(0,0));
+		linestring_store->push_back(linestring_t());
+		multi_polygon_store->push_back(multi_polygon_t());
+		multi_linestring_store->push_back(multi_linestring_t());
 	}
 	void reportSize() const;
 	

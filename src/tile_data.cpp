@@ -9,6 +9,19 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
+thread_local std::deque<OutputObject>* tlsObjects = NULL;
+
+OutputObjectRef TileDataSource::CreateObject(OutputObject const &oo) {
+	if (tlsObjects == NULL) {
+		std::lock_guard<std::mutex> lock(mutex);
+		objects.push_back(std::deque<OutputObject>());
+		tlsObjects = &objects.back();
+	}
+
+	tlsObjects->push_back(oo);
+	return &tlsObjects->back();
+}
+
 void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex

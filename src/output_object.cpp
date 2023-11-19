@@ -42,10 +42,10 @@ void OutputObject::writeAttributes(
 	auto attr = attributeStore.get(attributes);
 
 	for(auto const &it: attr) {
-		if (it.minzoom > zoom) continue;
+		if (it->minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = it.key;
+		std::string const &key = attributeStore.keyStore.getKey(it->keyIndex);
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();
@@ -57,17 +57,25 @@ void OutputObject::writeAttributes(
 		}
 		
 		// Look for value
-		vector_tile::Tile_Value const &value = it.value;
-		int subscript = findValue(valueList, value);
+		int subscript = findValue(valueList, *it);
 		if (subscript>-1) {
 			featurePtr->add_tags(subscript);
 		} else {
 			uint32_t subscript = valueList->size();
+			vector_tile::Tile_Value value;
+			if (it->hasStringValue()) {
+				value.set_string_value(it->stringValue());
+			} else if (it->hasBoolValue()) {
+				value.set_bool_value(it->boolValue());
+			} else if (it->hasFloatValue()) {
+				value.set_float_value(it->floatValue());
+			}
+			
 			valueList->push_back(value);
 			featurePtr->add_tags(subscript);
 		}
 
-		//if(value.has_string_value())
+		//if(value.hasStringValue())
 		//	std::cout << "Write attr: " << key << " " << value.string_value() << std::endl;	
 	}
 }
@@ -75,12 +83,12 @@ void OutputObject::writeAttributes(
 // Find a value in the value dictionary
 // (we can't easily use find() because of the different value-type encoding - 
 //	should be possible to improve this though)
-int OutputObject::findValue(vector<vector_tile::Tile_Value> *valueList, vector_tile::Tile_Value const &value) const {
+int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, const AttributePair& value) const {
 	for (size_t i=0; i<valueList->size(); i++) {
-		vector_tile::Tile_Value v = valueList->at(i);
-		if (v.has_string_value() && value.has_string_value() && v.string_value()==value.string_value()) { return i; }
-		if (v.has_float_value()  && value.has_float_value()  && v.float_value() ==value.float_value() ) { return i; }
-		if (v.has_bool_value()	 && value.has_bool_value()   && v.bool_value()  ==value.bool_value()	) { return i; }
+		const vector_tile::Tile_Value& v = valueList->at(i);
+		if (v.has_string_value() && value.hasStringValue() && v.string_value()==value.stringValue()) { return i; }
+		if (v.has_float_value()  && value.hasFloatValue()  && v.float_value() ==value.floatValue() ) { return i; }
+		if (v.has_bool_value()	 && value.hasBoolValue()   && v.bool_value()  ==value.boolValue()	) { return i; }
 	}
 	return -1;
 }

@@ -76,7 +76,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				NodeID oid = store_point(sp);
-				oo = CreateObject(OutputObjectPoint(geomType, layerNum, oid, attrIdx, minzoom));
+				oo = CreateObject(OutputObject(geomType, layerNum, oid, attrIdx, minzoom));
 				if (isIndexed) indexedGeometries.push_back(oo);
 
 				tilex =  lon2tilex(p->x(), baseZoom);
@@ -88,7 +88,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case LINESTRING_:
 		{
 			NodeID oid = store_linestring(boost::get<Linestring>(geometry));
-			oo = CreateObject(OutputObjectLinestring(geomType, layerNum, oid, attrIdx, minzoom));
+			oo = CreateObject(OutputObject(geomType, layerNum, oid, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
 			std::vector<OutputObjectRef> oolist { oo };
@@ -99,7 +99,7 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 		case POLYGON_:
 		{
 			NodeID oid = store_multi_polygon(boost::get<MultiPolygon>(geometry));
-			oo = CreateObject(OutputObjectMultiPolygon(geomType, layerNum, oid, attrIdx, minzoom));
+			oo = CreateObject(OutputObject(geomType, layerNum, oid, attrIdx, minzoom));
 			if (isIndexed) indexedGeometries.push_back(oo);
 
 			std::vector<OutputObjectRef> oolist { oo };

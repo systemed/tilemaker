@@ -329,13 +329,22 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	OutputGeometryType geomType = isRelation ? (area ? POLYGON_ : MULTILINESTRING_ ) :
 	                                   isWay ? (area ? POLYGON_ : LINESTRING_) : POINT_;
 	try {
+		// Lua profiles often write the same geometry twice, e.g. a river and its name,
+		// a highway and its name. Avoid duplicating geometry processing and storage
+		// when this occurs.
+		if (lastStoredGeometryId != 0 && lastStoredGeometryType == geomType) {
+			OutputObject oo(geomType, layers.layerMap[layerName], lastStoredGeometryId, 0, layerMinZoom);
+			outputs.push_back(std::make_pair(std::move(oo), attributes));
+			return;
+		}
+
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
             if(!CorrectGeometry(p)) return;
 
 			NodeID id = osmMemTiles.store_point(p);
-			OutputObject oo = OutputObjectPoint(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
             return;
 		}
@@ -364,7 +373,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(mp)) return;
 
 			NodeID id = osmMemTiles.store_multi_polygon(mp);
-			OutputObject oo = OutputObjectMultiPolygon(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 		else if (geomType==MULTILINESTRING_) {
@@ -379,7 +388,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			if (!CorrectGeometry(mls)) return;
 
 			NodeID id = osmMemTiles.store_multi_linestring(mls);
-			OutputObject oo = OutputObjectMultiLinestring(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			lastStoredGeometryId = id;
+			lastStoredGeometryType = geomType;
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 		else if (geomType==LINESTRING_) {
@@ -389,7 +400,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
             if(!CorrectGeometry(ls)) return;
 
 			NodeID id = osmMemTiles.store_linestring(ls);
-			OutputObject oo = OutputObjectLinestring(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+			lastStoredGeometryId = id;
+			lastStoredGeometryType = geomType;
+			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 	} catch (std::invalid_argument &err) {
@@ -424,7 +437,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	NodeID id = osmMemTiles.store_point(geomp);
-	OutputObject oo = OutputObjectPoint(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
+	OutputObject oo(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }
 
@@ -461,27 +474,21 @@ void OsmLuaProcessing::Attribute(const string &key, const string &val) { Attribu
 void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val, const char minzoom) {
 	if (val.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	vector_tile::Tile_Value v;
-	v.set_string_value(val);
-	outputs.back().second.add(key, v, minzoom);
+	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 0);
 }
 
 void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
 void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const float val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	vector_tile::Tile_Value v;
-	v.set_float_value(val);
-	outputs.back().second.add(key, v, minzoom);
+	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 1);
 }
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
 void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	vector_tile::Tile_Value v;
-	v.set_bool_value(val);
-	outputs.back().second.add(key, v, minzoom);
+	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 2);
 }
 

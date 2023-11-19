@@ -206,6 +206,7 @@ private:
 		multiPolygonInited = false;
 		relationAccepted = false;
 		relationSubscript = -1;
+		lastStoredGeometryId = 0;
 	}
 
 	const inline Point getPoint() {
@@ -242,6 +243,9 @@ private:
 	bool multiLinestringInited;
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
+
+	NodeID lastStoredGeometryId;
+	OutputGeometryType lastStoredGeometryType;
 
 	const class Config &config;
 	class LayerDefinition &layers;
