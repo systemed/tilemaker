@@ -292,6 +292,17 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 	return true;
 }
 
+struct OffsetLength {
+	size_t offset;
+	size_t length;
+};
+
+struct IndexedOffsetLength {
+	size_t index;
+	size_t offset;
+	size_t length;
+};
+
 int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
 		pbfreader_generate_stream const &generate_stream, pbfreader_generate_output const &generate_output)
 {
@@ -310,7 +321,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		}
 	}
 
-	std::map<std::size_t, std::pair< std::size_t, std::size_t> > blocks;
+	std::map<std::size_t, OffsetLength> blocks;
 
 	while (true) {
 		BlobHeader bh = readHeader(*infile);
@@ -318,7 +329,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			break;
 		}
 
-		blocks[blocks.size()] = std::make_pair(infile->tellg(), bh.datasize());
+		blocks[blocks.size()] = { infile->tellg(), bh.datasize() };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
 		
 	}
@@ -333,15 +344,56 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
 
-		{
+		std::atomic<uint32_t> blocksProcessed(0);
+		if (phase == ReadPhase::Nodes) {
+			// The Nodes phase tries to reserve large chunks of contiguous blocks for
+			// individual worker threads.
+			//
+			// This allows an optimization if the PBF has the Type_then_ID property.
+			//
+			// TODO: once things are working, choose smaller chunk size to avoid
+			//   skewed work queue sizes
+			const size_t chunkSize = (blocks.size() / threadNum) + 1;
+
+			size_t consumed = 0;
+			std::deque<std::vector<IndexedOffsetLength>> blockRanges;
+			while(consumed < blocks.size()) {
+				std::vector<IndexedOffsetLength> blockRange;
+				blockRange.reserve(chunkSize);
+				for (size_t i = consumed; i < consumed + chunkSize && i < blocks.size(); i++) {
+					blockRange.push_back({ i, blocks[i].offset, blocks[i].length });
+				}
+				blockRanges.push_back(blockRange);
+				consumed += chunkSize;
+			}
+
+			for(const std::vector<IndexedOffsetLength>& blockRange: blockRanges) {
+				boost::asio::post(pool, [=, total_blocks, blockRange, &blocks, &block_mutex, &nodeKeys, &blocksProcessed]() {
+					for (const IndexedOffsetLength& indexedOffsetLength: blockRange) {
+						auto infile = generate_stream();
+						auto output = generate_output();
+
+						infile->seekg(indexedOffsetLength.offset);
+
+						const auto progress = std::make_pair(blocksProcessed.load(), total_blocks);
+						if(ReadBlock(*infile, *output, progress, indexedOffsetLength.length, nodeKeys, locationsOnWays, phase)) {
+							const std::lock_guard<std::mutex> lock(block_mutex);
+							blocks.erase(indexedOffsetLength.index);	
+							blocksProcessed++;
+						}
+					}
+				});
+			}
+		} else {
+			// All threads are eligible to work on all blocks.
 			const std::lock_guard<std::mutex> lock(block_mutex);
 			for(auto const &block: blocks) {
 				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &nodeKeys]() {
 					auto infile = generate_stream();
 					auto output = generate_output();
 
-					infile->seekg(block.first);
-					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, locationsOnWays, phase)) {
+					infile->seekg(block.offset);
+					if(ReadBlock(*infile, *output, progress, block.length, nodeKeys, locationsOnWays, phase)) {
 						const std::lock_guard<std::mutex> lock(block_mutex);
 						blocks.erase(progress.first);	
 					}
