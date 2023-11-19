@@ -33,16 +33,17 @@
 #endif
 
 #include "geom.h"
+#include "node_stores.h"
 
 // Tilemaker code
 #include "helpers.h"
 #include "coordinates.h"
+#include "coordinates_geom.h"
 
 #include "attribute_store.h"
 #include "output_object.h"
 #include "osm_lua_processing.h"
 #include "mbtiles.h"
-#include "write_geometry.h"
 
 #include "shared_data.h"
 #include "read_pbf.h"
@@ -128,7 +129,6 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 }
 
 double bboxElementFromStr(const string& number) {
-	char* endptr;
 	try {
 		return boost::lexical_cast<double>(number);
 	} catch (boost::bad_lexical_cast&) {
@@ -278,7 +278,13 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-	OSMStore osmStore;
+	shared_ptr<NodeStore> nodeStore;
+
+	if (osmStoreCompact)
+		nodeStore = make_shared<CompactNodeStore>();
+	else
+		nodeStore = make_shared<BinarySearchNodeStore>();
+	OSMStore osmStore(*nodeStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);
 	if(!osmStoreFile.empty()) {

@@ -47,15 +47,6 @@ typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
 typedef std::pair<Box, uint> IndexValue;
 typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadratic<16> > RTree;
 
-// A 36-bit integer can store all OSM node IDs; we represent this as 16 collections
-// of 32-bit integers.
-#define NODE_SHARDS 16
-typedef uint32_t ShardedNodeID;
-typedef uint64_t NodeID;
-typedef uint64_t WayID;
-
-typedef std::vector<WayID> WayVec;
-
 // Perform self-intersection aware simplification of geometry types
 Linestring simplify(Linestring const &ls, double max_distance);
 Polygon simplify(Polygon const &p, double max_distance);

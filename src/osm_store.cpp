@@ -12,6 +12,7 @@
 #include <ciso646>
 #include <boost/filesystem.hpp>
 #include <boost/sort/sort.hpp>
+#include "node_store.h"
 
 using namespace std;
 namespace bg = boost::geometry;
@@ -260,16 +261,6 @@ void void_mmap_allocator::destroy(void *p)
 	} 
 }
 
-void NodeStore::sort(unsigned int threadNum) { 
-	std::lock_guard<std::mutex> lock(mutex);
-	for (auto i = 0; i < NODE_SHARDS; i++) {
-		boost::sort::block_indirect_sort(
-			mLatpLons[i]->begin(), mLatpLons[i]->end(), 
-			[](auto const &a, auto const &b) { return a.first < b.first; }, 
-			threadNum);
-	}
-}
-
 void WayStore::sort(unsigned int threadNum) { 
 	std::lock_guard<std::mutex> lock(mutex);
 	boost::sort::block_indirect_sort(
@@ -330,13 +321,6 @@ void OSMStore::generated_sort(unsigned int threadNum)
 		osm_generated.multi_polygon_store->begin(), osm_generated.multi_polygon_store->end(), 
 		[](auto const &a, auto const &b) { return a.first < b.first; }, 
 		threadNum);
-}
-
-void OSMStore::nodes_sort(unsigned int threadNum) 
-{
-	std::cout << "\nSorting nodes" << std::endl;
-	if(!use_compact_nodes)
-		nodes.sort(threadNum);
 }
 
 void OSMStore::ways_sort(unsigned int threadNum) { 
@@ -518,3 +502,31 @@ void OSMStore::reportSize() const {
 	std::cout << "Shape points: " << shp_generated.points_store->size() << ", lines: " << shp_generated.linestring_store->size() << ", polygons: " << shp_generated.multi_polygon_store->size() << std::endl;
 	std::cout << "Generated points: " << osm_generated.points_store->size() << ", lines: " << osm_generated.linestring_store->size() << ", polygons: " << osm_generated.multi_polygon_store->size() << std::endl;
 }
+
+void OSMStore::reopen() {
+	nodes.reopen();
+	ways.reopen();
+	relations.reopen();
+	
+	osm_generated.points_store = std::make_unique<point_store_t>();
+	osm_generated.linestring_store = std::make_unique<linestring_store_t>();
+	osm_generated.multi_polygon_store = std::make_unique<multi_polygon_store_t>();
+	osm_generated.multi_linestring_store = std::make_unique<multi_linestring_store_t>();
+
+	shp_generated.points_store = std::make_unique<point_store_t>();
+	shp_generated.linestring_store = std::make_unique<linestring_store_t>();
+	shp_generated.multi_polygon_store = std::make_unique<multi_polygon_store_t>();
+}
+
+void OSMStore::ensureUsedWaysInited() {
+	if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes.size());
+}
+
+void OSMStore::clear() {
+	nodes.clear();
+	ways.clear();
+	relations.clear();
+	used_ways.clear();
+} 
+
+

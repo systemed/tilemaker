@@ -7,6 +7,7 @@
 #include <boost/asio/post.hpp>
 #include <unordered_set>
 
+#include "node_store.h"
 #include "osm_lua_processing.h"
 
 using namespace std;
@@ -60,7 +61,7 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 
 		}
 
-		osmStore.nodes_insert_back(nodes);
+		osmStore.nodes.insert(nodes);
 		return true;
 	}
 	return false;
@@ -94,7 +95,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 				for (int k=0; k<pbfWay.refs_size(); k++) {
 					nodeId += pbfWay.refs(k);
 					try {
-						llVec.push_back(osmStore.nodes_at(static_cast<NodeID>(nodeId)));
+						llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
 					} catch (std::out_of_range &err) {
 						if (osmStore.integrity_enforced()) throw err;
 					}
@@ -248,7 +249,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		}
 
 		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
-			osmStore.ensure_used_ways_inited();
+			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
 				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)\r";
@@ -351,7 +352,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		pool.join();
 
 		if(phase == ReadPhase::Nodes) {
-			osmStore.nodes_sort(threadNum);
+			osmStore.nodes.finalize(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
 			osmStore.ways_sort(threadNum);

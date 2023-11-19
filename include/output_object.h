@@ -30,6 +30,8 @@ enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, 
 #define OSMID_WAY 		(2ULL<<OSMID_TYPE_OFFSET)
 #define OSMID_RELATION 	(3ULL<<OSMID_TYPE_OFFSET)
 
+class TileBbox;
+
 //\brief Display the geometry type
 std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
