@@ -91,7 +91,7 @@ INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 all: tilemaker
 
-tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf_blocks.o src/coordinates.o src/osm_store.o src/helpers.o src/output_object.o src/read_shp.o src/read_pbf.o src/osm_lua_processing.o src/write_geometry.o src/shared_data.o src/tile_worker.o src/tile_data.o src/osm_mem_tiles.o src/shp_mem_tiles.o src/attribute_store.o src/tilemaker.o src/geom.o src/node_stores.o src/coordinates_geom.o
+tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf_blocks.o src/coordinates.o src/osm_store.o src/helpers.o src/output_object.o src/read_shp.o src/read_pbf.o src/osm_lua_processing.o src/write_geometry.o src/shared_data.o src/tile_worker.o src/tile_data.o src/osm_mem_tiles.o src/shp_mem_tiles.o src/attribute_store.o src/tilemaker.o src/geom.o src/node_stores.o src/coordinates_geom.o src/sorted_node_store.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
 %.o: %.cpp

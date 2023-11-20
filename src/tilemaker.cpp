@@ -283,7 +283,8 @@ int main(int argc, char* argv[]) {
 	if (osmStoreCompact)
 		nodeStore = make_shared<CompactNodeStore>();
 	else
-		nodeStore = make_shared<BinarySearchNodeStore>();
+		//nodeStore = make_shared<BinarySearchNodeStore>();
+		nodeStore = make_shared<SortedNodeStore>();
 	OSMStore osmStore(*nodeStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);

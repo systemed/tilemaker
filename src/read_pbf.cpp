@@ -346,29 +346,27 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 
 		std::atomic<uint32_t> blocksProcessed(0);
 		if (phase == ReadPhase::Nodes) {
-			// The Nodes phase tries to reserve large chunks of contiguous blocks for
+			// The Nodes phase tries to reserve large batches of contiguous blocks for
 			// individual worker threads.
 			//
 			// This allows an optimization if the PBF has the Type_then_ID property.
-			//
-			// TODO: once things are working, choose smaller chunk size to avoid
-			//   skewed work queue sizes
-			const size_t chunkSize = (blocks.size() / threadNum) + 1;
+			const size_t batchSize = (blocks.size() / (threadNum * 8)) + 1;
 
 			size_t consumed = 0;
 			std::deque<std::vector<IndexedOffsetLength>> blockRanges;
 			while(consumed < blocks.size()) {
 				std::vector<IndexedOffsetLength> blockRange;
-				blockRange.reserve(chunkSize);
-				for (size_t i = consumed; i < consumed + chunkSize && i < blocks.size(); i++) {
-					blockRange.push_back({ i, blocks[i].offset, blocks[i].length });
+				blockRange.reserve(batchSize);
+				size_t max = consumed + batchSize;
+				for (; consumed < max && consumed < blocks.size(); consumed++) {
+					blockRange.push_back({ consumed, blocks[consumed].offset, blocks[consumed].length });
 				}
 				blockRanges.push_back(blockRange);
-				consumed += chunkSize;
 			}
 
 			for(const std::vector<IndexedOffsetLength>& blockRange: blockRanges) {
 				boost::asio::post(pool, [=, total_blocks, blockRange, &blocks, &block_mutex, &nodeKeys, &blocksProcessed]() {
+					osmStore.nodes.batchStart();
 					for (const IndexedOffsetLength& indexedOffsetLength: blockRange) {
 						auto infile = generate_stream();
 						auto output = generate_output();

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <memory>
 #include "node_store.h"
+#include "sorted_node_store.h"
 #include "mmap_allocator.h"
 
 class BinarySearchNodeStore : public NodeStore
@@ -21,6 +22,7 @@ public:
 	void clear() { 
 		reopen();
 	}
+	void batchStart() {}
 
 private: 
 	mutable std::mutex mutex;
@@ -47,6 +49,7 @@ public:
 	void insert(const std::vector<element_t>& elements) override;
 	void clear() override;
 	void finalize(size_t numThreads) override {}
+	void batchStart() {}
 
 private: 
 	// @brief Insert a latp/lon pair.
