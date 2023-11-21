@@ -7,6 +7,7 @@
 //
 // Things that pull in boost::geometry should go in coordinates_geom.h
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 #include <deque>
