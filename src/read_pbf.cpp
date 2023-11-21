@@ -12,6 +12,8 @@
 
 using namespace std;
 
+std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
+
 PbfReader::PbfReader(OSMStore &osmStore)
 	: osmStore(osmStore)
 { }
@@ -208,7 +210,7 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
+bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::size_t datasize, 
                           unordered_set<string> const &nodeKeys, bool locationsOnWays, ReadPhase phase) 
 {
 	PrimitiveBlock pb;
@@ -234,7 +236,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		{
 			std::ostringstream str;
 			osmStore.reportStoreSize(str);
-			str << "Block " << progress.first << "/" << progress.second << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
+			str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
 			std::cout << str.str();
 			std::cout.flush();
 		};
@@ -252,7 +254,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
-				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)\r";
+				std::cout << "(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)\r";
 				std::cout.flush();
 				continue;
 			}
@@ -335,65 +337,52 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 	}
 
 
-	std::mutex block_mutex;
-
-	std::size_t total_blocks = blocks.size();
 
 	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
+		std::mutex block_mutex;
 
-		std::atomic<uint32_t> blocksProcessed(0);
 		std::deque<std::vector<IndexedOffsetLength>> blockRanges;
-		if (phase == ReadPhase::Nodes) {
-			// The Nodes phase tries to reserve large batches of contiguous blocks for
-			// individual worker threads.
-			//
-			// This allows an optimization if the PBF has the Type_then_ID property.
-			const size_t batchSize = (blocks.size() / (threadNum * 8)) + 1;
+		blocksToProcess = blocks.size();
+		blocksProcessed = 0;
 
-			size_t consumed = 0;
-			while(consumed < blocks.size()) {
-				std::vector<IndexedOffsetLength> blockRange;
-				blockRange.reserve(batchSize);
-				size_t max = consumed + batchSize;
-				for (; consumed < max && consumed < blocks.size(); consumed++) {
-					blockRange.push_back({ consumed, blocks[consumed].offset, blocks[consumed].length });
-				}
-				blockRanges.push_back(blockRange);
+		// When processing blocks, we try to give each worker large batches
+		// of contiguous blocks, so that they might benefit from long runs
+		// of sorted indexes, and locality of nearby IDs.
+		const size_t batchSize = (blocks.size() / (threadNum * 8)) + 1;
+
+		size_t consumed = 0;
+		auto it = blocks.begin();
+		while(it != blocks.end()) {
+			std::vector<IndexedOffsetLength> blockRange;
+			blockRange.reserve(batchSize);
+			size_t max = consumed + batchSize;
+			for (; consumed < max && it != blocks.end(); consumed++) {
+				blockRange.push_back({ it->first, it->second.offset, it->second.length });
+				it++;
 			}
+			blockRanges.push_back(blockRange);
+		}
 
+		{
 			for(const std::vector<IndexedOffsetLength>& blockRange: blockRanges) {
-				boost::asio::post(pool, [=, &total_blocks, &blockRange, &blocks, &block_mutex, &nodeKeys, &blocksProcessed]() {
-					osmStore.nodes.batchStart();
+				boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
+					if (phase == ReadPhase::Nodes)
+						osmStore.nodes.batchStart();
+
 					for (const IndexedOffsetLength& indexedOffsetLength: blockRange) {
 						auto infile = generate_stream();
 						auto output = generate_output();
 
 						infile->seekg(indexedOffsetLength.offset);
 
-						const auto progress = std::make_pair(blocksProcessed.load(), total_blocks);
-						if(ReadBlock(*infile, *output, progress, indexedOffsetLength.length, nodeKeys, locationsOnWays, phase)) {
+						if(ReadBlock(*infile, *output, indexedOffsetLength.length, nodeKeys, locationsOnWays, phase)) {
 							const std::lock_guard<std::mutex> lock(block_mutex);
 							blocks.erase(indexedOffsetLength.index);	
 							blocksProcessed++;
 						}
-					}
-				});
-			}
-		} else {
-			// All threads are eligible to work on all blocks.
-			const std::lock_guard<std::mutex> lock(block_mutex);
-			for(auto const &block: blocks) {
-				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &nodeKeys]() {
-					auto infile = generate_stream();
-					auto output = generate_output();
-
-					infile->seekg(block.offset);
-					if(ReadBlock(*infile, *output, progress, block.length, nodeKeys, locationsOnWays, phase)) {
-						const std::lock_guard<std::mutex> lock(block_mutex);
-						blocks.erase(progress.first);	
 					}
 				});
 			}

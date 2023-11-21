@@ -46,7 +46,7 @@ public:
 	}
 
 private:
-	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
+	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::size_t datasize, 
 	               std::unordered_set<std::string> const &nodeKeys, bool locationsOnWays, ReadPhase phase = ReadPhase::All);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
