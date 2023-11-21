@@ -293,14 +293,14 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 }
 
 struct OffsetLength {
-	size_t offset;
-	size_t length;
+	long int offset;
+	google::protobuf::int32 length;
 };
 
 struct IndexedOffsetLength {
 	size_t index;
-	size_t offset;
-	size_t length;
+	long int offset;
+	google::protobuf::int32 length;
 };
 
 int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
@@ -329,7 +329,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			break;
 		}
 
-		blocks[blocks.size()] = { infile->tellg(), bh.datasize() };
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize() };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
 		
 	}
