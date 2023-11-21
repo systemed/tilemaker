@@ -289,6 +289,7 @@ OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const
 // Add geometries to tile/large indices
 
 void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+	std::vector<TileIndexEntry> entries;
 	unordered_set<TileCoordinates> tileSet;
 	try {
 		insertIntermediateTiles(geom, baseZoom, tileSet);
@@ -306,7 +307,7 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 					polygonExists = true;
 					continue;
 				}
-				AddObjectToTileIndex(index, output); // not a polygon
+				entries.push_back(std::make_pair(index, output)); // not a polygon
 			}
 		}
 
@@ -326,7 +327,7 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						TileCoordinates index = *it;
-						AddObjectToTileIndex(index, output);
+						entries.push_back(std::make_pair(index, output));
 					}
 				}
 			}
@@ -334,22 +335,30 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 	} catch(std::out_of_range &err) {
 		cerr << "Error calculating intermediate tiles: " << err.what() << endl;
 	}
+
+	if (!entries.empty())
+		AddObjectsToTileIndex(entries);
 }
 
 void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+	std::vector<TileIndexEntry> entries;
 	for (Linestring ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, baseZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (auto &output : outputs) {
-				AddObjectToTileIndex(index, output);
+				entries.push_back(std::make_pair(index, output));
 			}
 		}
 	}
+
+	if (!entries.empty())
+		AddObjectsToTileIndex(entries);
 }
 
 void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs) {
+	std::vector<TileIndexEntry> entries;
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
 	for (Polygon poly : geom) {
@@ -383,8 +392,52 @@ void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<Ou
 			// Smaller objects - add to each individual tile index
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
-				AddObjectToTileIndex(index, output);
+				entries.push_back(std::make_pair(index, output));
 			}
 		}
 	}
+	if (!entries.empty())
+		AddObjectsToTileIndex(entries);
+}
+
+void TileDataSource::AddObjectsToTileIndex(const std::vector<TileIndexEntry>& entries) {
+	bool maintenanceNeeded = false;
+
+	{
+		std::lock_guard<std::mutex> lock(tileIndexQueueMutex);
+
+		const size_t i = activeTileIndexQueue->size();
+		activeTileIndexQueue->resize(i + entries.size());
+		std::copy(entries.begin(), entries.end(), activeTileIndexQueue->begin() + i);
+
+		maintenanceNeeded = activeTileIndexQueue->size() > 25000;
+	}
+
+	if (maintenanceNeeded) {
+		if (!tileIndexQueueMaintenanceMutex.try_lock()) {
+			// Someone else is doing it already.
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(tileIndexQueueMaintenanceMutex, std::adopt_lock);
+		{
+			std::lock_guard<std::mutex> lock(tileIndexQueueMutex);
+			activeTileIndexQueue.swap(standbyTileIndexQueue);
+		}
+		for (const auto& entry: *standbyTileIndexQueue)
+			tileIndex[entry.first].push_back(entry.second);
+
+		standbyTileIndexQueue->clear();
+	}
+}
+
+void TileDataSource::FlushTileIndex() {
+		std::lock_guard<std::mutex> maintenanceLock(tileIndexQueueMaintenanceMutex);
+		std::lock_guard<std::mutex> lock(tileIndexQueueMutex);
+		for (const auto& entry: *standbyTileIndexQueue)
+			tileIndex[entry.first].push_back(entry.second);
+		standbyTileIndexQueue->clear();
+		for (const auto& entry: *activeTileIndexQueue)
+			tileIndex[entry.first].push_back(entry.second);
+		activeTileIndexQueue->clear();
 }

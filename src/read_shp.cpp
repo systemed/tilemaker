@@ -272,4 +272,5 @@ void readShapefile(const Box &clippingBox,
 
 	SHPClose(shp);
 	DBFClose(dbf);
+	shpMemTiles.FlushTileIndex();
 }

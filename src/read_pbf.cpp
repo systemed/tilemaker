@@ -357,6 +357,8 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			osmStore.ways_sort(threadNum);
 		}
 	}
+	const auto& osmLuaProcessing = generate_output();
+	osmLuaProcessing->FlushTileIndex();
 	return 0;
 }
 

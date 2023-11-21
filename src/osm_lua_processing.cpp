@@ -563,12 +563,15 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	}
 
 	if (!this->empty()) {
+		std::vector<TileIndexEntry> entries;
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
 		for (auto &output : OutputsAsOORefs()) {
-			osmMemTiles.AddObjectToTileIndex(index, output);
+			entries.push_back(std::make_pair(index, output));
 		}
-	} 
+
+		osmMemTiles.AddObjectsToTileIndex(entries);
+	}
 }
 
 // We are now processing a way

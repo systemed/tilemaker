@@ -81,7 +81,10 @@ OutputObjectRef ShpMemTiles::StoreShapefileGeometry(uint_least8_t layerNum,
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				AddObjectToTileIndex(TileCoordinates(tilex, tiley), oo);
+
+				std::vector<TileIndexEntry> entries;
+				entries.push_back(std::make_pair(TileCoordinates(tilex, tiley), oo));
+				AddObjectsToTileIndex(entries);
 			}
 		} break;
 

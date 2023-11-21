@@ -193,6 +193,10 @@ public:
 
 	struct luaProcessingException :std::exception {};
 
+	void FlushTileIndex() {
+		osmMemTiles.FlushTileIndex();
+	}
+
 private:
 	/// Internal: clear current cached state
 	inline void reset() {

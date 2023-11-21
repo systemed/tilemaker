@@ -13,6 +13,8 @@ typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConst
 typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare> TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
+typedef std::pair<TileCoordinates, OutputObjectRef> TileIndexEntry;
+
 typedef std::vector<class TileDataSource *> SourceList;
 
 class TileDataSource {
@@ -55,7 +57,9 @@ protected:
 
 public:
 	TileDataSource(unsigned int baseZoom) 
-		: baseZoom(baseZoom)
+		: baseZoom(baseZoom),
+		activeTileIndexQueue(std::make_shared<std::vector<TileIndexEntry>>()),
+		standbyTileIndexQueue(std::make_shared<std::vector<TileIndexEntry>>())
 	{ }
 
 	///This must be thread safe!
@@ -75,10 +79,9 @@ public:
 	void AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs);
 	void AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs);
 
-	void AddObjectToTileIndex(TileCoordinates const &index, OutputObjectRef const &oo) {
-		std::lock_guard<std::mutex> lock(mutex);
-		tileIndex[index].push_back(oo);
-	}
+	void AddObjectsToTileIndex(const std::vector<TileIndexEntry>& entries);
+
+	void FlushTileIndex();
 
 	void AddObjectToLargeIndex(Box const &envelope, OutputObjectRef const &oo) {
 		std::lock_guard<std::mutex> lock(mutex);
@@ -183,6 +186,10 @@ public:
 
 
 private:	
+	std::shared_ptr<std::vector<TileIndexEntry>> activeTileIndexQueue, standbyTileIndexQueue;
+	std::mutex tileIndexQueueMutex; // protects activeTileIndexQueue
+	std::mutex tileIndexQueueMaintenanceMutex; // protects standbyTileIndexQueue
+
 	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
 	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
 };
