@@ -104,6 +104,9 @@ file(GLOB tilemaker_src_files
 	src/shp_mem_tiles.cpp
 	src/tilemaker.cpp
 	src/write_geometry.cpp
+  src/node_stores.o
+	src/coordinates_geom.o
+	src/sorted_node_store.o
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)
