@@ -14,6 +14,8 @@ std::atomic<uint64_t> totalChunks;
 std::atomic<uint64_t> chunkSizeFreqs[257];
 std::atomic<uint64_t> groupSizeFreqs[257];
 
+#define CHUNK_ALIGNMENT 16
+
 // When SortedNodeStore first starts, it's not confident that it has seen an
 // entire segment, so it's in "collecting orphans" mode. Once it crosses a
 // threshold of 64K elements, it ceases to be in this mode.
@@ -82,7 +84,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	}
 
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
-	ChunkInfo* chunkPtr = (ChunkInfo*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * 8));
+	ChunkInfo* chunkPtr = (ChunkInfo*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * CHUNK_ALIGNMENT));
 
 	size_t nodeOffset = 0;
 	{
@@ -111,7 +113,7 @@ size_t SortedNodeStore::size() const {
 			totalChunks += chunks;
 
 			for (size_t i = 0; i < chunks; i++) {
-				size_t rawOffset = group->chunkOffsets[i] * 8;
+				size_t rawOffset = group->chunkOffsets[i] * CHUNK_ALIGNMENT;
 				ChunkInfo* chunk = (ChunkInfo*)(((char*)(&group->chunkOffsets[chunks])) + rawOffset);
 				rv += popcnt(chunk->nodeMask, 32);
 			}
@@ -205,12 +207,10 @@ void SortedNodeStore::finalize(size_t threadNum) {
 	orphanage.clear();
 
 	std::cout << "SortedNodeStore: saw " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, needed " << totalGroupSpace.load() << " bytes" << std::endl;
-	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
 	for (int i = 0; i < 257; i++)
 		std::cout << "groupSizeFreqs[ " << i << " ]= " << groupSizeFreqs[i].load() << std::endl;
-		*/
 }
 
 void SortedNodeStore::collectOrphans(const std::vector<element_t>& orphans) {
@@ -263,8 +263,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 			sizeof(ChunkInfo) + // Every chunk needs a ChunkInfo
 			chunk.second * sizeof(LatpLon); // The actual data
 
-		// We require that chunks align on 8-byte boundaries
-		chunkSpace += 8 - (chunkSpace % 8);
+		// We require that chunks align on 16-byte boundaries
+		chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
 		groupSpace += chunkSpace;
 	}
 	totalGroupSpace += groupSpace;
@@ -312,15 +312,15 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 				memcpy(((ChunkInfo*)nextChunkInfo)->nodeMask, nodeMask, 32);
 
 				const size_t rawOffset = nextChunkInfo - (char*)(&groupInfo->chunkOffsets[chunks]);
-				const size_t scaledOffset = rawOffset / 8;
-				if (rawOffset % 8 != 0)
+				const size_t scaledOffset = rawOffset / CHUNK_ALIGNMENT;
+				if (rawOffset % CHUNK_ALIGNMENT != 0)
 					throw std::runtime_error("SortedNodeStore: invalid scaledOffset for chunk");
 				if (scaledOffset > 65535)
-					throw std::runtime_error("SortedNodeStore: scaledOffset too big");
+					throw std::runtime_error("SortedNodeStore: scaledOffset too big (" + std::to_string(scaledOffset) + "), groupIndex=" + std::to_string(groupIndex));
 
 				groupInfo->chunkOffsets[currentChunkIndex] = (uint16_t)(scaledOffset);
 
-				((ChunkInfo*)nextChunkInfo)->size = numNodesInChunk * 8;
+				((ChunkInfo*)nextChunkInfo)->size = numNodesInChunk * CHUNK_ALIGNMENT;
 				// Copy the actual nodes.
 				for (size_t j = chunkNodeStartIndex; j < i; j++) {
 					((ChunkInfo*)nextChunkInfo)->nodes[j - chunkNodeStartIndex] = nodes[j].second;
@@ -330,8 +330,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 					sizeof(ChunkInfo) + // Every chunk needs a ChunkInfo
 					numNodesInChunk * sizeof(LatpLon); // The actual data
 
-				// We require that chunks align on 8-byte boundaries
-				chunkSpace += 8 - (chunkSpace % 8);
+				// We require that chunks align on 16-byte boundaries
+				chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
 
 				nextChunkInfo += chunkSpace;
 				chunkSizeFreqs[numNodesInChunk]++;
