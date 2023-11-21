@@ -345,6 +345,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		boost::asio::thread_pool pool(threadNum);
 
 		std::atomic<uint32_t> blocksProcessed(0);
+		std::deque<std::vector<IndexedOffsetLength>> blockRanges;
 		if (phase == ReadPhase::Nodes) {
 			// The Nodes phase tries to reserve large batches of contiguous blocks for
 			// individual worker threads.
@@ -353,7 +354,6 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			const size_t batchSize = (blocks.size() / (threadNum * 8)) + 1;
 
 			size_t consumed = 0;
-			std::deque<std::vector<IndexedOffsetLength>> blockRanges;
 			while(consumed < blocks.size()) {
 				std::vector<IndexedOffsetLength> blockRange;
 				blockRange.reserve(batchSize);
@@ -365,7 +365,7 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			}
 
 			for(const std::vector<IndexedOffsetLength>& blockRange: blockRanges) {
-				boost::asio::post(pool, [=, total_blocks, blockRange, &blocks, &block_mutex, &nodeKeys, &blocksProcessed]() {
+				boost::asio::post(pool, [=, &total_blocks, &blockRange, &blocks, &block_mutex, &nodeKeys, &blocksProcessed]() {
 					osmStore.nodes.batchStart();
 					for (const IndexedOffsetLength& indexedOffsetLength: blockRange) {
 						auto infile = generate_stream();
