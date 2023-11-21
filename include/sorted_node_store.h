@@ -45,6 +45,7 @@ class SortedNodeStore : public NodeStore
 
 public:
 	SortedNodeStore();
+	~SortedNodeStore();
 	void reopen() override;
 	void finalize(size_t threadNum) override;
 	LatpLon at(NodeID i) const override;
@@ -58,10 +59,7 @@ public:
 private: 
 	mutable std::mutex orphanageMutex;
 	std::vector<GroupInfo*> groups;
-
-	// The bulk of the long-lived data is actually stored in here,
-	// so be able to use mmap as storage.
-	std::deque<std::vector<char, mmap_allocator<char>>, mmap_allocator<std::vector<char, mmap_allocator<char>>>> backingStore;
+	std::vector<std::pair<void*, size_t>> allocatedMemory;
 
 	// The orphanage stores nodes that come from groups that may be worked on by
 	// multiple threads. They'll get folded into the index during finalize()

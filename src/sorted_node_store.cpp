@@ -33,6 +33,9 @@ SortedNodeStore::SortedNodeStore() {
 
 void SortedNodeStore::reopen()
 {
+	for (const auto entry: allocatedMemory)
+		void_mmap_allocator::deallocate(entry.first, entry.second);
+
 	totalNodes = 0;
 	totalGroups = 0;
 	totalGroupSpace = 0;
@@ -43,7 +46,11 @@ void SortedNodeStore::reopen()
 	workerBuffers.clear();
 	groups.clear();
 	groups.resize(256 * 1024);
-	backingStore.clear();
+}
+
+SortedNodeStore::~SortedNodeStore() {
+	for (const auto entry: allocatedMemory)
+		void_mmap_allocator::deallocate(entry.first, entry.second);
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
@@ -261,19 +268,16 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 	}
 	totalGroupSpace += groupSpace;
 
-	std::vector<char, mmap_allocator<char>>* vec = nullptr;
-
-	GroupInfo* groupInfo = nullptr;
-
 	// CONSIDER: for small values of `groupSpace`, pull space from a shared pool.
 	// e.g. a 1-node Group takes 78 bytes, which is a waste of a malloc
+	GroupInfo* groupInfo = nullptr;
+	groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
+	if (groupInfo == nullptr)
+		throw std::runtime_error("failed to allocate space for group");
 	{
 		std::lock_guard<std::mutex> lock(orphanageMutex);
-		backingStore.push_back(std::vector<char, mmap_allocator<char>>());
-		vec = &backingStore.back();
+		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));
 	}
-	vec->reserve(groupSpace);
-	groupInfo = (GroupInfo*)&(*vec)[0];
 	if (groups[groupIndex] != nullptr)
 		throw std::runtime_error("SortedNodeStore: group already present");
 	groups[groupIndex] = groupInfo;
