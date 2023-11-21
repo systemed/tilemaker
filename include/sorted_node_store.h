@@ -44,9 +44,6 @@ class SortedNodeStore : public NodeStore
 {
 
 public:
-	using internal_element_t = std::pair<ShardedNodeID, LatpLon>;
-	using map_t = std::deque<internal_element_t, mmap_allocator<internal_element_t>>;
-
 	SortedNodeStore();
 	void reopen() override;
 	void finalize(size_t threadNum) override;
@@ -60,7 +57,6 @@ public:
 
 private: 
 	mutable std::mutex orphanageMutex;
-	mutable std::mutex outMutex;
 	std::vector<GroupInfo*> groups;
 
 	// The bulk of the long-lived data is actually stored in here,
