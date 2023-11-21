@@ -1,6 +1,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <atomic>
 #include <map>
 #include <bitset>
