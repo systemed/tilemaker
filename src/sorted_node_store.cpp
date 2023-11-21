@@ -76,8 +76,6 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
 	ChunkInfo* chunkPtr = (ChunkInfo*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * 8));
 
-	uint32_t size = chunkPtr->size;
-
 	size_t nodeOffset = 0;
 	{
 			nodeOffset = popcnt(chunkPtr->nodeMask, nodeMaskByte);

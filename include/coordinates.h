@@ -94,18 +94,18 @@ double lat2latp(double lat);
 double latp2lat(double latp);
 
 // Tile conversions
-double lon2tilexf(double lon, uint z);
-double latp2tileyf(double latp, uint z);
-double lat2tileyf(double lat, uint z);
-uint lon2tilex(double lon, uint z);
-uint latp2tiley(double latp, uint z);
-uint lat2tiley(double lat, uint z);
-double tilex2lon(uint x, uint z);
-double tiley2latp(uint y, uint z);
-double tiley2lat(uint y, uint z);
+double lon2tilexf(double lon, uint8_t z);
+double latp2tileyf(double latp, uint8_t z);
+double lat2tileyf(double lat, uint8_t z);
+uint32_t lon2tilex(double lon, uint8_t z);
+uint32_t latp2tiley(double latp, uint8_t z);
+uint32_t lat2tiley(double lat, uint8_t z);
+double tilex2lon(uint32_t x, uint8_t z);
+double tiley2latp(uint32_t y, uint8_t z);
+double tiley2lat(uint32_t y, uint8_t z);
 
 // Get a tile index
-TileCoordinates latpLon2index(LatpLon ll, uint baseZoom);
+TileCoordinates latpLon2index(LatpLon ll, uint8_t baseZoom);
 
 // Earth's (mean) radius
 // http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
