@@ -33,6 +33,9 @@ thread_local int64_t cachedChunk = -1;
 thread_local std::vector<int32_t> cacheChunkLons;
 thread_local std::vector<int32_t> cacheChunkLatps;
 
+thread_local uint32_t arenaSpace = 0;
+thread_local char* arenaPtr = nullptr;
+
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
 	// Each group can store 64K nodes. If we allocate 256K slots
 	// for groups, we support 2^34 = 17B nodes, or about twice
@@ -333,6 +336,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 					size_t totalCompressedSize =
 						latsCompressedSize + lonsCompressedSize + // The compressed buffers
 						2 * 4; // The initial delta
+
 					// We only allot 10 bits for storing the size of the compressed array--
 					// if we need more than 10 bits, we haven't actually been able to
 					// compress the array.
@@ -394,16 +398,28 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 	groupSpace += STREAMVBYTE_PADDING;
 	totalGroupSpace += groupSpace;
 
-	// CONSIDER: for small values of `groupSpace`, pull space from a shared pool.
-	// e.g. a 1-node Group takes 78 bytes, which is a waste of a malloc
 	GroupInfo* groupInfo = nullptr;
-	groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
-	if (groupInfo == nullptr)
-		throw std::runtime_error("failed to allocate space for group");
 
-	{
+	if (groupSpace < 1024) {
+		// Avoid malloc for small groups, use a shared arena of memory
+		if (arenaSpace < groupSpace) {
+			arenaSpace = 32768;
+			arenaPtr = (char*)void_mmap_allocator::allocate(arenaSpace);
+			if (arenaPtr == nullptr)
+				throw std::runtime_error("SortedNodeStore: failed to allocate arena");
+			std::lock_guard<std::mutex> lock(orphanageMutex);
+			allocatedMemory.push_back(std::make_pair((void*)arenaPtr, arenaSpace));
+		}
+
+		arenaSpace -= groupSpace;
+		groupInfo = (GroupInfo*)arenaPtr;
+		arenaPtr += groupSpace;
+	} else {
+		groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
+		if (groupInfo == nullptr)
+			throw std::runtime_error("failed to allocate space for group");
+
 		std::lock_guard<std::mutex> lock(orphanageMutex);
-//		std::cout << "allocating " << groupSpace << " groupSpace bytes" << std::endl;
 		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));
 	}
 	if (groups[groupIndex] != nullptr)
