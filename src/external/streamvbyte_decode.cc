@@ -1,5 +1,5 @@
 #include "external/streamvbyte.h"
-#include "external/streamvbyte_isadetection.h"
+#include "streamvbyte_isadetection.h"
 
 #include <string.h> // for memcpy
 
