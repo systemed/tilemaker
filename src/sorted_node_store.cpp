@@ -337,9 +337,6 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 					// if we need more than 10 bits, we haven't actually been able to
 					// compress the array.
 					if (totalCompressedSize < uncompressedSize && latsCompressedSize < 1024 && lonsCompressedSize < 1024) {
-						if (groupIndex == 37204 && lastChunk == 246) {
-							std::cout << "group 37204, chunk 246, latsCompressedSize=" << latsCompressedSize << ", lonsCompressedSize=" << lonsCompressedSize << std::endl;
-						}
 						compressedLatpSize[currentChunkIndex] = latsCompressedSize;
 						compressedLonSize[currentChunkIndex] = lonsCompressedSize;
 					}
@@ -381,7 +378,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 		}
 
 		// We require that chunks align on 16-byte boundaries
-		chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
+		if (chunkSpace % CHUNK_ALIGNMENT != 0)
+			chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
 		groupSpace += chunkSpace;
 	}
 
@@ -495,7 +493,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 				}
 
 				// We require that chunks align on 16-byte boundaries
-				chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
+				if (chunkSpace % CHUNK_ALIGNMENT != 0)
+					chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
 
 				nextChunkInfo += chunkSpace;
 				chunkSizeFreqs[numNodesInChunk]++;
