@@ -256,7 +256,7 @@ void SortedNodeStore::finalize(size_t threadNum) {
 
 	orphanage.clear();
 
-	std::cout << "SortedNodeStore: saw " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, needed " << totalGroupSpace.load() << " bytes" << std::endl;
+	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes" << std::endl;
 	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
