@@ -435,3 +435,15 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 	return 0;
 }
 
+bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature) {
+	fstream infile(inputFile, ios::in | ios::binary);
+	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+	HeaderBlock block;
+	readBlock(&block, readHeader(infile).datasize(), infile);
+
+	for (const std::string& option: block.optional_features())
+		if (option == feature)
+			return true;
+
+	return false;
+}

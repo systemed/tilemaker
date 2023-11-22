@@ -282,9 +282,19 @@ int main(int argc, char* argv[]) {
 
 	if (osmStoreCompact)
 		nodeStore = make_shared<CompactNodeStore>();
-	else
-		//nodeStore = make_shared<BinarySearchNodeStore>();
-		nodeStore = make_shared<SortedNodeStore>();
+	else {
+		bool canUseSortedNodeStore = true;
+		for (const std::string& file: inputFiles) {
+			if (ends_with(file, ".pbf")) {
+				canUseSortedNodeStore = canUseSortedNodeStore && PbfHasOptionalFeature(file, "Sort.Type_then_ID");
+			}
+		}
+
+		if (canUseSortedNodeStore)
+			nodeStore = make_shared<SortedNodeStore>();
+		else
+			nodeStore = make_shared<BinarySearchNodeStore>();
+	}
 	OSMStore osmStore(*nodeStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);

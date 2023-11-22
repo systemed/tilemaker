@@ -71,4 +71,6 @@ private:
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 
 	double &minLat, double &maxLat, bool &hasClippingBox);
 
+bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature);
+
 #endif //_READ_PBF_H
