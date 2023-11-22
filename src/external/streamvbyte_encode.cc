@@ -11,7 +11,7 @@
 #include "streamvbyte_x64_encode.c"
 #endif
 
-static uint8_t svb_encode_data(uint32_t val, uint8_t *__restrict__ *dataPtrPtr) {
+static uint8_t svb_encode_data(uint32_t val, uint8_t * *dataPtrPtr) {
   uint8_t *dataPtr = *dataPtrPtr;
   uint8_t code;
 
@@ -37,8 +37,8 @@ static uint8_t svb_encode_data(uint32_t val, uint8_t *__restrict__ *dataPtrPtr) 
 }
 
 static uint8_t *svb_encode_scalar(const uint32_t *in,
-                                  uint8_t *__restrict__ keyPtr,
-                                  uint8_t *__restrict__ dataPtr,
+                                  uint8_t * keyPtr,
+                                  uint8_t * dataPtr,
                                   uint32_t count) {
   if (count == 0)
     return dataPtr; // exit immediately if no data
