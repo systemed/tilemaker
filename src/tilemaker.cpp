@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreCompressNodes;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -182,6 +182,7 @@ int main(int argc, char* argv[]) {
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
+		("compress-nodes", po::bool_switch(&osmStoreCompressNodes),  "Reduce memory by compressing nodes")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
@@ -280,6 +281,11 @@ int main(int argc, char* argv[]) {
 	// For each tile, objects to be used in processing
 	shared_ptr<NodeStore> nodeStore;
 
+	if (osmStoreCompressNodes && osmStoreCompact) {
+		std::cerr << "--compress-nodes is not compatible with --compact" << std::endl;
+		return 1;
+	}
+
 	if (osmStoreCompact)
 		nodeStore = make_shared<CompactNodeStore>();
 	else {
@@ -290,8 +296,13 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
+		if (osmStoreCompressNodes && !canUseSortedNodeStore) {
+			std::cerr << "--compress-nodes requires a PBF with the Sort.Type_then_ID feature" << std::endl;
+			return 1;
+		}
+
 		if (canUseSortedNodeStore)
-			nodeStore = make_shared<SortedNodeStore>();
+			nodeStore = make_shared<SortedNodeStore>(osmStoreCompressNodes);
 		else
 			nodeStore = make_shared<BinarySearchNodeStore>();
 	}

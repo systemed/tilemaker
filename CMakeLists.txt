@@ -107,6 +107,10 @@ file(GLOB tilemaker_src_files
 	src/node_stores.cpp
 	src/coordinates_geom.cpp
 	src/sorted_node_store.cpp
+	src/external/streamvbyte_decode.cc
+	src/external/streamvbyte_encode.cc
+	src/external/streamvbyte_zigzag.cc
+
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)

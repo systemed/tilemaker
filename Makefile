@@ -83,7 +83,7 @@ prefix = /usr/local
 
 MANPREFIX := /usr/share/man
 TM_VERSION ?= $(shell git describe --tags --abbrev=0)
-CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
+CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG) 
 LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
@@ -91,7 +91,33 @@ INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 all: tilemaker
 
-tilemaker: include/osmformat.pb.o include/vector_tile.pb.o src/mbtiles.o src/pbf_blocks.o src/coordinates.o src/osm_store.o src/helpers.o src/output_object.o src/read_shp.o src/read_pbf.o src/osm_lua_processing.o src/write_geometry.o src/shared_data.o src/tile_worker.o src/tile_data.o src/osm_mem_tiles.o src/shp_mem_tiles.o src/attribute_store.o src/tilemaker.o src/geom.o src/node_stores.o src/coordinates_geom.o src/sorted_node_store.o
+tilemaker: \
+	include/osmformat.pb.o \
+	include/vector_tile.pb.o \
+	src/attribute_store.o \
+	src/coordinates_geom.o \
+	src/coordinates.o \
+	src/external/streamvbyte_decode.o \
+	src/external/streamvbyte_encode.o \
+	src/external/streamvbyte_zigzag.o \
+	src/geom.o \
+	src/helpers.o \
+	src/mbtiles.o \
+	src/node_stores.o \
+	src/osm_lua_processing.o \
+	src/osm_mem_tiles.o \
+	src/osm_store.o \
+	src/output_object.o \
+	src/pbf_blocks.o \
+	src/read_pbf.o \
+	src/read_shp.o \
+	src/shared_data.o \
+	src/shp_mem_tiles.o \
+	src/sorted_node_store.o \
+	src/tile_data.o \
+	src/tilemaker.o \
+	src/tile_worker.o \
+	src/write_geometry.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
 %.o: %.cpp
@@ -110,6 +136,6 @@ install:
 	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
 
 clean:
-	rm -f tilemaker src/*.o include/*.o include/*.pb.h
+	rm -f tilemaker src/*.o src/external/*.o include/*.o include/*.pb.h
 
 .PHONY: install

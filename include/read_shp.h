@@ -9,7 +9,6 @@
 #include "geom.h"
 #include "output_object.h"
 #include "osm_lua_processing.h"
-#include "kaguya.hpp"
 #include "attribute_store.h"
 
 // Shapelib

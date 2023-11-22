@@ -16,13 +16,27 @@
 #define GROUP_SIZE 256
 #define CHUNK_SIZE 256
 
-struct ChunkInfo {
+#define CHUNK_COMPRESSED (1 << 31)
+struct ChunkInfoBase {
+	// If high bit is set, this is a compressed chunk.
+	// Bits 0..9 are the length of the compressed lons.
+	// Bits 10..19 are the length of the compressed lats.
+	// The upper-most bit should be set iff this is a compressed chunk.
+	uint32_t flags;
 	// A bitmask indicating how many nodes are in this chunk.
 	uint8_t nodeMask[32];
-	// The length of the data, starting at &nodes[0].
-	// 32 bits is way more than we need, we may eventually use the
-	// upper 2 bytes for flags, e.g. for tracking compression.
-	uint32_t size;
+};
+
+struct CompressedChunkInfo: ChunkInfoBase {
+	// streamvbyte_decode needs N, the size of the original array.
+	// N is popcnt(nodeMask) - 1.
+	// data is zigzag delta encoded, so we need firstLatp and firstLatp to recover it.
+	int32_t firstLatp;
+	int32_t firstLon;
+	uint8_t data[0];
+};
+
+struct UncompressedChunkInfo: ChunkInfoBase {
 	LatpLon nodes[0];
 };
 
@@ -44,7 +58,7 @@ class SortedNodeStore : public NodeStore
 {
 
 public:
-	SortedNodeStore();
+	SortedNodeStore(bool compressNodes);
 	~SortedNodeStore();
 	void reopen() override;
 	void finalize(size_t threadNum) override;
@@ -57,6 +71,10 @@ public:
 	}
 
 private: 
+	// When true, store chunks compressed. Only store compressed if the
+	// chunk is sufficiently large.
+	bool compressNodes;
+
 	mutable std::mutex orphanageMutex;
 	std::vector<GroupInfo*> groups;
 	std::vector<std::pair<void*, size_t>> allocatedMemory;

@@ -6,7 +6,9 @@
 #include <map>
 #include <bitset>
 #include "sorted_node_store.h"
-#include "libpopcnt.h"
+#include "external/libpopcnt.h"
+#include "external/streamvbyte.h"
+#include "external/streamvbyte_zigzag.h"
 
 std::atomic<uint64_t> totalGroups;
 std::atomic<uint64_t> totalNodes; // consider leaving this in so we have fast size()
@@ -27,7 +29,11 @@ thread_local bool collectingOrphans = true;
 thread_local uint64_t groupStart = -1;
 thread_local std::vector<NodeStore::element_t>* localNodes = NULL;
 
-SortedNodeStore::SortedNodeStore() {
+thread_local int64_t cachedChunk = -1;
+thread_local std::vector<int32_t> cacheChunkLons;
+thread_local std::vector<int32_t> cacheChunkLatps;
+
+SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
 	// Each group can store 64K nodes. If we allocate 256K slots
 	// for groups, we support 2^34 = 17B nodes, or about twice
 	// the number used by OSM as of November 2023.
@@ -75,7 +81,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 
 	size_t chunkOffset = 0;
 	{
-			chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
 		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
 		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
 		chunkOffset += popcnt(&maskByte, 1);
@@ -85,19 +91,59 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	}
 
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
-	ChunkInfo* chunkPtr = (ChunkInfo*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * CHUNK_ALIGNMENT));
+	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * CHUNK_ALIGNMENT));
 
-	size_t nodeOffset = 0;
-	{
-			nodeOffset = popcnt(chunkPtr->nodeMask, nodeMaskByte);
-		uint8_t maskByte = chunkPtr->nodeMask[nodeMaskByte];
+	if (basePtr->flags & CHUNK_COMPRESSED) {
+		CompressedChunkInfo* ptr = (CompressedChunkInfo*)basePtr;
+		size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
+		// TODO: we don't actually need the lonSize to decompress the data.
+		//       May as well store it as a sanity check for now.
+		size_t lonSize = ptr->flags & ((1 << 10) - 1);
+		size_t n = popcnt(ptr->nodeMask, 32) - 1;
+
+		const size_t neededChunk = groupIndex * CHUNK_SIZE + chunk;
+
+		// Really naive caching strategy - just cache the last-used chunk.
+		// Probably good enough?
+		if (cachedChunk != neededChunk) {
+			cachedChunk = neededChunk;
+			cacheChunkLons.reserve(256);
+			cacheChunkLatps.reserve(256);
+
+			uint8_t* latpData = ptr->data;
+			uint8_t* lonData = ptr->data + latpSize;
+			uint32_t recovdata[256] = {0};
+
+			streamvbyte_decode(latpData, recovdata, n);
+			cacheChunkLatps[0] = ptr->firstLatp;
+			zigzag_delta_decode(recovdata, &cacheChunkLatps[1], n, cacheChunkLatps[0]);
+
+			streamvbyte_decode(lonData, recovdata, n);
+			cacheChunkLons[0] = ptr->firstLon;
+			zigzag_delta_decode(recovdata, &cacheChunkLons[1], n, cacheChunkLons[0]);
+		}
+
+		size_t nodeOffset = 0;
+		nodeOffset = popcnt(ptr->nodeMask, nodeMaskByte);
+		uint8_t maskByte = ptr->nodeMask[nodeMaskByte];
 		maskByte = maskByte & ((1 << nodeMaskBit) - 1);
 		nodeOffset += popcnt(&maskByte, 1);
-		if (!(chunkPtr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
+		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
 			throw std::runtime_error("SortedNodeStore: node missing, no node");
-}
 
-	return chunkPtr->nodes[nodeOffset];
+		return { cacheChunkLatps[nodeOffset], cacheChunkLons[nodeOffset] };
+	}
+
+	UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)basePtr;
+	size_t nodeOffset = 0;
+	nodeOffset = popcnt(ptr->nodeMask, nodeMaskByte);
+	uint8_t maskByte = ptr->nodeMask[nodeMaskByte];
+	maskByte = maskByte & ((1 << nodeMaskBit) - 1);
+	nodeOffset += popcnt(&maskByte, 1);
+	if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
+		throw std::runtime_error("SortedNodeStore: node missing, no node");
+
+	return ptr->nodes[nodeOffset];
 }
 
 size_t SortedNodeStore::size() const {
@@ -240,36 +286,114 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 	totalGroups++;
 
-	// Calculate the space we need for this group.
-	// TODO: the nodes are sorted, so we can calculate # of chunks
-	// with a single O(n) pass, don't need a set/map.
-	// TODO: until then can use a uint16_t/uint16_t
-	std::map<uint64_t, uint64_t> uniqueChunks;
-	for (const auto& node: nodes) {
-		const size_t chunk = (node.first % (GROUP_SIZE * CHUNK_SIZE)) / CHUNK_SIZE;
+	// Calculate the space we need for this group's chunks.
 
-		if (uniqueChunks.find(chunk) == uniqueChunks.end())
-			uniqueChunks[chunk] = 0;
+	// Build up the lat/lons for each chunk; we use this to
+	// calculate if a compressed version is more efficient.
+	int32_t tmpLatpLons[257 * 2] = {0};
+	uint32_t tmpLatpLonsZigzag[257 * 2] = {0};
+	// NB that we're storing sparse indexes -- so if we had
+	// chunks 3, 6 and 7, only the first 3 indexes (0, 1, 2) would be set.
+	// compressed[chunkIndex] = 0 => no chunk, else it's the compressed size
+	// (or ~0 to skip compression)
+	uint32_t compressedLatpSize[256] = {0};
+	uint32_t compressedLonSize[256] = {0};
+	int64_t lastChunk = -1;
+	int64_t currentChunkIndex = 0;
+	int64_t currentNodeIndex = 0;
+	uint16_t numberNodesInChunk[256] = {0};
+	uint8_t compressedBuffer[256 * 4 * 2];
 
-		uniqueChunks[chunk]++;
+	for (size_t i = 0; i <= nodes.size(); i++) {
+		int64_t currentChunk = -1;
+
+		if (i != nodes.size()) {
+			const element_t& node = nodes[i];
+			currentChunk = (node.first % (GROUP_SIZE * CHUNK_SIZE)) / CHUNK_SIZE;
+		}
+
+		if (lastChunk != currentChunk) {
+			if (lastChunk != -1) {
+				numberNodesInChunk[currentChunkIndex] = currentNodeIndex;
+				compressedLatpSize[currentChunkIndex] = ~0;
+				compressedLonSize[currentChunkIndex] = ~0;
+
+				if (compressNodes) {
+					// Check to see if compression would help.
+					// Zigzag-delta-encode the lats/lons, then compress them.
+					tmpLatpLonsZigzag[0] = tmpLatpLons[0];
+					tmpLatpLonsZigzag[256] = tmpLatpLons[256];
+					zigzag_delta_encode(tmpLatpLons + 1, tmpLatpLonsZigzag + 1, currentNodeIndex - 1, tmpLatpLons[0]);
+					zigzag_delta_encode(tmpLatpLons + 256 + 1, tmpLatpLonsZigzag + 256 + 1, currentNodeIndex - 1, tmpLatpLons[256]);
+
+					size_t latsCompressedSize = streamvbyte_encode(tmpLatpLonsZigzag + 1, currentNodeIndex - 1, compressedBuffer);
+					size_t lonsCompressedSize = streamvbyte_encode(tmpLatpLonsZigzag + 256 + 1, currentNodeIndex - 1, compressedBuffer);
+
+					size_t uncompressedSize = currentNodeIndex * 8;
+					size_t totalCompressedSize =
+						latsCompressedSize + lonsCompressedSize + // The compressed buffers
+						2 * 4; // The initial delta
+					// We only allot 10 bits for storing the size of the compressed array--
+					// if we need more than 10 bits, we haven't actually been able to
+					// compress the array.
+					if (totalCompressedSize < uncompressedSize && latsCompressedSize < 1024 && lonsCompressedSize < 1024) {
+						if (groupIndex == 37204 && lastChunk == 246) {
+							std::cout << "group 37204, chunk 246, latsCompressedSize=" << latsCompressedSize << ", lonsCompressedSize=" << lonsCompressedSize << std::endl;
+						}
+						compressedLatpSize[currentChunkIndex] = latsCompressedSize;
+						compressedLonSize[currentChunkIndex] = lonsCompressedSize;
+					}
+				}
+
+				currentChunkIndex++;
+				currentNodeIndex = 0;
+			}
+
+			lastChunk = currentChunk;
+		}
+
+		tmpLatpLons[currentNodeIndex] = nodes[i].second.latp;
+		tmpLatpLons[currentNodeIndex + 256] = nodes[i].second.lon;
+		currentNodeIndex++;
 	}
 
-	uint64_t chunks = uniqueChunks.size();
+	uint64_t chunks = currentChunkIndex;
 	totalChunks += chunks;
 
 	size_t groupSpace =
 		sizeof(GroupInfo) + // Every group needs a GroupInfo
 		chunks * sizeof(uint16_t); // Offsets for each chunk in GroupInfo
 
-	for (const auto& chunk: uniqueChunks) {
-		size_t chunkSpace = 
-			sizeof(ChunkInfo) + // Every chunk needs a ChunkInfo
-			chunk.second * sizeof(LatpLon); // The actual data
+	for (currentChunkIndex = 0; currentChunkIndex < 256; currentChunkIndex++) {
+		if (compressedLatpSize[currentChunkIndex] == 0)
+			break;
+
+		size_t chunkSpace = 0;
+		if (compressedLatpSize[currentChunkIndex] == ~0) {
+			// Store uncompressed.
+			chunkSpace = 
+				sizeof(UncompressedChunkInfo) +
+				numberNodesInChunk[currentChunkIndex] * sizeof(LatpLon);
+		} else {
+			chunkSpace = 
+				sizeof(CompressedChunkInfo) +
+				compressedLatpSize[currentChunkIndex] + compressedLonSize[currentChunkIndex];
+		}
 
 		// We require that chunks align on 16-byte boundaries
 		chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
 		groupSpace += chunkSpace;
 	}
+
+	// Per https://github.com/lemire/streamvbyte:
+	// During decoding, the library may read up to STREAMVBYTE_PADDING extra
+	// bytes from the input buffer (these bytes are read but never used).
+	//
+	// Thus, we need to reserve at least that much extra to ensure we don't
+	// have an out-of-bounds access. We could also allocate from an arena
+	// to amortize the cost across many groups, but with 256K groups,
+	// the overhead is only 4M, so who cares.
+	groupSpace += STREAMVBYTE_PADDING;
 	totalGroupSpace += groupSpace;
 
 	// CONSIDER: for small values of `groupSpace`, pull space from a shared pool.
@@ -278,20 +402,22 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 	groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
 	if (groupInfo == nullptr)
 		throw std::runtime_error("failed to allocate space for group");
+
 	{
 		std::lock_guard<std::mutex> lock(orphanageMutex);
+//		std::cout << "allocating " << groupSpace << " groupSpace bytes" << std::endl;
 		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));
 	}
 	if (groups[groupIndex] != nullptr)
 		throw std::runtime_error("SortedNodeStore: group already present");
 	groups[groupIndex] = groupInfo;
 
-	int64_t lastChunk = -1;
+	lastChunk = -1;
 	uint8_t chunkMask[32], nodeMask[32];
 	memset(chunkMask, 0, 32);
 	memset(nodeMask, 0, 32);
 
-	int64_t currentChunkIndex = 0;
+	currentChunkIndex = 0;
 	size_t numNodesInChunk = 0;
 	size_t chunkNodeStartIndex = 0;
 
@@ -312,8 +438,6 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 			if (lastChunk != -1) {
 				// Publish a ChunkInfo.
 
-				memcpy(((ChunkInfo*)nextChunkInfo)->nodeMask, nodeMask, 32);
-
 				const size_t rawOffset = nextChunkInfo - (char*)(&groupInfo->chunkOffsets[chunks]);
 				const size_t scaledOffset = rawOffset / CHUNK_ALIGNMENT;
 				if (rawOffset % CHUNK_ALIGNMENT != 0)
@@ -323,15 +447,52 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 				groupInfo->chunkOffsets[currentChunkIndex] = (uint16_t)(scaledOffset);
 
-				((ChunkInfo*)nextChunkInfo)->size = numNodesInChunk * CHUNK_ALIGNMENT;
-				// Copy the actual nodes.
-				for (size_t j = chunkNodeStartIndex; j < i; j++) {
-					((ChunkInfo*)nextChunkInfo)->nodes[j - chunkNodeStartIndex] = nodes[j].second;
+				memcpy(((ChunkInfoBase*)nextChunkInfo)->nodeMask, nodeMask, 32);
+				if (compressedLatpSize[currentChunkIndex] == ~0) {
+					// Store uncompressed.
+					((ChunkInfoBase*)nextChunkInfo)->flags = 0;
+					for (size_t j = chunkNodeStartIndex; j < i; j++) {
+						UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)nextChunkInfo;
+						ptr->nodes[j - chunkNodeStartIndex] = nodes[j].second;
+					}
+				} else {
+					// Store compressed.
+					CompressedChunkInfo* ptr = (CompressedChunkInfo*)nextChunkInfo;
+					ptr->flags = CHUNK_COMPRESSED | (compressedLatpSize[currentChunkIndex] << 10) | compressedLonSize[currentChunkIndex];
+
+					ptr->firstLatp = nodes[chunkNodeStartIndex].second.latp;
+					ptr->firstLon = nodes[chunkNodeStartIndex].second.lon;
+					for (size_t j = chunkNodeStartIndex; j < i; j++) {
+						tmpLatpLons[j - chunkNodeStartIndex] = nodes[j].second.latp;
+						tmpLatpLons[j - chunkNodeStartIndex + 256] = nodes[j].second.lon;
+					}
+
+					tmpLatpLonsZigzag[0] = tmpLatpLons[0];
+					tmpLatpLonsZigzag[256] = tmpLatpLons[256];
+					currentNodeIndex = i - chunkNodeStartIndex;
+					zigzag_delta_encode(tmpLatpLons + 1, tmpLatpLonsZigzag + 1, currentNodeIndex - 1, tmpLatpLons[0]);
+					zigzag_delta_encode(tmpLatpLons + 256 + 1, tmpLatpLonsZigzag + 256 + 1, currentNodeIndex - 1, tmpLatpLons[256]);
+
+					size_t latsCompressedSize = streamvbyte_encode(tmpLatpLonsZigzag + 1, currentNodeIndex - 1, ptr->data);
+
+					if (latsCompressedSize != compressedLatpSize[currentChunkIndex])
+						throw std::runtime_error("unexpected latsCompressedSize");
+					size_t lonsCompressedSize = streamvbyte_encode(tmpLatpLonsZigzag + 256 + 1, currentNodeIndex - 1, ptr->data + latsCompressedSize);
+					if (lonsCompressedSize != compressedLonSize[currentChunkIndex])
+						throw std::runtime_error("unexpected lonsCompressedSize");
 				}
 
-				size_t chunkSpace = 
-					sizeof(ChunkInfo) + // Every chunk needs a ChunkInfo
-					numNodesInChunk * sizeof(LatpLon); // The actual data
+				size_t chunkSpace = 0;
+				if (compressedLatpSize[currentChunkIndex] == ~0) {
+					// Store uncompressed.
+					chunkSpace = 
+						sizeof(UncompressedChunkInfo) +
+						numberNodesInChunk[currentChunkIndex] * sizeof(LatpLon);
+				} else {
+					chunkSpace = 
+						sizeof(CompressedChunkInfo) +
+						compressedLatpSize[currentChunkIndex] + compressedLonSize[currentChunkIndex];
+				}
 
 				// We require that chunks align on 16-byte boundaries
 				chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
@@ -366,4 +527,14 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 	groupSizeFreqs[currentChunkIndex]++;
 	memcpy(groupInfo->chunkMask, chunkMask, 32);
+
+	/*
+	// debug: verify that we can read every node we just wrote
+	for (const auto& node: nodes) {
+		const auto rv = at(node.first);
+
+		if (rv.latp != node.second.latp || rv.lon != node.second.lon)
+			throw std::runtime_error("failed to roundtrip node ID " + std::to_string(node.first));
+	}
+	*/
 }

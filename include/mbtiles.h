@@ -5,7 +5,7 @@
 #include <string>
 #include <mutex>
 #include <vector>
-#include "sqlite_modern_cpp.h"
+#include "external/sqlite_modern_cpp.h"
 
 /** \brief Write to MBTiles (sqlite) database
 *

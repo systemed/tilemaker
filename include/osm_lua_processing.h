@@ -24,7 +24,7 @@ extern "C" {
     #include "lauxlib.h"
 }
 
-#include "kaguya.hpp"
+#include "external/kaguya.hpp"
 
 // FIXME: why is this global ?
 extern bool verbose;
