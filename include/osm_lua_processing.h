@@ -12,7 +12,6 @@
 #include "output_object.h"
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
-#include "attribute_store.h"
 #include "helpers.h"
 
 #include <boost/container/flat_map.hpp>
@@ -28,6 +27,9 @@ extern "C" {
 
 // FIXME: why is this global ?
 extern bool verbose;
+
+class AttributeStore;
+class AttributeSet;
 
 /**
 	\brief OsmLuaProcessing - converts OSM objects into OutputObjects.
@@ -249,18 +251,11 @@ private:
 
 	const class Config &config;
 	class LayerDefinition &layers;
-	
-	OutputObjectsWithAttributes outputs;		// All output objects that have been created
+
+	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
 	const boost::container::flat_map<std::string, std::string>* currentTags;
 
-	std::vector<OutputObjectRef> OutputsAsOORefs() {
-		std::vector<OutputObjectRef> list;
-		for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-			jt->first.setAttributeSet(attributeStore.add(jt->second));
-			list.emplace_back(osmMemTiles.CreateObject(jt->first));
-		}
-		return list;
-	}
+	std::vector<OutputObject> finalizeOutputs();
 };
 
 #endif //_OSM_LUA_PROCESSING_H

@@ -94,15 +94,14 @@ int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, co
 }
 
 // Comparision functions
-
-bool operator==(const OutputObjectRef x, const OutputObjectRef y) {
+bool operator==(const OutputObject& x, const OutputObject& y) {
 	return
-		x->layer == y->layer &&
-		x->z_order == y->z_order &&
-		x->geomType == y->geomType &&
-		x->attributes == y->attributes &&
-		x->objectID == y->objectID;
-} 
+		x.layer == y.layer &&
+		x.z_order == y.z_order &&
+		x.geomType == y.geomType &&
+		x.attributes == y.attributes &&
+		x.objectID == y.objectID;
+}
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {

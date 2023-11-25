@@ -8,9 +8,10 @@
 #include <memory>
 #include "output_object.h"
 
-typedef std::vector<OutputObjectRef>::const_iterator OutputObjectsConstIt;
+typedef std::vector<OutputObject>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
-typedef std::map<TileCoordinates, std::vector<OutputObjectRef>, TileCoordinatesCompare> TileIndex;
+// TODO: remove TileIndex ?
+typedef std::map<TileCoordinates, std::vector<OutputObject>, TileCoordinatesCompare> TileIndex;
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
 typedef std::vector<class TileDataSource *> SourceList;
@@ -24,7 +25,7 @@ protected:
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
-	boost::geometry::index::rtree< std::pair<Box,OutputObjectRef>, oo_rtree_param_type> box_rtree;
+	boost::geometry::index::rtree< std::pair<Box,OutputObject>, oo_rtree_param_type> box_rtree;
 
 	unsigned int baseZoom;
 
@@ -59,36 +60,39 @@ public:
 	{ }
 
 	///This must be thread safe!
-	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
+	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet& dstCoords) {
 		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
 	}
 
-	void MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords);
+	void MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet& dstCoords);
 
 	///This must be thread safe!
-	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObject>& dstTile) {
 		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
 	}
 
-	OutputObjectRef CreateObject(OutputObject const &oo);
-	void AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs);
-	void AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs);
-	void AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs);
+	void AddGeometryToIndex(const Linestring& geom, const std::vector<OutputObject>& outputs);
+	void AddGeometryToIndex(const MultiLinestring& geom, const std::vector<OutputObject>& outputs);
+	void AddGeometryToIndex(const MultiPolygon& geom, const std::vector<OutputObject>& outputs);
 
-	void AddObjectToTileIndex(TileCoordinates const &index, OutputObjectRef const &oo) {
+	// TODO: this should stop existing
+	void AddObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		tileIndex[index].push_back(oo);
 	}
 
-	void AddObjectToLargeIndex(Box const &envelope, OutputObjectRef const &oo) {
+	void AddObjectToLargeIndex(const Box& envelope, const OutputObject& oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		box_rtree.insert(std::make_pair(envelope, oo));
 	}
 
-	void MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile);
+	void MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObject>& dstTile);
 
-	std::vector<OutputObjectRef> getTileData(std::vector<bool> const &sortOrders, 
-	                                         TileCoordinates coordinates, unsigned int zoom);
+	std::vector<OutputObject> getTileData(
+		const std::vector<bool>& sortOrders, 
+		TileCoordinates coordinates,
+		unsigned int zoom
+	);
 
 	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
@@ -183,12 +187,29 @@ public:
 
 
 private:	
-	static void MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords);
-	static void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile);
+	static void MergeTileCoordsAtZoom(
+		uint zoom,
+		uint baseZoom,
+		const TileIndex& srcTiles,
+		TileCoordinatesSet& dstCoords
+	);
+	static void MergeSingleTileDataAtZoom(
+		TileCoordinates dstIndex,
+		uint zoom,
+		uint baseZoom,
+		const TileIndex& srcTiles,
+		std::vector<OutputObject>& dstTile
+	);
 };
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom);
+TileCoordinatesSet GetTileCoordinates(
+	const std::vector<class TileDataSource *>& sources,
+	unsigned int zoom
+);
 
-OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum);
+OutputObjectsConstItPair GetObjectsAtSubLayer(
+	const std::vector<OutputObject>& data,
+	uint_least8_t layerNum
+);
 
 #endif //_TILE_DATA_H

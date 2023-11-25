@@ -9,19 +9,6 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-thread_local std::deque<OutputObject>* tlsObjects = NULL;
-
-OutputObjectRef TileDataSource::CreateObject(OutputObject const &oo) {
-	if (tlsObjects == NULL) {
-		std::lock_guard<std::mutex> lock(mutex);
-		objects.push_back(std::deque<OutputObject>());
-		tlsObjects = &objects.back();
-	}
-
-	tlsObjects->push_back(oo);
-	return &tlsObjects->back();
-}
-
 void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
@@ -60,12 +47,18 @@ void TileDataSource::MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCo
 }
 
 // Copy objects from the tile at dstIndex (in the dataset srcTiles) into dstTile
-void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile) {
+void TileDataSource::MergeSingleTileDataAtZoom(
+	TileCoordinates dstIndex,
+	uint zoom,
+	uint baseZoom,
+	const TileIndex& srcTiles,
+	std::vector<OutputObject>& dstTile
+) {
 	if (zoom==baseZoom) {
 		// at z14, we can just use tileIndex
-		auto oosetIt = srcTiles.find(dstIndex);
-		if(oosetIt == srcTiles.end()) return;
-		dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
+		auto outputObjects = srcTiles.find(dstIndex);
+		if(outputObjects == srcTiles.end()) return;
+		dstTile.insert(dstTile.end(), outputObjects->second.begin(), outputObjects->second.end());
 	} else {
 		// otherwise, we need to run through the z14 list, and assign each way
 		// to a tile at our zoom level
@@ -73,17 +66,17 @@ void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zo
 		TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
 		TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
 
-		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
-		{
-			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
-			{
+		for(int x=srcIndex1.x; x<srcIndex2.x; x++) {
+			for(int y=srcIndex1.y; y<srcIndex2.y; y++) {
 				TileCoordinates srcIndex(x, y);
-				auto oosetIt = srcTiles.find(srcIndex);
-				if(oosetIt == srcTiles.end()) continue;
-				for (auto it = oosetIt->second.begin(); it != oosetIt->second.end(); ++it) {
-					OutputObjectRef oo = *it;
-					if (oo->minZoom > zoom) continue;
-					dstTile.insert(dstTile.end(), oo);
+				const auto outputObjects = srcTiles.find(srcIndex);
+				if(outputObjects == srcTiles.end())
+					continue;
+
+				for (auto it = outputObjects->second.begin(); it != outputObjects->second.end(); ++it) {
+					if (it->minZoom > zoom)
+						continue;
+					dstTile.insert(dstTile.end(), *it);
 				}
 			}
 		}
@@ -91,13 +84,17 @@ void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zo
 }
 
 // Copy objects from the large index into dstTile
-void TileDataSource::MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+void TileDataSource::MergeLargeObjects(
+	TileCoordinates dstIndex,
+	uint zoom,
+	std::vector<OutputObject>& dstTile
+) {
 	int scale = pow(2, baseZoom - zoom);
 	TileCoordinates srcIndex1( dstIndex.x   *scale  ,  dstIndex.y   *scale  );
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
-	for(auto const &result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+	for(auto const& result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
 		dstTile.push_back(result.second);
 }
 
@@ -233,7 +230,10 @@ void TileDataSource::reportSize() const {
 	std::cout << "Generated points: " << point_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
 }
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
+TileCoordinatesSet GetTileCoordinates(
+	const std::vector<class TileDataSource *>& sources,
+	unsigned int zoom
+) {
 	TileCoordinatesSet tileCoordinates;
 
 	// Create list of tiles
@@ -246,9 +246,12 @@ TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const 
 	return tileCoordinates;
 }
 
-std::vector<OutputObjectRef> TileDataSource::getTileData(std::vector<bool> const &sortOrders, 
-	                                                     TileCoordinates coordinates, unsigned int zoom) {
-	std::vector<OutputObjectRef> data;
+std::vector<OutputObject> TileDataSource::getTileData(
+	const std::vector<bool>& sortOrders, 
+	TileCoordinates coordinates,
+	unsigned int zoom
+) {
+	std::vector<OutputObject> data;
 	MergeSingleTileDataAtZoom(coordinates, zoom, data);
 	MergeLargeObjects(coordinates, zoom, data);
 
@@ -256,27 +259,30 @@ std::vector<OutputObjectRef> TileDataSource::getTileData(std::vector<bool> const
 	// Note that attributes is preferred to objectID.
 	// It is to arrange objects with the identical attributes continuously.
 	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectRef x, const OutputObjectRef y) -> bool {
-		if (x->layer < y->layer) return true;
-		if (x->layer > y->layer) return false;
-		if (x->z_order < y->z_order) return  sortOrders[x->layer];
-		if (x->z_order > y->z_order) return !sortOrders[x->layer];
-		if (x->geomType < y->geomType) return true;
-		if (x->geomType > y->geomType) return false;
-		if (x->attributes < y->attributes) return true;
-		if (x->attributes > y->attributes) return false;
-		if (x->objectID < y->objectID) return true;
+	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObject& x, const OutputObject& y) -> bool {
+		if (x.layer < y.layer) return true;
+		if (x.layer > y.layer) return false;
+		if (x.z_order < y.z_order) return  sortOrders[x.layer];
+		if (x.z_order > y.z_order) return !sortOrders[x.layer];
+		if (x.geomType < y.geomType) return true;
+		if (x.geomType > y.geomType) return false;
+		if (x.attributes < y.attributes) return true;
+		if (x.attributes > y.attributes) return false;
+		if (x.objectID < y.objectID) return true;
 		return false;
 	});
 	data.erase(unique(data.begin(), data.end()), data.end());
 	return data;
 }
 
-OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum) {
+OutputObjectsConstItPair GetObjectsAtSubLayer(
+	const std::vector<OutputObject>& data,
+	uint_least8_t layerNum
+) {
     struct layerComp
     {
-        bool operator() ( const OutputObjectRef &x, uint_least8_t layer ) const { return x->layer < layer; }
-        bool operator() ( uint_least8_t layer, const OutputObjectRef &x ) const { return layer < x->layer; }
+        bool operator() ( const OutputObject& x, uint_least8_t layer ) const { return x.layer < layer; }
+        bool operator() ( uint_least8_t layer, const OutputObject& x ) const { return layer < x.layer; }
     };
 
 	// compare only by `layer`
@@ -288,7 +294,10 @@ OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const
 // ------------------------------------
 // Add geometries to tile/large indices
 
-void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::AddGeometryToIndex(
+	const Linestring& geom,
+	const std::vector<OutputObject>& outputs
+) {
 	unordered_set<TileCoordinates> tileSet;
 	try {
 		insertIntermediateTiles(geom, baseZoom, tileSet);
@@ -301,8 +310,8 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 			minTileY = std::min(index.y, minTileY);
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
-			for (auto &output : outputs) {
-				if (output->geomType == POLYGON_) {
+			for (const auto& output : outputs) {
+				if (output.geomType == POLYGON_) {
 					polygonExists = true;
 					continue;
 				}
@@ -314,8 +323,8 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 		if (polygonExists) {
 			bool tilesetFilled = false;
 			uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
-			for (auto &output : outputs) {
-				if (output->geomType != POLYGON_) continue;
+			for (const auto& output : outputs) {
+				if (output.geomType != POLYGON_) continue;
 				if (size>= 16) {
 					// Larger objects - add to rtree
 					Box box = Box(geom::make<Point>(minTileX, minTileY),
@@ -336,20 +345,26 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::AddGeometryToIndex(
+	const MultiLinestring& geom,
+	const std::vector<OutputObject>& outputs
+) {
 	for (Linestring ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, baseZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
-			for (auto &output : outputs) {
+			for (const auto& output : outputs) {
 				AddObjectToTileIndex(index, output);
 			}
 		}
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::AddGeometryToIndex(
+	const MultiPolygon& geom,
+	const std::vector<OutputObject>& outputs
+) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
 	for (Polygon poly : geom) {
@@ -371,7 +386,7 @@ void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<Ou
 		maxTileX = std::max(index.x, maxTileX);
 		maxTileY = std::max(index.y, maxTileY);
 	}
-	for (auto &output : outputs) {
+	for (const auto& output : outputs) {
 		if (tileSet.size()>=16) {
 			// Larger objects - add to rtree
 			// note that the bbox is currently the envelope of the entire multipolygon,

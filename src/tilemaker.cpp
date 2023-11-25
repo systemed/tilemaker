@@ -21,6 +21,7 @@
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/asio/thread_pool.hpp>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -441,12 +442,13 @@ int main(int argc, char* argv[]) {
 		// Loop through tiles
 		std::size_t tc = 0;
 
+		// tiles by zoom level
 		std::deque< std::pair<unsigned int, TileCoordinates> > tile_coordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 			auto zoom_result = GetTileCoordinates(sources, zoom);
 			for(auto&& it: zoom_result) {
 				// If we're constrained to a source tile, check we're within it
-				if (srcZ>-1) {
+				if (srcZ > -1) {
 					int x = it.x / pow(2, zoom-srcZ);
 					int y = it.y / pow(2, zoom-srcZ);
 					if (x!=srcX || y!=srcY) continue;
@@ -474,11 +476,11 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
 					TileCoordinates coords = tile_coordinates[i].second;
-					std::vector<std::vector<OutputObjectRef>> data;
+					std::vector<std::vector<OutputObject>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getTileData(sortOrders,coords,zoom));
 					}
-					outputProc(pool, sharedData, sources, attributeStore, data, coords, zoom);
+					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
