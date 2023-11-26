@@ -21,7 +21,7 @@ void TileDataSource::finalize(size_t threadNum) {
 	finalizeObjects<OutputObjectXYID>(threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end());
 }
 
-void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
+void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
 	// Pick the z6 index
 	const size_t z6x = index.x / z6OffsetDivisor;
 	const size_t z6y = index.y / z6OffsetDivisor;
@@ -304,7 +304,7 @@ void TileDataSource::addGeometryToIndex(
 					polygonExists = true;
 					continue;
 				}
-				addObjectToTileIndex(index, output, id); // not a polygon
+				addObjectToSmallIndex(index, output, id); // not a polygon
 			}
 		}
 
@@ -324,7 +324,7 @@ void TileDataSource::addGeometryToIndex(
 					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						TileCoordinates index = *it;
-						addObjectToTileIndex(index, output, id);
+						addObjectToSmallIndex(index, output, id);
 					}
 				}
 			}
@@ -345,7 +345,7 @@ void TileDataSource::addGeometryToIndex(
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			for (const auto& output : outputs) {
-				addObjectToTileIndex(index, output, id);
+				addObjectToSmallIndex(index, output, id);
 			}
 		}
 	}
@@ -389,7 +389,7 @@ void TileDataSource::addGeometryToIndex(
 			// Smaller objects - add to each individual tile index
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
-				addObjectToTileIndex(index, output, id);
+				addObjectToSmallIndex(index, output, id);
 			}
 		}
 	}

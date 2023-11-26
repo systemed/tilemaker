@@ -310,7 +310,7 @@ public:
 		const uint64_t id
 	);
 
-	void addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 
 	void AddObjectToLargeIndex(const Box& envelope, const OutputObject& oo) {
 		std::lock_guard<std::mutex> lock(mutex);

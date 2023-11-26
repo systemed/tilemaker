@@ -567,7 +567,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
 		for (auto &output : finalizeOutputs()) {
-			osmMemTiles.addObjectToTileIndex(index, output, originalOsmID);
+			osmMemTiles.addObjectToSmallIndex(index, output, originalOsmID);
 		}
 	} 
 }

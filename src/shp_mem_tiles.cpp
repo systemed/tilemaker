@@ -91,7 +91,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				addObjectToTileIndex(TileCoordinates(tilex, tiley), oo, 0);
+				addObjectToSmallIndex(TileCoordinates(tilex, tiley), oo, 0);
 			}
 		} break;
 
