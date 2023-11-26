@@ -5,7 +5,7 @@ namespace geom = boost::geometry;
 extern bool verbose;
 
 ShpMemTiles::ShpMemTiles(size_t threadNum, uint baseZoom)
-	: TileDataSource(threadNum, baseZoom)
+	: TileDataSource(threadNum, baseZoom, false)
 { }
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
@@ -91,7 +91,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				addObjectToTileIndex(TileCoordinates(tilex, tiley), oo);
+				addObjectToTileIndex(TileCoordinates(tilex, tiley), oo, 0);
 			}
 		} break;
 
@@ -102,7 +102,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 			if (isIndexed) indexedGeometries.push_back(oo);
 
 			std::vector<OutputObject> oolist { oo };
-			AddGeometryToIndex(boost::get<Linestring>(geometry), oolist);
+			addGeometryToIndex(boost::get<Linestring>(geometry), oolist, 0);
 
 		} break;
 
@@ -113,7 +113,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 			if (isIndexed) indexedGeometries.push_back(oo);
 
 			std::vector<OutputObject> oolist { oo };
-			AddGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist);
+			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
 		} break;
 
 		default:

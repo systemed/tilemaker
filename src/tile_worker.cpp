@@ -8,6 +8,9 @@
 using namespace std;
 extern bool verbose;
 
+typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
+typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
+
 typedef std::pair<double,double> xy_pair;
 namespace std {
 	template<>
@@ -105,18 +108,18 @@ void CheckNextObjectAndMerge(
 	// If an object is a linestring/polygon that is followed by
 	// other linestrings/polygons with the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
-	OutputObject oo = *jt;
-	OutputObject ooNext = *(jt + 1);
+	OutputObjectID oo = *jt;
+	OutputObjectID ooNext = *(jt + 1);
 
 	// TODO: this code is fiddly, it's a potential culprit if things aren't working
 
 	// TODO: do we need ooNext? Could we instead just update jt and dereference it?
 	//       put differently: we don't need to keep overwriting oo/ooNext
-	OutputGeometryType gt = oo.geomType;
+	OutputGeometryType gt = oo.oo.geomType;
 	while (jt + 1 != ooSameLayerEnd &&
-			ooNext.geomType == gt &&
-			ooNext.z_order == oo.z_order &&
-			ooNext.attributes == oo.attributes) {
+			ooNext.oo.geomType == gt &&
+			ooNext.oo.z_order == oo.oo.z_order &&
+			ooNext.oo.attributes == oo.oo.attributes) {
 		jt++;
 		oo = *jt;
 		if(jt + 1 != ooSameLayerEnd) {
@@ -124,11 +127,11 @@ void CheckNextObjectAndMerge(
 		}
 
 		try {
-			T to_merge = boost::get<T>(source->buildWayGeometry(oo.geomType, oo.objectID, bbox));
+			T to_merge = boost::get<T>(source->buildWayGeometry(oo.oo.geomType, oo.oo.objectID, bbox));
 			MergeIntersecting(g, to_merge);
-		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo.objectID) <<"," << err.what() << endl;
-		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo.objectID) << endl;
-		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo.objectID) << endl;
+		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo.oo.objectID) <<"," << err.what() << endl;
+		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
+		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
 		}
 	}
 }
@@ -162,43 +165,43 @@ void ProcessObjects(
 ) {
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
-		OutputObject oo = *jt;
-		if (zoom < oo.minZoom) { continue; }
+		OutputObjectID oo = *jt;
+		if (zoom < oo.oo.minZoom) { continue; }
 
-		if (oo.geomType == POINT_) {
+		if (oo.oo.geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = source->buildNodeGeometry(oo.geomType, oo.objectID, bbox);
+			LatpLon pos = source->buildNodeGeometry(oo.oo.geomType, oo.oo.objectID, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			// not currently supported:
-			// if (sharedData.config.includeID) { featurePtr->set_id(oo.objectID & OSMID_MASK); }
+			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
+
+			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
 		} else {
 			Geometry g;
 			try {
-				g = source->buildWayGeometry(oo.geomType, oo.objectID, bbox);
+				g = source->buildWayGeometry(oo.oo.geomType, oo.oo.objectID, bbox);
 			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing geometry " << oo.geomType << "," << static_cast<int>(oo.objectID) <<"," << err.what() << endl;
+				if (verbose) cerr << "Error while processing geometry " << oo.oo.geomType << "," << static_cast<int>(oo.oo.objectID) <<"," << err.what() << endl;
 				continue;
 			}
 
-			if (oo.geomType == POLYGON_ && filterArea > 0.0) {
+			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
 				if (geom::area(g)<filterArea) continue;
 				RemoveInnersBelowSize(boost::get<MultiPolygon>(g), filterArea);
 			}
 
 			//This may increment the jt iterator
-			if (oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
+			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
-			} else if (oo.geomType == POLYGON_ && combinePolygons) {
+			} else if (oo.oo.geomType == POLYGON_ && combinePolygons) {
 				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}
@@ -207,9 +210,8 @@ void ProcessObjects(
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			// not currently supported:
-			// if (sharedData.config.includeID) { featurePtr->set_id(oo.objectID & OSMID_MASK); }
+			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
+			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
 
 		}
 	}
@@ -232,12 +234,30 @@ vector_tile::Tile_Layer* findLayerByName(
 	return tile.add_layers();
 }
 
+OutputObjectsConstItPair getObjectsAtSubLayer(
+	const std::vector<OutputObjectID>& data,
+	uint_least8_t layerNum
+) {
+    struct layerComp
+    {
+        bool operator() ( const OutputObjectID& x, uint_least8_t layer ) const { return x.oo.layer < layer; }
+        bool operator() ( uint_least8_t layer, const OutputObjectID& x ) const { return layer < x.oo.layer; }
+    };
+
+	// compare only by `layer`
+	// We get the range within ooList, where the layer of each object is `layerNum`.
+	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+	return equal_range(data.begin(), data.end(), layerNum, layerComp());
+}
+
+
+
 void ProcessLayer(
 	const SourceList& sources,
 	const AttributeStore& attributeStore,
 	TileCoordinates index,
 	uint zoom, 
-	const std::vector<std::vector<OutputObject>>& data,
+	const std::vector<std::vector<OutputObjectID>>& data,
 	vector_tile::Tile& tile, 
 	const TileBbox& bbox,
 	const std::vector<uint>& ltx,
@@ -314,7 +334,7 @@ void outputProc(
 	SharedData& sharedData, 
 	const SourceList& sources,
 	const AttributeStore& attributeStore,
-	const std::vector<std::vector<OutputObject>>& data, 
+	const std::vector<std::vector<OutputObjectID>>& data, 
 	TileCoordinates coordinates,
 	uint zoom
 ) {

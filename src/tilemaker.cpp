@@ -289,9 +289,9 @@ int main(int argc, char* argv[]) {
 
 	AttributeStore attributeStore;
 
-	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom);
-	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
 	class LayerDefinition layers(config.layers);
+	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID);
+	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
@@ -351,10 +351,8 @@ int main(int argc, char* argv[]) {
 		attributeStore.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
-
 	// ----	Initialise SharedData
 	SourceList sources = {&osmMemTiles, &shpMemTiles};
-
 	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
@@ -545,7 +543,7 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
-					std::vector<std::vector<OutputObject>> data;
+					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}

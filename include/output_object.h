@@ -92,8 +92,14 @@ public:
 };
 #pragma pack(pop)
 
+struct OutputObjectID {
+	OutputObject oo;
+	uint64_t id;
+};
+
 // Comparison functions
 bool operator==(const OutputObject& x, const OutputObject& y);
+bool operator==(const OutputObjectID& x, const OutputObjectID& y);
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);

@@ -15,7 +15,7 @@
 class OsmMemTiles : public TileDataSource {
 
 public:
-	OsmMemTiles(size_t threadNum, uint baseZoom);
+	OsmMemTiles(size_t threadNum, uint baseZoom, bool includeID);
 
 
 	void Clear();

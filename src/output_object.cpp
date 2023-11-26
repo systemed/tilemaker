@@ -103,6 +103,10 @@ bool operator==(const OutputObject& x, const OutputObject& y) {
 		x.objectID == y.objectID;
 }
 
+bool operator==(const OutputObjectID& x, const OutputObjectID& y) {
+	return x.oo == y.oo && x.id == y.id;
+}
+
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y) {
 		std::string strx = x.SerializeAsString();

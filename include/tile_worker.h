@@ -10,7 +10,7 @@ void outputProc(
 	SharedData& sharedData,
 	const SourceList& sources,
 	const AttributeStore& attributeStore,
-	const std::vector<std::vector<OutputObject>>& data,
+	const std::vector<std::vector<OutputObjectID>>& data,
 	TileCoordinates coordinates,
 	uint zoom
 );

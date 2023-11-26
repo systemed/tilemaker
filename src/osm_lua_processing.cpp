@@ -567,7 +567,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
 		for (auto &output : finalizeOutputs()) {
-			osmMemTiles.addObjectToTileIndex(index, output);
+			osmMemTiles.addObjectToTileIndex(index, output, originalOsmID);
 		}
 	} 
 }
@@ -614,7 +614,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	}
 
 	if (!this->empty()) {
-		osmMemTiles.AddGeometryToIndex(linestringCached(), finalizeOutputs());
+		osmMemTiles.addGeometryToIndex(linestringCached(), finalizeOutputs(), originalOsmID);
 	}
 }
 
@@ -645,9 +645,9 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 	try {
 		if (isClosed) {
-			osmMemTiles.AddGeometryToIndex(multiPolygonCached(), finalizeOutputs());
+			osmMemTiles.addGeometryToIndex(multiPolygonCached(), finalizeOutputs(), originalOsmID);
 		} else {
-			osmMemTiles.AddGeometryToIndex(multiLinestringCached(), finalizeOutputs());
+			osmMemTiles.addGeometryToIndex(multiLinestringCached(), finalizeOutputs(), originalOsmID);
 		}
 	} catch(std::out_of_range &err) {
 		cout << "In relation " << originalOsmID << ": " << err.what() << endl;
