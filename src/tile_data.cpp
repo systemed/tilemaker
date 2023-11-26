@@ -4,8 +4,6 @@
 
 #include <ciso646>
 #include <boost/sort/sort.hpp>
-#include <boost/asio/thread_pool.hpp>
-#include <boost/asio/post.hpp>
 
 using namespace std;
 
@@ -20,43 +18,58 @@ TileDataSource::TileDataSource(unsigned int baseZoom)
 
 void TileDataSource::finalize(size_t threadNum) {
 	const size_t bz = baseZoom;
-	boost::asio::thread_pool pool(threadNum);
 
-	for (size_t modulo = 0; modulo < threadNum; modulo++) {
-		boost::asio::post(pool, [=, bz, threadNum, modulo]() {
-			for (size_t i = modulo; i < objects.size(); i += threadNum) {
-				std::sort(
-					objects[i].begin(),
-					objects[i].end(), 
-					[bz](auto const &a, auto const &b) {
-						// Cluster by parent zoom, so that a subsequent search
-						// can find a contiguous range of entries for any tile
-						// at zoom 6 or higher.
-						const size_t aX = a.x;
-						const size_t aY = a.y;
-						const size_t bX = b.x;
-						const size_t bY = b.y;
-						for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
-							const auto aXz = aX / (1 << (bz - z));
-							const auto aYz = aY / (1 << (bz - z));
-							const auto bXz = bX / (1 << (bz - z));
-							const auto bYz = bY / (1 << (bz - z));
+	for (size_t i = 0; i < objects.size(); i ++) {
+		if (objects[i].size() == 0)
+			continue;
 
-							if (aXz != bXz)
-								return aXz < bXz;
+		// If the user is doing a a small extract, there are few populated
+		// entries in `object`.
+		//
+		// e.g. Colorado has ~9 z6 tiles, 1 of which has 95% of its output
+		// objects.
+		//
+		// This optimizes for the small extract case by doing:
+		// - for each vector in objects
+		//   - do a multi-threaded sort of vector
+		//
+		// For small extracts, this ensures that all threads are used even if
+		// only a handful of entries in `objects` are non-empty.
+		//
+		// For a global extract, this will have some overhead of repeatedly
+		// setting up/tearing down threads. In that case, it would be 
+		// better to assign chunks of `objects` to each thread.
+		//
+		// That's a future performance improvement, so deferring for now.
+		boost::sort::block_indirect_sort(
+			objects[i].begin(),
+			objects[i].end(), 
+			[bz](auto const &a, auto const &b) {
+				// Cluster by parent zoom, so that a subsequent search
+				// can find a contiguous range of entries for any tile
+				// at zoom 6 or higher.
+				const size_t aX = a.x;
+				const size_t aY = a.y;
+				const size_t bX = b.x;
+				const size_t bY = b.y;
+				for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
+					const auto aXz = aX / (1 << (bz - z));
+					const auto bXz = bX / (1 << (bz - z));
+					if (aXz != bXz)
+						return aXz < bXz;
 
-							if (aYz != bYz)
-								return aYz < bYz;
-						}
+					const auto aYz = aY / (1 << (bz - z));
+					const auto bYz = bY / (1 << (bz - z));
 
-						return false;
-					}
-				);
-			}
-		});
+					if (aYz != bYz)
+						return aYz < bYz;
+				}
+
+				return false;
+			},
+			threadNum
+		);
 	}
-
-	pool.join();
 }
 
 void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
@@ -76,6 +89,8 @@ void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const Ou
 void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output) {
 	// Scan through all shards. Convert to base zoom, then convert to the requested zoom.
 
+	int64_t lastX = -1;
+	int64_t lastY = -1;
 	for (size_t i = 0; i < objects.size(); i++) {
 		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
 		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
@@ -89,7 +104,11 @@ void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet
 			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
 			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
 
-			output.insert(TileCoordinates(x, y));
+			if (lastX != x || lastY != y) {
+				output.insert(TileCoordinates(x, y));
+				lastX = x;
+				lastY = y;
+			}
 		}
 	}
 }
