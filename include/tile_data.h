@@ -206,9 +206,11 @@ template<typename OO> void collectObjectsForTileTemplate(
 				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
 				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
 
-				if (dstIndex.x == x && dstIndex.y == y)
-					output.push_back(outputObjectWithId(*iter));
-				else {
+				if (dstIndex.x == x && dstIndex.y == y) {
+					if (iter->oo.minZoom <= zoom) {
+						output.push_back(outputObjectWithId(*iter));
+					}
+				} else {
 					// Short-circuit when we're confident we'd no longer see relevant matches.
 					// We've ordered the entries in `objects` such that all objects that
 					// share the same tile at any zoom are in contiguous runs.
@@ -228,8 +230,11 @@ template<typename OO> void collectObjectsForTileTemplate(
 				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
 				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
 
-				if (dstIndex.x == x && dstIndex.y == y)
-					output.push_back(outputObjectWithId(objects[i][j]));
+				if (dstIndex.x == x && dstIndex.y == y) {
+					if (objects[i][j].oo.minZoom <= zoom) {
+						output.push_back(outputObjectWithId(objects[i][j]));
+					}
+				}
 			}
 		}
 	}

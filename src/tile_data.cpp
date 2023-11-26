@@ -63,7 +63,6 @@ void TileDataSource::collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinat
 
 	for(auto const &result: boxRtreeWithIds)
 		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
-
 }
 
 // Copy objects from the tile at dstIndex (in the dataset srcTiles) into output
@@ -72,9 +71,6 @@ void TileDataSource::collectObjectsForTile(
 	TileCoordinates dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
-	// TODO: for all zooms, we ought to filter by minzoom vs
-	// adding it to output, only for it be filtered later by tile_worker
-
 	size_t iStart = 0;
 	size_t iEnd = objects.size();
 
@@ -104,10 +100,15 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
-	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
-		output.push_back({result.second, 0});
-	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
-		output.push_back({result.second.oo, result.second.id});
+	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
+		if (result.second.minZoom <= zoom)
+			output.push_back({result.second, 0});
+	}
+
+	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
+		if (result.second.oo.minZoom <= zoom)
+			output.push_back({result.second.oo, result.second.id});
+	}
 }
 
 // Build node and way geometries
