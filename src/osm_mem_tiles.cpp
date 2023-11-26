@@ -8,4 +8,6 @@ OsmMemTiles::OsmMemTiles(size_t threadNum, uint baseZoom, bool includeID)
 void OsmMemTiles::Clear() {
 	for (auto& entry : objects)
 		entry.clear();
+	for (auto& entry : objectsWithIds)
+		entry.clear();
 }
