@@ -42,21 +42,28 @@ void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet
 	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(baseZoom, objectsWithIds.begin(), objectsWithIds.size(), zoom, output);
 }
 
-// Find the tiles used by the "large objects" from the rtree index
-void TileDataSource::collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet &output) {
-	for(auto const &result: box_rtree) {
-		int scale = pow(2, baseZoom-zoom);
-		TileCoordinate minx = result.first.min_corner().x() / scale;
-		TileCoordinate maxx = result.first.max_corner().x() / scale;
-		TileCoordinate miny = result.first.min_corner().y() / scale;
-		TileCoordinate maxy = result.first.max_corner().y() / scale;
-		for (int x=minx; x<=maxx; x++) {
-			for (int y=miny; y<=maxy; y++) {
-				TileCoordinates newIndex(x, y);
-				output.insert(newIndex);
-			}
+void addCoveredTilesToOutput(const uint baseZoom, const uint zoom, const Box& box, TileCoordinatesSet& output) {
+	int scale = pow(2, baseZoom-zoom);
+	TileCoordinate minx = box.min_corner().x() / scale;
+	TileCoordinate maxx = box.max_corner().x() / scale;
+	TileCoordinate miny = box.min_corner().y() / scale;
+	TileCoordinate maxy = box.max_corner().y() / scale;
+	for (int x=minx; x<=maxx; x++) {
+		for (int y=miny; y<=maxy; y++) {
+			TileCoordinates newIndex(x, y);
+			output.insert(newIndex);
 		}
 	}
+}
+
+// Find the tiles used by the "large objects" from the rtree index
+void TileDataSource::collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet &output) {
+	for(auto const &result: boxRtree)
+		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
+
+	for(auto const &result: boxRtreeWithIds)
+		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
+
 }
 
 // Copy objects from the tile at dstIndex (in the dataset srcTiles) into output
@@ -97,9 +104,10 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
-	for(auto const& result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
-		// TODO: teach this about IDs
+	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
 		output.push_back({result.second, 0});
+	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+		output.push_back({result.second.oo, result.second.id});
 }
 
 // Build node and way geometries
@@ -318,7 +326,7 @@ void TileDataSource::addGeometryToIndex(
 					// Larger objects - add to rtree
 					Box box = Box(geom::make<Point>(minTileX, minTileY),
 					              geom::make<Point>(maxTileX, maxTileY));
-					AddObjectToLargeIndex(box, output);
+					addObjectToLargeIndex(box, output, id);
 				} else {
 					// Smaller objects - add to each individual tile index
 					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
@@ -384,7 +392,7 @@ void TileDataSource::addGeometryToIndex(
 			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
 			Box box = Box(geom::make<Point>(minTileX, minTileY),
 			              geom::make<Point>(maxTileX, maxTileY));
-			AddObjectToLargeIndex(box, output);
+			addObjectToLargeIndex(box, output, id);
 		} else {
 			// Smaller objects - add to each individual tile index
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {

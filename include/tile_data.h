@@ -255,7 +255,8 @@ protected:
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
-	boost::geometry::index::rtree< std::pair<Box,OutputObject>, oo_rtree_param_type> box_rtree;
+	boost::geometry::index::rtree< std::pair<Box,OutputObject>, oo_rtree_param_type> boxRtree;
+	boost::geometry::index::rtree< std::pair<Box,OutputObjectID>, oo_rtree_param_type> boxRtreeWithIds;
 
 	unsigned int baseZoom;
 
@@ -312,9 +313,12 @@ public:
 
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 
-	void AddObjectToLargeIndex(const Box& envelope, const OutputObject& oo) {
+	void addObjectToLargeIndex(const Box& envelope, const OutputObject& oo, uint64_t id) {
 		std::lock_guard<std::mutex> lock(mutex);
-		box_rtree.insert(std::make_pair(envelope, oo));
+		if (id == 0 || !includeID)
+			boxRtree.insert(std::make_pair(envelope, oo));
+		else
+			boxRtreeWithIds.insert(std::make_pair(envelope, OutputObjectID({oo, id})));
 	}
 
 	void collectLargeObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
