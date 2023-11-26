@@ -23,6 +23,8 @@ void TileDataSource::finalize(size_t threadNum) {
 		if (objects[i].size() == 0)
 			continue;
 
+		objects[i].shrink_to_fit();
+
 		// If the user is doing a a small extract, there are few populated
 		// entries in `object`.
 		//

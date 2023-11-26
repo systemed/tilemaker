@@ -441,7 +441,7 @@ int main(int argc, char* argv[]) {
 		std::mutex io_mutex;
 
 		// Loop through tiles
-		std::size_t tc = 0;
+		size_t tilesWritten = 0;
 
 		for (auto source : sources) {
 			source->finalize(threadNum);
@@ -539,7 +539,7 @@ int main(int argc, char* argv[]) {
 				batchSize++;
 			}
 
-			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tc]() {
+			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 				const auto& originalTile = tileCoordinates[startIndex];
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
@@ -553,7 +553,7 @@ int main(int argc, char* argv[]) {
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
-				tc += (endIndex - startIndex); 
+				tilesWritten += (endIndex - startIndex); 
 
 				// Show progress grouped by z6 (or lower)
 				size_t z = tileCoordinates[startIndex].first;
@@ -564,10 +564,9 @@ int main(int argc, char* argv[]) {
 					y = y / (1 << (z - CLUSTER_ZOOM));
 					z = CLUSTER_ZOOM;
 				}
-				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tc << " of " << tileCoordinates.size() << "               \r" << std::flush;
+				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});
 		}
-		
 		// Wait for all tasks in the pool to complete.
 		pool.join();
 	}
