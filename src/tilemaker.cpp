@@ -435,9 +435,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		// Launch the pool with threadNum threads
-		// TODO
-		//boost::asio::thread_pool pool(threadNum);
-		boost::asio::thread_pool pool(1);
+		boost::asio::thread_pool pool(threadNum);
 
 		// Mutex is hold when IO is performed
 		std::mutex io_mutex;
@@ -446,7 +444,7 @@ int main(int argc, char* argv[]) {
 		std::size_t tc = 0;
 
 		// tiles by zoom level
-		std::deque< std::pair<unsigned int, TileCoordinates> > tile_coordinates;
+		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
 			auto zoom_result = getTilesAtZoom(sources, zoom);
 			for(auto&& it: zoom_result) {
@@ -462,16 +460,14 @@ int main(int argc, char* argv[]) {
 						continue;
 				}
 
-				tile_coordinates.push_back(std::make_pair(zoom, it));
+				tileCoordinates.push_back(std::make_pair(zoom, it));
 			}
 		}
 
-		// Cluster tiles:
-		// - bread-first for z0..z5
-		// - depth-first for z6
+		// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 		const size_t baseZoom = config.baseZoom;
 		boost::sort::block_indirect_sort(
-			tile_coordinates.begin(), tile_coordinates.end(), 
+			tileCoordinates.begin(), tileCoordinates.end(), 
 			[baseZoom](auto const &a, auto const &b) {
 				const auto aZoom = a.first;
 				const auto bZoom = b.first;
@@ -496,13 +492,10 @@ int main(int argc, char* argv[]) {
 					return aY < bY;
 				}
 
-				// Depth-first for z6 onwards. By here, we're guaranteed
-				// that both a and b are at least z6.
 				for (size_t z = 6; z < baseZoom; z++) {
 					// Translate both a and b to zoom z, compare.
 					// First, sanity check: can we translate it to this zoom?
 					if (aZoom < z || bZoom < z) {
-						// Whichever one has the lower zoom should come first.
 						return aZoom < bZoom;
 					}
 
@@ -522,22 +515,32 @@ int main(int argc, char* argv[]) {
 			}, 
 			threadNum);
 
-		std::size_t interval = 1;
-		std::size_t zoomDisplay = 0;
-		for(std::size_t start_index = 0; start_index < tile_coordinates.size(); start_index += interval) {
-			unsigned int zoom = tile_coordinates[start_index].first;
-			/*
-			if (zoom > 10) interval = 10;
-			if (zoom > 11) interval = 100;
-			if (zoom > 12) interval = 1000;
-			*/
+		std::size_t batchSize = 0;
+		for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
+			// Compute how many tiles should be assigned to this batch --
+			// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
+			batchSize = 0;
+			size_t weight = 0;
+			while (weight < 1000 && startIndex + batchSize < tileCoordinates.size()) {
+				const auto& zoom = tileCoordinates[startIndex + batchSize].first;
+				if (zoom > 12)
+					weight++;
+				else if (zoom > 11)
+					weight += 10;
+				else if (zoom > 10)
+					weight += 100;
+				else
+					weight += 1000;
 
-			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tc, &zoomDisplay]() {
-				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
-				const auto& originalTile = tile_coordinates[start_index];
-				for(std::size_t i = start_index; i < end_index; ++i) {
-					unsigned int zoom = tile_coordinates[i].first;
-					TileCoordinates coords = tile_coordinates[i].second;
+				batchSize++;
+			}
+
+			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tc]() {
+				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
+				const auto& originalTile = tileCoordinates[startIndex];
+				for(std::size_t i = startIndex; i < endIndex; ++i) {
+					unsigned int zoom = tileCoordinates[i].first;
+					TileCoordinates coords = tileCoordinates[i].second;
 					std::vector<std::vector<OutputObject>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
@@ -546,12 +549,18 @@ int main(int argc, char* argv[]) {
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
-				tc += (end_index - start_index); 
+				tc += (endIndex - startIndex); 
 
-				unsigned int zoom = tile_coordinates[end_index-1].first;
-				if (zoom>zoomDisplay) zoomDisplay = zoom;
-				cout << "Zoom level " << originalTile.first << ", " << originalTile.second.x << ", " << originalTile.second.y << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::endl << std::flush;
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				// Show progress grouped by z6 (or lower)
+				size_t z = tileCoordinates[startIndex].first;
+				size_t x = tileCoordinates[startIndex].second.x;
+				size_t y = tileCoordinates[startIndex].second.y;
+				if (z > 6) {
+					x = x / (1 << (z - 6));
+					y = y / (1 << (z - 6));
+					z = 6;
+				}
+				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tc << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});
 		}
 		
