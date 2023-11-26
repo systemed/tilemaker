@@ -443,9 +443,13 @@ int main(int argc, char* argv[]) {
 		// Loop through tiles
 		std::size_t tc = 0;
 
+		for (auto source : sources) {
+			source->finalize(threadNum);
+		}
+
 		// tiles by zoom level
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
-		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
+		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
 			auto zoom_result = getTilesAtZoom(sources, zoom);
 			for(auto&& it: zoom_result) {
 				// If we're constrained to a source tile, check we're within it
@@ -475,8 +479,8 @@ int main(int argc, char* argv[]) {
 				const auto aY = a.second.y;
 				const auto bX = b.second.x;
 				const auto bY = b.second.y;
-				const bool aLowZoom = aZoom <= 5;
-				const bool bLowZoom = bZoom <= 5;
+				const bool aLowZoom = aZoom < CLUSTER_ZOOM;
+				const bool bLowZoom = bZoom < CLUSTER_ZOOM;
 
 				// Breadth-first for z0..5
 				if (aLowZoom != bLowZoom)
@@ -492,7 +496,7 @@ int main(int argc, char* argv[]) {
 					return aY < bY;
 				}
 
-				for (size_t z = 6; z < baseZoom; z++) {
+				for (size_t z = CLUSTER_ZOOM; z <= baseZoom; z++) {
 					// Translate both a and b to zoom z, compare.
 					// First, sanity check: can we translate it to this zoom?
 					if (aZoom < z || bZoom < z) {
@@ -555,10 +559,10 @@ int main(int argc, char* argv[]) {
 				size_t z = tileCoordinates[startIndex].first;
 				size_t x = tileCoordinates[startIndex].second.x;
 				size_t y = tileCoordinates[startIndex].second.y;
-				if (z > 6) {
-					x = x / (1 << (z - 6));
-					y = y / (1 << (z - 6));
-					z = 6;
+				if (z > CLUSTER_ZOOM) {
+					x = x / (1 << (z - CLUSTER_ZOOM));
+					y = y / (1 << (z - CLUSTER_ZOOM));
+					z = CLUSTER_ZOOM;
 				}
 				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tc << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});

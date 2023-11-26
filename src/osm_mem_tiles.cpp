@@ -8,7 +8,4 @@ OsmMemTiles::OsmMemTiles(uint baseZoom)
 void OsmMemTiles::Clear() {
 	for (auto& entry : objects)
 		entry.clear();
-
-	for (auto& entry : z6Offsets)
-		entry.clear();
 }

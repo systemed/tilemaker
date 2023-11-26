@@ -9,16 +9,46 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-// We cluster output objects by z6 tile
-#define Z6_WIDTH (1 << 6)
-#define Z6_AREA (Z6_WIDTH * Z6_WIDTH)
-
 TileDataSource::TileDataSource(unsigned int baseZoom)
 	: baseZoom(baseZoom),
-	z6OffsetDivisor(baseZoom >= 6 ? (1 << (baseZoom - 6)) : 1)
+	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1)
 {
-	objects.resize(Z6_AREA);
-	z6Offsets.resize(Z6_AREA);
+	objects.resize(CLUSTER_ZOOM_AREA);
+}
+
+void TileDataSource::finalize(size_t threadNum) {
+	// TODO: for large datasets, this should be parallelized
+	const size_t bz = baseZoom;
+
+	for (size_t i = 0; i < objects.size(); i++) {
+		std::sort(
+			objects[i].begin(),
+			objects[i].end(), 
+			[bz](auto const &a, auto const &b) {
+				// Cluster by parent zoom, so that a subsequent search
+				// can find a contiguous range of entries for any tile
+				// at zoom 6 or higher.
+				const size_t aX = a.x;
+				const size_t aY = a.y;
+				const size_t bX = b.x;
+				const size_t bY = b.y;
+				for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
+					const auto aXz = aX / (1 << (bz - z));
+					const auto aYz = aY / (1 << (bz - z));
+					const auto bXz = bX / (1 << (bz - z));
+					const auto bYz = bY / (1 << (bz - z));
+
+					if (aXz != bXz)
+						return aXz < bXz;
+
+					if (aYz != bYz)
+						return aYz < bYz;
+				}
+
+				return false;
+			}
+		);
+	}
 }
 
 void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
@@ -29,27 +59,23 @@ void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const Ou
 	const size_t z6x = index.x / z6OffsetDivisor;
 	const size_t z6y = index.y / z6OffsetDivisor;
 
-	const size_t z6index = z6x * Z6_WIDTH + z6y;
+	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 
 	//std::cout << "adding to objects[" << z6index << "]: z" << baseZoom << " was: " << index.x << ", " << index.y << ", z6 was " << z6x << ", " << z6y << std::endl;
-	objects[z6index].push_back(oo);
-	z6Offsets[z6index].push_back(std::make_pair(
-		index.x - (z6x * z6OffsetDivisor),
-		index.y - (z6y * z6OffsetDivisor)
-	));
+	objects[z6index].push_back({ oo, index.x - (z6x * z6OffsetDivisor), index.y - (z6y * z6OffsetDivisor) });
 }
 
 void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output) {
 	// Scan through all shards. Convert to base zoom, then convert to the requested zoom.
 
 	for (size_t i = 0; i < objects.size(); i++) {
-		const size_t z6x = i / Z6_WIDTH;
-		const size_t z6y = i % Z6_WIDTH;
+		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
 
 		for (size_t j = 0; j < objects[i].size(); j++) {
 			// Compute the x, y at the base zoom level
-			TileCoordinate baseX = z6x * z6OffsetDivisor + z6Offsets[i][j].first;
-			TileCoordinate baseY = z6y * z6OffsetDivisor + z6Offsets[i][j].second;
+			TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
+			TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
 
 			// Translate the x, y at the requested zoom level
 			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
@@ -86,37 +112,106 @@ void TileDataSource::collectObjectsForTile(
 	// TODO: this is brutally naive. Once we're at z1 or higher, we can skip
 	//       certain shards that we know will never contribute.
 	//
-	//       At z6 or higher, we can pick the precise shard.
+	//       At z6 or higher, we can pick the precise shard, and
+	//       do a binary search to find responsive items.
 
 	size_t iStart = 0;
 	size_t iEnd = objects.size();
 
 	// TODO: we could narrow the search space for z1..z5, too.
 	//       They're less important, as they have fewer tiles.
-	if (zoom >= 6) {
+	if (zoom >= CLUSTER_ZOOM) {
 		// Compute the x, y at the base zoom level
-		TileCoordinate z6x = dstIndex.x / (1 << (zoom - 6));
-		TileCoordinate z6y = dstIndex.y / (1 << (zoom - 6));
+		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
+		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
-		iStart = z6x * Z6_WIDTH + z6y;
+		iStart = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 		iEnd = iStart + 1;
 	}
 
 	for (size_t i = iStart; i < iEnd; i++) {
-		const size_t z6x = i / Z6_WIDTH;
-		const size_t z6y = i % Z6_WIDTH;
+		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
 
-		for (size_t j = 0; j < objects[i].size(); j++) {
-			// Compute the x, y at the base zoom level
-			TileCoordinate baseX = z6x * z6OffsetDivisor + z6Offsets[i][j].first;
-			TileCoordinate baseY = z6y * z6OffsetDivisor + z6Offsets[i][j].second;
+		if (zoom >= CLUSTER_ZOOM) {
+			// If z >= 6, we can compute the exact bounds within the objects array.
+			// Translate to the base zoom, then do a binary search to find
+			// the starting point.
+			TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
+			TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
-			// Translate the x, y at the requested zoom level
-			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
-			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+			TileCoordinate baseX = dstIndex.x * (1 << (baseZoom - zoom));
+			TileCoordinate baseY = dstIndex.y * (1 << (baseZoom - zoom));
 
-			if (dstIndex.x == x && dstIndex.y == y)
-				output.push_back(objects[i][j]);
+			Z6Offset x = baseX - z6x * z6OffsetDivisor;
+			Z6Offset y = baseY - z6y * z6OffsetDivisor;
+
+			// Kind of gross that we have to do this. Might be better if we split
+			// into two arrays, one of x/y and one of OOs. Would have better locality for
+			// searching, too.
+			OutputObject dummyOo(POINT_, 0, 0, 0, 0);
+			const size_t bz = baseZoom;
+
+			const OutputObjectXY targetXY = {dummyOo, x, y };
+			auto iter = std::lower_bound(
+				objects[i].begin(),
+				objects[i].end(),
+				targetXY,
+				[bz](const auto& a, const auto& b) {
+					// Cluster by parent zoom, so that a subsequent search
+					// can find a contiguous range of entries for any tile
+					// at zoom 6 or higher.
+					const size_t aX = a.x;
+					const size_t aY = a.y;
+					const size_t bX = b.x;
+					const size_t bY = b.y;
+					for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
+						const auto aXz = aX / (1 << (bz - z));
+						const auto aYz = aY / (1 << (bz - z));
+						const auto bXz = bX / (1 << (bz - z));
+						const auto bYz = bY / (1 << (bz - z));
+
+						if (aXz != bXz)
+							return aXz < bXz;
+
+						if (aYz != bYz)
+							return aYz < bYz;
+					}
+					return false;
+				}
+			);
+			for (; iter != objects[i].end(); iter++) {
+				// Compute the x, y at the base zoom level
+				TileCoordinate baseX = z6x * z6OffsetDivisor + iter->x;
+				TileCoordinate baseY = z6y * z6OffsetDivisor + iter->y;
+
+				// Translate the x, y at the requested zoom level
+				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
+				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+
+				if (dstIndex.x == x && dstIndex.y == y)
+					output.push_back(iter->oo);
+				else if (zoom == baseZoom) {
+					// Short-circuit when we're confident we'd no longer see relevant matches.
+					// For the base zoom, this is as soon as the x/y coords no longer match.
+					// TODO: Support short-circuiting for z6..basezoom - 1
+					break;
+				}
+
+			}
+		} else {
+			for (size_t j = 0; j < objects[i].size(); j++) {
+				// Compute the x, y at the base zoom level
+				TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
+				TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
+
+				// Translate the x, y at the requested zoom level
+				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
+				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+
+				if (dstIndex.x == x && dstIndex.y == y)
+					output.push_back(objects[i][j].oo);
+			}
 		}
 	}
 }
