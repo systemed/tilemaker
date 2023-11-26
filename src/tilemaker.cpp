@@ -22,6 +22,7 @@
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/sort/sort.hpp>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -434,7 +435,9 @@ int main(int argc, char* argv[]) {
 		}
 
 		// Launch the pool with threadNum threads
-		boost::asio::thread_pool pool(threadNum);
+		// TODO
+		//boost::asio::thread_pool pool(threadNum);
+		boost::asio::thread_pool pool(1);
 
 		// Mutex is hold when IO is performed
 		std::mutex io_mutex;
@@ -463,16 +466,75 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
+		// Cluster tiles:
+		// - bread-first for z0..z5
+		// - depth-first for z6
+		const size_t baseZoom = config.baseZoom;
+		boost::sort::block_indirect_sort(
+			tile_coordinates.begin(), tile_coordinates.end(), 
+			[baseZoom](auto const &a, auto const &b) {
+				const auto aZoom = a.first;
+				const auto bZoom = b.first;
+				const auto aX = a.second.x;
+				const auto aY = a.second.y;
+				const auto bX = b.second.x;
+				const auto bY = b.second.y;
+				const bool aLowZoom = aZoom <= 5;
+				const bool bLowZoom = bZoom <= 5;
+
+				// Breadth-first for z0..5
+				if (aLowZoom != bLowZoom)
+					return aLowZoom;
+
+				if (aLowZoom && bLowZoom) {
+					if (aZoom != bZoom)
+						return aZoom < bZoom;
+
+					if (aX != bX)
+						return aX < bX;
+
+					return aY < bY;
+				}
+
+				// Depth-first for z6 onwards. By here, we're guaranteed
+				// that both a and b are at least z6.
+				for (size_t z = 6; z < baseZoom; z++) {
+					// Translate both a and b to zoom z, compare.
+					// First, sanity check: can we translate it to this zoom?
+					if (aZoom < z || bZoom < z) {
+						// Whichever one has the lower zoom should come first.
+						return aZoom < bZoom;
+					}
+
+					const auto aXz = aX / (1 << (aZoom - z));
+					const auto aYz = aY / (1 << (aZoom - z));
+					const auto bXz = bX / (1 << (bZoom - z));
+					const auto bYz = bY / (1 << (bZoom - z));
+
+					if (aXz != bXz)
+						return aXz < bXz;
+
+					if (aYz != bYz)
+						return aYz < bYz;
+				}
+
+				return false;
+			}, 
+			threadNum);
+
 		std::size_t interval = 1;
 		std::size_t zoomDisplay = 0;
 		for(std::size_t start_index = 0; start_index < tile_coordinates.size(); start_index += interval) {
 			unsigned int zoom = tile_coordinates[start_index].first;
+			/*
 			if (zoom > 10) interval = 10;
 			if (zoom > 11) interval = 100;
 			if (zoom > 12) interval = 1000;
+			*/
 
 			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tc, &zoomDisplay]() {
 				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
+				const auto& originalTile = tile_coordinates[start_index];
 				for(std::size_t i = start_index; i < end_index; ++i) {
 					unsigned int zoom = tile_coordinates[i].first;
 					TileCoordinates coords = tile_coordinates[i].second;
@@ -488,7 +550,8 @@ int main(int argc, char* argv[]) {
 
 				unsigned int zoom = tile_coordinates[end_index-1].first;
 				if (zoom>zoomDisplay) zoomDisplay = zoom;
-				cout << "Zoom level " << zoomDisplay << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::flush;
+				cout << "Zoom level " << originalTile.first << ", " << originalTile.second.x << ", " << originalTile.second.y << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::endl << std::flush;
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
 			});
 		}
 		
