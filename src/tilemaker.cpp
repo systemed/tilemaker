@@ -539,7 +539,6 @@ int main(int argc, char* argv[]) {
 
 			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
-				const auto& originalTile = tileCoordinates[startIndex];
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;

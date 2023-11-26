@@ -244,10 +244,11 @@ class TileDataSource {
 
 protected:	
 	std::mutex mutex;
-	std::vector<std::mutex> objectsMutex;
 	bool includeID;
 	uint16_t z6OffsetDivisor;
 
+	// Guards objects, objectsWithIds.
+	std::vector<std::mutex> objectsMutex;
 	// The top-level vector has 1 entry per z6 tile, indexed by x*64 + y
 	// The inner vector contains the output objects that are contained in that z6 tile
 	//

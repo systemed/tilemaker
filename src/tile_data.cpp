@@ -7,12 +7,13 @@
 using namespace std;
 
 TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID)
-	: baseZoom(baseZoom),
+	:
 	includeID(includeID),
 	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
-	objectsWithIds(CLUSTER_ZOOM_AREA)
+	objectsWithIds(CLUSTER_ZOOM_AREA),
+	baseZoom(baseZoom)
 {
 }
 
@@ -31,9 +32,18 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	std::lock_guard<std::mutex> lock(objectsMutex[z6index % objectsMutex.size()]);
 
 	if (id == 0 || !includeID)
-		objects[z6index].push_back({ oo, index.x - (z6x * z6OffsetDivisor), index.y - (z6y * z6OffsetDivisor) });
+		objects[z6index].push_back({
+			oo,
+			(Z6Offset)(index.x - (z6x * z6OffsetDivisor)),
+			(Z6Offset)(index.y - (z6y * z6OffsetDivisor))
+		});
 	else
-		objectsWithIds[z6index].push_back({ oo, index.x - (z6x * z6OffsetDivisor), index.y - (z6y * z6OffsetDivisor), id });
+		objectsWithIds[z6index].push_back({
+			oo,
+			(Z6Offset)(index.x - (z6x * z6OffsetDivisor)),
+			(Z6Offset)(index.y - (z6y * z6OffsetDivisor)),
+			id
+		});
 }
 
 void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output) {
