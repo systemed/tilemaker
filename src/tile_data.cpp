@@ -4,6 +4,8 @@
 
 #include <ciso646>
 #include <boost/sort/sort.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp>
 
 using namespace std;
 
@@ -17,38 +19,44 @@ TileDataSource::TileDataSource(unsigned int baseZoom)
 }
 
 void TileDataSource::finalize(size_t threadNum) {
-	// TODO: for large datasets, this should be parallelized
 	const size_t bz = baseZoom;
+	boost::asio::thread_pool pool(threadNum);
 
-	for (size_t i = 0; i < objects.size(); i++) {
-		std::sort(
-			objects[i].begin(),
-			objects[i].end(), 
-			[bz](auto const &a, auto const &b) {
-				// Cluster by parent zoom, so that a subsequent search
-				// can find a contiguous range of entries for any tile
-				// at zoom 6 or higher.
-				const size_t aX = a.x;
-				const size_t aY = a.y;
-				const size_t bX = b.x;
-				const size_t bY = b.y;
-				for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
-					const auto aXz = aX / (1 << (bz - z));
-					const auto aYz = aY / (1 << (bz - z));
-					const auto bXz = bX / (1 << (bz - z));
-					const auto bYz = bY / (1 << (bz - z));
+	for (size_t modulo = 0; modulo < threadNum; modulo++) {
+		boost::asio::post(pool, [=, bz, threadNum, modulo]() {
+			for (size_t i = modulo; i < objects.size(); i += threadNum) {
+				std::sort(
+					objects[i].begin(),
+					objects[i].end(), 
+					[bz](auto const &a, auto const &b) {
+						// Cluster by parent zoom, so that a subsequent search
+						// can find a contiguous range of entries for any tile
+						// at zoom 6 or higher.
+						const size_t aX = a.x;
+						const size_t aY = a.y;
+						const size_t bX = b.x;
+						const size_t bY = b.y;
+						for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
+							const auto aXz = aX / (1 << (bz - z));
+							const auto aYz = aY / (1 << (bz - z));
+							const auto bXz = bX / (1 << (bz - z));
+							const auto bYz = bY / (1 << (bz - z));
 
-					if (aXz != bXz)
-						return aXz < bXz;
+							if (aXz != bXz)
+								return aXz < bXz;
 
-					if (aYz != bYz)
-						return aYz < bYz;
-				}
+							if (aYz != bYz)
+								return aYz < bYz;
+						}
 
-				return false;
+						return false;
+					}
+				);
 			}
-		);
+		});
 	}
+
+	pool.join();
 }
 
 void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
@@ -384,11 +392,6 @@ std::vector<OutputObject> TileDataSource::getObjectsForTile(
 	unsigned int zoom,
 	TileCoordinates coordinates
 ) {
-	// TODO: once we cluster writes by z6, consider a thread-local
-	//   cache of z6 tiles.
-	//
-	// In a perfect world, we'd share them so we only constructed the cache
-	// once per z6 tile...but baby steps.
 	std::vector<OutputObject> data;
 	collectObjectsForTile(zoom, coordinates, data);
 	collectLargeObjectsForTile(zoom, coordinates, data);
