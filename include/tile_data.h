@@ -20,8 +20,20 @@ class TileDataSource {
 
 protected:	
 	std::mutex mutex;
-	TileIndex tileIndex;
-	std::deque<std::deque<OutputObject>> objects;
+
+	uint16_t z6OffsetDivisor;
+	// The top-level vector has 1 entry per z6 tile, indexed by x*64 + y
+	// The inner vector contains the output objects that are contained in that z6 tile
+	std::vector<std::vector<OutputObject>> objects;
+
+	// The top-level vector has 1 entry per z6 tile, indexed by x*64 + y
+	// The inner vector contains the output object's base zoom tile coordinates,
+	// relative to the z6 parent tile.
+	// e.g.    given a z14 tile of: 4528, 5991
+	//         then its z6 tile is: 17, 23
+	//           and its offset is: 178, 103 (given by: 4528 - (Z6x * Z6_OFFSET_DIVISOR))
+	//   ...where Z6_OFFSET_DIVISOR is 2^max(basezoom - 6, 0)
+	std::vector<std::vector<std::pair<Z6Offset, Z6Offset>>> z6Offsets;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
@@ -55,43 +67,31 @@ protected:
 	std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
 
 public:
-	TileDataSource(unsigned int baseZoom) 
-		: baseZoom(baseZoom)
-	{ }
+	TileDataSource(unsigned int baseZoom);
 
-	///This must be thread safe!
-	void MergeTileCoordsAtZoom(uint zoom, TileCoordinatesSet& dstCoords) {
-		MergeTileCoordsAtZoom(zoom, baseZoom, tileIndex, dstCoords);
-	}
+	void collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
 
-	void MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet& dstCoords);
+	void collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
 
-	///This must be thread safe!
-	void MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, std::vector<OutputObject>& dstTile) {
-		MergeSingleTileDataAtZoom(dstIndex, zoom, baseZoom, tileIndex, dstTile);
-	}
+	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObject>& output);
 
 	void AddGeometryToIndex(const Linestring& geom, const std::vector<OutputObject>& outputs);
 	void AddGeometryToIndex(const MultiLinestring& geom, const std::vector<OutputObject>& outputs);
 	void AddGeometryToIndex(const MultiPolygon& geom, const std::vector<OutputObject>& outputs);
 
-	// TODO: this should stop existing
-	void AddObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
-		std::lock_guard<std::mutex> lock(mutex);
-		tileIndex[index].push_back(oo);
-	}
+	void addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo);
 
 	void AddObjectToLargeIndex(const Box& envelope, const OutputObject& oo) {
 		std::lock_guard<std::mutex> lock(mutex);
 		box_rtree.insert(std::make_pair(envelope, oo));
 	}
 
-	void MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObject>& dstTile);
+	void collectLargeObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObject>& output);
 
-	std::vector<OutputObject> getTileData(
+	std::vector<OutputObject> getObjectsForTile(
 		const std::vector<bool>& sortOrders, 
-		TileCoordinates coordinates,
-		unsigned int zoom
+		unsigned int zoom,
+		TileCoordinates coordinates
 	);
 
 	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
@@ -187,29 +187,17 @@ public:
 
 
 private:	
-	static void MergeTileCoordsAtZoom(
-		uint zoom,
-		uint baseZoom,
-		const TileIndex& srcTiles,
-		TileCoordinatesSet& dstCoords
-	);
-	static void MergeSingleTileDataAtZoom(
-		TileCoordinates dstIndex,
-		uint zoom,
-		uint baseZoom,
-		const TileIndex& srcTiles,
-		std::vector<OutputObject>& dstTile
-	);
 };
 
-TileCoordinatesSet GetTileCoordinates(
+TileCoordinatesSet getTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
 	unsigned int zoom
 );
 
-OutputObjectsConstItPair GetObjectsAtSubLayer(
+OutputObjectsConstItPair getObjectsAtSubLayer(
 	const std::vector<OutputObject>& data,
 	uint_least8_t layerNum
 );
+
 
 #endif //_TILE_DATA_H

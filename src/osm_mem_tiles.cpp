@@ -6,5 +6,9 @@ OsmMemTiles::OsmMemTiles(uint baseZoom)
 { }
 
 void OsmMemTiles::Clear() {
-	tileIndex.clear();
+	for (auto& entry : objects)
+		entry.clear();
+
+	for (auto& entry : z6Offsets)
+		entry.clear();
 }

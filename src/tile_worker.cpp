@@ -275,7 +275,7 @@ void ProcessLayer(
 
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
-			auto ooListSameLayer = GetObjectsAtSubLayer(data[i], layerNum);
+			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
 			auto end = ooListSameLayer.second;
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 

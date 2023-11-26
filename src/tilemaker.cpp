@@ -445,7 +445,7 @@ int main(int argc, char* argv[]) {
 		// tiles by zoom level
 		std::deque< std::pair<unsigned int, TileCoordinates> > tile_coordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
-			auto zoom_result = GetTileCoordinates(sources, zoom);
+			auto zoom_result = getTilesAtZoom(sources, zoom);
 			for(auto&& it: zoom_result) {
 				// If we're constrained to a source tile, check we're within it
 				if (srcZ > -1) {
@@ -478,7 +478,7 @@ int main(int argc, char* argv[]) {
 					TileCoordinates coords = tile_coordinates[i].second;
 					std::vector<std::vector<OutputObject>> data;
 					for (auto source : sources) {
-						data.emplace_back(source->getTileData(sortOrders,coords,zoom));
+						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 				}

@@ -8,12 +8,14 @@
 #include <unordered_set>
 
 #ifdef FAT_TILE_INDEX
+// Supports up to z22
 typedef uint32_t TileCoordinate;
-typedef uint16_t Z6Coordinate;
+typedef uint16_t Z6Offset;
 #define TILE_COORDINATE_MAX UINT32_MAX
 #else
+// Supports up to z14
 typedef uint16_t TileCoordinate;
-typedef uint8_t Z6Coordinate;
+typedef uint8_t Z6Offset;
 #define TILE_COORDINATE_MAX UINT16_MAX
 #endif
 
