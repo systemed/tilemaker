@@ -111,8 +111,6 @@ void CheckNextObjectAndMerge(
 	OutputObjectID oo = *jt;
 	OutputObjectID ooNext = *(jt + 1);
 
-	// TODO: this code is fiddly, it's a potential culprit if things aren't working
-
 	// TODO: do we need ooNext? Could we instead just update jt and dereference it?
 	//       put differently: we don't need to keep overwriting oo/ooNext
 	OutputGeometryType gt = oo.oo.geomType;
