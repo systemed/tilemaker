@@ -29,6 +29,7 @@ class TileDataSource {
 
 protected:	
 	std::mutex mutex;
+	std::vector<std::mutex> objectsMutex;
 
 	uint16_t z6OffsetDivisor;
 	// The top-level vector has 1 entry per z6 tile, indexed by x*64 + y
@@ -67,7 +68,7 @@ protected:
 	std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
 
 public:
-	TileDataSource(unsigned int baseZoom);
+	TileDataSource(size_t threadNum, unsigned int baseZoom);
 
 	void collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
 

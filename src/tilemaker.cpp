@@ -289,8 +289,8 @@ int main(int argc, char* argv[]) {
 
 	AttributeStore attributeStore;
 
-	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(config.baseZoom);
+	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom);
+	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
 	class LayerDefinition layers(config.layers);
 	osmMemTiles.open();
 	shpMemTiles.open();

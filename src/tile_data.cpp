@@ -9,9 +9,10 @@ using namespace std;
 
 typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
 
-TileDataSource::TileDataSource(unsigned int baseZoom)
+TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom)
 	: baseZoom(baseZoom),
-	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1)
+	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
+	objectsMutex(threadNum * 4)
 {
 	objects.resize(CLUSTER_ZOOM_AREA);
 }
@@ -75,16 +76,14 @@ void TileDataSource::finalize(size_t threadNum) {
 }
 
 void TileDataSource::addObjectToTileIndex(const TileCoordinates& index, const OutputObject& oo) {
-	// TODO: shard this lock, we have 4096 vectors
-	std::lock_guard<std::mutex> lock(mutex);
-
 	// Pick the z6 index
 	const size_t z6x = index.x / z6OffsetDivisor;
 	const size_t z6y = index.y / z6OffsetDivisor;
 
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 
-	//std::cout << "adding to objects[" << z6index << "]: z" << baseZoom << " was: " << index.x << ", " << index.y << ", z6 was " << z6x << ", " << z6y << std::endl;
+	std::lock_guard<std::mutex> lock(objectsMutex[z6index % objectsMutex.size()]);
+
 	objects[z6index].push_back({ oo, index.x - (z6x * z6OffsetDivisor), index.y - (z6y * z6OffsetDivisor) });
 }
 

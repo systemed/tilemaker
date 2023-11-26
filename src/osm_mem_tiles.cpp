@@ -1,8 +1,8 @@
 #include "osm_mem_tiles.h"
 using namespace std;
 
-OsmMemTiles::OsmMemTiles(uint baseZoom)
-	: TileDataSource(baseZoom) 
+OsmMemTiles::OsmMemTiles(size_t threadNum, uint baseZoom)
+	: TileDataSource(threadNum, baseZoom) 
 { }
 
 void OsmMemTiles::Clear() {

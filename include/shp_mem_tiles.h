@@ -9,7 +9,7 @@ extern bool verbose;
 class ShpMemTiles : public TileDataSource
 {
 public:
-	ShpMemTiles(uint baseZoom);
+	ShpMemTiles(size_t threadNum, uint baseZoom);
 
 	void CreateNamedLayerIndex(const std::string& layerName);
 

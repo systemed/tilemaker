@@ -4,8 +4,8 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
-ShpMemTiles::ShpMemTiles(uint baseZoom)
-	: TileDataSource(baseZoom)
+ShpMemTiles::ShpMemTiles(size_t threadNum, uint baseZoom)
+	: TileDataSource(threadNum, baseZoom)
 { }
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
