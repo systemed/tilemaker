@@ -46,7 +46,7 @@ void TileDataSource::finalize(size_t threadNum) {
 		boost::sort::block_indirect_sort(
 			objects[i].begin(),
 			objects[i].end(), 
-			[bz](auto const &a, auto const &b) {
+			[bz](const OutputObjectXY& a, const OutputObjectXY& b) {
 				// Cluster by parent zoom, so that a subsequent search
 				// can find a contiguous range of entries for any tile
 				// at zoom 6 or higher.
@@ -172,8 +172,8 @@ void TileDataSource::collectObjectsForTile(
 			TileCoordinate baseX = dstIndex.x * (1 << (baseZoom - zoom));
 			TileCoordinate baseY = dstIndex.y * (1 << (baseZoom - zoom));
 
-			Z6Offset x = baseX - z6x * z6OffsetDivisor;
-			Z6Offset y = baseY - z6y * z6OffsetDivisor;
+			Z6Offset needleX = baseX - z6x * z6OffsetDivisor;
+			Z6Offset needleY = baseY - z6y * z6OffsetDivisor;
 
 			// Kind of gross that we have to do this. Might be better if we split
 			// into two arrays, one of x/y and one of OOs. Would have better locality for
@@ -181,12 +181,12 @@ void TileDataSource::collectObjectsForTile(
 			OutputObject dummyOo(POINT_, 0, 0, 0, 0);
 			const size_t bz = baseZoom;
 
-			const OutputObjectXY targetXY = {dummyOo, x, y };
+			const OutputObjectXY targetXY = {dummyOo, needleX, needleY };
 			auto iter = std::lower_bound(
 				objects[i].begin(),
 				objects[i].end(),
 				targetXY,
-				[bz](const auto& a, const auto& b) {
+				[bz](const OutputObjectXY& a, const OutputObjectXY& b) {
 					// Cluster by parent zoom, so that a subsequent search
 					// can find a contiguous range of entries for any tile
 					// at zoom 6 or higher.
@@ -220,10 +220,12 @@ void TileDataSource::collectObjectsForTile(
 
 				if (dstIndex.x == x && dstIndex.y == y)
 					output.push_back(iter->oo);
-				else if (zoom == baseZoom) {
+				else {
 					// Short-circuit when we're confident we'd no longer see relevant matches.
-					// For the base zoom, this is as soon as the x/y coords no longer match.
-					// TODO: Support short-circuiting for z6..basezoom - 1
+					// We've ordered the entries in `objects` such that all objects that
+					// share the same tile at any zoom are in contiguous runs.
+					//
+					// Thus, as soon as we fail to find a match, we can stop looking.
 					break;
 				}
 
