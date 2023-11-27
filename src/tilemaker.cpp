@@ -292,7 +292,7 @@ int main(int argc, char* argv[]) {
 		bool canUseSortedNodeStore = true;
 		for (const std::string& file: inputFiles) {
 			if (ends_with(file, ".pbf")) {
-				canUseSortedNodeStore = canUseSortedNodeStore && PbfHasOptionalFeature(file, "Sort.Type_then_ID");
+				canUseSortedNodeStore = canUseSortedNodeStore && PbfHasOptionalFeature(file, OptionSortTypeThenID);
 			}
 		}
 
@@ -362,15 +362,20 @@ int main(int argc, char* argv[]) {
 			ifstream infile(inputFile, ios::in | ios::binary);
 			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
-			int ret = pbfReader.ReadPbfFile(nodeKeys, threadNum, 
-				[&]() { 
+			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
+			int ret = pbfReader.ReadPbfFile(
+				hasSortTypeThenID,
+				nodeKeys,
+				threadNum,
+				[&]() {
 					thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
 					return pbfStream;
 				},
 				[&]() {
 					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore));
 					return osmLuaProcessing;
-				});	
+				}
+			);
 			if (ret != 0) return ret;
 		} 
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
@@ -446,13 +451,17 @@ int main(int argc, char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			int ret = pbfReader.ReadPbfFile(nodeKeys, 1, 
-				[&]() { 
+			int ret = pbfReader.ReadPbfFile(
+				false,
+				nodeKeys,
+				1,
+				[&]() {
 					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
 				},
 				[&]() {
 					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
-				});	
+				}
+			);
 			if (ret != 0) return ret;
 
 			tileList.pop_back();

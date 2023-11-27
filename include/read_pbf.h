@@ -14,6 +14,8 @@
 
 class OsmLuaProcessing;
 
+extern const std::string OptionSortTypeThenID;
+
 /**
  *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from OsmLuaProcessing
  *
@@ -29,9 +31,13 @@ public:
 	using pbfreader_generate_output = std::function< std::shared_ptr<OsmLuaProcessing> () >;
 	using pbfreader_generate_stream = std::function< std::shared_ptr<std::istream> () >;
 
-	int ReadPbfFile(std::unordered_set<std::string> const &nodeKeys, unsigned int threadNum, 
-			pbfreader_generate_stream const &generate_stream,
-			pbfreader_generate_output const &generate_output);
+	int ReadPbfFile(
+		bool hasSortTypeThenID,
+		const std::unordered_set<std::string>& nodeKeys,
+		unsigned int threadNum,
+		const pbfreader_generate_stream& generate_stream,
+		const pbfreader_generate_output& generate_output
+	);
 
 	// Read tags into a map from a way/node/relation
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;

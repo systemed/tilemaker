@@ -12,6 +12,8 @@
 
 using namespace std;
 
+const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
+const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 
 PbfReader::PbfReader(OSMStore &osmStore)
@@ -294,19 +296,51 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 	return true;
 }
 
-struct OffsetLength {
+struct BlockMetadata {
 	long int offset;
 	google::protobuf::int32 length;
+	bool hasNodes;
+	bool hasWays;
+	bool hasRelations;
 };
 
-struct IndexedOffsetLength {
+struct IndexedBlockMetadata: BlockMetadata {
 	size_t index;
-	long int offset;
-	google::protobuf::int32 length;
 };
 
-int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
-		pbfreader_generate_stream const &generate_stream, pbfreader_generate_output const &generate_output)
+bool blockHasPrimitiveGroupSatisfying(
+	std::istream& infile,
+	const BlockMetadata block,
+	std::function<bool(const PrimitiveGroup&)> test
+) {
+	PrimitiveBlock pb;
+
+	// We may have previously read to EOF, so clear the internal error state
+	infile.clear();
+	infile.seekg(block.offset);
+	readBlock(&pb, block.length, infile);
+	if (infile.eof()) {
+		throw std::runtime_error("blockHasPrimitiveGroupSatisfying got unexpected eof");
+	}
+
+	for (int i=0; i<pb.primitivegroup_size(); i++) {
+		PrimitiveGroup pg;
+		pg = pb.primitivegroup(i);
+
+		if (test(pg))
+			return false;
+	}
+	
+	return true;
+}
+
+int PbfReader::ReadPbfFile(
+	bool hasSortTypeThenID,
+	unordered_set<string> const& nodeKeys,
+	unsigned int threadNum,
+	const pbfreader_generate_stream& generate_stream,
+	const pbfreader_generate_output& generate_output
+)
 {
 	auto infile = generate_stream();
 
@@ -317,13 +351,13 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 	readBlock(&block, readHeader(*infile).datasize(), *infile);
 	bool locationsOnWays = false;
 	for (std::string option : block.optional_features()) {
-		if (option=="LocationsOnWays") {
+		if (option == OptionLocationsOnWays) {
 			std::cout << ".osm.pbf file has locations on ways" << std::endl;
 			locationsOnWays = true;
 		}
 	}
 
-	std::map<std::size_t, OffsetLength> blocks;
+	std::map<std::size_t, BlockMetadata> blocks;
 
 	while (true) {
 		BlobHeader bh = readHeader(*infile);
@@ -331,11 +365,50 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 			break;
 		}
 
-		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize() };
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), true, true, true };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
-		
 	}
 
+	if (hasSortTypeThenID) {
+		// The PBF's blocks are sorted by type, then ID. We can do a binary search
+		// to learn where the blocks transition between object types, which
+		// enables a more efficient partitioning of work for reading.
+		std::vector<size_t> indexes;
+		for (int i = 0; i < blocks.size(); i++)
+			indexes.push_back(i);
+
+		const auto& waysStart = std::lower_bound(
+			indexes.begin(),
+			indexes.end(),
+			0,
+			[&blocks, &infile](const auto &i, const auto &ignored) {
+				return blockHasPrimitiveGroupSatisfying(
+					*infile,
+					blocks[i],
+					[](const PrimitiveGroup&pg) { return pg.ways_size() > 0 || pg.relations_size() > 0; }
+				);
+			}
+		);
+
+		const auto& relationsStart = std::lower_bound(
+			indexes.begin(),
+			indexes.end(),
+			0,
+			[&blocks, &infile](const auto &i, const auto &ignored) {
+				return blockHasPrimitiveGroupSatisfying(
+					*infile,
+					blocks[i],
+					[](const PrimitiveGroup&pg) { return pg.relations_size() > 0; }
+				);
+			}
+		);
+
+		for (auto it = indexes.begin(); it != indexes.end(); it++) {
+			blocks[*it].hasNodes = it <= waysStart;
+			blocks[*it].hasWays = it >= waysStart && it <= relationsStart;
+			blocks[*it].hasRelations = it >= relationsStart;
+		}
+	}
 
 
 	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
@@ -344,43 +417,55 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		boost::asio::thread_pool pool(threadNum);
 		std::mutex block_mutex;
 
-		std::deque<std::vector<IndexedOffsetLength>> blockRanges;
-		blocksToProcess = blocks.size();
+		std::deque<std::vector<IndexedBlockMetadata>> blockRanges;
+		std::map<std::size_t, BlockMetadata> filteredBlocks;
+		for (const auto& entry : blocks) {
+			if ((phase == ReadPhase::Nodes && entry.second.hasNodes) ||
+					(phase == ReadPhase::RelationScan && entry.second.hasRelations) ||
+					(phase == ReadPhase::Ways && entry.second.hasWays) ||
+					(phase == ReadPhase::Relations && entry.second.hasRelations))
+				filteredBlocks[entry.first] = entry.second;
+		}
+
+		blocksToProcess = filteredBlocks.size();
 		blocksProcessed = 0;
 
 		// When processing blocks, we try to give each worker large batches
 		// of contiguous blocks, so that they might benefit from long runs
 		// of sorted indexes, and locality of nearby IDs.
-		const size_t batchSize = (blocks.size() / (threadNum * 8)) + 1;
+		const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
 
 		size_t consumed = 0;
-		auto it = blocks.begin();
-		while(it != blocks.end()) {
-			std::vector<IndexedOffsetLength> blockRange;
+		auto it = filteredBlocks.begin();
+		while(it != filteredBlocks.end()) {
+			std::vector<IndexedBlockMetadata> blockRange;
 			blockRange.reserve(batchSize);
 			size_t max = consumed + batchSize;
-			for (; consumed < max && it != blocks.end(); consumed++) {
-				blockRange.push_back({ it->first, it->second.offset, it->second.length });
+			for (; consumed < max && it != filteredBlocks.end(); consumed++) {
+				IndexedBlockMetadata ibm;
+				memcpy(&ibm, &it->second, sizeof(BlockMetadata));
+				ibm.index = it->first;
+				blockRange.push_back(ibm);
 				it++;
 			}
 			blockRanges.push_back(blockRange);
 		}
 
 		{
-			for(const std::vector<IndexedOffsetLength>& blockRange: blockRanges) {
+			for(const std::vector<IndexedBlockMetadata>& blockRange: blockRanges) {
 				boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
 					if (phase == ReadPhase::Nodes)
 						osmStore.nodes.batchStart();
 
-					for (const IndexedOffsetLength& indexedOffsetLength: blockRange) {
+					for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
 						auto infile = generate_stream();
 						auto output = generate_output();
 
-						infile->seekg(indexedOffsetLength.offset);
+						infile->seekg(indexedBlockMetadata.offset);
 
-						if(ReadBlock(*infile, *output, indexedOffsetLength.length, nodeKeys, locationsOnWays, phase)) {
+						if(ReadBlock(*infile, *output, indexedBlockMetadata.length, nodeKeys, locationsOnWays, phase)) {
 							const std::lock_guard<std::mutex> lock(block_mutex);
-							blocks.erase(indexedOffsetLength.index);	
+							blocks.erase(indexedBlockMetadata.index);	
 							blocksProcessed++;
 						}
 					}
