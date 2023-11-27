@@ -16,6 +16,25 @@ class OsmLuaProcessing;
 
 extern const std::string OptionSortTypeThenID;
 
+struct BlockMetadata {
+	long int offset;
+	google::protobuf::int32 length;
+	bool hasNodes;
+	bool hasWays;
+	bool hasRelations;
+
+	// We use blocks as the unit of parallelism. Sometimes, a PBF only
+	// has a few blocks with relations. In this case, to keep all cores
+	// busy, we'll subdivide the block into chunks, and each thread
+	// will only process a chunk of the block.
+	size_t chunk;
+	size_t chunks;
+};
+
+struct IndexedBlockMetadata: BlockMetadata {
+	size_t index;
+};
+
 /**
  *\brief Reads a PBF OSM file and returns objects as a stream of events to a class derived from OsmLuaProcessing
  *
@@ -24,7 +43,7 @@ extern const std::string OptionSortTypeThenID;
 class PbfReader
 {
 public:	
-	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8, All = 15 };
+	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8 };
 
 	PbfReader(OSMStore &osmStore);
 
@@ -52,13 +71,24 @@ public:
 	}
 
 private:
-	bool ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::size_t datasize, 
-	               std::unordered_set<std::string> const &nodeKeys, bool locationsOnWays, ReadPhase phase = ReadPhase::All);
+	bool ReadBlock(
+		std::istream &infile,
+		OsmLuaProcessing &output,
+		const BlockMetadata& blockMetadata,
+		const std::unordered_set<std::string>& nodeKeys,
+		bool locationsOnWays,
+		ReadPhase phase
+	);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
 	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays);
 	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
-	bool ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
+	bool ReadRelations(
+		OsmLuaProcessing& output,
+		PrimitiveGroup& pg,
+		const PrimitiveBlock& pb,
+		const BlockMetadata& blockMetadata
+	);
 
 	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {
 		if (typeKey==-1 || val==-1) return false;

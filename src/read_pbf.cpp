@@ -162,7 +162,12 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	return true;
 }
 
-bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadRelations(
+	OsmLuaProcessing& output,
+	PrimitiveGroup& pg,
+	const PrimitiveBlock& pb,
+	const BlockMetadata& blockMetadata
+) {
 	// ----	Read relations
 
 	if (pg.relations_size() > 0) {
@@ -175,6 +180,9 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
+				if (j % blockMetadata.chunks != blockMetadata.chunk)
+					continue;
+
 				Relation pbfRelation = pg.relations(j);
 				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
 				bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
@@ -212,11 +220,19 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::size_t datasize, 
-                          unordered_set<string> const &nodeKeys, bool locationsOnWays, ReadPhase phase) 
+bool PbfReader::ReadBlock(
+	std::istream& infile,
+	OsmLuaProcessing& output,
+	const BlockMetadata& blockMetadata,
+	const unordered_set<string>& nodeKeys,
+	bool locationsOnWays,
+	ReadPhase phase
+) 
 {
+	infile.seekg(blockMetadata.offset);
+
 	PrimitiveBlock pb;
-	readBlock(&pb, datasize, infile);
+	readBlock(&pb, blockMetadata.length, infile);
 	if (infile.eof()) {
 		return true;
 	}
@@ -243,7 +259,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 			std::cout.flush();
 		};
 
-		if(phase == ReadPhase::Nodes || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Nodes) {
 			bool done = ReadNodes(output, pg, pb, nodeKeyPositions);
 			if(done) { 
 				output_progress();
@@ -252,7 +268,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 			}
 		}
 
-		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
+		if(phase == ReadPhase::RelationScan) {
 			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
@@ -262,7 +278,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 			}
 		}
 	
-		if(phase == ReadPhase::Ways || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Ways) {
 			bool done = ReadWays(output, pg, pb, locationsOnWays);
 			if(done) { 
 				output_progress();
@@ -271,8 +287,8 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 			}
 		}
 
-		if(phase == ReadPhase::Relations || phase == ReadPhase::All) {
-			bool done = ReadRelations(output, pg, pb);
+		if(phase == ReadPhase::Relations) {
+			bool done = ReadRelations(output, pg, pb, blockMetadata);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -293,20 +309,10 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::s
 		return false;
 	}
 
-	return true;
+	// We can only delete blocks if we're confident we've processed everything,
+	// which is not possible in the case of subdivided blocks.
+	return blockMetadata.chunks == 1;
 }
-
-struct BlockMetadata {
-	long int offset;
-	google::protobuf::int32 length;
-	bool hasNodes;
-	bool hasWays;
-	bool hasRelations;
-};
-
-struct IndexedBlockMetadata: BlockMetadata {
-	size_t index;
-};
 
 bool blockHasPrimitiveGroupSatisfying(
 	std::istream& infile,
@@ -365,7 +371,7 @@ int PbfReader::ReadPbfFile(
 			break;
 		}
 
-		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), true, true, true };
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), true, true, true, 0, 1 };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
 	}
 
@@ -417,6 +423,23 @@ int PbfReader::ReadPbfFile(
 		boost::asio::thread_pool pool(threadNum);
 		std::mutex block_mutex;
 
+		// If we're in ReadPhase::Relations and there aren't many blocks left
+		// to read, increase parallelism by letting each thread only process
+		// a portion of the block.
+		if (phase == ReadPhase::Relations && blocks.size() < threadNum * 2) {
+			std::cout << "only " << blocks.size() << " relation blocks; subdividing for better parallelism" << std::endl;
+			std::map<std::size_t, BlockMetadata> moreBlocks;
+			for (const auto& block : blocks) {
+				BlockMetadata newBlock = block.second;
+				newBlock.chunks = threadNum;
+				for (size_t i = 0; i < threadNum; i++) {
+					newBlock.chunk = i;
+					moreBlocks[moreBlocks.size()] = newBlock;
+				}
+			}
+			blocks = moreBlocks;
+		}
+
 		std::deque<std::vector<IndexedBlockMetadata>> blockRanges;
 		std::map<std::size_t, BlockMetadata> filteredBlocks;
 		for (const auto& entry : blocks) {
@@ -461,9 +484,7 @@ int PbfReader::ReadPbfFile(
 						auto infile = generate_stream();
 						auto output = generate_output();
 
-						infile->seekg(indexedBlockMetadata.offset);
-
-						if(ReadBlock(*infile, *output, indexedBlockMetadata.length, nodeKeys, locationsOnWays, phase)) {
+						if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, locationsOnWays, phase)) {
 							const std::lock_guard<std::mutex> lock(block_mutex);
 							blocks.erase(indexedBlockMetadata.index);	
 							blocksProcessed++;
