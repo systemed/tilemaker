@@ -13,6 +13,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/sort/sort.hpp>
 #include "node_store.h"
+#include "way_store.h"
 
 using namespace std;
 namespace bg = boost::geometry;
@@ -261,14 +262,6 @@ void void_mmap_allocator::destroy(void *p)
 	} 
 }
 
-void WayStore::sort(unsigned int threadNum) { 
-	std::lock_guard<std::mutex> lock(mutex);
-	boost::sort::block_indirect_sort(
-		mLatpLonLists->begin(), mLatpLonLists->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-}
-
 static inline bool isClosed(WayStore::latplon_vector_t const &way) {
 	return way.begin() == way.end();
 }
@@ -321,11 +314,6 @@ void OSMStore::generated_sort(unsigned int threadNum)
 		osm_generated.multi_polygon_store->begin(), osm_generated.multi_polygon_store->end(), 
 		[](auto const &a, auto const &b) { return a.first < b.first; }, 
 		threadNum);
-}
-
-void OSMStore::ways_sort(unsigned int threadNum) { 
-	std::cout << "\nSorting ways" << std::endl;
-	ways.sort(threadNum); 
 }
 
 MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const {

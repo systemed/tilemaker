@@ -34,6 +34,7 @@
 
 #include "geom.h"
 #include "node_stores.h"
+#include "way_stores.h"
 
 // Tilemaker code
 #include "helpers.h"
@@ -306,7 +307,10 @@ int main(int argc, char* argv[]) {
 		else
 			nodeStore = make_shared<BinarySearchNodeStore>();
 	}
-	OSMStore osmStore(*nodeStore.get());
+
+	shared_ptr<WayStore> wayStore;
+	wayStore = make_shared<BinarySearchWayStore>();
+	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);
 	if(!osmStoreFile.empty()) {

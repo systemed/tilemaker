@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "node_store.h"
+#include "way_store.h"
 #include "osm_lua_processing.h"
 
 using namespace std;
@@ -124,7 +125,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 		}
 
-		osmStore.ways_insert_back(ways);
+		osmStore.ways.insert(ways);
 		return true;
 	}
 	return false;
@@ -500,7 +501,7 @@ int PbfReader::ReadPbfFile(
 			osmStore.nodes.finalize(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
-			osmStore.ways_sort(threadNum);
+			osmStore.ways.finalize(threadNum);
 		}
 	}
 

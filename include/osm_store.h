@@ -15,6 +15,7 @@
 extern bool verbose;
 
 class NodeStore;
+class WayStore;
 
 //
 // Internal data structures.
@@ -104,64 +105,6 @@ public:
 	}
 };
 
-// way store
-class WayStore {
-
-public:
-	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;
-	using element_t = std::pair<WayID, latplon_vector_t>;
-	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
-
-	void reopen() {
-		mLatpLonLists = std::make_unique<map_t>();
-	}
-
-	// @brief Lookup a node list
-	// @param i OSM ID of a way
-	// @return A node list
-	// @exception NotFound
-	latplon_vector_t const &at(WayID wayid) const {
-		std::lock_guard<std::mutex> lock(mutex);
-		
-		auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), wayid, [](auto const &e, auto wayid) { 
-			return e.first < wayid; 
-		});
-
-		if(iter == mLatpLonLists->end() || iter->first != wayid)
-			throw std::out_of_range("Could not find way with id " + std::to_string(wayid));
-
-		return iter->second;
-	}
-
-	// @brief Insert a node list.
-	// @param i OSM ID of a way
-	// @param llVec a coordinate vector to be inserted
-	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
-	//			  (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(std::vector<element_t> &new_ways) {
-		std::lock_guard<std::mutex> lock(mutex);
-		auto i = mLatpLonLists->size();
-		mLatpLonLists->resize(i + new_ways.size());
-		std::copy(std::make_move_iterator(new_ways.begin()), std::make_move_iterator(new_ways.end()), mLatpLonLists->begin() + i); 
-	}
-
-	// @brief Make the store empty
-	void clear() { 
-		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLonLists->clear(); 
-	}
-
-	std::size_t size() const { 
-		std::lock_guard<std::mutex> lock(mutex);
-		return mLatpLonLists->size(); 
-	}
-
-	void sort(unsigned int threadNum);
-
-private:	
-	mutable std::mutex mutex;
-	std::unique_ptr<map_t> mLatpLonLists;
-};
 
 // relation store
 // (this isn't currently used as we don't need to store relations for later processing, but may be needed for nested relations)
@@ -252,11 +195,11 @@ public:
 	};
 
 	NodeStore& nodes;
+	WayStore& ways;
 protected:	
 	bool use_compact_nodes = false;
 	bool require_integrity = true;
 
-	WayStore ways;
 	RelationStore relations; // unused
 	UsedWays used_ways;
 	RelationScanStore scanned_relations;
@@ -266,7 +209,7 @@ protected:
 
 public:
 
-	OSMStore(NodeStore& nodes): nodes(nodes)
+	OSMStore(NodeStore& nodes, WayStore& ways): nodes(nodes), ways(ways)
 	{ 
 		reopen();
 	}
@@ -284,9 +227,6 @@ public:
 
 	void nodes_sort(unsigned int threadNum);
 
-	void ways_insert_back(std::vector<WayStore::element_t> &new_ways) {
-		ways.insert_back(new_ways);
-	}
 	void ways_sort(unsigned int threadNum);
 
 	void relations_insert_front(std::vector<RelationStore::element_t> &new_relations) {
