@@ -12,7 +12,7 @@ public:
 	using map_t = std::deque<WayStore::ll_element_t, mmap_allocator<WayStore::ll_element_t>>;
 
 	void reopen() override;
-	const WayStore::latplon_vector_t& at(WayID wayid) const override;
+	std::vector<LatpLon> at(WayID wayid) const override;
 	bool requiresNodes() const override { return false; }
 	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
 	const void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;

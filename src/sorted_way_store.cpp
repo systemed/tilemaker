@@ -1,11 +1,20 @@
 #include <iostream>
 #include "sorted_way_store.h"
 
+namespace SortedWayStoreTypes {
+	thread_local bool collectingOrphans = true;
+	thread_local uint64_t groupStart = -1;
+	thread_local std::vector<std::pair<WayID, std::vector<NodeID>>>* localNodes = NULL;
+}
+
+using namespace SortedWayStoreTypes;
+
+
 void SortedWayStore::reopen() {
 	std::cout << "TODO: SortedWayStore::reopen()" << std::endl;
 }
 
-const WayStore::latplon_vector_t& SortedWayStore::at(WayID wayid) const {
+std::vector<LatpLon> SortedWayStore::at(WayID wayid) const {
 	throw std::runtime_error("at() notimpl");
 }
 

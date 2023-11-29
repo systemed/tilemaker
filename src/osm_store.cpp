@@ -262,7 +262,7 @@ void void_mmap_allocator::destroy(void *p)
 	} 
 }
 
-static inline bool isClosed(WayStore::latplon_vector_t const &way) {
+static inline bool isClosed(const std::vector<LatpLon>& way) {
 	return way.begin() == way.end();
 }
 

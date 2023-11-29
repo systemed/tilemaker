@@ -15,32 +15,35 @@ const uint16_t SortedNodeStoreTypes::ChunkSize = 256;
 const uint16_t SortedNodeStoreTypes::ChunkAlignment = 16;
 const uint32_t SortedNodeStoreTypes::ChunkCompressed = 1 << 31;
 
+
+namespace SortedNodeStoreTypes {
+	std::atomic<uint64_t> totalGroups;
+	std::atomic<uint64_t> totalNodes; // consider leaving this in so we have fast size()
+	std::atomic<uint64_t> totalGroupSpace;
+	std::atomic<uint64_t> totalChunks;
+	std::atomic<uint64_t> chunkSizeFreqs[257];
+	std::atomic<uint64_t> groupSizeFreqs[257];
+
+
+	// When SortedNodeStore first starts, it's not confident that it has seen an
+	// entire segment, so it's in "collecting orphans" mode. Once it crosses a
+	// threshold of 64K elements, it ceases to be in this mode.
+	//
+	// Orphans are rounded up across multiple threads, and dealt with in
+	// the finalize step.
+	thread_local bool collectingOrphans = true;
+	thread_local uint64_t groupStart = -1;
+	thread_local std::vector<NodeStore::element_t>* localNodes = NULL;
+
+	thread_local int64_t cachedChunk = -1;
+	thread_local std::vector<int32_t> cacheChunkLons;
+	thread_local std::vector<int32_t> cacheChunkLatps;
+
+	thread_local uint32_t arenaSpace = 0;
+	thread_local char* arenaPtr = nullptr;
+}
+
 using namespace SortedNodeStoreTypes;
-
-std::atomic<uint64_t> totalGroups;
-std::atomic<uint64_t> totalNodes; // consider leaving this in so we have fast size()
-std::atomic<uint64_t> totalGroupSpace;
-std::atomic<uint64_t> totalChunks;
-std::atomic<uint64_t> chunkSizeFreqs[257];
-std::atomic<uint64_t> groupSizeFreqs[257];
-
-
-// When SortedNodeStore first starts, it's not confident that it has seen an
-// entire segment, so it's in "collecting orphans" mode. Once it crosses a
-// threshold of 64K elements, it ceases to be in this mode.
-//
-// Orphans are rounded up across multiple threads, and dealt with in
-// the finalize step.
-thread_local bool collectingOrphans = true;
-thread_local uint64_t groupStart = -1;
-thread_local std::vector<NodeStore::element_t>* localNodes = NULL;
-
-thread_local int64_t cachedChunk = -1;
-thread_local std::vector<int32_t> cacheChunkLons;
-thread_local std::vector<int32_t> cacheChunkLatps;
-
-thread_local uint32_t arenaSpace = 0;
-thread_local char* arenaPtr = nullptr;
 
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
 	// Each group can store 64K nodes. If we allocate 256K slots
