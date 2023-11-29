@@ -9,20 +9,17 @@
 class SortedWayStore: public WayStore {
 
 public:
-	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;
-	using element_t = std::pair<WayID, latplon_vector_t>;
-	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
-
 	void reopen() override;
-	const latplon_vector_t& at(WayID wayid) const override;
-	void insert(std::vector<element_t> &newWays) override;
+	const WayStore::latplon_vector_t& at(WayID wayid) const override;
+	bool requiresNodes() const override { return true; }
+	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
+	const void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;
 	void clear() override;
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;
 
 private:
 	mutable std::mutex mutex;
-	std::unique_ptr<map_t> mLatpLonLists;
 };
 
 #endif

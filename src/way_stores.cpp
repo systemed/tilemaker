@@ -14,7 +14,7 @@ void BinarySearchWayStore::reopen() {
 	mLatpLonLists = std::make_unique<map_t>();
 }
 
-const BinarySearchWayStore::latplon_vector_t& BinarySearchWayStore::at(WayID wayid) const {
+const WayStore::latplon_vector_t& BinarySearchWayStore::at(WayID wayid) const {
 	std::lock_guard<std::mutex> lock(mutex);
 	
 	auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), wayid, [](auto const &e, auto wayid) { 
@@ -27,11 +27,15 @@ const BinarySearchWayStore::latplon_vector_t& BinarySearchWayStore::at(WayID way
 	return iter->second;
 }
 
-void BinarySearchWayStore::insert(std::vector<element_t> &newWays) {
+void BinarySearchWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {
 	std::lock_guard<std::mutex> lock(mutex);
 	auto i = mLatpLonLists->size();
 	mLatpLonLists->resize(i + newWays.size());
 	std::copy(std::make_move_iterator(newWays.begin()), std::make_move_iterator(newWays.end()), mLatpLonLists->begin() + i); 
+}
+
+const void BinarySearchWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
+	throw std::runtime_error("BinarySearchWayStore does not support insertNodes");
 }
 
 void BinarySearchWayStore::clear() {

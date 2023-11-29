@@ -9,13 +9,13 @@
 class BinarySearchWayStore: public WayStore {
 
 public:
-	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;
-	using element_t = std::pair<WayID, latplon_vector_t>;
-	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
+	using map_t = std::deque<WayStore::ll_element_t, mmap_allocator<WayStore::ll_element_t>>;
 
 	void reopen() override;
-	const latplon_vector_t& at(WayID wayid) const override;
-	void insert(std::vector<element_t> &newWays) override;
+	const WayStore::latplon_vector_t& at(WayID wayid) const override;
+	bool requiresNodes() const override { return false; }
+	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
+	const void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;
 	void clear() override;
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;

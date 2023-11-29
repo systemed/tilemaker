@@ -78,7 +78,8 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 	if (pg.ways_size() > 0) {
 		Way pbfWay;
 
-		std::vector<WayStore::element_t> ways;
+		std::vector<WayStore::ll_element_t> llWays;
+		std::vector<std::pair<WayID, std::vector<NodeID>>> nodeWays;
 
 		for (int j=0; j<pg.ways_size(); j++) {
 			pbfWay = pg.ways(j);
@@ -87,6 +88,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 			// Assemble nodelist
 			LatpLonVec llVec;
+			std::vector<NodeID> nodeVec;
 			if (locationsOnWays) {
 				int lat=0, lon=0;
 				for (int k=0; k<pbfWay.lats_size(); k++) {
@@ -101,6 +103,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 					nodeId += pbfWay.refs(k);
 					try {
 						llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
+						nodeVec.push_back(nodeId);
 					} catch (std::out_of_range &err) {
 						if (osmStore.integrity_enforced()) throw err;
 					}
@@ -114,7 +117,8 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 				// If we need it for later, store the way's coordinates in the global way store
 				if (osmStore.way_is_used(wayId)) {
-					ways.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
+					llWays.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
+					nodeWays.push_back(std::make_pair(wayId, nodeVec));
 				}
 				output.setWay(static_cast<WayID>(pbfWay.id()), llVec, tags);
 
@@ -125,7 +129,12 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 		}
 
-		osmStore.ways.insert(ways);
+		if (osmStore.ways.requiresNodes()) {
+			osmStore.ways.insertNodes(nodeWays);
+		} else {
+			osmStore.ways.insertLatpLons(llWays);
+		}
+
 		return true;
 	}
 	return false;
