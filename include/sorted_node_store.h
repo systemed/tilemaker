@@ -13,45 +13,49 @@
 // Access to a node given its NodeID is constant time.
 //
 // Additional memory usage varies, approaching 1% for very large PBFs.
-#define GROUP_SIZE 256
-#define CHUNK_SIZE 256
 
-#define CHUNK_COMPRESSED (1 << 31)
-struct ChunkInfoBase {
-	// If high bit is set, this is a compressed chunk.
-	// Bits 0..9 are the length of the compressed lons.
-	// Bits 10..19 are the length of the compressed lats.
-	// The upper-most bit should be set iff this is a compressed chunk.
-	uint32_t flags;
-	// A bitmask indicating how many nodes are in this chunk.
-	uint8_t nodeMask[32];
-};
+namespace SortedNodeStoreTypes {
+	extern const uint16_t GroupSize;
+	extern const uint16_t ChunkSize;
+	extern const uint16_t ChunkAlignment;
+	extern const uint32_t ChunkCompressed;
 
-struct CompressedChunkInfo: ChunkInfoBase {
-	// streamvbyte_decode needs N, the size of the original array.
-	// N is popcnt(nodeMask) - 1.
-	// data is zigzag delta encoded, so we need firstLatp and firstLatp to recover it.
-	int32_t firstLatp;
-	int32_t firstLon;
-	uint8_t data[0];
-};
+	struct ChunkInfoBase {
+		// If high bit is set, this is a compressed chunk.
+		// Bits 0..9 are the length of the compressed lons.
+		// Bits 10..19 are the length of the compressed lats.
+		// The upper-most bit should be set iff this is a compressed chunk.
+		uint32_t flags;
+		// A bitmask indicating how many nodes are in this chunk.
+		uint8_t nodeMask[32];
+	};
 
-struct UncompressedChunkInfo: ChunkInfoBase {
-	LatpLon nodes[0];
-};
+	struct CompressedChunkInfo: ChunkInfoBase {
+		// streamvbyte_decode needs N, the size of the original array.
+		// N is popcnt(nodeMask) - 1.
+		// data is zigzag delta encoded, so we need firstLatp and firstLatp to recover it.
+		int32_t firstLatp;
+		int32_t firstLon;
+		uint8_t data[0];
+	};
 
-struct GroupInfo {
-	// A bitmask indicating how many chunks are in this group.
-	uint8_t chunkMask[32];
+	struct UncompressedChunkInfo: ChunkInfoBase {
+		LatpLon nodes[0];
+	};
 
-	// There is an entry for each set bit in chunkMask. They identify
-	// the address of a ChunkInfo. The address is relative to the end
-	// of the GroupInfo struct
-	//
-	// e.g. given an offset 12, the chunk is located at
-	// &chunkOffsets[popcnt(chunkMask)] + offset * 8.
-	uint16_t chunkOffsets[0];
-};
+	struct GroupInfo {
+		// A bitmask indicating how many chunks are in this group.
+		uint8_t chunkMask[32];
+
+		// There is an entry for each set bit in chunkMask. They identify
+		// the address of a ChunkInfo. The address is relative to the end
+		// of the GroupInfo struct
+		//
+		// e.g. given an offset 12, the chunk is located at
+		// &chunkOffsets[popcnt(chunkMask)] + offset * 8.
+		uint16_t chunkOffsets[0];
+	};
+}
 
 
 class SortedNodeStore : public NodeStore
@@ -76,7 +80,7 @@ private:
 	bool compressNodes;
 
 	mutable std::mutex orphanageMutex;
-	std::vector<GroupInfo*> groups;
+	std::vector<SortedNodeStoreTypes::GroupInfo*> groups;
 	std::vector<std::pair<void*, size_t>> allocatedMemory;
 
 	// The orphanage stores nodes that come from groups that may be worked on by

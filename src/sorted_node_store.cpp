@@ -10,6 +10,13 @@
 #include "external/streamvbyte.h"
 #include "external/streamvbyte_zigzag.h"
 
+const uint16_t SortedNodeStoreTypes::GroupSize = 256;
+const uint16_t SortedNodeStoreTypes::ChunkSize = 256;
+const uint16_t SortedNodeStoreTypes::ChunkAlignment = 16;
+const uint32_t SortedNodeStoreTypes::ChunkCompressed = 1 << 31;
+
+using namespace SortedNodeStoreTypes;
+
 std::atomic<uint64_t> totalGroups;
 std::atomic<uint64_t> totalNodes; // consider leaving this in so we have fast size()
 std::atomic<uint64_t> totalGroupSpace;
@@ -17,7 +24,6 @@ std::atomic<uint64_t> totalChunks;
 std::atomic<uint64_t> chunkSizeFreqs[257];
 std::atomic<uint64_t> groupSizeFreqs[257];
 
-#define CHUNK_ALIGNMENT 16
 
 // When SortedNodeStore first starts, it's not confident that it has seen an
 // entire segment, so it's in "collecting orphans" mode. Once it crosses a
@@ -67,12 +73,12 @@ SortedNodeStore::~SortedNodeStore() {
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
-	const size_t groupIndex = id / (GROUP_SIZE * CHUNK_SIZE);
-	const size_t chunk = (id % (GROUP_SIZE * CHUNK_SIZE)) / CHUNK_SIZE;
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
 	const uint64_t chunkMaskByte = chunk / 8;
 	const uint64_t chunkMaskBit = chunk % 8;
 
-	const uint64_t nodeMaskByte = (id % CHUNK_SIZE) / 8;
+	const uint64_t nodeMaskByte = (id % ChunkSize) / 8;
 	const uint64_t nodeMaskBit = id % 8;
 
 	GroupInfo* groupPtr = groups[groupIndex];
@@ -94,9 +100,9 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	}
 
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
-	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * CHUNK_ALIGNMENT));
+	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * ChunkAlignment));
 
-	if (basePtr->flags & CHUNK_COMPRESSED) {
+	if (basePtr->flags & ChunkCompressed) {
 		CompressedChunkInfo* ptr = (CompressedChunkInfo*)basePtr;
 		size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
 		// TODO: we don't actually need the lonSize to decompress the data.
@@ -104,7 +110,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		size_t lonSize = ptr->flags & ((1 << 10) - 1);
 		size_t n = popcnt(ptr->nodeMask, 32) - 1;
 
-		const size_t neededChunk = groupIndex * CHUNK_SIZE + chunk;
+		const size_t neededChunk = groupIndex * ChunkSize + chunk;
 
 		// Really naive caching strategy - just cache the last-used chunk.
 		// Probably good enough?
@@ -163,7 +169,7 @@ size_t SortedNodeStore::size() const {
 			totalChunks += chunks;
 
 			for (size_t i = 0; i < chunks; i++) {
-				size_t rawOffset = group->chunkOffsets[i] * CHUNK_ALIGNMENT;
+				size_t rawOffset = group->chunkOffsets[i] * ChunkAlignment;
 				ChunkInfo* chunk = (ChunkInfo*)(((char*)(&group->chunkOffsets[chunks])) + rawOffset);
 				rv += popcnt(chunk->nodeMask, 32);
 			}
@@ -189,16 +195,16 @@ void SortedNodeStore::insert(const std::vector<element_t>& elements) {
 	if (groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		groupStart = elements[0].first / (GROUP_SIZE * CHUNK_SIZE) * (GROUP_SIZE * CHUNK_SIZE);
+		groupStart = elements[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
 	while (collectingOrphans && i < elements.size()) {
 		const element_t& el = elements[i];
-		if (el.first >= groupStart + (GROUP_SIZE * CHUNK_SIZE)) {
+		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
 			collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			groupStart = el.first / (GROUP_SIZE * CHUNK_SIZE) * (GROUP_SIZE * CHUNK_SIZE);
+			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 			collectOrphans(*localNodes);
 			localNodes->clear();
 		}
@@ -209,10 +215,10 @@ void SortedNodeStore::insert(const std::vector<element_t>& elements) {
 	while(i < elements.size()) {
 		const element_t& el = elements[i];
 
-		if (el.first >= groupStart + (GROUP_SIZE * CHUNK_SIZE)) {
+		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
 			publishGroup(*localNodes);
 			localNodes->clear();
-			groupStart = el.first / (GROUP_SIZE * CHUNK_SIZE) * (GROUP_SIZE * CHUNK_SIZE);
+			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
 		localNodes->push_back(el);
@@ -267,7 +273,7 @@ void SortedNodeStore::finalize(size_t threadNum) {
 
 void SortedNodeStore::collectOrphans(const std::vector<element_t>& orphans) {
 	std::lock_guard<std::mutex> lock(orphanageMutex);
-	size_t groupIndex = orphans[0].first / (GROUP_SIZE * CHUNK_SIZE);
+	size_t groupIndex = orphans[0].first / (GroupSize * ChunkSize);
 
 	std::vector<element_t>& vec = orphanage[groupIndex];
 	const size_t i = vec.size();
@@ -280,9 +286,9 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 	if (nodes.size() == 0) {
 		throw std::runtime_error("SortedNodeStore: group is empty");
 	}
-	size_t groupIndex = nodes[0].first / (GROUP_SIZE * CHUNK_SIZE);
+	size_t groupIndex = nodes[0].first / (GroupSize * ChunkSize);
 
-	if (nodes.size() > CHUNK_SIZE * GROUP_SIZE) {
+	if (nodes.size() > ChunkSize * GroupSize) {
 		std::cout << "groupIndex=" << groupIndex << ", first ID=" << nodes[0].first << ", nodes.size() = " << nodes.size() << std::endl;
 		throw std::runtime_error("SortedNodeStore: group is too big");
 	}
@@ -312,7 +318,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 		if (i != nodes.size()) {
 			const element_t& node = nodes[i];
-			currentChunk = (node.first % (GROUP_SIZE * CHUNK_SIZE)) / CHUNK_SIZE;
+			currentChunk = (node.first % (GroupSize * ChunkSize)) / ChunkSize;
 		}
 
 		if (lastChunk != currentChunk) {
@@ -382,8 +388,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 		}
 
 		// We require that chunks align on 16-byte boundaries
-		if (chunkSpace % CHUNK_ALIGNMENT != 0)
-			chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
+		if (chunkSpace % ChunkAlignment != 0)
+			chunkSpace += ChunkAlignment - (chunkSpace % ChunkAlignment);
 		groupSpace += chunkSpace;
 	}
 
@@ -445,7 +451,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 		if (i != nodes.size()) {
 			const element_t& node = nodes[i];
-			currentChunk = (node.first % (GROUP_SIZE * CHUNK_SIZE)) / CHUNK_SIZE;
+			currentChunk = (node.first % (GroupSize * ChunkSize)) / ChunkSize;
 		}
 
 		if (currentChunk != lastChunk) {
@@ -453,8 +459,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 				// Publish a ChunkInfo.
 
 				const size_t rawOffset = nextChunkInfo - (char*)(&groupInfo->chunkOffsets[chunks]);
-				const size_t scaledOffset = rawOffset / CHUNK_ALIGNMENT;
-				if (rawOffset % CHUNK_ALIGNMENT != 0)
+				const size_t scaledOffset = rawOffset / ChunkAlignment;
+				if (rawOffset % ChunkAlignment != 0)
 					throw std::runtime_error("SortedNodeStore: invalid scaledOffset for chunk");
 				if (scaledOffset > 65535)
 					throw std::runtime_error("SortedNodeStore: scaledOffset too big (" + std::to_string(scaledOffset) + "), groupIndex=" + std::to_string(groupIndex));
@@ -472,7 +478,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 				} else {
 					// Store compressed.
 					CompressedChunkInfo* ptr = (CompressedChunkInfo*)nextChunkInfo;
-					ptr->flags = CHUNK_COMPRESSED | (compressedLatpSize[currentChunkIndex] << 10) | compressedLonSize[currentChunkIndex];
+					ptr->flags = ChunkCompressed | (compressedLatpSize[currentChunkIndex] << 10) | compressedLonSize[currentChunkIndex];
 
 					ptr->firstLatp = nodes[chunkNodeStartIndex].second.latp;
 					ptr->firstLon = nodes[chunkNodeStartIndex].second.lon;
@@ -509,8 +515,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 				}
 
 				// We require that chunks align on 16-byte boundaries
-				if (chunkSpace % CHUNK_ALIGNMENT != 0)
-					chunkSpace += CHUNK_ALIGNMENT - (chunkSpace % CHUNK_ALIGNMENT);
+				if (chunkSpace % ChunkAlignment != 0)
+					chunkSpace += ChunkAlignment - (chunkSpace % ChunkAlignment);
 
 				nextChunkInfo += chunkSpace;
 				chunkSizeFreqs[numNodesInChunk]++;
@@ -534,7 +540,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 		if (i != nodes.size()) {
 			const element_t& node = nodes[i];
 
-			const uint64_t nodeMaskByte = (node.first % CHUNK_SIZE) / 8;
+			const uint64_t nodeMaskByte = (node.first % ChunkSize) / 8;
 			const uint64_t nodeMaskBit = node.first % 8;
 			nodeMask[nodeMaskByte] |= 1 << nodeMaskBit;
 		}
