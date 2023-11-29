@@ -1,12 +1,12 @@
-#ifndef _WAY_STORES_H
-#define _WAY_STORES_H
+#ifndef _SORTED_WAY_STORE_H
+#define _SORTED_WAY_STORE_H
 
 #include <memory>
 #include <mutex>
 #include "way_store.h"
-#include "sorted_way_store.h"
+#include "mmap_allocator.h"
 
-class BinarySearchWayStore: public WayStore {
+class SortedWayStore: public WayStore {
 
 public:
 	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;

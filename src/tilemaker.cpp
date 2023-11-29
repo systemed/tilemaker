@@ -287,16 +287,16 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
+	bool canUseSortedNodeStore = true;
+	for (const std::string& file: inputFiles) {
+		if (ends_with(file, ".pbf")) {
+			canUseSortedNodeStore = canUseSortedNodeStore && PbfHasOptionalFeature(file, OptionSortTypeThenID);
+		}
+	}
+
 	if (osmStoreCompact)
 		nodeStore = make_shared<CompactNodeStore>();
 	else {
-		bool canUseSortedNodeStore = true;
-		for (const std::string& file: inputFiles) {
-			if (ends_with(file, ".pbf")) {
-				canUseSortedNodeStore = canUseSortedNodeStore && PbfHasOptionalFeature(file, OptionSortTypeThenID);
-			}
-		}
-
 		if (osmStoreCompressNodes && !canUseSortedNodeStore) {
 			std::cerr << "--compress-nodes requires a PBF with the Sort.Type_then_ID feature" << std::endl;
 			return 1;
@@ -309,7 +309,12 @@ int main(int argc, char* argv[]) {
 	}
 
 	shared_ptr<WayStore> wayStore;
-	wayStore = make_shared<BinarySearchWayStore>();
+	if (canUseSortedNodeStore) {
+		wayStore = make_shared<SortedWayStore>();
+	} else {
+		wayStore = make_shared<BinarySearchWayStore>();
+	}
+
 	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);
