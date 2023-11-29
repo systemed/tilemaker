@@ -15,6 +15,7 @@
 class OsmLuaProcessing;
 
 extern const std::string OptionSortTypeThenID;
+extern const std::string OptionLocationsOnWays;
 
 struct BlockMetadata {
 	long int offset;
