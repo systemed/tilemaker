@@ -1,6 +1,6 @@
-
 #include "mbtiles.h"
 #include "helpers.h"
+#include <iostream>
 #include <cmath>
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
@@ -21,8 +21,9 @@ MBTiles::~MBTiles() {
 
 // ---- Write .mbtiles
 
-void MBTiles::openForWriting(string *filename) {
-	db.init(*filename);
+void MBTiles::openForWriting(string &filename) {
+	db.init(filename);
+
 	db << "PRAGMA synchronous = OFF;";
 	try {
 		db << "PRAGMA application_id = 0x4d504258;";
@@ -36,7 +37,11 @@ void MBTiles::openForWriting(string *filename) {
 	}
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
+	preparedStatements.emplace_back(db << "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);");
+	preparedStatements.emplace_back(db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);");
+
 	db << "BEGIN;"; // begin a transaction
+	cout << "Creating mbtiles at " << filename << endl;
 	inTransaction = true;
 }
 	
@@ -48,23 +53,24 @@ void MBTiles::writeMetadata(string key, string value) {
 	
 void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
 	int tmsY = pow(2,zoom) - 1 - y;
+	int s = isMerge ? 1 : 0;
 	m.lock();
-	if (isMerge) {
-		db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)" << zoom << x << tmsY && *data;
-	} else {
-		db << "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)" << zoom << x << tmsY && *data;
-	}
+	preparedStatements[s].reset();
+	preparedStatements[s] << zoom << x << tmsY && *data;
+	preparedStatements[s].execute();
 	m.unlock();
 }
 
 void MBTiles::closeForWriting() {
 	db << "CREATE UNIQUE INDEX IF NOT EXISTS tile_index on tiles (zoom_level, tile_column, tile_row);";
+	preparedStatements[0].used(true);
+	preparedStatements[1].used(true);
 }
 
 // ---- Read mbtiles
 
-void MBTiles::openForReading(string *filename) {
-	db.init(*filename);
+void MBTiles::openForReading(string &filename) {
+	db.init(filename);
 }
 
 void MBTiles::readBoundingBox(double &minLon, double &maxLon, double &minLat, double &maxLat) {
