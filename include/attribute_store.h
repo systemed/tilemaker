@@ -329,8 +329,6 @@ struct AttributeSet {
 		if (useVector) {
 			new (&intValues) std::vector<uint32_t>;
 			intValues = a.intValues;
-			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
-				shortValues[i] = 0;
 		} else {
 			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 				shortValues[i] = a.shortValues[i];
