@@ -27,6 +27,11 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	const size_t z6x = index.x / z6OffsetDivisor;
 	const size_t z6y = index.y / z6OffsetDivisor;
 
+	if (z6x >= 64 || z6y >= 64) {
+		std::cerr << "addObjectToSmallIndex: ignoring OutputObject with invalid z" << baseZoom << " coordinates " << index.x << ", " << index.y << " (id: " << id << ")" << std::endl;
+		return;
+	}
+
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 
 	std::lock_guard<std::mutex> lock(objectsMutex[z6index % objectsMutex.size()]);
