@@ -302,7 +302,7 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, OSMStore
 		// Write to sqlite
 		tile.SerializeToString(&outputdata);
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
-		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata);
+		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
 
 	} else {
 		// Write to file

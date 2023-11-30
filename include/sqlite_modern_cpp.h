@@ -8,6 +8,8 @@
 /*
 	This is an earlier version of sqlite_modern_cpp (current versions break on OS X), lightly patched
 	to include a database.init() method, and to use the && operator for inserting blobs.
+	https://github.com/SqliteModernCpp/sqlite_modern_cpp/commit/552541a0afc49d9381aa75cb9ae5a9c362b0fdea
+	also applied.
 	-- Richard Fairhurst, 28.06.2015
 */
 
@@ -97,7 +99,10 @@ namespace sqlite {
 		~database_binder() noexcept(false) {
 			/* Will be executed if no >>op is found */
 			if (_stmt) {
-				if (sqlite3_step(_stmt) != SQLITE_DONE) {
+				int hresult;
+				while ((hresult=sqlite3_step(_stmt)) == SQLITE_ROW) {}
+				
+				if (hresult != SQLITE_DONE) {
 					throw std::runtime_error(sqlite3_errmsg(_db));
 				}
 

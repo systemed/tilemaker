@@ -29,6 +29,11 @@ void MBTiles::openForWriting(string *filename) {
 	} catch(runtime_error &e) {
 		cout << "Couldn't write SQLite application_id (not fatal): " << e.what() << endl;
 	}
+	try {
+		db << "PRAGMA journal_mode=OFF;";
+	} catch(runtime_error &e) {
+		cout << "Couldn't turn journaling off (not fatal): " << e.what() << endl;
+	}
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
 	db << "BEGIN;"; // begin a transaction
@@ -41,10 +46,14 @@ void MBTiles::writeMetadata(string key, string value) {
 	m.unlock();
 }
 	
-void MBTiles::saveTile(int zoom, int x, int y, string *data) {
+void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
 	int tmsY = pow(2,zoom) - 1 - y;
 	m.lock();
-	db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);" << zoom << x << tmsY && *data;
+	if (isMerge) {
+		db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)" << zoom << x << tmsY && *data;
+	} else {
+		db << "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?)" << zoom << x << tmsY && *data;
+	}
 	m.unlock();
 }
 
