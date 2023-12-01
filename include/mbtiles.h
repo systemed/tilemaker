@@ -13,18 +13,19 @@
 */
 class MBTiles { 
 	sqlite::database db;
+	std::vector<sqlite::database_binder> preparedStatements;
 	std::mutex m;
 	bool inTransaction;
 
 public:
 	MBTiles();
 	virtual ~MBTiles();
-	void openForWriting(std::string *filename);
+	void openForWriting(std::string &filename);
 	void writeMetadata(std::string key, std::string value);
-	void saveTile(int zoom, int x, int y, std::string *data);
+	void saveTile(int zoom, int x, int y, std::string *data, bool isMerge);
 	void closeForWriting();
 
-	void openForReading(std::string *filename);
+	void openForReading(std::string &filename);
 	void readBoundingBox(double &minLon, double &maxLon, double &minLat, double &maxLat);
 	void readTileList(std::vector<std::tuple<int,int,int>> &tileList);
 	std::vector<char> readTile(int zoom, int col, int row);
