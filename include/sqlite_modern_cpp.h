@@ -125,7 +125,7 @@ namespace sqlite {
 
 		void reset() {
 			sqlite3_reset(_stmt.get());
-			sqlite3_clear_bindings(_stmt.get());
+			//sqlite3_clear_bindings(_stmt.get());
 			_inx = 1;
 			used(false);
 		}

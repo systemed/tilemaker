@@ -35,6 +35,8 @@ void MBTiles::openForWriting(string &filename) {
 	} catch(runtime_error &e) {
 		cout << "Couldn't turn journaling off (not fatal): " << e.what() << endl;
 	}
+	db << "PRAGMA page_size = 65536;";
+	db << "VACUUM;"; // make sure page_size takes effect
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
 	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
 	preparedStatements.emplace_back(db << "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);");
