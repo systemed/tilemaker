@@ -15,11 +15,6 @@
 // Additional memory usage varies, approaching 1% for very large PBFs.
 
 namespace SortedNodeStoreTypes {
-	extern const uint16_t GroupSize;
-	extern const uint16_t ChunkSize;
-	extern const uint16_t ChunkAlignment;
-	extern const uint32_t ChunkCompressed;
-
 	struct ChunkInfoBase {
 		// If high bit is set, this is a compressed chunk.
 		// Bits 0..9 are the length of the compressed lons.

@@ -489,6 +489,8 @@ int PbfReader::ReadPbfFile(
 				boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
 					if (phase == ReadPhase::Nodes)
 						osmStore.nodes.batchStart();
+					if (phase == ReadPhase::Ways)
+						osmStore.ways.batchStart();
 
 					for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
 						auto infile = generate_stream();

@@ -11,6 +11,9 @@ public:
 	using ll_element_t = std::pair<WayID, latplon_vector_t>;
 
 	virtual void reopen() = 0;
+	// Run on each thread when a batch of blocks is started. Only
+	// meaningful for SortedWayStore
+	virtual void batchStart() = 0;
 	virtual std::vector<LatpLon> at(WayID wayid) const = 0;
 	virtual bool requiresNodes() const = 0;
 	virtual void insertLatpLons(std::vector<ll_element_t>& newWays) = 0;

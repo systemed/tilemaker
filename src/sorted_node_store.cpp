@@ -10,15 +10,14 @@
 #include "external/streamvbyte.h"
 #include "external/streamvbyte_zigzag.h"
 
-const uint16_t SortedNodeStoreTypes::GroupSize = 256;
-const uint16_t SortedNodeStoreTypes::ChunkSize = 256;
-const uint16_t SortedNodeStoreTypes::ChunkAlignment = 16;
-const uint32_t SortedNodeStoreTypes::ChunkCompressed = 1 << 31;
-
-
 namespace SortedNodeStoreTypes {
+	const uint16_t GroupSize = 256;
+	const uint16_t ChunkSize = 256;
+	const uint16_t ChunkAlignment = 16;
+	const uint32_t ChunkCompressed = 1 << 31;
+
 	std::atomic<uint64_t> totalGroups;
-	std::atomic<uint64_t> totalNodes; // consider leaving this in so we have fast size()
+	std::atomic<uint64_t> totalNodes;
 	std::atomic<uint64_t> totalGroupSpace;
 	std::atomic<uint64_t> totalChunks;
 	std::atomic<uint64_t> chunkSizeFreqs[257];
@@ -33,7 +32,7 @@ namespace SortedNodeStoreTypes {
 	// the finalize step.
 	thread_local bool collectingOrphans = true;
 	thread_local uint64_t groupStart = -1;
-	thread_local std::vector<NodeStore::element_t>* localNodes = NULL;
+	thread_local std::vector<NodeStore::element_t>* localNodes = nullptr;
 
 	thread_local int64_t cachedChunk = -1;
 	thread_local std::vector<int32_t> cacheChunkLons;
@@ -185,7 +184,7 @@ size_t SortedNodeStore::size() const {
 }
 
 void SortedNodeStore::insert(const std::vector<element_t>& elements) {
-	if (localNodes == NULL) {
+	if (localNodes == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
@@ -232,7 +231,7 @@ void SortedNodeStore::insert(const std::vector<element_t>& elements) {
 void SortedNodeStore::batchStart() {
 	collectingOrphans = true;
 	groupStart = -1;
-	if (localNodes == NULL || localNodes->size() == 0)
+	if (localNodes == nullptr || localNodes->size() == 0)
 		return;
 
 	collectOrphans(*localNodes);
