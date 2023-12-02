@@ -293,6 +293,17 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 	return rv;
 }
 
+void populateMask(uint8_t* mask, const std::vector<uint8_t>& ids) {
+	// mask should be a 32-byte array of uint8_t
+	memset(mask, 0, 32);
+	for (const uint8_t id : ids) {
+		const uint64_t maskByte = id / 8;
+		const uint64_t maskBit = id % 8;
+
+		mask[maskByte] |= 1 << maskBit;
+	}
+}
+
 void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways) {
 	totalWays += ways.size();
 	if (ways.size() == 0) {
@@ -311,7 +322,7 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	totalGroups++;
 
 	struct ChunkData {
-		uint8_t chunkId;
+		uint8_t id;
 		std::vector<uint8_t> wayIds;
 		std::vector<uint16_t> wayFlags;
 		std::deque<std::vector<uint8_t>> encodedWays;
@@ -326,11 +337,11 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	for (const auto& way : ways) {
 		const uint8_t currentChunk = (way.first % (GroupSize * ChunkSize)) / ChunkSize;
 
-		if (lastChunk == nullptr || lastChunk->chunkId != currentChunk) {
+		if (lastChunk == nullptr || lastChunk->id != currentChunk) {
 			std::cout << "making a chunk for " << std::to_string(currentChunk) << std::endl;
 			chunks.push_back({});
 			lastChunk = &chunks.back();
-			lastChunk->chunkId = currentChunk;
+			lastChunk->id = currentChunk;
 		}
 		const WayID id = way.first;
 		const std::vector<NodeID>& nodes = way.second;
@@ -393,9 +404,11 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	groups[groupIndex] = groupInfo;
 
 	// 3. populate the masks and offsets
-
-
-
+	std::vector<uint8_t> chunkIds;
+	chunkIds.reserve(chunks.size());
+	for (const auto& chunk : chunks)
+		chunkIds.push_back(chunk.id);
+	populateMask(groupInfo->chunkMask, chunkIds);
 }
 
 

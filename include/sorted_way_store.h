@@ -113,4 +113,8 @@ private:
 	void publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways);
 };
 
+
+// TODO: consider extracting this for SortedNodeStore if we rewrite that class
+void populateMask(uint8_t* mask, const std::vector<uint8_t>& ids);
+
 #endif

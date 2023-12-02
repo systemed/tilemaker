@@ -76,13 +76,49 @@ MU_TEST(test_way_store) {
 	*/
 }
 
-MU_TEST_SUITE(test_suite) {
+MU_TEST(test_populate_mask) {
+	uint8_t mask[32];
+	std::vector<uint8_t> ids;
+
+	{
+		// No ids: all 0s
+		populateMask(mask, ids);
+		for(int i = 0; i < 32; i++)
+			mu_check(mask[i] == 0);
+	}
+
+	{
+		// Every id: all 1s
+		for(int i = 0; i < 256; i++)
+			ids.push_back(i);
+		populateMask(mask, ids);
+		for(int i = 0; i < 32; i++)
+			mu_check(mask[i] == 255);
+	}
+
+	{
+		// Every other ID
+		ids.clear();
+		for (int i = 0;  i < 256; i += 2)
+			ids.push_back(i);
+		populateMask(mask, ids);
+		for(int i = 0; i < 32; i++)
+			mu_check(mask[i] == 0b01010101);
+	}
+}
+
+MU_TEST_SUITE(test_suite_sorted_way_store) {
 	MU_RUN_TEST(test_encode_way);
 	MU_RUN_TEST(test_way_store);
 }
 
+MU_TEST_SUITE(test_suite_bitmask) {
+	MU_RUN_TEST(test_populate_mask);
+}
+
 int main() {
-	MU_RUN_SUITE(test_suite);
+	MU_RUN_SUITE(test_suite_sorted_way_store);
+	MU_RUN_SUITE(test_suite_bitmask);
 	MU_REPORT();
 	return MU_EXIT_CODE;
 }
