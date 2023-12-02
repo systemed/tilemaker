@@ -225,6 +225,7 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		nodeKeyPositions.insert(findStringPosition(pb, it.c_str()));
 	}
 
+	bool is_terminal = isatty(1);
 	for (int i=0; i<pb.primitivegroup_size(); i++) {
 		PrimitiveGroup pg;
 		pg = pb.primitivegroup(i);
@@ -233,7 +234,11 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		{
 			std::ostringstream str;
 			osmStore.reportStoreSize(str);
-			str << "Block " << progress.first << "/" << progress.second << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
+			str << "Block " << progress.first << "/" << progress.second << " ways " << pg.ways_size() << " relations " << pg.relations_size();
+			if (is_terminal)
+				str << "        \r";
+			else
+				str << std::endl;
 			std::cout << str.str();
 			std::cout.flush();
 		};
@@ -250,8 +255,12 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
 			osmStore.ensure_used_ways_inited();
 			bool done = ScanRelations(output, pg, pb);
-			if(done) { 
-				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)\r";
+			if(done) {
+				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)";
+				if (isatty(1))
+					std::cout << "\r";
+				else
+					std::cout << std::endl;
 				std::cout.flush();
 				continue;
 			}
