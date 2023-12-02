@@ -139,7 +139,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		maskByte = maskByte & ((1 << nodeMaskBit) - 1);
 		nodeOffset += popcnt(&maskByte, 1);
 		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
-			throw std::runtime_error("SortedNodeStore: node missing, no node");
+			throw std::runtime_error("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
 		return { cacheChunkLatps[nodeOffset], cacheChunkLons[nodeOffset] };
 	}

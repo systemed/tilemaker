@@ -115,6 +115,24 @@ MU_TEST(test_way_store) {
 		mu_check(rv[99].latp == 299);
 	}
 
+	// missing things should throw std::out_of_range
+
+	bool threw = false;
+	try {
+		sws.at(123123123);
+	} catch (std::out_of_range &e) {
+		threw = true;
+	} catch (...) {}
+	mu_check(threw == true);
+
+	threw = false;
+	try {
+		sws.at(3);
+	} catch (std::out_of_range &e) {
+		threw = true;
+	} catch (...) {}
+	mu_check(threw == true);
+
 }
 
 MU_TEST(test_populate_mask) {

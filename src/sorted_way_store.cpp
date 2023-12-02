@@ -73,7 +73,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 	GroupInfo* groupPtr = groups[groupIndex];
 
 	if (groupPtr == nullptr) {
-		throw std::runtime_error("SortedWayStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
+		throw std::out_of_range("SortedWayStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
 	}
 
 	size_t chunkOffset = 0;
@@ -84,7 +84,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 		chunkOffset += popcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
-			throw std::runtime_error("SortedWayStore: way " + std::to_string(id) + " missing, no chunk");
+			throw std::out_of_range("SortedWayStore: way " + std::to_string(id) + " missing, no chunk");
 	}
 
 	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
@@ -113,7 +113,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 		maskByte = maskByte & ((1 << wayMaskBit) - 1);
 		wayOffset += popcnt(&maskByte, 1);
 		if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
-			throw std::runtime_error("SortedWayStore: way missing, no way");
+			throw std::out_of_range("SortedWayStore: way " + std::to_string(id) + " missing, no way");
 
 		wayPtr = (EncodedWay*)(endOfWayOffsetPtr + chunkPtr->wayOffsets[wayOffset] * LargeWayAlignment);
 	}
