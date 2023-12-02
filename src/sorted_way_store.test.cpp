@@ -108,6 +108,13 @@ MU_TEST(test_way_store) {
 		mu_check(rv[99].latp == 299);
 	}
 
+	{
+		const auto& rv = sws.at(131072);
+		mu_check(rv.size() == 100);
+		mu_check(rv[0].latp == 200);
+		mu_check(rv[99].latp == 299);
+	}
+
 }
 
 MU_TEST(test_populate_mask) {

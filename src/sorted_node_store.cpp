@@ -86,8 +86,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	GroupInfo* groupPtr = groups[groupIndex];
 
 	if (groupPtr == nullptr) {
-		std::cerr << "SortedNodeStore::at(" << id << ") uses non-existent group " << groupIndex << std::endl;
-		throw std::runtime_error("SortedNodeStore::at bad index");
+		throw std::runtime_error("SortedNodeStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
 	}
 
 	size_t chunkOffset = 0;
@@ -98,7 +97,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		chunkOffset += popcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
-			throw std::runtime_error("SortedNodeStore: node missing, no chunk");
+			throw std::runtime_error("SortedNodeStore: node " + std::to_string(id) + " missing, no chunk");
 	}
 
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];

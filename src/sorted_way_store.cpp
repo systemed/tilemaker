@@ -73,8 +73,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 	GroupInfo* groupPtr = groups[groupIndex];
 
 	if (groupPtr == nullptr) {
-		std::cerr << "SortedWayStore::at(" << id << ") uses non-existent group " << groupIndex << std::endl;
-		throw std::runtime_error("SortedWayStore::at bad index");
+		throw std::runtime_error("SortedWayStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
 	}
 
 	size_t chunkOffset = 0;
@@ -85,7 +84,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 		chunkOffset += popcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
-			throw std::runtime_error("SortedWayStore: way missing, no chunk");
+			throw std::runtime_error("SortedWayStore: way " + std::to_string(id) + " missing, no chunk");
 	}
 
 	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
@@ -400,7 +399,7 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		const uint8_t currentChunk = (way.first % (GroupSize * ChunkSize)) / ChunkSize;
 
 		if (lastChunk == nullptr || lastChunk->id != currentChunk) {
-			std::cout << "making a chunk for " << std::to_string(currentChunk) << std::endl;
+			totalChunks++;
 			chunks.push_back({});
 			lastChunk = &chunks.back();
 			lastChunk->id = currentChunk;
