@@ -86,7 +86,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	GroupInfo* groupPtr = groups[groupIndex];
 
 	if (groupPtr == nullptr) {
-		throw std::runtime_error("SortedNodeStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
+		throw std::out_of_range("SortedNodeStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
 	}
 
 	size_t chunkOffset = 0;
@@ -97,7 +97,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		chunkOffset += popcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
-			throw std::runtime_error("SortedNodeStore: node " + std::to_string(id) + " missing, no chunk");
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no chunk");
 	}
 
 	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
@@ -139,7 +139,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		maskByte = maskByte & ((1 << nodeMaskBit) - 1);
 		nodeOffset += popcnt(&maskByte, 1);
 		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
-			throw std::runtime_error("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
 		return { cacheChunkLatps[nodeOffset], cacheChunkLons[nodeOffset] };
 	}
@@ -151,7 +151,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 	maskByte = maskByte & ((1 << nodeMaskBit) - 1);
 	nodeOffset += popcnt(&maskByte, 1);
 	if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
-		throw std::runtime_error("SortedNodeStore: node missing, no node");
+		throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
 	return ptr->nodes[nodeOffset];
 }
