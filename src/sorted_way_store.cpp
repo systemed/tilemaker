@@ -3,7 +3,9 @@
 #include <bitset>
 #include <cstring>
 #include <iostream>
+#include "external/libpopcnt.h"
 #include "sorted_way_store.h"
+#include "node_store.h"
 
 namespace SortedWayStoreTypes {
 	const uint16_t GroupSize = 256;
@@ -29,7 +31,7 @@ namespace SortedWayStoreTypes {
 
 using namespace SortedWayStoreTypes;
 
-SortedWayStore::SortedWayStore() {
+SortedWayStore::SortedWayStore(const NodeStore& nodeStore): nodeStore(nodeStore) {
 	// Each group can store 64K ways. If we allocate 32K slots,
 	// we support 2^31 = 2B ways, or about twice the number used
 	// by OSM as of December 2023.
@@ -59,10 +61,69 @@ void SortedWayStore::reopen() {
 
 }
 
-std::vector<LatpLon> SortedWayStore::at(WayID wayid) const {
+std::vector<LatpLon> SortedWayStore::at(WayID id) const {
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+	const uint64_t chunkMaskByte = chunk / 8;
+	const uint64_t chunkMaskBit = chunk % 8;
+
+	const uint64_t wayMaskByte = (id % ChunkSize) / 8;
+	const uint64_t wayMaskBit = id % 8;
+
+	GroupInfo* groupPtr = groups[groupIndex];
+
+	if (groupPtr == nullptr) {
+		std::cerr << "SortedWayStore::at(" << id << ") uses non-existent group " << groupIndex << std::endl;
+		throw std::runtime_error("SortedWayStore::at bad index");
+	}
+
+	size_t chunkOffset = 0;
+	{
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
+		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
+		chunkOffset += popcnt(&maskByte, 1);
+
+		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
+			throw std::runtime_error("SortedWayStore: way missing, no chunk");
+	}
+
+	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
+	const size_t numWays = popcnt(chunkPtr->smallWayMask, 32) + popcnt(chunkPtr->bigWayMask, 32);
+
+	uint8_t* const endOfWayOffsetPtr = (uint8_t*)(chunkPtr->wayOffsets + numWays);
+	EncodedWay* wayPtr = nullptr;
+
+	{
+		size_t wayOffset = 0;
+		wayOffset = popcnt(chunkPtr->smallWayMask, wayMaskByte);
+		uint8_t maskByte = chunkPtr->smallWayMask[wayMaskByte];
+		maskByte = maskByte & ((1 << wayMaskBit) - 1);
+		wayOffset += popcnt(&maskByte, 1);
+		if (chunkPtr->smallWayMask[wayMaskByte] & (1 << wayMaskBit)) {
+			wayPtr = (EncodedWay*)(endOfWayOffsetPtr + chunkPtr->wayOffsets[wayOffset]);
+		}
+	}
+
+	// If we didn't find it in small ways, look in big ways.
+	if (wayPtr == nullptr) {
+		size_t wayOffset = 0;
+		wayOffset += popcnt(chunkPtr->smallWayMask, 32);
+		wayOffset += popcnt(chunkPtr->bigWayMask, wayMaskByte);
+		uint8_t maskByte = chunkPtr->bigWayMask[wayMaskByte];
+		maskByte = maskByte & ((1 << wayMaskBit) - 1);
+		wayOffset += popcnt(&maskByte, 1);
+		if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
+			throw std::runtime_error("SortedWayStore: way missing, no way");
+
+		wayPtr = (EncodedWay*)(endOfWayOffsetPtr + chunkPtr->wayOffsets[wayOffset] * LargeWayAlignment);
+	}
+
+	std::vector<NodeID> nodes = SortedWayStore::decodeWay(wayPtr->flags, wayPtr->data);
 	std::vector<LatpLon> rv;
+	for (const NodeID& node : nodes)
+		rv.push_back(nodeStore.at(node));
 	return rv;
-	//throw std::runtime_error("at() notimpl");
 }
 
 void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {
@@ -209,7 +270,8 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		}
 	} else {
 		uint8_t setBits = (flags >> 11) & 0b00000011;
-		uint64_t highByte = setBits << 32;
+		uint64_t highByte = setBits;
+		highByte = highByte << 32;
 		for (int i = 0; i < length; i++)
 			highBytes[i] = highByte;
 	}
@@ -344,7 +406,6 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 			lastChunk->id = currentChunk;
 		}
 		const WayID id = way.first;
-		const std::vector<NodeID>& nodes = way.second;
 		lastChunk->wayIds.push_back(id % ChunkSize);
 
 		// Encode the way, uncompressed.
@@ -436,15 +497,17 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		// TODO: align this?
 		uint8_t* const endOfWayOffsetPtr = (uint8_t*)(chunkPtr->wayOffsets + numWays);
 		uint8_t* wayStartPtr = endOfWayOffsetPtr;
+		int offsetIndex = 0;
 		for (int i = 0; i < numWays; i++) {
 			const size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
 			if (waySize < 256) {
-				chunkPtr->wayOffsets[i] = wayStartPtr - endOfWayOffsetPtr;
+				chunkPtr->wayOffsets[offsetIndex] = wayStartPtr - endOfWayOffsetPtr;
 				EncodedWay* wayPtr = (EncodedWay*)wayStartPtr;
 				wayPtr->flags = chunk.wayFlags[i];
 				memcpy(wayPtr->data, chunk.encodedWays[i].data(), chunk.encodedWays[i].size());
 
 				wayStartPtr += sizeof(EncodedWay) + chunk.encodedWays[i].size();
+				offsetIndex++;
 			}
 		}
 
@@ -459,12 +522,13 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 				if (offset % LargeWayAlignment != 0)
 					throw std::runtime_error("big way alignment error");
 
-				chunkPtr->wayOffsets[i] = offset / LargeWayAlignment;
+				chunkPtr->wayOffsets[offsetIndex] = offset / LargeWayAlignment;
 				EncodedWay* wayPtr = (EncodedWay*)wayStartPtr;
 				wayPtr->flags = chunk.wayFlags[i];
 				memcpy(wayPtr->data, chunk.encodedWays[i].data(), chunk.encodedWays[i].size());
 
 				wayStartPtr += spaceNeeded;
+				offsetIndex++;
 			}
 		}
 

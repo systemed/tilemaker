@@ -7,6 +7,8 @@
 #include "way_store.h"
 #include "mmap_allocator.h"
 
+class NodeStore;
+
 // Like SortedNodeStore, but for ways.
 //
 // Ways are variable length, whereas nodes are a fixed 8 bytes.
@@ -80,7 +82,7 @@ namespace SortedWayStoreTypes {
 class SortedWayStore: public WayStore {
 
 public:
-	SortedWayStore();
+	SortedWayStore(const NodeStore& nodeStore);
 	~SortedWayStore();
 	void reopen() override;
 	void batchStart() override;
@@ -101,6 +103,7 @@ public:
 	static std::vector<NodeID> decodeWay(uint16_t flags, const uint8_t* input);
 
 private:
+	const NodeStore& nodeStore;
 	mutable std::mutex orphanageMutex;
 	std::vector<SortedWayStoreTypes::GroupInfo*> groups;
 	std::vector<std::pair<void*, size_t>> allocatedMemory;

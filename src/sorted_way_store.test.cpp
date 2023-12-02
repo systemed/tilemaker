@@ -1,6 +1,19 @@
 #include <iostream>
 #include "minunit.h"
 #include "sorted_way_store.h"
+#include "node_store.h"
+
+class TestNodeStore : public NodeStore {
+	void clear() override {}
+	void reopen() override {}
+	void batchStart() override {}
+	void finalize(size_t threadNum) override {}
+	size_t size() const override { return 1; }
+	LatpLon at(NodeID id) const override {
+		return { (int32_t)id, -(int32_t)id };
+	}
+	void insert(const std::vector<std::pair<NodeID, LatpLon>>& elements) override {}
+};
 
 void roundtripWay(const std::vector<NodeID>& way) {
 	std::vector<uint8_t> output;
@@ -48,7 +61,8 @@ MU_TEST(test_encode_way) {
 }
 
 MU_TEST(test_way_store) {
-	SortedWayStore sws;
+	TestNodeStore ns;
+	SortedWayStore sws(ns);
 	sws.batchStart();
 
 	std::vector<std::pair<WayID, std::vector<NodeID>>> ways;
@@ -67,13 +81,33 @@ MU_TEST(test_way_store) {
 	sws.insertNodes(ways);
 	sws.finalize(1);
 
-	/*
-	const auto& rv = sws.at(1);
-	mu_check(rv.size() == 1);
-	// TODO: requires a node store
-	// mu_check(rv[0] == 123);
 	mu_check(sws.size() == 5);
-	*/
+
+	{
+		const auto& rv = sws.at(1);
+		mu_check(rv.size() == 1);
+		mu_check(rv[0].latp == 123);
+	}
+
+	{
+		const auto& rv = sws.at(2);
+		mu_check(rv.size() == 1);
+		mu_check(rv[0].latp == 123);
+	}
+
+	{
+		const auto& rv = sws.at(513);
+		mu_check(rv.size() == 1);
+		mu_check(rv[0].latp == 123);
+	}
+
+	{
+		const auto& rv = sws.at(65536);
+		mu_check(rv.size() == 100);
+		mu_check(rv[0].latp == 200);
+		mu_check(rv[99].latp == 299);
+	}
+
 }
 
 MU_TEST(test_populate_mask) {
