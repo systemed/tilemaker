@@ -225,7 +225,20 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
-			if (!geom::is_valid(mp)) make_valid(mp);
+			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
+			if (!geom::is_valid(mp,failure)) { 
+				if (failure==geom::failure_spikes) {
+					geom::remove_spikes(mp);
+				} else if (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors) {
+					// retry with Boost intersection if fast_clip has caused self-intersections
+					MultiPolygon output;
+					geom::intersection(input, box, output);
+					geom::correct(output);
+					return output;
+				} else {
+					// occasionally also wrong_topological_dimension, disconnected_interior
+				}
+			}
 			return mp;
 		}
 
