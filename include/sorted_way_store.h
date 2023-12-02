@@ -17,25 +17,74 @@
 //
 // Per https://wiki.openstreetmap.org/wiki/Way, a way can have at most 2,000 nodes.
 //
-// In the naive case:
-// - we store each node ID as a 64-bit value
-// - we store the length, which takes 11 bits
-// ...a way could take 2 + 2000*8 = 16,002 byte
-// ...4 ways could fit in a short.
+// In practice, most ways have far fewer than 2,000 nodes.
+//   for NS: p50=7, p90=32, p95=54, p99=161
+//   for GB: p50=5, p90=19, p95=30, p99=82
+//   for ON: p50=8, p90=31, p95=54, p99=172
 //
-// Option 1: up to 256 uint32_ts => 1,024 bytes
-//   pro: simple, and 4 bytes is still better than a vector's 24 bytes.
-//
-// Option 2: 64 uint32_ts, plus 256 uint16_ts => 768 bytes
-//   pro: better memory usage
-//   con: fiddly
-//
-// Option 3: break ways into the component parts that would fit in a short.
-//           eg 64K / 256 => 256 => break a way into 32-node chunks.
-//  pro: very memory efficient. most (how many?) ways are likely <= 32 nodes.
-//
-// Option 4: require a running tally, e.g. store relative offsets. This
-//           feels a bit shitty on perf.
+// That is, 50% of the time, ways have 8 or fewer nodes. 90% of the time,
+// they have 32 or fewer nodes.
+
+namespace SortedWayStoreTypes {
+
+	struct EncodedWay {
+		// A way can have 2000 nodes.
+		// Bits 0..10 track how many nodes are in this way.
+		// That leaves 5 bits for activities:
+		// ab0xx: bits 32..33 of node ID are interwoven as bytes.
+		// ab1xx: bits 32..33 of node ID are xx
+		//
+		// 1zzzz: This way is stored zigzag encoded.
+		// z1zzz: This is a closed way, repeat the first node as the last node.
+		//
+		// When it's compressed, we still handle high bits the same,
+		// but the low bytes are compressed.
+		//
+		// We'd need to add a compressedLength, but otherwise it'd
+		// be the same.
+		//
+		//
+		uint16_t length;
+		// Data could be:
+		// (if compression bit) 2 bytes: compressed length
+		// (if compression bit) 4 bytes: first 32-bit value
+		// (if interwoven bit) N/4 bytes: interwoven high bits
+		// N 32-bit ints: the N low bits
+		uint8_t data[0];
+	};
+
+	// TODO: have 3 chunks: small chunk, large chunk, mixed chunk.
+	struct ChunkInfo {
+		// Bitmasks indicating which ways are in this chunk.
+		uint8_t wayMask[32];
+
+		// TODO: a whole 32-bit offset is a lot--90% of ways will
+		// need ~140 bytes or less. 50% will need ~20 bytes or less.
+		//
+		// The worst case--a chunk of ways that each have 2,000 nodes--
+		// would require 8,500 bytes per way, and 2.1M bytes total.
+		//
+		// A possible option: have 2 masks, one for small ways, and one
+		// for large ways. A small way is a way that fits in 256 bytes.
+		//
+		// A big way can then be stored with a scale of 64, and not
+		// be too wasteful.
+		//
+		// I think we'll need to collect the ways in 2 passes, which
+		// is a bit tedious.
+		uint32_t wayOffsets[0];
+	};
+
+	struct GroupInfo {
+		// A bitmask indicating how many chunks are in this group.
+		uint8_t chunkMask[32];
+
+		// There is an entry for each set bit in chunkMask. They identify
+		// the address of a ChunkInfo. The address is relative to the end
+		// of the GroupInfo struct
+		uint32_t chunkOffsets[0];
+	};
+}
 
 class SortedWayStore: public WayStore {
 
