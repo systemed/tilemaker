@@ -444,7 +444,9 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		}
 
 		groupSpace += smallWaySize;
-		groupSpace += (smallWaySize % LargeWayAlignment);
+
+		if (smallWaySize % LargeWayAlignment != 0)
+			groupSpace += LargeWayAlignment - (smallWaySize % LargeWayAlignment);
 		groupSpace += largeWaySize;
 	}
 
@@ -513,7 +515,8 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 
 		// Publish the big ways
 		// Offset is scaled for big ways, so make sure we're on a multiple of LargeWayAlignment
-		wayStartPtr += ((wayStartPtr - endOfWayOffsetPtr) % LargeWayAlignment);
+		if ((wayStartPtr - endOfWayOffsetPtr) % LargeWayAlignment != 0)
+			wayStartPtr += LargeWayAlignment - ((wayStartPtr - endOfWayOffsetPtr) % LargeWayAlignment);
 		for (int i = 0; i < numWays; i++) {
 			const size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
 			if (waySize >= 256) {
