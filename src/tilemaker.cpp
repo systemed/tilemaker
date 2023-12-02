@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) {
 
 	shared_ptr<WayStore> wayStore;
 	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
-		wayStore = make_shared<SortedWayStore>();
+		wayStore = make_shared<SortedWayStore>(*nodeStore.get());
 	} else {
 		wayStore = make_shared<BinarySearchWayStore>();
 	}
