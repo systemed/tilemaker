@@ -88,6 +88,7 @@ LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 # Targets
+.PHONY: test
 
 all: tilemaker
 
@@ -121,6 +122,14 @@ tilemaker: \
 	src/way_stores.o \
 	src/write_geometry.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
+
+test: test_sorted_way_store
+
+test_sorted_way_store: \
+	src/sorted_way_store.o \
+	src/sorted_way_store.test.o
+	$(CXX) $(CXXFLAGS) -o test $^ $(INC) $(LIB) $(LDFLAGS) && ./test
+
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)
