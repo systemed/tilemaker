@@ -1,14 +1,23 @@
 #include <atomic>
 #include <algorithm>
+#include <bitset>
 #include <iostream>
 #include "sorted_way_store.h"
 
 namespace SortedWayStoreTypes {
 	const uint16_t GroupSize = 256;
 	const uint16_t ChunkSize = 256;
+
+	// We encode some things in the length of a way's unused upper bits.
+	const uint16_t CompressedWay = 1 << 15;
+	const uint16_t ClosedWay = 1 << 14;
+	const uint16_t UniformUpperBits = 1 << 13;
+
 	thread_local bool collectingOrphans = true;
 	thread_local uint64_t groupStart = -1;
 	thread_local std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays = NULL;
+
+	thread_local std::vector<uint8_t> encodedWay;
 
 	std::atomic<uint64_t> totalWays;
 	std::atomic<uint64_t> totalGroups;
@@ -18,13 +27,21 @@ namespace SortedWayStoreTypes {
 
 using namespace SortedWayStoreTypes;
 
+SortedWayStore::SortedWayStore() {
+	// Each group can store 64K ways. If we allocate 32K slots,
+	// we support 2^31 = 2B ways, or about twice the number used
+	// by OSM as of December 2023.
+	groups.resize(32 * 1024);
+}
 
 void SortedWayStore::reopen() {
 	std::cout << "TODO: SortedWayStore::reopen()" << std::endl;
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID wayid) const {
-	throw std::runtime_error("at() notimpl");
+	std::vector<LatpLon> rv;
+	return rv;
+	//throw std::runtime_error("at() notimpl");
 }
 
 void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {
@@ -81,7 +98,7 @@ void SortedWayStore::clear() {
 }
 
 std::size_t SortedWayStore::size() const {
-	throw std::runtime_error("size() notimpl");
+	return totalWays.load();
 }
 
 void SortedWayStore::finalize(unsigned int threadNum) {
@@ -140,8 +157,111 @@ void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vect
 	std::copy(orphans.begin(), orphans.end(), vec.begin() + i);
 }
 
+std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input) {
+	std::vector<NodeID> rv;
+
+	bool isCompressed = flags & CompressedWay;
+	
+	if (isCompressed)
+		throw std::runtime_error("cannot decode compressed ways yet");
+
+	bool isClosed = flags & ClosedWay;
+
+	const uint16_t length = flags & 0b0000011111111111;
+
+	// TODO: handle isCompressed
+
+	uint64_t highBytes[length];
+
+	if (!(flags & UniformUpperBits)) {
+		// The nodes don't all share the same upper int; unpack which
+		// bits are set on a per-node basis.
+		for (int i = 0; i <= (length - 1) / 4; i++) {
+			uint8_t byte = *input;
+			for (int j = i * 4; j < std::min<int>(length, i * 4 + 4); j++) {
+			//for (int j = std::min<int>(length, i * 4 + 4) - 1; j >= i * 4; j--) {
+				//std::cout << "j=" << j << ", byte=" << std::bitset<8>(byte) << std::endl;
+				uint64_t highByte = 0;
+				highByte |= (byte & 0b00000011);
+				byte = byte >> 2;
+				highBytes[j] = (highByte << 32);
+			}
+			input++;
+		}
+	} else {
+		// TODO: handle non-interwoven bits
+		throw std::runtime_error("cannot handle non-interwoven bits");
+	}
+
+	// Decode the low ints
+	uint32_t* lowIntData = (uint32_t*)input;
+	for (int i = 0; i < length; i++)
+		rv.push_back(highBytes[i] | lowIntData[i]);
+
+	if (isClosed)
+		rv.push_back(rv[0]);
+	return rv;
+};
+
+uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<uint8_t>& output, bool compress) {
+	if (compress)
+		throw std::runtime_error("Way compression not implemented yet");
+
+	if (way.size() == 0)
+		throw std::runtime_error("Cannot encode an empty way");
+
+	if (way.size() > 2000)
+		throw std::runtime_error("Way had more than 2,000 nodes");
+
+	bool isClosed = way.size() > 1 && way[0] == way[way.size() - 1];
+	output.clear();
+
+	// When the way is closed, store that in a single bit and omit
+	// the final point.
+	const int max = isClosed ? way.size() - 1 : way.size();
+
+	uint16_t rv = max;
+
+	if (isClosed)
+		rv |= ClosedWay;
+
+	// TODO: detect when all the upper bits are the same
+	bool pushUpperBits = true;
+
+	if (pushUpperBits) {
+		for (int i = 0; i <= (max - 1) / 4; i++) {
+			uint8_t byte = 0;
+
+			//for (j = i * 4; j < std::min(max, i * 4 + 4); j++) {
+			bool first = true;
+			for (int j = std::min(max, i * 4 + 4) - 1; j >= i * 4; j--) {
+				if (!first)
+					byte = byte << 2;
+				first = false;
+				uint8_t upper2Bits = way[j] >> 32;
+				if (upper2Bits > 3)
+					throw std::runtime_error("unexpectedly high node ID: " + std::to_string(way[j]));
+				byte |= upper2Bits;
+			}
+
+			output.push_back(byte);
+
+		}
+	}
+
+	// Push the low bytes.
+	const size_t oldSize = output.size();
+	output.resize(output.size() + max * 4);
+	uint32_t* dataStart = (uint32_t*)(output.data() + oldSize);
+	for (int i = 0; i < max; i++) {
+		uint32_t lowBits = way[i];
+		dataStart[i] = lowBits;
+	}
+
+	return rv;
+}
+
 void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways) {
-	// Start with a very naive approach, store the entire thing.
 	totalWays += ways.size();
 	if (ways.size() == 0) {
 		throw std::runtime_error("SortedWayStore: group is empty");
@@ -155,6 +275,16 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 
 	totalGroups++;
 
+	for (const auto& way : ways) {
+		const WayID id = way.first;
+		const std::vector<NodeID>& nodes = way.second;
+
+		// Encode the way, uncompressed.
+		encodeWay(way.second, encodedWay, false);
+	}
+
+
 }
+
 
 

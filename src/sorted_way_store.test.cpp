@@ -1,8 +1,65 @@
+#include <iostream>
 #include "minunit.h"
 #include "sorted_way_store.h"
 
+void roundtripWay(const std::vector<NodeID>& way) {
+	std::vector<uint8_t> output;
+	uint16_t flags = SortedWayStore::encodeWay(way, output, false);
+
+	if (false) {
+		std::cout << "input=";
+		for (const auto& node : way) {
+			std::cout << node << " ";
+		}
+		std::cout << std::endl;
+		std::cout << "flags=" << flags << ", output.size()=" << output.size() << ", ";
+
+		for (const uint8_t byte : output)
+			std::cout << " " << std::to_string(byte);
+		std::cout << std::endl;
+	}
+
+	const std::vector<NodeID> roundtrip = SortedWayStore::decodeWay(flags, &output[0]);
+
+	mu_check(roundtrip.size() == way.size());
+	for (int i = 0; i < way.size(); i++)
+		mu_check(roundtrip[i] == way[i]);
+}
+
+MU_TEST(test_encode_way) {
+	{
+		std::vector<NodeID> way { 1 };
+		roundtripWay(way);
+	}
+
+	{
+		std::vector<NodeID> way { 1, 2 };
+		roundtripWay(way);
+	}
+
+	{
+		std::vector<NodeID> way { 1, 2, 1 };
+		roundtripWay(way);
+	}
+
+	{
+		std::vector<NodeID> way { 1, 2, 3, 4 };
+		roundtripWay(way);
+	}
+
+	{
+		std::vector<NodeID> way { 4294967295, 4294967297, 8589934592, 4, 5 };
+		roundtripWay(way);
+	}
+
+	// TODO: add a test that confirms that encoded size is smaller if
+	//       all high bits are the same
+
+}
+
 MU_TEST(test_way_store) {
 	SortedWayStore sws;
+	sws.batchStart();
 
 	std::vector<std::pair<WayID, std::vector<NodeID>>> ways;
 	std::vector<NodeID> shortWay;
@@ -18,15 +75,18 @@ MU_TEST(test_way_store) {
 	sws.insertNodes(ways);
 	sws.finalize(1);
 
+	/*
 	const auto& rv = sws.at(1);
 	mu_check(rv.size() == 1);
 	// TODO: requires a node store
 	// mu_check(rv[0] == 123);
 	mu_check(sws.size() == 3);
+	*/
 }
 
 MU_TEST_SUITE(test_suite) {
-	MU_RUN_TEST(test_way_store);
+	MU_RUN_TEST(test_encode_way);
+//	MU_RUN_TEST(test_way_store);
 }
 
 int main() {

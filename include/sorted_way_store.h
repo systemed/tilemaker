@@ -42,36 +42,27 @@ namespace SortedWayStoreTypes {
 		//
 		// We'd need to add a compressedLength, but otherwise it'd
 		// be the same.
-		//
-		//
-		uint16_t length;
+		uint16_t flags;
 		// Data could be:
 		// (if compression bit) 2 bytes: compressed length
 		// (if compression bit) 4 bytes: first 32-bit value
 		// (if interwoven bit) N/4 bytes: interwoven high bits
-		// N 32-bit ints: the N low bits
+		// N 32-bit ints: the N low ints
 		uint8_t data[0];
 	};
 
-	// TODO: have 3 chunks: small chunk, large chunk, mixed chunk.
 	struct ChunkInfo {
 		// Bitmasks indicating which ways are in this chunk.
-		uint8_t wayMask[32];
+		// Small ways: these are ways that can be stored in 256 bytes or less,
+		//   they can be identified with a scale of 1 relative to end of wayOffsets.
+		//
+		//   We expect 60-80% of ways to be small ways.
+		//
+		// Big ways: these are ways that require more than 256 bytes,
+		//   they can be identified with a scale of 64 relative to start of chunk.
+		uint8_t smallWayMask[32];
+		uint8_t bigWayMask[32];
 
-		// TODO: a whole 32-bit offset is a lot--90% of ways will
-		// need ~140 bytes or less. 50% will need ~20 bytes or less.
-		//
-		// The worst case--a chunk of ways that each have 2,000 nodes--
-		// would require 8,500 bytes per way, and 2.1M bytes total.
-		//
-		// A possible option: have 2 masks, one for small ways, and one
-		// for large ways. A small way is a way that fits in 256 bytes.
-		//
-		// A big way can then be stored with a scale of 64, and not
-		// be too wasteful.
-		//
-		// I think we'll need to collect the ways in 2 passes, which
-		// is a bit tedious.
 		uint32_t wayOffsets[0];
 	};
 
@@ -81,7 +72,7 @@ namespace SortedWayStoreTypes {
 
 		// There is an entry for each set bit in chunkMask. They identify
 		// the address of a ChunkInfo. The address is relative to the end
-		// of the GroupInfo struct
+		// of the GroupInfo struct.
 		uint32_t chunkOffsets[0];
 	};
 }
@@ -89,6 +80,7 @@ namespace SortedWayStoreTypes {
 class SortedWayStore: public WayStore {
 
 public:
+	SortedWayStore();
 	void reopen() override;
 	void batchStart() override;
 	std::vector<LatpLon> at(WayID wayid) const override;
@@ -98,9 +90,19 @@ public:
 	void clear() override;
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;
+	
+	static uint16_t encodeWay(
+		const std::vector<NodeID>& way,
+		std::vector<uint8_t>& output,
+		bool compress
+	);
+
+	static std::vector<NodeID> decodeWay(uint16_t flags, const uint8_t* input);
 
 private:
 	mutable std::mutex orphanageMutex;
+	std::vector<SortedWayStoreTypes::GroupInfo*> groups;
+	std::vector<std::pair<void*, size_t>> allocatedMemory;
 
 	// The orphanage stores nodes that come from groups that may be worked on by
 	// multiple threads. They'll get folded into the index during finalize()
