@@ -346,7 +346,6 @@ public:
 	}
 
 	void clear();
-	void reportStoreSize(std::ostringstream &str);
 	void reportSize() const;
 
 	// Relation -> MultiPolygon or MultiLinestring

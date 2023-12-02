@@ -2,6 +2,7 @@
 #define _MMAP_ALLOCATOR_H
 
 #include <cstddef>
+#include <sstream>
 
 class void_mmap_allocator
 {
@@ -12,6 +13,8 @@ public:
 	static void deallocate(void *p, size_type n);
 	static void destroy(void *p);
 	static void shutdown();
+	static void reportStoreSize(std::ostringstream &str);
+	static void openMmapFile(const std::string& mmapFilename);
 };
 
 template<typename T>

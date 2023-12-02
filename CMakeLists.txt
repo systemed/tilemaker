@@ -99,6 +99,7 @@ file(GLOB tilemaker_src_files
 	src/helpers.cpp
 	src/osm_lua_processing.cpp
 	src/osm_store.cpp
+	src/mmap_allocator.cpp
 	src/pbf_blocks.cpp
 	src/read_shp.cpp
 	src/shp_mem_tiles.cpp
@@ -107,6 +108,8 @@ file(GLOB tilemaker_src_files
 	src/node_stores.cpp
 	src/coordinates_geom.cpp
 	src/sorted_node_store.cpp
+	src/sorted_way_store.cpp
+	src/way_stores.cpp
 	src/external/streamvbyte_decode.cc
 	src/external/streamvbyte_encode.cc
 	src/external/streamvbyte_zigzag.cc

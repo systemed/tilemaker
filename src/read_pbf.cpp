@@ -10,6 +10,7 @@
 #include "node_store.h"
 #include "way_store.h"
 #include "osm_lua_processing.h"
+#include "mmap_allocator.h"
 
 using namespace std;
 
@@ -263,7 +264,7 @@ bool PbfReader::ReadBlock(
 		auto output_progress = [&]()
 		{
 			std::ostringstream str;
-			osmStore.reportStoreSize(str);
+			void_mmap_allocator::reportStoreSize(str);
 			str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
 			std::cout << str.str();
 			std::cout.flush();

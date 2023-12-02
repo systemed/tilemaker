@@ -104,6 +104,7 @@ tilemaker: \
 	src/geom.o \
 	src/helpers.o \
 	src/mbtiles.o \
+	src/mmap_allocator.o \
 	src/node_stores.o \
 	src/osm_lua_processing.o \
 	src/osm_mem_tiles.o \
