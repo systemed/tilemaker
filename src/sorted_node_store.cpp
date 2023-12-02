@@ -289,6 +289,8 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 		throw std::runtime_error("SortedNodeStore: group is empty");
 	}
 	size_t groupIndex = nodes[0].first / (GroupSize * ChunkSize);
+	if (groupIndex >= groups.size())
+		throw std::runtime_error("SortedNodeStore: unexpected groupIndex " + std::to_string(groupIndex));
 
 	if (nodes.size() > ChunkSize * GroupSize) {
 		std::cout << "groupIndex=" << groupIndex << ", first ID=" << nodes[0].first << ", nodes.size() = " << nodes.size() << std::endl;
@@ -425,7 +427,7 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 	} else {
 		groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
 		if (groupInfo == nullptr)
-			throw std::runtime_error("failed to allocate space for group");
+			throw std::runtime_error("SortedNodeStore: failed to allocate space for group");
 
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));

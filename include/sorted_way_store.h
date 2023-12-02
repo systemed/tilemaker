@@ -63,7 +63,7 @@ namespace SortedWayStoreTypes {
 		uint8_t smallWayMask[32];
 		uint8_t bigWayMask[32];
 
-		uint32_t wayOffsets[0];
+		uint16_t wayOffsets[0];
 	};
 
 	struct GroupInfo {
@@ -81,6 +81,7 @@ class SortedWayStore: public WayStore {
 
 public:
 	SortedWayStore();
+	~SortedWayStore();
 	void reopen() override;
 	void batchStart() override;
 	std::vector<LatpLon> at(WayID wayid) const override;

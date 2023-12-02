@@ -1,12 +1,14 @@
 #include <atomic>
 #include <algorithm>
 #include <bitset>
+#include <cstring>
 #include <iostream>
 #include "sorted_way_store.h"
 
 namespace SortedWayStoreTypes {
 	const uint16_t GroupSize = 256;
 	const uint16_t ChunkSize = 256;
+	const size_t LargeWayAlignment = 64;
 
 	// We encode some things in the length of a way's unused upper bits.
 	const uint16_t CompressedWay = 1 << 15;
@@ -34,8 +36,27 @@ SortedWayStore::SortedWayStore() {
 	groups.resize(32 * 1024);
 }
 
+SortedWayStore::~SortedWayStore() {
+	for (const auto entry: allocatedMemory)
+		void_mmap_allocator::deallocate(entry.first, entry.second);
+}
+
 void SortedWayStore::reopen() {
-	std::cout << "TODO: SortedWayStore::reopen()" << std::endl;
+	for (const auto entry: allocatedMemory)
+		void_mmap_allocator::deallocate(entry.first, entry.second);
+	allocatedMemory.clear();
+
+	totalWays = 0;
+	totalGroups = 0;
+	totalGroupSpace = 0;
+	totalChunks = 0;
+	//memset(chunkSizeFreqs, 0, sizeof(chunkSizeFreqs));
+	//memset(groupSizeFreqs, 0, sizeof(groupSizeFreqs));
+	orphanage.clear();
+	workerBuffers.clear();
+	groups.clear();
+	groups.resize(256 * 1024);
+
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID wayid) const {
@@ -279,6 +300,9 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	}
 	size_t groupIndex = ways[0].first / (GroupSize * ChunkSize);
 
+	if (groupIndex >= groups.size())
+		throw std::runtime_error("SortedWayStore: unexpected groupIndex " + std::to_string(groupIndex));
+
 	if (ways.size() > ChunkSize * GroupSize) {
 		std::cout << "groupIndex=" << groupIndex << ", first ID=" << ways[0].first << ", ways.size() = " << ways.size() << std::endl;
 		throw std::runtime_error("SortedWayStore: group is too big");
@@ -286,13 +310,90 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 
 	totalGroups++;
 
+	struct ChunkData {
+		uint8_t chunkId;
+		std::vector<uint8_t> wayIds;
+		std::vector<uint16_t> wayFlags;
+		std::deque<std::vector<uint8_t>> encodedWays;
+	};
+
+	std::deque<ChunkData> chunks;
+
+
+	ChunkData* lastChunk = nullptr;
+
+	// Encode the ways and group by chunk - don't allocate final memory yet.
 	for (const auto& way : ways) {
+		const uint8_t currentChunk = (way.first % (GroupSize * ChunkSize)) / ChunkSize;
+
+		if (lastChunk == nullptr || lastChunk->chunkId != currentChunk) {
+			std::cout << "making a chunk for " << std::to_string(currentChunk) << std::endl;
+			chunks.push_back({});
+			lastChunk = &chunks.back();
+			lastChunk->chunkId = currentChunk;
+		}
 		const WayID id = way.first;
 		const std::vector<NodeID>& nodes = way.second;
+		lastChunk->wayIds.push_back(id % ChunkSize);
 
 		// Encode the way, uncompressed.
-		encodeWay(way.second, encodedWay, false);
+		uint16_t flags = encodeWay(way.second, encodedWay, false);
+		lastChunk->wayFlags.push_back(flags);
+
+		std::vector<uint8_t> encoded;
+		encoded.resize(encodedWay.size());
+		memcpy(encoded.data(), encodedWay.data(), encodedWay.size());
+
+		lastChunk->encodedWays.push_back(std::move(encoded));
 	}
+
+	// We now have the sizes of everything, so we can generate the final memory layout.
+
+	// 1. compute the memory that is needed
+	size_t groupSpace = sizeof(GroupInfo); // every group needs a GroupInfo
+	groupSpace += chunks.size() * sizeof(uint32_t); // every chunk needs a 32-bit offset
+	groupSpace += chunks.size() * sizeof(ChunkInfo); // every chunk needs a ChunkInfo
+	for (const auto& chunk : chunks) {
+		groupSpace += chunk.wayIds.size() * sizeof(uint16_t); // every way need a 16-bit offset
+
+		// Ways that are < 256 bytes get stored in the small ways buffer with
+		// no wasted space. Ways that are >= 256 bytes are stored in the large ways
+		// buffer with some wasted space.
+
+		size_t smallWaySize = 0;
+		size_t largeWaySize = 0;
+		for (int i = 0; i < chunk.wayIds.size(); i++) {
+			size_t waySize = chunk.encodedWays[i].size();
+			if (waySize < 256) {
+				smallWaySize += waySize;
+			} else {
+				largeWaySize += (((waySize - 1) / LargeWayAlignment) + 1) * LargeWayAlignment;
+			}
+		}
+
+		groupSpace += smallWaySize;
+		groupSpace += (smallWaySize % LargeWayAlignment);
+		groupSpace += largeWaySize;
+	}
+
+	totalGroupSpace += groupSpace;
+
+	// 2. allocate and track the memory
+	GroupInfo* groupInfo = nullptr;
+	{
+		groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
+		if (groupInfo == nullptr)
+			throw std::runtime_error("SortedWayStore: failed to allocate space for group");
+		std::lock_guard<std::mutex> lock(orphanageMutex);
+		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));
+	}
+
+	if (groups[groupIndex] != nullptr)
+		throw std::runtime_error("SortedNodeStore: group already present");
+	groups[groupIndex] = groupInfo;
+
+	// 3. populate the masks and offsets
+
 
 
 }

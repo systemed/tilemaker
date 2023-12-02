@@ -127,6 +127,7 @@ tilemaker: \
 test: test_sorted_way_store
 
 test_sorted_way_store: \
+	src/mmap_allocator.o \
 	src/sorted_way_store.o \
 	src/sorted_way_store.test.o
 	$(CXX) $(CXXFLAGS) -o test $^ $(INC) $(LIB) $(LDFLAGS) && ./test

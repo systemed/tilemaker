@@ -55,6 +55,8 @@ MU_TEST(test_way_store) {
 	std::vector<NodeID> shortWay;
 	shortWay.push_back(123);
 	ways.push_back(std::make_pair(1, shortWay));
+	ways.push_back(std::make_pair(2, shortWay));
+	ways.push_back(std::make_pair(513, shortWay));
 
 	std::vector<NodeID> longWay;
 	for(int i = 200; i < 300; i++)
@@ -70,13 +72,13 @@ MU_TEST(test_way_store) {
 	mu_check(rv.size() == 1);
 	// TODO: requires a node store
 	// mu_check(rv[0] == 123);
-	mu_check(sws.size() == 3);
+	mu_check(sws.size() == 5);
 	*/
 }
 
 MU_TEST_SUITE(test_suite) {
 	MU_RUN_TEST(test_encode_way);
-//	MU_RUN_TEST(test_way_store);
+	MU_RUN_TEST(test_way_store);
 }
 
 int main() {
