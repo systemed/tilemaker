@@ -329,8 +329,6 @@ struct AttributeSet {
 		if (useVector) {
 			new (&intValues) std::vector<uint32_t>;
 			intValues = a.intValues;
-			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
-				shortValues[i] = 0;
 		} else {
 			for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 				shortValues[i] = a.shortValues[i];
@@ -381,7 +379,7 @@ struct AttributeStore {
 	AttributeKeyStore keyStore;
 	AttributePairStore pairStore;
 	mutable std::mutex mutex;
-	int lookups=0;
+	std::atomic<uint64_t> lookups;
 
 	AttributeIndex add(AttributeSet &attributes);
 	std::vector<const AttributePair*> get(AttributeIndex index) const;
@@ -395,7 +393,8 @@ struct AttributeStore {
 	AttributeStore():
 		sets(ATTRIBUTE_SHARDS),
 		setsMaps(ATTRIBUTE_SHARDS),
-		setsMutex(ATTRIBUTE_SHARDS) {
+		setsMutex(ATTRIBUTE_SHARDS),
+		lookups(0) {
 	}
 };
 

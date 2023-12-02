@@ -30,9 +30,19 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 class OutputObject {
 
 public:
-	OutputObject(OutputGeometryType type, uint_least8_t l, NodeID id, AttributeIndex attributes, uint mz) 
-		: objectID(id), geomType(type), layer(l), z_order(0),
-		  minZoom(mz), attributes(attributes)
+	OutputObject(
+		OutputGeometryType type,
+		uint_least8_t l,
+		NodeID id,
+		AttributeIndex attributes,
+		uint mz
+	):
+		objectID(id),
+		geomType(type),
+		layer(l),
+		z_order(0),
+		minZoom(mz),
+		attributes(attributes)
 	{ }
 
 
@@ -82,44 +92,18 @@ public:
 };
 #pragma pack(pop)
 
-class OutputObjectRef
-{
-	OutputObject *oo;
-
-public:
-	OutputObjectRef(OutputObject *oo = nullptr)
-		: oo(oo)
-	{ }
-	OutputObjectRef(OutputObjectRef const &other) = default;
-	OutputObjectRef(OutputObjectRef &&other) = default;
-
-	OutputObjectRef &operator=(OutputObjectRef const &other) { oo = other.oo; return *this; }
-    OutputObject& operator*() { return *oo; }
-    OutputObject const& operator*() const { return *oo; }
-    OutputObject *operator->() { return oo; }
-    OutputObject const *operator->() const { return oo; }
-	void reset() { oo = nullptr; }
+struct OutputObjectID {
+	OutputObject oo;
+	uint64_t id;
 };
 
-typedef std::deque<std::pair<OutputObject, AttributeSet>> OutputObjectsWithAttributes;
-
 // Comparison functions
-
-bool operator==(const OutputObjectRef x, const OutputObjectRef y);
+bool operator==(const OutputObject& x, const OutputObject& y);
+bool operator==(const OutputObjectID& x, const OutputObjectID& y);
 
 namespace vector_tile {
 	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
 	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
-}
-
-namespace std {
-	/// Hashing function so we can use an unordered_set
-	template<>
-	struct hash<OutputObjectRef> {
-		size_t operator()(const OutputObjectRef &oo) const {
-			return std::hash<uint_least8_t>()(oo->layer) ^ std::hash<NodeID>()(oo->objectID);
-		}
-	};
 }
 
 #endif //_OUTPUT_OBJECT_H

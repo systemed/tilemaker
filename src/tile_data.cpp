@@ -3,102 +3,127 @@
 #include "tile_data.h"
 
 #include <ciso646>
-#include <boost/sort/sort.hpp>
 
 using namespace std;
 
-typedef std::pair<OutputObjectsConstIt,OutputObjectsConstIt> OutputObjectsConstItPair;
-
-thread_local std::deque<OutputObject>* tlsObjects = NULL;
-
-OutputObjectRef TileDataSource::CreateObject(OutputObject const &oo) {
-	if (tlsObjects == NULL) {
-		std::lock_guard<std::mutex> lock(mutex);
-		objects.push_back(std::deque<OutputObject>());
-		tlsObjects = &objects.back();
-	}
-
-	tlsObjects->push_back(oo);
-	return &tlsObjects->back();
+TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID)
+	:
+	includeID(includeID),
+	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
+	objectsMutex(threadNum * 4),
+	objects(CLUSTER_ZOOM_AREA),
+	objectsWithIds(CLUSTER_ZOOM_AREA),
+	baseZoom(baseZoom)
+{
 }
 
-void TileDataSource::MergeTileCoordsAtZoom(uint zoom, uint baseZoom, const TileIndex &srcTiles, TileCoordinatesSet &dstCoords) {
-	if (zoom==baseZoom) {
-		// at z14, we can just use tileIndex
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
-			dstCoords.insert(index);
-		}
-	} else {
-		// otherwise, we need to run through the z14 list, and assign each way
-		// to a tile at our zoom level
-		for (auto it = srcTiles.begin(); it!= srcTiles.end(); ++it) {
-			TileCoordinates index = it->first;
-			TileCoordinate tilex = index.x / pow(2, baseZoom-zoom);
-			TileCoordinate tiley = index.y / pow(2, baseZoom-zoom);
-			TileCoordinates newIndex(tilex, tiley);
-			dstCoords.insert(newIndex);
+void TileDataSource::finalize(size_t threadNum) {
+	finalizeObjects<OutputObjectXY>(threadNum, baseZoom, objects.begin(), objects.end());
+	finalizeObjects<OutputObjectXYID>(threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end());
+}
+
+void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
+	// Pick the z6 index
+	const size_t z6x = index.x / z6OffsetDivisor;
+	const size_t z6y = index.y / z6OffsetDivisor;
+
+	if (z6x >= 64 || z6y >= 64) {
+		std::cerr << "addObjectToSmallIndex: ignoring OutputObject with invalid z" << baseZoom << " coordinates " << index.x << ", " << index.y << " (id: " << id << ")" << std::endl;
+		return;
+	}
+
+	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+
+	std::lock_guard<std::mutex> lock(objectsMutex[z6index % objectsMutex.size()]);
+
+	if (id == 0 || !includeID)
+		objects[z6index].push_back({
+			oo,
+			(Z6Offset)(index.x - (z6x * z6OffsetDivisor)),
+			(Z6Offset)(index.y - (z6y * z6OffsetDivisor))
+		});
+	else
+		objectsWithIds[z6index].push_back({
+			oo,
+			(Z6Offset)(index.x - (z6x * z6OffsetDivisor)),
+			(Z6Offset)(index.y - (z6y * z6OffsetDivisor)),
+			id
+		});
+}
+
+void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output) {
+	// Scan through all shards. Convert to base zoom, then convert to the requested zoom.
+	collectTilesWithObjectsAtZoomTemplate<OutputObjectXY>(baseZoom, objects.begin(), objects.size(), zoom, output);
+	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(baseZoom, objectsWithIds.begin(), objectsWithIds.size(), zoom, output);
+}
+
+void addCoveredTilesToOutput(const uint baseZoom, const uint zoom, const Box& box, TileCoordinatesSet& output) {
+	int scale = pow(2, baseZoom-zoom);
+	TileCoordinate minx = box.min_corner().x() / scale;
+	TileCoordinate maxx = box.max_corner().x() / scale;
+	TileCoordinate miny = box.min_corner().y() / scale;
+	TileCoordinate maxy = box.max_corner().y() / scale;
+	for (int x=minx; x<=maxx; x++) {
+		for (int y=miny; y<=maxy; y++) {
+			TileCoordinates newIndex(x, y);
+			output.insert(newIndex);
 		}
 	}
 }
 
 // Find the tiles used by the "large objects" from the rtree index
-void TileDataSource::MergeLargeCoordsAtZoom(uint zoom, TileCoordinatesSet &dstCoords) {
-	for(auto const &result: box_rtree) {
-		int scale = pow(2, baseZoom-zoom);
-		TileCoordinate minx = result.first.min_corner().x() / scale;
-		TileCoordinate maxx = result.first.max_corner().x() / scale;
-		TileCoordinate miny = result.first.min_corner().y() / scale;
-		TileCoordinate maxy = result.first.max_corner().y() / scale;
-		for (int x=minx; x<=maxx; x++) {
-			for (int y=miny; y<=maxy; y++) {
-				TileCoordinates newIndex(x, y);
-				dstCoords.insert(newIndex);
-			}
-		}
-	}
+void TileDataSource::collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet &output) {
+	for(auto const &result: boxRtree)
+		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
+
+	for(auto const &result: boxRtreeWithIds)
+		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
 }
 
-// Copy objects from the tile at dstIndex (in the dataset srcTiles) into dstTile
-void TileDataSource::MergeSingleTileDataAtZoom(TileCoordinates dstIndex, uint zoom, uint baseZoom, const TileIndex &srcTiles, std::vector<OutputObjectRef> &dstTile) {
-	if (zoom==baseZoom) {
-		// at z14, we can just use tileIndex
-		auto oosetIt = srcTiles.find(dstIndex);
-		if(oosetIt == srcTiles.end()) return;
-		dstTile.insert(dstTile.end(), oosetIt->second.begin(), oosetIt->second.end());
-	} else {
-		// otherwise, we need to run through the z14 list, and assign each way
-		// to a tile at our zoom level
-		int scale = pow(2, baseZoom-zoom);
-		TileCoordinates srcIndex1(dstIndex.x*scale, dstIndex.y*scale);
-		TileCoordinates srcIndex2((dstIndex.x+1)*scale, (dstIndex.y+1)*scale);
+// Copy objects from the tile at dstIndex (in the dataset srcTiles) into output
+void TileDataSource::collectObjectsForTile(
+	uint zoom,
+	TileCoordinates dstIndex,
+	std::vector<OutputObjectID>& output
+) {
+	size_t iStart = 0;
+	size_t iEnd = objects.size();
 
-		for(int x=srcIndex1.x; x<srcIndex2.x; x++)
-		{
-			for(int y=srcIndex1.y; y<srcIndex2.y; y++)
-			{
-				TileCoordinates srcIndex(x, y);
-				auto oosetIt = srcTiles.find(srcIndex);
-				if(oosetIt == srcTiles.end()) continue;
-				for (auto it = oosetIt->second.begin(); it != oosetIt->second.end(); ++it) {
-					OutputObjectRef oo = *it;
-					if (oo->minZoom > zoom) continue;
-					dstTile.insert(dstTile.end(), oo);
-				}
-			}
-		}
+	// TODO: we could also narrow the search space for z1..z5, too.
+	//       They're less important, as they have fewer tiles.
+	if (zoom >= CLUSTER_ZOOM) {
+		// Compute the x, y at the base zoom level
+		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
+		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
+
+		iStart = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+		iEnd = iStart + 1;
 	}
+
+	collectObjectsForTileTemplate<OutputObjectXY>(baseZoom, objects.begin(), iStart, iEnd, zoom, dstIndex, output);
+	collectObjectsForTileTemplate<OutputObjectXYID>(baseZoom, objectsWithIds.begin(), iStart, iEnd, zoom, dstIndex, output);
 }
 
-// Copy objects from the large index into dstTile
-void TileDataSource::MergeLargeObjects(TileCoordinates dstIndex, uint zoom, std::vector<OutputObjectRef> &dstTile) {
+// Copy objects from the large index into output
+void TileDataSource::collectLargeObjectsForTile(
+	uint zoom,
+	TileCoordinates dstIndex,
+	std::vector<OutputObjectID>& output
+) {
 	int scale = pow(2, baseZoom - zoom);
 	TileCoordinates srcIndex1( dstIndex.x   *scale  ,  dstIndex.y   *scale  );
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
-	for(auto const &result: box_rtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
-		dstTile.push_back(result.second);
+	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
+		if (result.second.minZoom <= zoom)
+			output.push_back({result.second, 0});
+	}
+
+	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
+		if (result.second.oo.minZoom <= zoom)
+			output.push_back({result.second.oo, result.second.id});
+	}
 }
 
 // Build node and way geometries
@@ -233,62 +258,59 @@ void TileDataSource::reportSize() const {
 	std::cout << "Generated points: " << point_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
 }
 
-TileCoordinatesSet GetTileCoordinates(std::vector<class TileDataSource *> const &sources, unsigned int zoom) {
+TileCoordinatesSet getTilesAtZoom(
+	const std::vector<class TileDataSource *>& sources,
+	unsigned int zoom
+) {
 	TileCoordinatesSet tileCoordinates;
 
 	// Create list of tiles
 	tileCoordinates.clear();
 	for(size_t i=0; i<sources.size(); i++) {
-		sources[i]->MergeTileCoordsAtZoom(zoom, tileCoordinates);
-		sources[i]->MergeLargeCoordsAtZoom(zoom, tileCoordinates);
+		sources[i]->collectTilesWithObjectsAtZoom(zoom, tileCoordinates);
+		sources[i]->collectTilesWithLargeObjectsAtZoom(zoom, tileCoordinates);
 	}
 
 	return tileCoordinates;
 }
 
-std::vector<OutputObjectRef> TileDataSource::getTileData(std::vector<bool> const &sortOrders, 
-	                                                     TileCoordinates coordinates, unsigned int zoom) {
-	std::vector<OutputObjectRef> data;
-	MergeSingleTileDataAtZoom(coordinates, zoom, data);
-	MergeLargeObjects(coordinates, zoom, data);
+std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
+	const std::vector<bool>& sortOrders, 
+	unsigned int zoom,
+	TileCoordinates coordinates
+) {
+	std::vector<OutputObjectID> data;
+	collectObjectsForTile(zoom, coordinates, data);
+	collectLargeObjectsForTile(zoom, coordinates, data);
 
 	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
 	// Note that attributes is preferred to objectID.
 	// It is to arrange objects with the identical attributes continuously.
 	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectRef x, const OutputObjectRef y) -> bool {
-		if (x->layer < y->layer) return true;
-		if (x->layer > y->layer) return false;
-		if (x->z_order < y->z_order) return  sortOrders[x->layer];
-		if (x->z_order > y->z_order) return !sortOrders[x->layer];
-		if (x->geomType < y->geomType) return true;
-		if (x->geomType > y->geomType) return false;
-		if (x->attributes < y->attributes) return true;
-		if (x->attributes > y->attributes) return false;
-		if (x->objectID < y->objectID) return true;
+	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
+		if (x.oo.layer < y.oo.layer) return true;
+		if (x.oo.layer > y.oo.layer) return false;
+		if (x.oo.z_order < y.oo.z_order) return  sortOrders[x.oo.layer];
+		if (x.oo.z_order > y.oo.z_order) return !sortOrders[x.oo.layer];
+		if (x.oo.geomType < y.oo.geomType) return true;
+		if (x.oo.geomType > y.oo.geomType) return false;
+		if (x.oo.attributes < y.oo.attributes) return true;
+		if (x.oo.attributes > y.oo.attributes) return false;
+		if (x.oo.objectID < y.oo.objectID) return true;
 		return false;
 	});
 	data.erase(unique(data.begin(), data.end()), data.end());
 	return data;
 }
 
-OutputObjectsConstItPair GetObjectsAtSubLayer(std::vector<OutputObjectRef> const &data, uint_least8_t layerNum) {
-    struct layerComp
-    {
-        bool operator() ( const OutputObjectRef &x, uint_least8_t layer ) const { return x->layer < layer; }
-        bool operator() ( uint_least8_t layer, const OutputObjectRef &x ) const { return layer < x->layer; }
-    };
-
-	// compare only by `layer`
-	// We get the range within ooList, where the layer of each object is `layerNum`.
-	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
-	return equal_range(data.begin(), data.end(), layerNum, layerComp());
-}
-
 // ------------------------------------
 // Add geometries to tile/large indices
 
-void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::addGeometryToIndex(
+	const Linestring& geom,
+	const std::vector<OutputObject>& outputs,
+	const uint64_t id
+) {
 	unordered_set<TileCoordinates> tileSet;
 	try {
 		insertIntermediateTiles(geom, baseZoom, tileSet);
@@ -301,12 +323,12 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 			minTileY = std::min(index.y, minTileY);
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
-			for (auto &output : outputs) {
-				if (output->geomType == POLYGON_) {
+			for (const auto& output : outputs) {
+				if (output.geomType == POLYGON_) {
 					polygonExists = true;
 					continue;
 				}
-				AddObjectToTileIndex(index, output); // not a polygon
+				addObjectToSmallIndex(index, output, id); // not a polygon
 			}
 		}
 
@@ -314,19 +336,19 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 		if (polygonExists) {
 			bool tilesetFilled = false;
 			uint size = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
-			for (auto &output : outputs) {
-				if (output->geomType != POLYGON_) continue;
+			for (const auto& output : outputs) {
+				if (output.geomType != POLYGON_) continue;
 				if (size>= 16) {
 					// Larger objects - add to rtree
 					Box box = Box(geom::make<Point>(minTileX, minTileY),
 					              geom::make<Point>(maxTileX, maxTileY));
-					AddObjectToLargeIndex(box, output);
+					addObjectToLargeIndex(box, output, id);
 				} else {
 					// Smaller objects - add to each individual tile index
 					if (!tilesetFilled) { fillCoveredTiles(tileSet); tilesetFilled = true; }
 					for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 						TileCoordinates index = *it;
-						AddObjectToTileIndex(index, output);
+						addObjectToSmallIndex(index, output, id);
 					}
 				}
 			}
@@ -336,20 +358,28 @@ void TileDataSource::AddGeometryToIndex(Linestring const &geom, std::vector<Outp
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiLinestring const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::addGeometryToIndex(
+	const MultiLinestring& geom,
+	const std::vector<OutputObject>& outputs,
+	const uint64_t id
+) {
 	for (Linestring ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, baseZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
-			for (auto &output : outputs) {
-				AddObjectToTileIndex(index, output);
+			for (const auto& output : outputs) {
+				addObjectToSmallIndex(index, output, id);
 			}
 		}
 	}
 }
 
-void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<OutputObjectRef> const &outputs) {
+void TileDataSource::addGeometryToIndex(
+	const MultiPolygon& geom,
+	const std::vector<OutputObject>& outputs,
+	const uint64_t id
+) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
 	for (Polygon poly : geom) {
@@ -371,19 +401,19 @@ void TileDataSource::AddGeometryToIndex(MultiPolygon const &geom, std::vector<Ou
 		maxTileX = std::max(index.x, maxTileX);
 		maxTileY = std::max(index.y, maxTileY);
 	}
-	for (auto &output : outputs) {
+	for (const auto& output : outputs) {
 		if (tileSet.size()>=16) {
 			// Larger objects - add to rtree
 			// note that the bbox is currently the envelope of the entire multipolygon,
 			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
 			Box box = Box(geom::make<Point>(minTileX, minTileY),
 			              geom::make<Point>(maxTileX, maxTileY));
-			AddObjectToLargeIndex(box, output);
+			addObjectToLargeIndex(box, output, id);
 		} else {
 			// Smaller objects - add to each individual tile index
 			for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 				TileCoordinates index = *it;
-				AddObjectToTileIndex(index, output);
+				addObjectToSmallIndex(index, output, id);
 			}
 		}
 	}

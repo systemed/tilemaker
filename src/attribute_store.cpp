@@ -293,7 +293,7 @@ void AttributeStore::reportSize() const {
 	size_t numAttributeSets = 0;
 	for (int i = 0; i < ATTRIBUTE_SHARDS; i++)
 		numAttributeSets += sets[i].size();
-	std::cout << "Attributes: " << numAttributeSets << " sets from " << lookups << " objects" << std::endl;
+	std::cout << "Attributes: " << numAttributeSets << " sets from " << lookups.load() << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {

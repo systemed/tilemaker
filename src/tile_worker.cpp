@@ -8,6 +8,9 @@
 using namespace std;
 extern bool verbose;
 
+typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
+typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
+
 typedef std::pair<double,double> xy_pair;
 namespace std {
 	template<>
@@ -92,32 +95,41 @@ void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
 }
 
 template <typename T>
-void CheckNextObjectAndMerge(TileDataSource const *source, OutputObjectsConstIt &jt, OutputObjectsConstIt ooSameLayerEnd, 
-	const TileBbox &bbox, T &g) {
+void CheckNextObjectAndMerge(
+	const TileDataSource* source,
+	OutputObjectsConstIt& jt,
+	OutputObjectsConstIt ooSameLayerEnd, 
+	const TileBbox& bbox,
+	T& g
+) {
+	if (jt + 1 == ooSameLayerEnd)
+		return;
 
-	// If a object is a linestring/polygon that is followed by
+	// If an object is a linestring/polygon that is followed by
 	// other linestrings/polygons with the same attributes,
 	// the following objects are merged into the first object, by taking union of geometries.
-	OutputObjectRef oo = *jt;
-	OutputObjectRef ooNext;
-	if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
+	OutputObjectID oo = *jt;
+	OutputObjectID ooNext = *(jt + 1);
 
-	OutputGeometryType gt = oo->geomType;
-	while (jt+1 != ooSameLayerEnd &&
-			ooNext->geomType == gt &&
-			ooNext->z_order == oo->z_order &&
-			ooNext->attributes == oo->attributes) {
+	// TODO: do we need ooNext? Could we instead just update jt and dereference it?
+	//       put differently: we don't need to keep overwriting oo/ooNext
+	OutputGeometryType gt = oo.oo.geomType;
+	while (jt + 1 != ooSameLayerEnd &&
+			ooNext.oo.geomType == gt &&
+			ooNext.oo.z_order == oo.oo.z_order &&
+			ooNext.oo.attributes == oo.oo.attributes) {
 		jt++;
 		oo = *jt;
-		if(jt+1 != ooSameLayerEnd) ooNext = *(jt+1);
-		else ooNext.reset();
+		if(jt + 1 != ooSameLayerEnd) {
+			ooNext = *(jt + 1);
+		}
 
 		try {
-			T to_merge = boost::get<T>(source->buildWayGeometry(oo->geomType, oo->objectID, bbox));
+			T to_merge = boost::get<T>(source->buildWayGeometry(oo.oo.geomType, oo.oo.objectID, bbox));
 			MergeIntersecting(g, to_merge);
-		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
-		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
-		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo->objectID) << endl;
+		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo.oo.objectID) <<"," << err.what() << endl;
+		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
+		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
 		}
 	}
 }
@@ -134,49 +146,60 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
-void ProcessObjects(TileDataSource const *source, AttributeStore const &attributeStore,
-	OutputObjectsConstIt ooSameLayerBegin, OutputObjectsConstIt ooSameLayerEnd, 
-	class SharedData &sharedData, double simplifyLevel, double filterArea, bool combinePolygons, unsigned zoom, const TileBbox &bbox,
-	vector_tile::Tile_Layer *vtLayer, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
+void ProcessObjects(
+	const TileDataSource* source,
+	const AttributeStore& attributeStore,
+	OutputObjectsConstIt ooSameLayerBegin,
+	OutputObjectsConstIt ooSameLayerEnd, 
+	class SharedData& sharedData,
+	double simplifyLevel,
+	double filterArea,
+	bool combinePolygons,
+	unsigned zoom,
+	const TileBbox &bbox,
+	vector_tile::Tile_Layer* vtLayer,
+	vector<string>& keyList,
+	vector<vector_tile::Tile_Value>& valueList
+) {
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
-		OutputObjectRef oo = *jt;
-		if (zoom < oo->minZoom) { continue; }
+		OutputObjectID oo = *jt;
+		if (zoom < oo.oo.minZoom) { continue; }
 
-		if (oo->geomType == POINT_) {
+		if (oo.oo.geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = source->buildNodeGeometry(oo->geomType, oo->objectID, bbox);
+			LatpLon pos = source->buildNodeGeometry(oo.oo.geomType, oo.oo.objectID, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
 			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
 			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
 
-			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			// not currently supported:
-			// if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
+			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
+
+			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
 		} else {
 			Geometry g;
 			try {
-				g = source->buildWayGeometry(oo->geomType, oo->objectID, bbox);
+				g = source->buildWayGeometry(oo.oo.geomType, oo.oo.objectID, bbox);
 			} catch (std::out_of_range &err) {
-				if (verbose) cerr << "Error while processing geometry " << oo->geomType << "," << static_cast<int>(oo->objectID) <<"," << err.what() << endl;
+				if (verbose) cerr << "Error while processing geometry " << oo.oo.geomType << "," << static_cast<int>(oo.oo.objectID) <<"," << err.what() << endl;
 				continue;
 			}
 
-			if (oo->geomType == POLYGON_ && filterArea > 0.0) {
+			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
 				if (geom::area(g)<filterArea) continue;
 				RemoveInnersBelowSize(boost::get<MultiPolygon>(g), filterArea);
 			}
 
 			//This may increment the jt iterator
-			if (oo->geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
+			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
 				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
-			} else if (oo->geomType == POLYGON_ && combinePolygons) {
+			} else if (oo.oo.geomType == POLYGON_ && combinePolygons) {
 				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
 				oo = *jt;
 			}
@@ -185,15 +208,19 @@ void ProcessObjects(TileDataSource const *source, AttributeStore const &attribut
 			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
 			boost::apply_visitor(w, g);
 			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo->writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			// not currently supported:
-			// if (sharedData.config.includeID) { featurePtr->set_id(oo->objectID & OSMID_MASK); }
+			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
+			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
 
 		}
 	}
 }
 
-vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &layerName, vector<string> &keyList, vector<vector_tile::Tile_Value> &valueList) {
+vector_tile::Tile_Layer* findLayerByName(
+	vector_tile::Tile& tile,
+	std::string& layerName,
+	vector<string>& keyList,
+	vector<vector_tile::Tile_Value>& valueList
+) {
 	for (unsigned i=0; i<tile.layers_size(); i++) {
 		if (tile.layers(i).name()!=layerName) continue;
 		// we already have this layer, so copy the key/value lists, and return it
@@ -205,11 +232,35 @@ vector_tile::Tile_Layer* findLayerByName(vector_tile::Tile &tile, std::string &l
 	return tile.add_layers();
 }
 
-void ProcessLayer(SourceList const &sources, AttributeStore const &attributeStore,
-	TileCoordinates index, uint zoom, 
-	std::vector<std::vector<OutputObjectRef>> const &data, vector_tile::Tile &tile, 
-	const TileBbox &bbox, const std::vector<uint> &ltx, SharedData &sharedData) {
+OutputObjectsConstItPair getObjectsAtSubLayer(
+	const std::vector<OutputObjectID>& data,
+	uint_least8_t layerNum
+) {
+    struct layerComp
+    {
+        bool operator() ( const OutputObjectID& x, uint_least8_t layer ) const { return x.oo.layer < layer; }
+        bool operator() ( uint_least8_t layer, const OutputObjectID& x ) const { return layer < x.oo.layer; }
+    };
 
+	// compare only by `layer`
+	// We get the range within ooList, where the layer of each object is `layerNum`.
+	// Note that ooList is sorted by a lexicographic order, `layer` being the most significant.
+	return equal_range(data.begin(), data.end(), layerNum, layerComp());
+}
+
+
+
+void ProcessLayer(
+	const SourceList& sources,
+	const AttributeStore& attributeStore,
+	TileCoordinates index,
+	uint zoom, 
+	const std::vector<std::vector<OutputObjectID>>& data,
+	vector_tile::Tile& tile, 
+	const TileBbox& bbox,
+	const std::vector<uint>& ltx,
+	SharedData& sharedData
+) {
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
@@ -242,7 +293,7 @@ void ProcessLayer(SourceList const &sources, AttributeStore const &attributeStor
 
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
-			auto ooListSameLayer = GetObjectsAtSubLayer(data[i], layerNum);
+			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
 			auto end = ooListSameLayer.second;
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
@@ -277,16 +328,23 @@ void handleUserSignal(int signum) {
 	signalStop=true;
 }
 
-bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData, 
-                SourceList const &sources, AttributeStore const &attributeStore,
-                std::vector<std::vector<OutputObjectRef>> const &data, 
-                TileCoordinates coordinates, uint zoom) {
+void outputProc(
+	SharedData& sharedData, 
+	const SourceList& sources,
+	const AttributeStore& attributeStore,
+	const std::vector<std::vector<OutputObjectID>>& data, 
+	TileCoordinates coordinates,
+	uint zoom
+) {
 	// Create tile
 	vector_tile::Tile tile;
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
-	if (sharedData.config.clippingBoxFromJSON && (sharedData.config.maxLon<=bbox.minLon 
-		|| sharedData.config.minLon>=bbox.maxLon || sharedData.config.maxLat<=bbox.minLat 
-		|| sharedData.config.minLat>=bbox.maxLat)) { return true; }
+	if (sharedData.config.clippingBoxFromJSON && (
+			sharedData.config.maxLon <= bbox.minLon ||
+			sharedData.config.minLon >= bbox.maxLon ||
+			sharedData.config.maxLat <= bbox.minLat ||
+			sharedData.config.minLat >= bbox.maxLat))
+		return;
 
 	// Read existing tile if merging
 	if (sharedData.mergeSqlite) {
@@ -326,10 +384,10 @@ bool outputProc(boost::asio::thread_pool &pool, SharedData &sharedData,
 			tile.SerializeToString(&outputdata);
 			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
 		} else {
-			if (!tile.SerializeToOstream(&outfile)) { cerr << "Couldn't write to " << filename.str() << endl; return false; }
+			if (!tile.SerializeToOstream(&outfile)) {
+				cerr << "Couldn't write to " << filename.str() << endl;
+			}
 		}
 		outfile.close();
 	}
-
-	return true;
 }

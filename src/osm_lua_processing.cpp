@@ -1,4 +1,5 @@
 #include "osm_lua_processing.h"
+#include "attribute_store.h"
 #include "helpers.h"
 #include <iostream>
 
@@ -565,8 +566,8 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	if (!this->empty()) {
 		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
 
-		for (auto &output : OutputsAsOORefs()) {
-			osmMemTiles.AddObjectToTileIndex(index, output);
+		for (auto &output : finalizeOutputs()) {
+			osmMemTiles.addObjectToSmallIndex(index, output, originalOsmID);
 		}
 	} 
 }
@@ -613,7 +614,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	}
 
 	if (!this->empty()) {
-		osmMemTiles.AddGeometryToIndex(linestringCached(), OutputsAsOORefs());
+		osmMemTiles.addGeometryToIndex(linestringCached(), finalizeOutputs(), originalOsmID);
 	}
 }
 
@@ -644,9 +645,9 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 	try {
 		if (isClosed) {
-			osmMemTiles.AddGeometryToIndex(multiPolygonCached(), OutputsAsOORefs());
+			osmMemTiles.addGeometryToIndex(multiPolygonCached(), finalizeOutputs(), originalOsmID);
 		} else {
-			osmMemTiles.AddGeometryToIndex(multiLinestringCached(), OutputsAsOORefs());
+			osmMemTiles.addGeometryToIndex(multiLinestringCached(), finalizeOutputs(), originalOsmID);
 		}
 	} catch(std::out_of_range &err) {
 		cout << "In relation " << originalOsmID << ": " << err.what() << endl;
@@ -655,5 +656,15 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 vector<string> OsmLuaProcessing::GetSignificantNodeKeys() {
 	return luaState["node_keys"];
+}
+
+std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
+	std::vector<OutputObject> list;
+	list.reserve(this->outputs.size());
+	for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
+		jt->first.setAttributeSet(attributeStore.add(jt->second));
+		list.push_back(jt->first);
+	}
+	return list;
 }
 
