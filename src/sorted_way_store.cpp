@@ -374,7 +374,7 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		size_t smallWaySize = 0;
 		size_t largeWaySize = 0;
 		for (int i = 0; i < chunk.wayIds.size(); i++) {
-			size_t waySize = chunk.encodedWays[i].size();
+			size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
 			if (waySize < 256) {
 				smallWaySize += waySize;
 			} else {
@@ -409,7 +409,67 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	for (const auto& chunk : chunks)
 		chunkIds.push_back(chunk.id);
 	populateMask(groupInfo->chunkMask, chunkIds);
+
+	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupInfo->chunkOffsets + (sizeof(uint32_t) * chunks.size()));
+
+	for (size_t chunkIndex = 0; chunkIndex < chunks.size(); chunkIndex++) {
+		groupInfo->chunkOffsets[chunkIndex] = (char*)chunkPtr - (char*)groupInfo;
+
+		// Populate: smallWayMask, bigWayMask, wayOffsets
+		std::vector<uint8_t> smallWays;
+		std::vector<uint8_t> bigWays;
+
+		const ChunkData& chunk = chunks[chunkIndex];
+		const size_t numWays = chunk.wayIds.size();
+		for (int i = 0; i < numWays; i++) {
+			const size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
+			if (waySize < 256) {
+				smallWays.push_back(chunk.wayIds[i]);
+			} else {
+				bigWays.push_back(chunk.wayIds[i]);
+			}
+		}
+		populateMask(chunkPtr->smallWayMask, smallWays);
+		populateMask(chunkPtr->bigWayMask, bigWays);
+
+		// Publish the small ways
+		// TODO: align this?
+		uint8_t* const endOfWayOffsetPtr = (uint8_t*)(chunkPtr->wayOffsets + numWays);
+		uint8_t* wayStartPtr = endOfWayOffsetPtr;
+		for (int i = 0; i < numWays; i++) {
+			const size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
+			if (waySize < 256) {
+				chunkPtr->wayOffsets[i] = wayStartPtr - endOfWayOffsetPtr;
+				EncodedWay* wayPtr = (EncodedWay*)wayStartPtr;
+				wayPtr->flags = chunk.wayFlags[i];
+				memcpy(wayPtr->data, chunk.encodedWays[i].data(), chunk.encodedWays[i].size());
+
+				wayStartPtr += sizeof(EncodedWay) + chunk.encodedWays[i].size();
+			}
+		}
+
+		// Publish the big ways
+		// Offset is scaled for big ways, so make sure we're on a multiple of LargeWayAlignment
+		wayStartPtr += ((wayStartPtr - endOfWayOffsetPtr) % LargeWayAlignment);
+		for (int i = 0; i < numWays; i++) {
+			const size_t waySize = chunk.encodedWays[i].size() + sizeof(EncodedWay);
+			if (waySize >= 256) {
+				uint32_t spaceNeeded = (((waySize - 1) / LargeWayAlignment) + 1) * LargeWayAlignment;
+				uint32_t offset = wayStartPtr - endOfWayOffsetPtr;
+				if (offset % LargeWayAlignment != 0)
+					throw std::runtime_error("big way alignment error");
+
+				chunkPtr->wayOffsets[i] = offset / LargeWayAlignment;
+				EncodedWay* wayPtr = (EncodedWay*)wayStartPtr;
+				wayPtr->flags = chunk.wayFlags[i];
+				memcpy(wayPtr->data, chunk.encodedWays[i].data(), chunk.encodedWays[i].size());
+
+				wayStartPtr += spaceNeeded;
+			}
+		}
+
+
+		// Update chunkPtr
+		chunkPtr = (ChunkInfo*)wayStartPtr;
+	}
 }
-
-
-
