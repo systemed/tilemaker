@@ -27,34 +27,24 @@ void roundtripWay(const std::vector<NodeID>& way) {
 }
 
 MU_TEST(test_encode_way) {
+	roundtripWay({ 1 });
+	roundtripWay({ 1, 2 });
+	roundtripWay({ 1, 2, 1 });
+	roundtripWay({ 1, 2, 3, 4 });
+	roundtripWay({ 4294967295, 4294967297, 8589934592, 4, 5 });
+
+	// When the high bytes are all the same, it should take
+	// less space to encode.
 	{
-		std::vector<NodeID> way { 1 };
-		roundtripWay(way);
+		std::vector<uint8_t> output;
+		SortedWayStore::encodeWay({ 1, 2 }, output, false);
+		const uint16_t l1 = output.size();
+
+		SortedWayStore::encodeWay({ 1, 8589934592 }, output, false);
+		const uint16_t l2 = output.size();
+
+		mu_check(l1 < l2);
 	}
-
-	{
-		std::vector<NodeID> way { 1, 2 };
-		roundtripWay(way);
-	}
-
-	{
-		std::vector<NodeID> way { 1, 2, 1 };
-		roundtripWay(way);
-	}
-
-	{
-		std::vector<NodeID> way { 1, 2, 3, 4 };
-		roundtripWay(way);
-	}
-
-	{
-		std::vector<NodeID> way { 4294967295, 4294967297, 8589934592, 4, 5 };
-		roundtripWay(way);
-	}
-
-	// TODO: add a test that confirms that encoded size is smaller if
-	//       all high bits are the same
-
 }
 
 MU_TEST(test_way_store) {

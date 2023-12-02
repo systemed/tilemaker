@@ -179,8 +179,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		for (int i = 0; i <= (length - 1) / 4; i++) {
 			uint8_t byte = *input;
 			for (int j = i * 4; j < std::min<int>(length, i * 4 + 4); j++) {
-			//for (int j = std::min<int>(length, i * 4 + 4) - 1; j >= i * 4; j--) {
-				//std::cout << "j=" << j << ", byte=" << std::bitset<8>(byte) << std::endl;
 				uint64_t highByte = 0;
 				highByte |= (byte & 0b00000011);
 				byte = byte >> 2;
@@ -189,8 +187,10 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 			input++;
 		}
 	} else {
-		// TODO: handle non-interwoven bits
-		throw std::runtime_error("cannot handle non-interwoven bits");
+		uint8_t setBits = (flags >> 11) & 0b00000011;
+		uint64_t highByte = setBits << 32;
+		for (int i = 0; i < length; i++)
+			highBytes[i] = highByte;
 	}
 
 	// Decode the low ints
@@ -225,8 +225,14 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 	if (isClosed)
 		rv |= ClosedWay;
 
-	// TODO: detect when all the upper bits are the same
-	bool pushUpperBits = true;
+	bool pushUpperBits = false;
+	uint32_t upperInt = way[0] >> 32;
+	for (int i = 1; i < way.size(); i++) {
+		if (way[i] >> 32 != upperInt) {
+			pushUpperBits = true;
+			break;
+		}
+	}
 
 	if (pushUpperBits) {
 		for (int i = 0; i <= (max - 1) / 4; i++) {
@@ -245,8 +251,13 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 			}
 
 			output.push_back(byte);
-
 		}
+	} else {
+		if (upperInt > 3)
+			throw std::runtime_error("unexpectedly high node ID");
+
+		rv |= UniformUpperBits;
+		rv |= (upperInt << 11);
 	}
 
 	// Push the low bytes.
