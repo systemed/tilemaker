@@ -25,6 +25,15 @@ namespace SortedWayStoreTypes {
 
 	thread_local std::vector<uint8_t> encodedWay;
 
+	// C++ doesn't support variable length arrays declared on stack.
+	// g++ and clang support it, but msvc doesn't. Rather than pay the
+	// cost of a vector for every decode, we use a thread_local with room for at
+	// least 2,000 nodes.
+	thread_local uint64_t highBytes[2000];
+	uint32_t uint32Buffer[2000];
+	int32_t int32Buffer[2000];
+	uint8_t uint8Buffer[8192];
+
 	std::atomic<uint64_t> totalWays;
 	std::atomic<uint64_t> totalNodes;
 	std::atomic<uint64_t> totalGroups;
@@ -239,11 +248,6 @@ void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vect
 	std::copy(orphans.begin(), orphans.end(), vec.begin() + i);
 }
 
-// C++ doesn't support variable length arrays declared on stack.
-// g++ and clang support it, but msvc doesn't. Rather than pay the
-// cost of a vector for every decode, we use a thread_local with room for at
-// least 2,000 nodes.
-thread_local uint64_t highBytes[2000];
 std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input) {
 	std::vector<NodeID> rv;
 
@@ -287,12 +291,10 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		input += 4;
 		rv.push_back(highBytes[0] | firstInt);
 
-		uint32_t uncompressed[length - 1];
-		streamvbyte_decode(input, uncompressed, length - 1);
-		int32_t decoded[length - 1];
-		zigzag_delta_decode(uncompressed, decoded, length - 1, firstInt);
+		streamvbyte_decode(input, uint32Buffer, length - 1);
+		zigzag_delta_decode(uint32Buffer, int32Buffer, length - 1, firstInt);
 		for (int i = 1; i < length; i++) {
-			uint32_t tmp = decoded[i - 1];
+			uint32_t tmp = int32Buffer[i - 1];
 			rv.push_back(highBytes[i] | tmp);
 		}
 	}
@@ -372,19 +374,15 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 			dataStart[i] = lowBits;
 		}
 	} else {
-		int32_t input[max];
-		uint32_t zigzag[max];
-		uint8_t compressedBuffer[max * 4 + 128];
-
 		for (int i = 0; i < max; i++) {
 			uint32_t truncated = way[i];
 			truncated = truncated & 0x7FFFFFFF;
-			input[i] = truncated;
+			int32Buffer[i] = truncated;
 		}
 
-		zigzag_delta_encode(input + 1, zigzag, max - 1, input[0]);
+		zigzag_delta_encode(int32Buffer + 1, uint32Buffer, max - 1, int32Buffer[0]);
 
-		size_t compressedSize = streamvbyte_encode(zigzag, max - 1, compressedBuffer);
+		size_t compressedSize = streamvbyte_encode(uint32Buffer, max - 1, uint8Buffer);
 
 		const size_t oldSize = output.size();
 		output.resize(output.size() + 2 /* compressed size */ + 4 /* first 32-bit value */ + compressedSize);
@@ -392,7 +390,7 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 		*(uint32_t*)(output.data() + oldSize + 2) = way[0];
 		*(uint32_t*)(output.data() + oldSize + 2) &= 0x7FFFFFFF;
 
-		memcpy(output.data() + oldSize + 2 + 4, compressedBuffer, compressedSize);
+		memcpy(output.data() + oldSize + 2 + 4, uint8Buffer, compressedSize);
 	}
 
 	return rv;
