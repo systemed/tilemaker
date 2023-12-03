@@ -2,6 +2,7 @@
 #include "attribute_store.h"
 #include "helpers.h"
 #include <iostream>
+#include "tag_map.h"
 
 
 using namespace std;
@@ -152,14 +153,14 @@ string OsmLuaProcessing::Id() const {
 
 // Check if there's a value for a given key
 bool OsmLuaProcessing::Holds(const string& key) const {
-	return currentTags->find(key) != currentTags->end();
+	return currentTags->getTag(key) != nullptr;
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
 const string& OsmLuaProcessing::Find(const string& key) const {
-	auto it = currentTags->find(key);
-	if(it == currentTags->end()) return EMPTY_STRING;
-	return it->second;
+	auto it = currentTags->getTag(key);
+	if(it == nullptr) return EMPTY_STRING;
+	return *it;
 }
 
 // ----	Spatial queries called from Lua
@@ -562,7 +563,7 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 
 // Scan relation (but don't write geometry)
 // return true if we want it, false if we don't
-bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
+bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 	reset();
 	originalOsmID = id;
 	isWay = false;
@@ -576,11 +577,13 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	}
 	if (!relationAccepted) return false;
 	
-	osmStore.store_relation_tags(id, tags);
+	// If we're persisting, we need to make a real map that owns its
+	// own keys and values.
+	osmStore.store_relation_tags(id, tags.exportToBoostMap());
 	return true;
 }
 
-void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
+void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 
 	reset();
 	originalOsmID = id;
@@ -608,7 +611,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 }
 
 // We are now processing a way
-void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
+void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags) {
 	reset();
 	originalOsmID = wayId;
 	isWay = true;
@@ -654,7 +657,7 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 }
 
 // We are now processing a relation
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, 
+void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const TagMap& tags, 
                                    bool isNativeMP,      // only OSM type=multipolygon
                                    bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
 	reset();

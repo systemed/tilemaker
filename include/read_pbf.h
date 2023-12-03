@@ -11,6 +11,7 @@
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
+#include "tag_map.h"
 
 class OsmLuaProcessing;
 
@@ -34,6 +35,7 @@ public:
 			pbfreader_generate_output const &generate_output);
 
 	// Read tags into a map from a way/node/relation
+	/*
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	template<typename T>
 	void readTags(T &pbfObject, PrimitiveBlock const &pb, tag_map_t &tags) {
@@ -42,6 +44,15 @@ public:
 		auto valsPtr = pbfObject.mutable_vals();
 		for (uint n=0; n < pbfObject.keys_size(); n++) {
 			tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
+		}
+	}
+	*/
+	template<typename T>
+	void readTags(T &pbfObject, PrimitiveBlock const &pb, TagMap& tags) {
+		auto keysPtr = pbfObject.mutable_keys();
+		auto valsPtr = pbfObject.mutable_vals();
+		for (uint n=0; n < pbfObject.keys_size(); n++) {
+			tags.addTag(pb.stringtable().s(keysPtr->Get(n)), pb.stringtable().s(valsPtr->Get(n)));
 		}
 	}
 

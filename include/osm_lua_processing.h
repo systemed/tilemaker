@@ -16,6 +16,8 @@
 
 #include <boost/container/flat_map.hpp>
 
+class TagMap;
+
 // Lua
 extern "C" {
 	#include "lua.h"
@@ -71,19 +73,19 @@ public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 
 	// Scan non-MP relation
-	bool scanRelation(WayID id, const tag_map_t &tags);
+	bool scanRelation(WayID id, const TagMap& tags);
 
 	/// \brief We are now processing a significant node
-	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
+	void setNode(NodeID id, LatpLon node, const TagMap& tags);
 
 	/// \brief We are now processing a way
-	void setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
+	void setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP, bool isInnerOuter);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const TagMap& tags, bool isNativeMP, bool isInnerOuter);
 
 	// ----	Metadata queries called from Lua
 
@@ -253,7 +255,8 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
-	const boost::container::flat_map<std::string, std::string>* currentTags;
+	//const boost::container::flat_map<std::string, std::string>* currentTags;
+	const TagMap* currentTags;
 
 	std::vector<OutputObject> finalizeOutputs();
 };

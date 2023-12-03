@@ -1,6 +1,7 @@
 #include <iostream>
 #include "read_pbf.h"
 #include "pbf_blocks.h"
+#include "tag_map.h"
 
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -18,6 +19,7 @@ PbfReader::PbfReader(OSMStore &osmStore)
 bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
 {
 	// ----	Read nodes
+	TagMap tags;
 
 	if (pg.has_dense()) {
 		int64_t nodeId  = 0;
@@ -49,11 +51,11 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 
 			if (significant) {
 				// For tagged nodes, call Lua, then save the OutputObject
-				boost::container::flat_map<std::string, std::string> tags;
-				tags.reserve(kvPos / 2);
+				tags.reset();
 
 				for (uint n=kvStart; n<kvPos-1; n+=2) {
-					tags[pb.stringtable().s(dense.keys_vals(n))] = pb.stringtable().s(dense.keys_vals(n+1));
+					tags.addTag(pb.stringtable().s(dense.keys_vals(n)), pb.stringtable().s(dense.keys_vals(n+1)));
+
 				}
 				output.setNode(static_cast<NodeID>(nodeId), node, tags);
 			} 
@@ -70,6 +72,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
+		TagMap tags;
 		Way pbfWay;
 
 		std::vector<WayStore::element_t> ways;
@@ -103,7 +106,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 			if (llVec.empty()) continue;
 
 			try {
-				tag_map_t tags;
+				tags.reset();
 				readTags(pbfWay, pb, tags);
 
 				// If we need it for later, store the way's coordinates in the global way store
@@ -132,6 +135,8 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 
+	TagMap tags;
+
 	for (int j=0; j<pg.relations_size(); j++) {
 		Relation pbfRelation = pg.relations(j);
 		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
@@ -139,7 +144,7 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		WayID relid = static_cast<WayID>(pbfRelation.id());
 		if (!isMultiPolygon) {
 			if (output.canReadRelations()) {
-				tag_map_t tags;
+				tags.reset();
 				readTags(pbfRelation, pb, tags);
 				isAccepted = output.scanRelation(relid, tags);
 			}
@@ -161,6 +166,7 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	// ----	Read relations
 
 	if (pg.relations_size() > 0) {
+		TagMap tags;
 		std::vector<RelationStore::element_t> relations;
 
 		int typeKey = findStringPosition(pb, "type");
@@ -189,7 +195,7 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 				}
 
 				try {
-					tag_map_t tags;
+					tags.reset();
 					readTags(pbfRelation, pb, tags);
 					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
