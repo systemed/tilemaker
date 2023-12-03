@@ -16,8 +16,12 @@
 // stored in our tag map, and passing a reference to its location.
 
 // Assumptions:
-// 1. Not thread-safe.
-// 2. Lifetime of map is less than lifetime of keys/values that are passed.
+// 1. Not thread-safe
+//      This is OK because we have 1 instance of OsmLuaProcessing per thread.
+// 2. Lifetime of map is less than lifetime of keys/values that are passed
+//      This is true since the strings are owned by the protobuf block reader
+// 3. Max number of tag values will fit in a short
+//      OSM limit is 5,000 tags per object
 class TagMap {
 public:
 	TagMap();
@@ -25,6 +29,11 @@ public:
 
 	void addTag(const std::string& key, const std::string& value);
 	const std::string* getTag(const std::string& key) const;
+
+	// Return -1 if key not found, else return its keyLoc.
+	int64_t getTag(const char* key, size_t size) const;
+
+	const std::string* getValue(uint32_t keyLoc) const;
 
 	boost::container::flat_map<std::string, std::string> exportToBoostMap() const;
 

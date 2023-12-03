@@ -29,6 +29,19 @@ const std::size_t hashString(const std::string& str) {
 	return hash;
 }
 
+const std::size_t hashString(const char* str, size_t size) {
+	// This is a pretty crappy hash function in terms of bit
+	// avalanching and distribution of output values.
+	//
+	// But it's very good in terms of speed, which turns out
+	// to be the important measure.
+	std::size_t hash = size;
+	if (hash >= 4)
+		hash ^= *(uint32_t*)str;
+
+	return hash;
+}
+
 uint32_t TagMap::ensureString(
 	std::vector<std::vector<const std::string*>>& vector,
 	const std::string& value
@@ -75,6 +88,28 @@ const std::string* TagMap::getTag(const std::string& key) const {
 		}
 
 	return nullptr;
+}
+
+int64_t TagMap::getTag(const char* key, size_t size) const {
+	// Return -1 if key not found, else return its keyLoc.
+	std::size_t hash = hashString(key, size);
+
+	const uint16_t shard = hash % keys.size();
+	for (int i = 0; i < keys[shard].size(); i++) {
+		const std::string& candidate = *keys[shard][i];
+	  if (candidate.size() != size)
+			continue;
+
+		if (memcmp(candidate.data(), key, size) == 0)
+			return shard << 16 | i;
+	}
+
+	return -1;
+}
+
+const std::string* TagMap::getValue(uint32_t keyLoc) const {
+	const uint32_t valueLoc = key2value[keyLoc >> 16][keyLoc & 0xFFFF];
+	return values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 
 boost::container::flat_map<std::string, std::string> TagMap::exportToBoostMap() const {

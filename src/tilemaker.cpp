@@ -392,7 +392,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// ----	Write out data
-	return 0; // TODO
+//	return 0; // TODO
 
 	// If mapsplit, read list of tiles available
 	unsigned runs=1;

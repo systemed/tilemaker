@@ -7,12 +7,59 @@
 
 using namespace std;
 
+const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
+// A key in `currentTags`. If Lua code refers to an absent key,
+// found will be false.
+struct KnownTagKey {
+	bool found;
+	uint32_t index;
+};
+
+template<>  struct kaguya::lua_type_traits<KnownTagKey> {
+	typedef KnownTagKey get_type;
+	typedef const KnownTagKey& push_type;
+
+	static bool strictCheckType(lua_State* l, int index)
+	{
+		return lua_type(l, index) == LUA_TSTRING;
+	}
+	static bool checkType(lua_State* l, int index)
+	{
+		return lua_isstring(l, index) != 0;
+	}
+	static get_type get(lua_State* l, int index)
+	{
+		KnownTagKey rv = { false, 0 };
+		size_t size = 0;
+		const char* buffer = lua_tolstring(l, index, &size);
+
+		int64_t tagLoc = osmLuaProcessing->currentTags->getTag(buffer, size);
+
+		if (tagLoc >= 0) {
+			rv.found = true;
+			rv.index = tagLoc;
+		}
+//		std::string key(buffer, size);
+//		std::cout << "for key " << key << ": rv.found=" << rv.found << ", rv.index=" << rv.index << std::endl;
+		return rv;
+	}
+	static int push(lua_State* l, push_type s)
+	{
+		throw std::runtime_error("Lua code doesn't know how to use KnownTagKey");
+	}
+};
+
 std::string rawId() { return osmLuaProcessing->Id(); }
-bool rawHolds(const std::string& key) { return osmLuaProcessing->Holds(key); }
-const std::string& rawFind(const std::string& key) { return osmLuaProcessing->Find(key); }
+bool rawHolds(const KnownTagKey& key) { return key.found; }
+const std::string& rawFind(const KnownTagKey& key) {
+	if (key.found)
+		return *(osmLuaProcessing->currentTags->getValue(key.index));
+
+	return EMPTY_STRING;
+}
 std::vector<std::string> rawFindIntersecting(const std::string &layerName) { return osmLuaProcessing->FindIntersecting(layerName); }
 bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Intersects(layerName); }
 std::vector<std::string> rawFindCovering(const std::string& layerName) { return osmLuaProcessing->FindCovering(layerName); }
@@ -34,7 +81,6 @@ std::vector<double> rawCentroid() { return osmLuaProcessing->Centroid(); }
 
 
 bool supportsRemappingShapefiles = false;
-const std::string EMPTY_STRING = "";
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -149,18 +195,6 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, c
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
 	return to_string(originalOsmID);
-}
-
-// Check if there's a value for a given key
-bool OsmLuaProcessing::Holds(const string& key) const {
-	return currentTags->getTag(key) != nullptr;
-}
-
-// Get an OSM tag for a given key (or return empty string if none)
-const string& OsmLuaProcessing::Find(const string& key) const {
-	auto it = currentTags->getTag(key);
-	if(it == nullptr) return EMPTY_STRING;
-	return *it;
 }
 
 // ----	Spatial queries called from Lua

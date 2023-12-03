@@ -92,12 +92,6 @@ public:
 	// Get the ID of the current object
 	std::string Id() const;
 
-	// Check if there's a value for a given key
-	bool Holds(const std::string& key) const;
-
-	// Get an OSM tag for a given key (or return empty string if none)
-	const std::string& Find(const std::string& key) const;
-
 	// ----	Spatial queries called from Lua
 
 	// Find intersecting shapefile layer
@@ -196,6 +190,7 @@ public:
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
 
 	struct luaProcessingException :std::exception {};
+	const TagMap* currentTags;
 
 private:
 	/// Internal: clear current cached state
@@ -255,8 +250,6 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
-	//const boost::container::flat_map<std::string, std::string>* currentTags;
-	const TagMap* currentTags;
 
 	std::vector<OutputObject> finalizeOutputs();
 };
