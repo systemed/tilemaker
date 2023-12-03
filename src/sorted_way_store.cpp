@@ -245,7 +245,7 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 	bool isCompressed = flags & CompressedWay;
 	bool isClosed = flags & ClosedWay;
 
-	const uint16_t length = flags & 0b0000011111111111;
+	uint16_t length = flags & 0b0000011111111111;
 
 	uint64_t highBytes[length];
 	if (!(flags & UniformUpperBits)) {
