@@ -107,7 +107,7 @@ int64_t TagMap::getTag(const char* key, size_t size) const {
 	return -1;
 }
 
-const std::string* TagMap::getValue(uint32_t keyLoc) const {
+const std::string* TagMap::getValueFromKey(uint32_t keyLoc) const {
 	const uint32_t valueLoc = key2value[keyLoc >> 16][keyLoc & 0xFFFF];
 	return values[valueLoc >> 16][valueLoc & 0xFFFF];
 }

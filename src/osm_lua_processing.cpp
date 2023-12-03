@@ -56,7 +56,7 @@ std::string rawId() { return osmLuaProcessing->Id(); }
 bool rawHolds(const KnownTagKey& key) { return key.found; }
 const std::string& rawFind(const KnownTagKey& key) {
 	if (key.found)
-		return *(osmLuaProcessing->currentTags->getValue(key.index));
+		return *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
 
 	return EMPTY_STRING;
 }
