@@ -56,8 +56,6 @@ void SortedWayStore::reopen() {
 	totalGroups = 0;
 	totalGroupSpace = 0;
 	totalChunks = 0;
-	//memset(chunkSizeFreqs, 0, sizeof(chunkSizeFreqs));
-	//memset(groupSizeFreqs, 0, sizeof(groupSizeFreqs));
 	orphanage.clear();
 	workerBuffers.clear();
 	groups.clear();
@@ -66,7 +64,6 @@ void SortedWayStore::reopen() {
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID id) const {
-//	std::cout << "! SortedWayStore::at(" << id << ")" << std::endl;
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
 	const uint64_t chunkMaskByte = chunk / 8;
@@ -135,6 +132,11 @@ void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays
 }
 
 const void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
+	// read_pbf can call with an empty array if the only ways it read were unable to
+	// be processed due to missing nodes, so be robust against empty way vector.
+	if (newWays.empty())
+		return;
+
 	if (localWays == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
@@ -214,13 +216,6 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 	orphanage.clear();
 
 	std::cout << "SortedWayStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalWays.load() << " ways, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes" << std::endl;
-	/*
-	for (int i = 0; i < 257; i++)
-		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
-	for (int i = 0; i < 257; i++)
-		std::cout << "groupSizeFreqs[ " << i << " ]= " << groupSizeFreqs[i].load() << std::endl;
-		*/
-
 }
 
 void SortedWayStore::batchStart() {
@@ -250,7 +245,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 	bool isClosed = flags & ClosedWay;
 
 	const uint16_t length = flags & 0b0000011111111111;
-//	std::cout << "length=" << length << std::endl;
 
 	uint64_t highBytes[length];
 	if (!(flags & UniformUpperBits)) {
@@ -294,7 +288,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		zigzag_delta_decode(uncompressed, decoded, length - 1, firstInt);
 		for (int i = 1; i < length; i++) {
 			uint32_t tmp = decoded[i - 1];
-//			std::cout << "decoded[" << i - 1 << "]=" << tmp << std::endl;
 			rv.push_back(highBytes[i] | tmp);
 		}
 	}
@@ -382,16 +375,11 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 			uint32_t truncated = way[i];
 			truncated = truncated & 0x7FFFFFFF;
 			input[i] = truncated;
-//			std::cout << "input[" << i << "]=" << std::to_string(input[i]) << ", way[" << i << "]=" << std::to_string(way[i]) << ", truncated=" << truncated << std::endl;
 		}
 
-//		std::cout << "max=" << max << std::endl;
 		zigzag_delta_encode(input + 1, zigzag, max - 1, input[0]);
-//		for (int i = 0; i < 6; i++)
-//			std::cout << "zigzag[" << i << "]=" << std::to_string(zigzag[i]) << std::endl;
 
 		size_t compressedSize = streamvbyte_encode(zigzag, max - 1, compressedBuffer);
-//		std::cout << "compressedSize=" << compressedSize << ", max*4+128=" << (max*4 + 128) << std::endl;
 
 		const size_t oldSize = output.size();
 		output.resize(output.size() + 2 /* compressed size */ + 4 /* first 32-bit value */ + compressedSize);
@@ -551,7 +539,6 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		populateMask(chunkPtr->bigWayMask, bigWays);
 
 		// Publish the small ways
-		// TODO: align this?
 		uint8_t* const endOfWayOffsetPtr = (uint8_t*)(chunkPtr->wayOffsets + numWays);
 		uint8_t* wayStartPtr = endOfWayOffsetPtr;
 		int offsetIndex = 0;

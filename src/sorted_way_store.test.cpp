@@ -47,14 +47,14 @@ void roundtripWay(const std::vector<NodeID>& way) {
 }
 
 MU_TEST(test_encode_way) {
-	// 11386679771 uses the full lower 32-bits, so is a good test case that
-	// zigzag encoding hasn't broken anything.
-	roundtripWay({ 5056880431, 538663248, 538663257, 538663260, 538663263, 11386679771, 538663266 });
 	roundtripWay({ 1 });
 	roundtripWay({ 1, 2 });
 	roundtripWay({ 1, 2, 1 });
 	roundtripWay({ 1, 2, 3, 4 });
 	roundtripWay({ 4294967295, 4294967297, 8589934592, 4, 5 });
+	// 11386679771 uses the full lower 32-bits, so is a good test case that
+	// zigzag encoding hasn't broken anything.
+	roundtripWay({ 5056880431, 538663248, 538663257, 538663260, 538663263, 11386679771, 538663266 });
 
 	// When the high bytes are all the same, it should take
 	// less space to encode.
