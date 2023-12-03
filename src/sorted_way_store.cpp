@@ -182,7 +182,8 @@ const void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::v
 }
 
 void SortedWayStore::clear() {
-	std::cout << "TODO: SortedWayStore::clear()" << std::endl;
+	// TODO: why does this function exist in addition to reopen?
+	reopen();
 }
 
 std::size_t SortedWayStore::size() const {
