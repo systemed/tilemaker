@@ -346,7 +346,7 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
-		attributeStore.doneReading();
+		attributeStore.finalize();
 		osmMemTiles.reportSize();
 		attributeStore.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)

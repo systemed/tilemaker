@@ -23,12 +23,15 @@ struct string_ptr_less_than {
 
 class AttributeKeyStore {
 public:
-	AttributeKeyStore(): keys2indexSize(0) {}
+	AttributeKeyStore(): finalized(false), keys2indexSize(0) {}
 	uint16_t key2index(const std::string& key);
 	const std::string& getKey(uint16_t index) const;
+	const std::string& getKeyUnsafe(uint16_t index) const;
+	void finalize() { finalized = true; }
 	std::atomic<uint32_t> keys2indexSize;
 
 private:
+	bool finalized;
 	mutable std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
@@ -150,6 +153,7 @@ struct AttributePair {
 class AttributePairStore {
 public:
 	AttributePairStore():
+		finalized(false),
 		pairs(ATTRIBUTE_SHARDS),
 		pairsMaps(ATTRIBUTE_SHARDS),
 		pairsMutex(ATTRIBUTE_SHARDS),
@@ -162,7 +166,9 @@ public:
 			hotShard.push_back(AttributePair(0, false, 0));
 	}
 
+	void finalize() { finalized = true; }
 	const AttributePair& getPair(uint32_t i) const;
+	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(const AttributePair& pair, bool isHot);
 
 	struct key_value_less_ptr {
@@ -184,6 +190,7 @@ public:
 	std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
 
 private:
+	bool finalized;
 	// We refer to all attribute pairs by index.
 	//
 	// Each shard is responsible for a portion of the key space.
@@ -272,7 +279,7 @@ struct AttributeSet {
 		return memcmp(shortValues, other.shortValues, sizeof(shortValues)) == 0;
 	}
 
-	void finalizeSet();
+	void finalize();
 
 	// We store references to AttributePairs either in an array of shorts
 	// or a vector of 32-bit ints.
@@ -372,30 +379,34 @@ private:
 
 // AttributeStore is the store for all AttributeSets
 struct AttributeStore {
-	std::vector<std::deque<AttributeSet>> sets;
-	std::vector<boost::container::flat_map<const AttributeSet*, uint32_t, AttributeSet::less_ptr>> setsMaps;
-	mutable std::vector<std::mutex> setsMutex;
-
-	AttributeKeyStore keyStore;
-	AttributePairStore pairStore;
-	mutable std::mutex mutex;
-	std::atomic<uint64_t> lookups;
-
 	AttributeIndex add(AttributeSet &attributes);
-	std::vector<const AttributePair*> get(AttributeIndex index) const;
+	std::vector<const AttributePair*> getUnsafe(AttributeIndex index) const;
 	void reportSize() const;
-	void doneReading();
+	void finalize();
 
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	
 	AttributeStore():
+		finalized(false),
 		sets(ATTRIBUTE_SHARDS),
 		setsMaps(ATTRIBUTE_SHARDS),
 		setsMutex(ATTRIBUTE_SHARDS),
 		lookups(0) {
 	}
+
+	AttributeKeyStore keyStore;
+	AttributePairStore pairStore;
+
+private:
+	bool finalized;
+	std::vector<std::deque<AttributeSet>> sets;
+	std::vector<boost::container::flat_map<const AttributeSet*, uint32_t, AttributeSet::less_ptr>> setsMaps;
+	mutable std::vector<std::mutex> setsMutex;
+
+	mutable std::mutex mutex;
+	std::atomic<uint64_t> lookups;
 };
 
 #endif //_ATTRIBUTE_STORE_H
