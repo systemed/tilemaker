@@ -83,7 +83,7 @@ prefix = /usr/local
 
 MANPREFIX := /usr/share/man
 TM_VERSION ?= $(shell git describe --tags --abbrev=0)
-CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG) -g
+CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lprotobuf -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
@@ -127,6 +127,9 @@ tilemaker: \
 test: test_sorted_way_store
 
 test_sorted_way_store: \
+	src/external/streamvbyte_decode.o \
+	src/external/streamvbyte_encode.o \
+	src/external/streamvbyte_zigzag.o \
 	src/mmap_allocator.o \
 	src/sorted_way_store.o \
 	src/sorted_way_store.test.o

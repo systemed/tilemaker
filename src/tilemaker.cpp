@@ -170,7 +170,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreCompressNodes;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreCompressNodes = false, osmStoreCompressWays = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -184,6 +184,7 @@ int main(int argc, char* argv[]) {
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("compress-nodes", po::bool_switch(&osmStoreCompressNodes),  "Reduce memory by compressing nodes")
+		("compress-ways", po::bool_switch(&osmStoreCompressWays),  "Reduce memory by compressing ways")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
@@ -301,7 +302,7 @@ int main(int argc, char* argv[]) {
 		nodeStore = make_shared<CompactNodeStore>();
 	else {
 		if (osmStoreCompressNodes && !allPbfsHaveSortTypeThenID) {
-			std::cerr << "--compress-nodes requires a PBF with the Sort.Type_then_ID feature" << std::endl;
+			std::cerr << "--compress-nodes requires PBFs with the Sort.Type_then_ID feature" << std::endl;
 			return 1;
 		}
 
@@ -313,8 +314,12 @@ int main(int argc, char* argv[]) {
 
 	shared_ptr<WayStore> wayStore;
 	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
-		wayStore = make_shared<SortedWayStore>(*nodeStore.get());
+		wayStore = make_shared<SortedWayStore>(osmStoreCompressWays, *nodeStore.get());
 	} else {
+		if (osmStoreCompressWays) {
+			std::cerr << "--compress-ways requires PBFs with the Sort.Type_then_ID feature" << std::endl;
+			return 1;
+		}
 		wayStore = make_shared<BinarySearchWayStore>();
 	}
 

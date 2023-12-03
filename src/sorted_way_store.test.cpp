@@ -16,30 +16,40 @@ class TestNodeStore : public NodeStore {
 };
 
 void roundtripWay(const std::vector<NodeID>& way) {
-	std::vector<uint8_t> output;
-	uint16_t flags = SortedWayStore::encodeWay(way, output, false);
+	bool compress = false;
 
-	if (false) {
-		std::cout << "input=";
-		for (const auto& node : way) {
-			std::cout << node << " ";
+	for (int i = 0; i < 2; i++) {
+		std::vector<uint8_t> output;
+		uint16_t flags = SortedWayStore::encodeWay(way, output, compress);
+
+		if (false) {
+			std::cout << "input=";
+			for (const auto& node : way) {
+				std::cout << node << " ";
+			}
+			std::cout << std::endl;
+			std::cout << "flags=" << flags << ", output.size()=" << output.size() << ", ";
+
+			for (const uint8_t byte : output)
+				std::cout << " " << std::to_string(byte);
+			std::cout << std::endl;
 		}
-		std::cout << std::endl;
-		std::cout << "flags=" << flags << ", output.size()=" << output.size() << ", ";
 
-		for (const uint8_t byte : output)
-			std::cout << " " << std::to_string(byte);
-		std::cout << std::endl;
+		const std::vector<NodeID> roundtrip = SortedWayStore::decodeWay(flags, &output[0]);
+
+		mu_check(roundtrip.size() == way.size());
+		for (int i = 0; i < way.size(); i++) {
+			//std::cout << "roundtrip[" << i << "]=" << roundtrip[i] << ", way[" << i << "]=" << way[i] << std::endl;
+			mu_check(roundtrip[i] == way[i]);
+		}
+		compress = !compress;
 	}
-
-	const std::vector<NodeID> roundtrip = SortedWayStore::decodeWay(flags, &output[0]);
-
-	mu_check(roundtrip.size() == way.size());
-	for (int i = 0; i < way.size(); i++)
-		mu_check(roundtrip[i] == way[i]);
 }
 
 MU_TEST(test_encode_way) {
+	// 11386679771 uses the full lower 32-bits, so is a good test case that
+	// zigzag encoding hasn't broken anything.
+	roundtripWay({ 5056880431, 538663248, 538663257, 538663260, 538663263, 11386679771, 538663266 });
 	roundtripWay({ 1 });
 	roundtripWay({ 1, 2 });
 	roundtripWay({ 1, 2, 1 });
@@ -50,10 +60,10 @@ MU_TEST(test_encode_way) {
 	// less space to encode.
 	{
 		std::vector<uint8_t> output;
-		SortedWayStore::encodeWay({ 1, 2 }, output, false);
+		SortedWayStore::encodeWay({ 1, 2, 3, 4 }, output, false);
 		const uint16_t l1 = output.size();
 
-		SortedWayStore::encodeWay({ 1, 8589934592 }, output, false);
+		SortedWayStore::encodeWay({ 1, 8589934592, 3, 4 }, output, false);
 		const uint16_t l2 = output.size();
 
 		mu_check(l1 < l2);
@@ -62,7 +72,7 @@ MU_TEST(test_encode_way) {
 
 MU_TEST(test_way_store) {
 	TestNodeStore ns;
-	SortedWayStore sws(ns);
+	SortedWayStore sws(true, ns);
 	sws.batchStart();
 
 	std::vector<std::pair<WayID, std::vector<NodeID>>> ways;

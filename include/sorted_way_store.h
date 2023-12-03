@@ -33,10 +33,10 @@ namespace SortedWayStoreTypes {
 		// A way can have 2000 nodes.
 		// Bits 0..10 track how many nodes are in this way.
 		// That leaves 5 bits for activities:
-		// ab0xx: bits 32..33 of node ID are interwoven as bytes.
-		// ab1xx: bits 32..33 of node ID are xx
+		// ab0xx: bits 31..34 of node ID are interwoven as bytes.
+		// ab1xx: bits 31..34 of node ID are the same, stored as first byte
 		//
-		// 1zzzz: This way is stored zigzag encoded.
+		// 1xxxx: This way is stored zigzag encoded.
 		// z1zzz: This is a closed way, repeat the first node as the last node.
 		//
 		// When it's compressed, we still handle high bits the same,
@@ -46,9 +46,9 @@ namespace SortedWayStoreTypes {
 		// be the same.
 		uint16_t flags;
 		// Data could be:
+		// (if interwoven bit) N/2 bytes: interwoven high bits
 		// (if compression bit) 2 bytes: compressed length
 		// (if compression bit) 4 bytes: first 32-bit value
-		// (if interwoven bit) N/4 bytes: interwoven high bits
 		// N 32-bit ints: the N low ints
 		uint8_t data[0];
 	};
@@ -82,7 +82,7 @@ namespace SortedWayStoreTypes {
 class SortedWayStore: public WayStore {
 
 public:
-	SortedWayStore(const NodeStore& nodeStore);
+	SortedWayStore(bool compressWays, const NodeStore& nodeStore);
 	~SortedWayStore();
 	void reopen() override;
 	void batchStart() override;
@@ -103,6 +103,7 @@ public:
 	static std::vector<NodeID> decodeWay(uint16_t flags, const uint8_t* input);
 
 private:
+	bool compressWays;
 	const NodeStore& nodeStore;
 	mutable std::mutex orphanageMutex;
 	std::vector<SortedWayStoreTypes::GroupInfo*> groups;

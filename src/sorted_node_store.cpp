@@ -75,6 +75,7 @@ SortedNodeStore::~SortedNodeStore() {
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
+//	std::cout << "  ! SortedNodeStore::at(" << id << ")" << std::endl;
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
 	const uint64_t chunkMaskByte = chunk / 8;

@@ -4,6 +4,8 @@
 #include <cstring>
 #include <iostream>
 #include "external/libpopcnt.h"
+#include "external/streamvbyte.h"
+#include "external/streamvbyte_zigzag.h"
 #include "sorted_way_store.h"
 #include "node_store.h"
 
@@ -24,6 +26,7 @@ namespace SortedWayStoreTypes {
 	thread_local std::vector<uint8_t> encodedWay;
 
 	std::atomic<uint64_t> totalWays;
+	std::atomic<uint64_t> totalNodes;
 	std::atomic<uint64_t> totalGroups;
 	std::atomic<uint64_t> totalGroupSpace;
 	std::atomic<uint64_t> totalChunks;
@@ -31,7 +34,7 @@ namespace SortedWayStoreTypes {
 
 using namespace SortedWayStoreTypes;
 
-SortedWayStore::SortedWayStore(const NodeStore& nodeStore): nodeStore(nodeStore) {
+SortedWayStore::SortedWayStore(bool compressWays, const NodeStore& nodeStore): compressWays(compressWays), nodeStore(nodeStore) {
 	// Each group can store 64K ways. If we allocate 32K slots,
 	// we support 2^31 = 2B ways, or about twice the number used
 	// by OSM as of December 2023.
@@ -49,6 +52,7 @@ void SortedWayStore::reopen() {
 	allocatedMemory.clear();
 
 	totalWays = 0;
+	totalNodes = 0;
 	totalGroups = 0;
 	totalGroupSpace = 0;
 	totalChunks = 0;
@@ -62,6 +66,7 @@ void SortedWayStore::reopen() {
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID id) const {
+//	std::cout << "! SortedWayStore::at(" << id << ")" << std::endl;
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
 	const uint64_t chunkMaskByte = chunk / 8;
@@ -208,7 +213,7 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 
 	orphanage.clear();
 
-	std::cout << "SortedWayStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalWays.load() << " ways, " << totalGroupSpace.load() << " bytes" << std::endl;
+	std::cout << "SortedWayStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalWays.load() << " ways, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes" << std::endl;
 	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
@@ -242,43 +247,57 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 	std::vector<NodeID> rv;
 
 	bool isCompressed = flags & CompressedWay;
-	
-	if (isCompressed)
-		throw std::runtime_error("cannot decode compressed ways yet");
-
 	bool isClosed = flags & ClosedWay;
 
 	const uint16_t length = flags & 0b0000011111111111;
-
-	// TODO: handle isCompressed
+//	std::cout << "length=" << length << std::endl;
 
 	uint64_t highBytes[length];
-
 	if (!(flags & UniformUpperBits)) {
 		// The nodes don't all share the same upper int; unpack which
 		// bits are set on a per-node basis.
-		for (int i = 0; i <= (length - 1) / 4; i++) {
+		for (int i = 0; i <= (length - 1) / 2; i++) {
 			uint8_t byte = *input;
-			for (int j = i * 4; j < std::min<int>(length, i * 4 + 4); j++) {
+			for (int j = i * 2; j < std::min<int>(length, i * 2 + 2); j++) {
 				uint64_t highByte = 0;
-				highByte |= (byte & 0b00000011);
-				byte = byte >> 2;
-				highBytes[j] = (highByte << 32);
+				highByte |= (byte & 0b00001111);
+				byte = byte >> 4;
+				highBytes[j] = (highByte << 31);
 			}
 			input++;
 		}
 	} else {
-		uint8_t setBits = (flags >> 11) & 0b00000011;
+		uint8_t setBits = *(uint8_t*)input;
+		input++;
 		uint64_t highByte = setBits;
-		highByte = highByte << 32;
+		highByte = highByte << 31;
 		for (int i = 0; i < length; i++)
 			highBytes[i] = highByte;
 	}
 
-	// Decode the low ints
-	uint32_t* lowIntData = (uint32_t*)input;
-	for (int i = 0; i < length; i++)
-		rv.push_back(highBytes[i] | lowIntData[i]);
+	if (!isCompressed) {
+		// Decode the low ints
+		uint32_t* lowIntData = (uint32_t*)input;
+		for (int i = 0; i < length; i++)
+			rv.push_back(highBytes[i] | lowIntData[i]);
+	} else {
+		uint16_t compressedLength = *(uint16_t*)input;
+		input += 2;
+
+		uint32_t firstInt = *(uint32_t*)(input);
+		input += 4;
+		rv.push_back(highBytes[0] | firstInt);
+
+		uint32_t uncompressed[length - 1];
+		streamvbyte_decode(input, uncompressed, length - 1);
+		int32_t decoded[length - 1];
+		zigzag_delta_decode(uncompressed, decoded, length - 1, firstInt);
+		for (int i = 1; i < length; i++) {
+			uint32_t tmp = decoded[i - 1];
+//			std::cout << "decoded[" << i - 1 << "]=" << tmp << std::endl;
+			rv.push_back(highBytes[i] | tmp);
+		}
+	}
 
 	if (isClosed)
 		rv.push_back(rv[0]);
@@ -286,9 +305,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 };
 
 uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<uint8_t>& output, bool compress) {
-	if (compress)
-		throw std::runtime_error("Way compression not implemented yet");
-
 	if (way.size() == 0)
 		throw std::runtime_error("Cannot encode an empty way");
 
@@ -304,51 +320,86 @@ uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<u
 
 	uint16_t rv = max;
 
+	if (compress)
+		rv |= CompressedWay;
+
 	if (isClosed)
 		rv |= ClosedWay;
 
 	bool pushUpperBits = false;
-	uint32_t upperInt = way[0] >> 32;
+
+	// zigzag encoding can only be done on ints, not uints, so we shift
+	// 31 bits, not 32.
+	uint32_t upperInt = way[0] >> 31;
 	for (int i = 1; i < way.size(); i++) {
-		if (way[i] >> 32 != upperInt) {
+		if (way[i] >> 31 != upperInt) {
 			pushUpperBits = true;
 			break;
 		}
 	}
 
 	if (pushUpperBits) {
-		for (int i = 0; i <= (max - 1) / 4; i++) {
+		for (int i = 0; i <= (max - 1) / 2; i++) {
 			uint8_t byte = 0;
 
-			//for (j = i * 4; j < std::min(max, i * 4 + 4); j++) {
 			bool first = true;
-			for (int j = std::min(max, i * 4 + 4) - 1; j >= i * 4; j--) {
+			for (int j = std::min(max, i * 2 + 2) - 1; j >= i * 2; j--) {
 				if (!first)
-					byte = byte << 2;
+					byte = byte << 4;
 				first = false;
-				uint8_t upper2Bits = way[j] >> 32;
-				if (upper2Bits > 3)
+				uint8_t upper4Bits = way[j] >> 31;
+				if (upper4Bits > 15)
 					throw std::runtime_error("unexpectedly high node ID: " + std::to_string(way[j]));
-				byte |= upper2Bits;
+				byte |= upper4Bits;
 			}
 
 			output.push_back(byte);
 		}
 	} else {
-		if (upperInt > 3)
+		if (upperInt > 15)
 			throw std::runtime_error("unexpectedly high node ID");
 
 		rv |= UniformUpperBits;
-		rv |= (upperInt << 11);
+		output.push_back(upperInt);
 	}
 
 	// Push the low bytes.
-	const size_t oldSize = output.size();
-	output.resize(output.size() + max * 4);
-	uint32_t* dataStart = (uint32_t*)(output.data() + oldSize);
-	for (int i = 0; i < max; i++) {
-		uint32_t lowBits = way[i];
-		dataStart[i] = lowBits;
+	if (!compress) {
+		const size_t oldSize = output.size();
+		output.resize(output.size() + max * 4);
+		uint32_t* dataStart = (uint32_t*)(output.data() + oldSize);
+		for (int i = 0; i < max; i++) {
+			uint32_t lowBits = way[i];
+			lowBits = lowBits & 0x7FFFFFFF;
+			dataStart[i] = lowBits;
+		}
+	} else {
+		int32_t input[max];
+		uint32_t zigzag[max];
+		uint8_t compressedBuffer[max * 4 + 128];
+
+		for (int i = 0; i < max; i++) {
+			uint32_t truncated = way[i];
+			truncated = truncated & 0x7FFFFFFF;
+			input[i] = truncated;
+//			std::cout << "input[" << i << "]=" << std::to_string(input[i]) << ", way[" << i << "]=" << std::to_string(way[i]) << ", truncated=" << truncated << std::endl;
+		}
+
+//		std::cout << "max=" << max << std::endl;
+		zigzag_delta_encode(input + 1, zigzag, max - 1, input[0]);
+//		for (int i = 0; i < 6; i++)
+//			std::cout << "zigzag[" << i << "]=" << std::to_string(zigzag[i]) << std::endl;
+
+		size_t compressedSize = streamvbyte_encode(zigzag, max - 1, compressedBuffer);
+//		std::cout << "compressedSize=" << compressedSize << ", max*4+128=" << (max*4 + 128) << std::endl;
+
+		const size_t oldSize = output.size();
+		output.resize(output.size() + 2 /* compressed size */ + 4 /* first 32-bit value */ + compressedSize);
+		*(uint16_t*)(output.data() + oldSize) = compressedSize;
+		*(uint32_t*)(output.data() + oldSize + 2) = way[0];
+		*(uint32_t*)(output.data() + oldSize + 2) &= 0x7FFFFFFF;
+
+		memcpy(output.data() + oldSize + 2 + 4, compressedBuffer, compressedSize);
 	}
 
 	return rv;
@@ -395,7 +446,9 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 	ChunkData* lastChunk = nullptr;
 
 	// Encode the ways and group by chunk - don't allocate final memory yet.
+	uint32_t seenNodes = 0;
 	for (const auto& way : ways) {
+		seenNodes += way.second.size();
 		const uint8_t currentChunk = (way.first % (GroupSize * ChunkSize)) / ChunkSize;
 
 		if (lastChunk == nullptr || lastChunk->id != currentChunk) {
@@ -407,8 +460,7 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		const WayID id = way.first;
 		lastChunk->wayIds.push_back(id % ChunkSize);
 
-		// Encode the way, uncompressed.
-		uint16_t flags = encodeWay(way.second, encodedWay, false);
+		uint16_t flags = encodeWay(way.second, encodedWay, compressWays && way.second.size() >= 4);
 		lastChunk->wayFlags.push_back(flags);
 
 		std::vector<uint8_t> encoded;
@@ -417,6 +469,7 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 
 		lastChunk->encodedWays.push_back(std::move(encoded));
 	}
+	totalNodes += seenNodes;
 
 	// We now have the sizes of everything, so we can generate the final memory layout.
 
@@ -448,6 +501,9 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 			groupSpace += LargeWayAlignment - (smallWaySize % LargeWayAlignment);
 		groupSpace += largeWaySize;
 	}
+	// During decoding, the library may read up to STREAMVBYTE_PADDING extra
+	// bytes -- ensure that won't cause out-of-bounds reads.
+	groupSpace += STREAMVBYTE_PADDING;
 
 	totalGroupSpace += groupSpace;
 
