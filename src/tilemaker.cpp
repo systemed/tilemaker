@@ -244,7 +244,7 @@ int main(int argc, char* argv[]) {
 
 	} else if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
 		mapsplit = true;
-		mapsplitFile.openForReading(&inputFiles[0]);
+		mapsplitFile.openForReading(inputFiles[0]);
 		mapsplitFile.readBoundingBox(minLon, maxLon, minLat, maxLat);
 		hasClippingBox = true;
 
@@ -409,7 +409,7 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise mbtiles if required
 	
 	if (sharedData.sqlite) {
-		sharedData.mbtiles.openForWriting(&sharedData.outputFile);
+		sharedData.mbtiles.openForWriting(sharedData.outputFile);
 		sharedData.mbtiles.writeMetadata("name",sharedData.config.projectName);
 		sharedData.mbtiles.writeMetadata("type","baselayer");
 		sharedData.mbtiles.writeMetadata("version",sharedData.config.projectVersion);
