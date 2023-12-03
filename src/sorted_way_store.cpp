@@ -239,15 +239,19 @@ void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vect
 	std::copy(orphans.begin(), orphans.end(), vec.begin() + i);
 }
 
+// C++ doesn't support variable length arrays declared on stack.
+// g++ and clang support it, but msvc doesn't. Rather than pay the
+// cost of a vector for every decode, we use a thread_local with room for at
+// least 2,000 nodes.
+thread_local uint64_t highBytes[2000];
 std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input) {
 	std::vector<NodeID> rv;
 
 	bool isCompressed = flags & CompressedWay;
 	bool isClosed = flags & ClosedWay;
 
-	uint16_t length = flags & 0b0000011111111111;
+	const uint16_t length = flags & 0b0000011111111111;
 
-	uint64_t highBytes[length];
 	if (!(flags & UniformUpperBits)) {
 		// The nodes don't all share the same upper int; unpack which
 		// bits are set on a per-node basis.
