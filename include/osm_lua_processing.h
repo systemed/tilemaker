@@ -17,6 +17,8 @@
 
 #include <boost/container/flat_map.hpp>
 
+class TagMap;
+
 // Lua
 extern "C" {
 	#include "lua.h"
@@ -31,6 +33,19 @@ extern bool verbose;
 
 class AttributeStore;
 class AttributeSet;
+
+// A string, which might be in `currentTags` as a value. If Lua
+// code refers to an absent value, it'll fallback to passing
+// it as a std::string.
+//
+// The intent is that Attribute("name", Find("name")) is a common
+// pattern, and we ought to avoid marshalling a string back and
+// forth from C++ to Lua when possible.
+struct PossiblyKnownTagValue {
+	bool found;
+	uint32_t index;
+	std::string fallback;
+};
 
 /**
 	\brief OsmLuaProcessing - converts OSM objects into OutputObjects.
@@ -75,30 +90,24 @@ public:
 	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 
 	// Scan non-MP relation
-	bool scanRelation(WayID id, const tag_map_t &tags);
+	bool scanRelation(WayID id, const TagMap& tags);
 
 	/// \brief We are now processing a significant node
-	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
+	void setNode(NodeID id, LatpLon node, const TagMap& tags);
 
 	/// \brief We are now processing a way
-	bool setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
+	bool setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP, bool isInnerOuter);
+	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const TagMap& tags, bool isNativeMP, bool isInnerOuter);
 
 	// ----	Metadata queries called from Lua
 
 	// Get the ID of the current object
 	std::string Id() const;
-
-	// Check if there's a value for a given key
-	bool Holds(const std::string& key) const;
-
-	// Get an OSM tag for a given key (or return empty string if none)
-	const std::string Find(const std::string& key) const;
 
 	// ----	Spatial queries called from Lua
 
@@ -200,6 +209,7 @@ public:
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
 
 	struct luaProcessingException :std::exception {};
+	const TagMap* currentTags;
 
 private:
 	/// Internal: clear current cached state
@@ -259,7 +269,6 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
-	const boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>* currentTags;
 
 	std::vector<OutputObject> finalizeOutputs();
 

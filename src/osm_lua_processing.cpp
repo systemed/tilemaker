@@ -5,16 +5,108 @@
 #include "helpers.h"
 #include "coordinates_geom.h"
 #include "osm_mem_tiles.h"
-
+#include "tag_map.h"
 
 using namespace std;
 
+const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
+// A key in `currentTags`. If Lua code refers to an absent key,
+// found will be false.
+struct KnownTagKey {
+	bool found;
+	uint32_t index;
+};
+
+template<>  struct kaguya::lua_type_traits<KnownTagKey> {
+	typedef KnownTagKey get_type;
+	typedef const KnownTagKey& push_type;
+
+	static bool strictCheckType(lua_State* l, int index)
+	{
+		return lua_type(l, index) == LUA_TSTRING;
+	}
+	static bool checkType(lua_State* l, int index)
+	{
+		return lua_isstring(l, index) != 0;
+	}
+	static get_type get(lua_State* l, int index)
+	{
+		KnownTagKey rv = { false, 0 };
+		size_t size = 0;
+		const char* buffer = lua_tolstring(l, index, &size);
+
+		int64_t tagLoc = osmLuaProcessing->currentTags->getKey(buffer, size);
+
+		if (tagLoc >= 0) {
+			rv.found = true;
+			rv.index = tagLoc;
+		}
+//		std::string key(buffer, size);
+//		std::cout << "for key " << key << ": rv.found=" << rv.found << ", rv.index=" << rv.index << std::endl;
+		return rv;
+	}
+	static int push(lua_State* l, push_type s)
+	{
+		throw std::runtime_error("Lua code doesn't know how to use KnownTagKey");
+	}
+};
+
+template<>  struct kaguya::lua_type_traits<PossiblyKnownTagValue> {
+	typedef PossiblyKnownTagValue get_type;
+	typedef const PossiblyKnownTagValue& push_type;
+
+	static bool strictCheckType(lua_State* l, int index)
+	{
+		return lua_type(l, index) == LUA_TSTRING;
+	}
+	static bool checkType(lua_State* l, int index)
+	{
+		return lua_isstring(l, index) != 0;
+	}
+	static get_type get(lua_State* l, int index)
+	{
+		PossiblyKnownTagValue rv = { false, 0 };
+		size_t size = 0;
+		const char* buffer = lua_tolstring(l, index, &size);
+
+		// For long strings where we might need to do a malloc, see if we
+		// can instead pass a pointer to a value from this object's tag
+		// map.
+		//
+		// 15 is the threshold where gcc no longer applies the small string
+		// optimization.
+		if (size > 15) {
+			int64_t tagLoc = osmLuaProcessing->currentTags->getValue(buffer, size);
+
+			if (tagLoc >= 0) {
+				rv.found = true;
+				rv.index = tagLoc;
+				return rv;
+			}
+		}
+
+		rv.fallback = std::string(buffer, size);
+		return rv;
+	}
+	static int push(lua_State* l, push_type s)
+	{
+		throw std::runtime_error("Lua code doesn't know how to use PossiblyKnownTagValue");
+	}
+};
+
 std::string rawId() { return osmLuaProcessing->Id(); }
-bool rawHolds(const std::string& key) { return osmLuaProcessing->Holds(key); }
-const std::string& rawFind(const std::string& key) { return osmLuaProcessing->Find(key); }
+bool rawHolds(const KnownTagKey& key) { return key.found; }
+const std::string rawFind(const KnownTagKey& key) {
+	if (key.found) {
+		auto value = *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
+		return std::string(value.data(), value.size());
+	}
+
+	return EMPTY_STRING;
+}
 std::vector<std::string> rawFindIntersecting(const std::string &layerName) { return osmLuaProcessing->FindIntersecting(layerName); }
 bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Intersects(layerName); }
 std::vector<std::string> rawFindCovering(const std::string& layerName) { return osmLuaProcessing->FindCovering(layerName); }
@@ -36,7 +128,6 @@ std::vector<double> rawCentroid() { return osmLuaProcessing->Centroid(); }
 
 
 bool supportsRemappingShapefiles = false;
-const std::string EMPTY_STRING = "";
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
@@ -154,18 +245,6 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, c
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
 	return to_string(originalOsmID);
-}
-
-// Check if there's a value for a given key
-bool OsmLuaProcessing::Holds(const string& key) const {
-	return currentTags->find(key) != currentTags->end();
-}
-
-// Get an OSM tag for a given key (or return empty string if none)
-const string OsmLuaProcessing::Find(const string& key) const {
-	auto it = currentTags->find(key);
-	if(it == currentTags->end()) return EMPTY_STRING;
-	return std::string(it->second.data(), it->second.size());
 }
 
 // ----	Spatial queries called from Lua
@@ -606,7 +685,7 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 
 // Scan relation (but don't write geometry)
 // return true if we want it, false if we don't
-bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
+bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 	reset();
 	originalOsmID = id;
 	isWay = false;
@@ -620,15 +699,13 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	}
 	if (!relationAccepted) return false;
 	
-	boost::container::flat_map<std::string, std::string> m;
-	for (const auto& i : tags) {
-		m[std::string(i.first.data(), i.first.size())] = std::string(i.second.data(), i.second.size());
-	}
-	osmStore.store_relation_tags(id, m);
+	// If we're persisting, we need to make a real map that owns its
+	// own keys and values.
+	osmStore.store_relation_tags(id, tags.exportToBoostMap());
 	return true;
 }
 
-void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
+void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 
 	reset();
 	originalOsmID = id;
@@ -656,7 +733,7 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 }
 
 // We are now processing a way
-bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
+bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags) {
 	reset();
 	wayEmitted = false;
 	originalOsmID = wayId;
@@ -706,7 +783,7 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 }
 
 // We are now processing a relation
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, 
+void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const TagMap& tags, 
                                    bool isNativeMP,      // only OSM type=multipolygon
                                    bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
 	reset();

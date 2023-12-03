@@ -96,6 +96,7 @@ file(GLOB tilemaker_src_files
 	src/shp_mem_tiles.cpp
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
+	src/tag_map.cpp
 	src/tile_data.cpp
 	src/tilemaker.cpp
 	src/tile_worker.cpp

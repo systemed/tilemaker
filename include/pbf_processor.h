@@ -9,6 +9,7 @@
 #include <map>
 #include "osm_store.h"
 #include "pbf_reader.h"
+#include "tag_map.h"
 #include <protozero/data_view.hpp>
 
 class OsmLuaProcessing;
@@ -62,16 +63,12 @@ public:
 	);
 
 	// Read tags into a map from a way/node/relation
-	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 	template<typename T>
-	void readTags(T& pbfObject, const PbfReader::PrimitiveBlock& pb, tag_map_t& tags) {
-		tags.reserve(pbfObject.keys.size());
+	void readTags(T &pbfObject, PbfReader::PrimitiveBlock const &pb, TagMap& tags) {
 		for (uint n=0; n < pbfObject.keys.size(); n++) {
 			auto keyIndex = pbfObject.keys[n];
 			auto valueIndex = pbfObject.vals[n];
-			protozero::data_view key = pb.stringTable[keyIndex];
-			protozero::data_view value = pb.stringTable[valueIndex];
-			tags[key] = value;
+			tags.addTag(pb.stringTable[keyIndex], pb.stringTable[valueIndex]);
 		}
 	}
 

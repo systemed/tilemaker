@@ -120,6 +120,7 @@ tilemaker: \
 	src/shp_mem_tiles.o \
 	src/sorted_node_store.o \
 	src/sorted_way_store.o \
+	src/tag_map.o \
 	src/tile_data.o \
 	src/tilemaker.o \
 	src/tile_worker.o \
