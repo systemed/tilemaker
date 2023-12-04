@@ -102,6 +102,7 @@ file(GLOB tilemaker_src_files
 	src/pbf_blocks.cpp
 	src/read_shp.cpp
 	src/shp_mem_tiles.cpp
+	src/tag_map.cpp
 	src/tilemaker.cpp
 	src/write_geometry.cpp
   )
