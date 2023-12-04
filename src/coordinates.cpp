@@ -105,7 +105,7 @@ std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
 		bool found = false;
 		for (size_t j=1; j<5; j++) {
-			if ((points.size()-j) < 1) break;
+			if (points.size() < 1+j) break;
 			Point check = points[points.size()-j];
 			if (check.x()==scaled.first && check.y()==scaled.second) {
 				points.resize(points.size()-j+1); found=true; break;
