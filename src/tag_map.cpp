@@ -90,7 +90,7 @@ const std::string* TagMap::getTag(const std::string& key) const {
 	return nullptr;
 }
 
-int64_t TagMap::getTag(const char* key, size_t size) const {
+int64_t TagMap::getKey(const char* key, size_t size) const {
 	// Return -1 if key not found, else return its keyLoc.
 	std::size_t hash = hashString(key, size);
 
@@ -107,8 +107,29 @@ int64_t TagMap::getTag(const char* key, size_t size) const {
 	return -1;
 }
 
+int64_t TagMap::getValue(const char* value, size_t size) const {
+	// Return -1 if value not found, else return its valueLoc.
+	std::size_t hash = hashString(value, size);
+
+	const uint16_t shard = hash % values.size();
+	for (int i = 0; i < values[shard].size(); i++) {
+		const std::string& candidate = *values[shard][i];
+	  if (candidate.size() != size)
+			continue;
+
+		if (memcmp(candidate.data(), value, size) == 0)
+			return shard << 16 | i;
+	}
+
+	return -1;
+}
+
 const std::string* TagMap::getValueFromKey(uint32_t keyLoc) const {
 	const uint32_t valueLoc = key2value[keyLoc >> 16][keyLoc & 0xFFFF];
+	return values[valueLoc >> 16][valueLoc & 0xFFFF];
+}
+
+const std::string* TagMap::getValue(uint32_t valueLoc) const {
 	return values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 

@@ -31,9 +31,13 @@ public:
 	const std::string* getTag(const std::string& key) const;
 
 	// Return -1 if key not found, else return its keyLoc.
-	int64_t getTag(const char* key, size_t size) const;
+	int64_t getKey(const char* key, size_t size) const;
+
+	// Return -1 if value not found, else return its keyLoc.
+	int64_t getValue(const char* key, size_t size) const;
 
 	const std::string* getValueFromKey(uint32_t keyLoc) const;
+	const std::string* getValue(uint32_t valueLoc) const;
 
 	boost::container::flat_map<std::string, std::string> exportToBoostMap() const;
 
