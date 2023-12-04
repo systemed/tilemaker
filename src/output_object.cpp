@@ -39,13 +39,13 @@ void OutputObject::writeAttributes(
 	vector_tile::Tile_Feature *featurePtr,
 	char zoom) const {
 
-	auto attr = attributeStore.get(attributes);
+	auto attr = attributeStore.getUnsafe(attributes);
 
 	for(auto const &it: attr) {
 		if (it->minzoom > zoom) continue;
 
 		// Look for key
-		std::string const &key = attributeStore.keyStore.getKey(it->keyIndex);
+		std::string const &key = attributeStore.keyStore.getKeyUnsafe(it->keyIndex);
 		auto kt = find(keyList->begin(), keyList->end(), key);
 		if (kt != keyList->end()) {
 			uint32_t subscript = kt - keyList->begin();

@@ -49,6 +49,12 @@ const std::string& AttributeKeyStore::getKey(uint16_t index) const {
 	return keys[index];
 }
 
+const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
+	// NB: This is unsafe if called before the PBF has been fully read.
+	// If called during the output phase, it's safe.
+	return keys[index];
+}
+
 // AttributePairStore
 thread_local boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr> tlsHotShardMap;
 thread_local uint16_t tlsHotShardSize = 0;
@@ -60,7 +66,18 @@ const AttributePair& AttributePairStore::getPair(uint32_t i) const {
 		return hotShard[offset];
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-	//return pairs[shard][offset];
+	return pairs[shard].at(offset);
+};
+const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
+	// NB: This is unsafe if called before the PBF has been fully read.
+	// If called during the output phase, it's safe.
+
+	uint32_t shard = i >> (32 - SHARD_BITS);
+	uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
+
+	if (shard == 0)
+		return hotShard[offset];
+
 	return pairs[shard].at(offset);
 };
 
@@ -200,7 +217,7 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 
-void AttributeSet::finalizeSet() {
+void AttributeSet::finalize() {
 	// Ensure that values are sorted, giving us a canonical representation,
 	// so that we can have fast hash/equality functions.
 	if (useVector) {
@@ -240,7 +257,7 @@ void AttributeSet::finalizeSet() {
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
-	attributes.finalizeSet();
+	attributes.finalize();
 
 	size_t hash = attributes.hash();
 	size_t shard = hash % ATTRIBUTE_SHARDS;
@@ -267,12 +284,13 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	return rv;
 }
 
-std::vector<const AttributePair*> AttributeStore::get(AttributeIndex index) const {
+std::vector<const AttributePair*> AttributeStore::getUnsafe(AttributeIndex index) const {
+	// NB: This is unsafe if called before the PBF has been fully read.
+	// If called during the output phase, it's safe.
+
 	try {
 		uint32_t shard = index >> (32 - SHARD_BITS);
 		uint32_t offset = index & (~(~0u << (32 - SHARD_BITS)));
-
-		std::lock_guard<std::mutex> lock(setsMutex[shard]);
 
 		const AttributeSet& attrSet = sets[shard].at(offset);
 
@@ -280,7 +298,7 @@ std::vector<const AttributePair*> AttributeStore::get(AttributeIndex index) cons
 
 		std::vector<const AttributePair*> rv;
 		for (size_t i = 0; i < n; i++) {
-			rv.push_back(&pairStore.getPair(attrSet.getPair(i)));
+			rv.push_back(&pairStore.getPairUnsafe(attrSet.getPair(i)));
 		}
 
 		return rv;
@@ -350,5 +368,8 @@ void AttributeStore::reportSize() const {
 	}
 }
 
-void AttributeStore::doneReading() {
+void AttributeStore::finalize() {
+	finalized = true;
+	keyStore.finalize();
+	pairStore.finalize();
 }
