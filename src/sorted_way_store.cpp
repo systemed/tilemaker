@@ -30,9 +30,9 @@ namespace SortedWayStoreTypes {
 	// cost of a vector for every decode, we use a thread_local with room for at
 	// least 2,000 nodes.
 	thread_local uint64_t highBytes[2000];
-	uint32_t uint32Buffer[2000];
-	int32_t int32Buffer[2000];
-	uint8_t uint8Buffer[8192];
+	thread_local uint32_t uint32Buffer[2000];
+	thread_local int32_t int32Buffer[2000];
+	thread_local uint8_t uint8Buffer[8192];
 
 	std::atomic<uint64_t> totalWays;
 	std::atomic<uint64_t> totalNodes;
