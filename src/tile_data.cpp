@@ -5,6 +5,7 @@
 #include <ciso646>
 
 using namespace std;
+extern bool verbose;
 
 TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID)
 	:
@@ -28,7 +29,7 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	const size_t z6y = index.y / z6OffsetDivisor;
 
 	if (z6x >= 64 || z6y >= 64) {
-		std::cerr << "addObjectToSmallIndex: ignoring OutputObject with invalid z" << baseZoom << " coordinates " << index.x << ", " << index.y << " (id: " << id << ")" << std::endl;
+		if (verbose) std::cerr << "ignoring OutputObject with invalid z" << baseZoom << " coordinates " << index.x << ", " << index.y << " (id: " << id << ")" << std::endl;
 		return;
 	}
 
@@ -268,7 +269,7 @@ LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType,
 
 // Report number of stored geometries
 void TileDataSource::reportSize() const {
-	std::cout << "Generated points: " << point_store->size() << ", lines: " << (linestring_store->size() + multi_linestring_store->size()) << ", polygons: " << multi_polygon_store->size() << std::endl;
+	std::cout << "Generated points: " << (point_store->size()-1) << ", lines: " << (linestring_store->size() + multi_linestring_store->size() - 2) << ", polygons: " << (multi_polygon_store->size()-1) << std::endl;
 }
 
 TileCoordinatesSet getTilesAtZoom(
