@@ -17,7 +17,11 @@
 void fillPointArrayFromShapefile(std::vector<Point> *points, SHPObject *shape, uint part);
 
 /// Read requested attributes from a shapefile, and encode into an OutputObject
-void addShapefileAttributes(DBFHandle &dbf, OutputObject &oo, int recordNum, std::unordered_map<int,std::string> &columnMap, std::unordered_map<int,int> &columnTypeMap);
+AttributeIndex readShapefileAttributes(DBFHandle &dbf, int recordNum, 
+                                       std::unordered_map<int,std::string> &columnMap,
+                                       std::unordered_map<int,int> &columnTypeMap,
+                                       LayerDef &layer,
+                                       OsmLuaProcessing &osmLuaProcessing, int &minzoom);
 
 /// Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void readShapefile(const Box &clippingBox,

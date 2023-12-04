@@ -23,49 +23,6 @@ void OSMStore::open(std::string const &osm_store_filename)
 	reopen();
 }
 
-void OSMStore::shapes_sort(unsigned int threadNum)
-{
-	std::cout << "Sorting loaded shapes" << std::endl;
-	boost::sort::block_indirect_sort(
-		shp_generated.points_store->begin(), shp_generated.points_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
-	boost::sort::block_indirect_sort(
-		shp_generated.linestring_store->begin(), shp_generated.linestring_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-	boost::sort::block_indirect_sort(
-		shp_generated.multi_polygon_store->begin(), shp_generated.multi_polygon_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-}
-
-void OSMStore::generated_sort(unsigned int threadNum)
-{
-	std::cout << "Sorting generated geometries" << std::endl;
-	std::lock_guard<std::mutex> lock_points(osm_generated.points_store_mutex);
-	boost::sort::block_indirect_sort(
-		osm_generated.points_store->begin(), osm_generated.points_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, threadNum);
-
-	std::lock_guard<std::mutex> lock_linestring(osm_generated.linestring_store_mutex);
-	boost::sort::block_indirect_sort(
-		osm_generated.linestring_store->begin(), osm_generated.linestring_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-
-	std::lock_guard<std::mutex> lock_multi_linestring(osm_generated.multi_linestring_store_mutex);
-	boost::sort::block_indirect_sort(
-		osm_generated.multi_linestring_store->begin(), osm_generated.multi_linestring_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-	
-	std::lock_guard<std::mutex> lock_multi_polygon(osm_generated.multi_polygon_store_mutex);
-	boost::sort::block_indirect_sort(
-		osm_generated.multi_polygon_store->begin(), osm_generated.multi_polygon_store->end(), 
-		[](auto const &a, auto const &b) { return a.first < b.first; }, 
-		threadNum);
-}
-
 MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const {
 	MultiPolygon mp;
 	if (outerBegin == outerEnd) { return mp; } // no outers so quit
@@ -233,23 +190,12 @@ void OSMStore::mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::ma
 
 void OSMStore::reportSize() const {
 	std::cout << "Stored " << nodes.size() << " nodes, " << ways.size() << " ways, " << relations.size() << " relations" << std::endl;
-	std::cout << "Shape points: " << shp_generated.points_store->size() << ", lines: " << shp_generated.linestring_store->size() << ", polygons: " << shp_generated.multi_polygon_store->size() << std::endl;
-	std::cout << "Generated points: " << osm_generated.points_store->size() << ", lines: " << osm_generated.linestring_store->size() << ", polygons: " << osm_generated.multi_polygon_store->size() << std::endl;
 }
 
 void OSMStore::reopen() {
 	nodes.reopen();
 	ways.reopen();
 	relations.reopen();
-	
-	osm_generated.points_store = std::make_unique<point_store_t>();
-	osm_generated.linestring_store = std::make_unique<linestring_store_t>();
-	osm_generated.multi_polygon_store = std::make_unique<multi_polygon_store_t>();
-	osm_generated.multi_linestring_store = std::make_unique<multi_linestring_store_t>();
-
-	shp_generated.points_store = std::make_unique<point_store_t>();
-	shp_generated.linestring_store = std::make_unique<linestring_store_t>();
-	shp_generated.multi_polygon_store = std::make_unique<multi_polygon_store_t>();
 }
 
 void OSMStore::ensureUsedWaysInited() {

@@ -153,10 +153,7 @@ private:
 	Store all of those to be output: latp/lon for nodes, node list for ways, and way list for relations.
 	It will serve as the global data store. OSM data destined for output will be set here from OsmMemTiles.
 
-	OSMStore will be mainly used for geometry generation. Geometry generation logic is implemented in this class.
-	These functions are used by osm_output, and can be used by OsmLuaProcessing to provide the geometry information to Lua.
-
-	Internal data structures are encapsulated in NodeStore, WayStore and [unused] RelationStore classes.
+	Internal data structures are encapsulated in NodeStore, WayStore and RelationStore classes.
 	These store can be altered for efficient memory use without global code changes.
 	Such data structures have to return const ForwardInputIterators (only *, ++ and == should be supported).
 
@@ -168,34 +165,9 @@ private:
 class OSMStore
 {
 public:
-	using point_store_t = std::deque<std::pair<NodeID, Point>>;
-
-	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
-	using linestring_store_t = std::deque<std::pair<NodeID, linestring_t>>;
-
-	using multi_linestring_t = boost::geometry::model::multi_linestring<linestring_t, std::vector, mmap_allocator>;
-	using multi_linestring_store_t = std::deque<std::pair<NodeID, multi_linestring_t>>;
-
-	using polygon_t = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, mmap_allocator, mmap_allocator>;
-	using multi_polygon_t = boost::geometry::model::multi_polygon<polygon_t, std::vector, mmap_allocator>;
-	using multi_polygon_store_t = std::deque<std::pair<NodeID, multi_polygon_t>>;
-
-	struct generated {
-		std::mutex points_store_mutex;
-		std::unique_ptr<point_store_t> points_store;
-		
-		std::mutex linestring_store_mutex;
-		std::unique_ptr<linestring_store_t> linestring_store;
-		
-		std::mutex multi_polygon_store_mutex;
-		std::unique_ptr<multi_polygon_store_t> multi_polygon_store;
-
-		std::mutex multi_linestring_store_mutex;
-		std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
-	};
-
 	NodeStore& nodes;
 	WayStore& ways;
+
 protected:	
 	bool use_compact_nodes = false;
 	bool require_integrity = true;
@@ -203,9 +175,6 @@ protected:
 	RelationStore relations; // unused
 	UsedWays used_ways;
 	RelationScanStore scanned_relations;
-
-	generated osm_generated;
-	generated shp_generated;
 
 public:
 
@@ -221,13 +190,6 @@ public:
 	void use_compact_store(bool use) { use_compact_nodes = use; }
 	void enforce_integrity(bool ei) { require_integrity = ei; }
 	bool integrity_enforced() { return require_integrity; }
-
-	void shapes_sort(unsigned int threadNum = 1);
-	void generated_sort(unsigned int threadNum = 1);
-
-	void nodes_sort(unsigned int threadNum);
-
-	void ways_sort(unsigned int threadNum);
 
 	void relations_insert_front(std::vector<RelationStore::element_t> &new_relations) {
 		relations.insert_front(new_relations);
@@ -245,105 +207,6 @@ public:
 	bool way_in_any_relations(WayID wayid) { return scanned_relations.way_in_any_relations(wayid); }
 	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
 	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
-
-	generated &osm() { return osm_generated; }
-	generated const &osm() const { return osm_generated; }
-	generated &shp() { return shp_generated; }
-	generated const &shp() const { return shp_generated; }
-
-	using handle_t = void *;
-
-	template<typename T>
-	void store_point(generated &store, NodeID id, T const &input) {	
-		std::lock_guard<std::mutex> lock(store.points_store_mutex);
-		store.points_store->emplace_back(id, input);		   	
-	}
-
-	Point const &retrieve_point(generated const &store, NodeID id) const {
-		auto iter = std::lower_bound(store.points_store->begin(), store.points_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-
-		if(iter == store.points_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated node with id " + std::to_string(id));
-
-		return iter->second;
-	}
-	
-	template<typename Input>
-	void store_linestring(generated &store, NodeID id, Input const &src)
-	{
-		linestring_t dst(src.begin(), src.end());
-
-		std::lock_guard<std::mutex> lock(store.linestring_store_mutex);
-		store.linestring_store->emplace_back(id, std::move(dst));
-	}
-
-	linestring_t const &retrieve_linestring(generated const &store, NodeID id) const {
-		auto iter = std::lower_bound(store.linestring_store->begin(), store.linestring_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-
-		if(iter == store.linestring_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id));
-
-		return iter->second;
-	}
-	
-	template<typename Input>
-	void store_multi_linestring(generated &store, NodeID id, Input const &src)
-	{
-		multi_linestring_t dst;
-		dst.resize(src.size());
-		for (std::size_t i=0; i<src.size(); ++i) {
-			boost::geometry::assign(dst[i], src[i]);
-		}
-
-		std::lock_guard<std::mutex> lock(store.multi_linestring_store_mutex);
-		store.multi_linestring_store->emplace_back(id, std::move(dst));
-	}
-
-	multi_linestring_t const &retrieve_multi_linestring(generated const &store, NodeID id) const {
-		auto iter = std::lower_bound(store.multi_linestring_store->begin(), store.multi_linestring_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-
-		if(iter == store.multi_linestring_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id));
-
-		return iter->second;
-	}
-
-	template<typename Input>
-	void store_multi_polygon(generated &store, NodeID id, Input const &src)
-	{
-		multi_polygon_t dst;
-		dst.resize(src.size());
-		for(std::size_t i = 0; i < src.size(); ++i) {
-			dst[i].outer().resize(src[i].outer().size());
-			boost::geometry::assign(dst[i].outer(), src[i].outer());
-
-			dst[i].inners().resize(src[i].inners().size());
-			for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
-				dst[i].inners()[j].resize(src[i].inners()[j].size());
-				boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
-			}
-		}
-		
-		std::lock_guard<std::mutex> lock(store.multi_polygon_store_mutex);
-		store.multi_polygon_store->emplace_back(id, std::move(dst));
-	}
-
-	multi_polygon_t const &retrieve_multi_polygon(generated const &store, NodeID id) const {
-		auto iter = std::lower_bound(store.multi_polygon_store->begin(), store.multi_polygon_store->end(), id, [](auto const &e, auto id) { 
-			return e.first < id; 
-		});
-
-		if(iter == store.multi_polygon_store->end() || iter->first != id)
-			throw std::out_of_range("Could not find generated multi polygon with id " + std::to_string(id));
-
-		return iter->second;
-	}
 
 	void clear();
 	void reportSize() const;
