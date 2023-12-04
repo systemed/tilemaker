@@ -21,6 +21,8 @@
 #include <boost/program_options.hpp>
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/sort/sort.hpp>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -128,7 +130,6 @@ void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &
 }
 
 double bboxElementFromStr(const string& number) {
-	char* endptr;
 	try {
 		return boost::lexical_cast<double>(number);
 	} catch (boost::bad_lexical_cast&) {
@@ -286,11 +287,13 @@ int main(int argc, char* argv[]) {
 		osmStore.open(osmStoreFile);
 	}
 
-	AttributeStore attributeStore(threadNum);
+	AttributeStore attributeStore;
 
-	class OsmMemTiles osmMemTiles(config.baseZoom);
-	class ShpMemTiles shpMemTiles(osmStore, config.baseZoom);
 	class LayerDefinition layers(config.layers);
+	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID);
+	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
+	osmMemTiles.open();
+	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore);
@@ -314,9 +317,7 @@ int main(int argc, char* argv[]) {
 						  shpMemTiles, osmLuaProcessing);
 		}
 	}
-	
-	// ---- Sort the generated shapes
-	osmStore.shapes_sort(threadNum);
+	shpMemTiles.reportSize();
 
 	// ----	Read significant node tags
 
@@ -345,12 +346,13 @@ int main(int argc, char* argv[]) {
 				});	
 			if (ret != 0) return ret;
 		} 
+		attributeStore.finalize();
+		osmMemTiles.reportSize();
+		attributeStore.reportSize();
 		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
-
 	// ----	Initialise SharedData
-	std::vector<class TileDataSource *> sources = {&osmMemTiles, &shpMemTiles};
-
+	SourceList sources = {&osmMemTiles, &shpMemTiles};
 	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
 	sharedData.sqlite = sqlite;
@@ -437,14 +439,19 @@ int main(int argc, char* argv[]) {
 		std::mutex io_mutex;
 
 		// Loop through tiles
-		std::size_t tc = 0;
+		size_t tilesWritten = 0;
 
-		std::deque< std::pair<unsigned int, TileCoordinates> > tile_coordinates;
-		for (uint zoom=sharedData.config.startZoom; zoom<=sharedData.config.endZoom; zoom++) {
-			auto zoom_result = GetTileCoordinates(sources, zoom);
+		for (auto source : sources) {
+			source->finalize(threadNum);
+		}
+
+		// tiles by zoom level
+		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
+		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
+			auto zoom_result = getTilesAtZoom(sources, zoom);
 			for(auto&& it: zoom_result) {
 				// If we're constrained to a source tile, check we're within it
-				if (srcZ>-1) {
+				if (srcZ > -1) {
 					int x = it.x / pow(2, zoom-srcZ);
 					int y = it.y / pow(2, zoom-srcZ);
 					if (x!=srcX || y!=srcY) continue;
@@ -455,35 +462,108 @@ int main(int argc, char* argv[]) {
 						continue;
 				}
 
-				tile_coordinates.push_back(std::make_pair(zoom, it));
+				tileCoordinates.push_back(std::make_pair(zoom, it));
 			}
 		}
 
-		std::size_t interval = 1;
-		std::size_t zoomDisplay = 0;
-		for(std::size_t start_index = 0; start_index < tile_coordinates.size(); start_index += interval) {
-			unsigned int zoom = tile_coordinates[start_index].first;
-			if (zoom > 10) interval = 10;
-			if (zoom > 11) interval = 100;
-			if (zoom > 12) interval = 1000;
+		// Cluster tiles: breadth-first for z0..z5, depth-first for z6
+		const size_t baseZoom = config.baseZoom;
+		boost::sort::block_indirect_sort(
+			tileCoordinates.begin(), tileCoordinates.end(), 
+			[baseZoom](auto const &a, auto const &b) {
+				const auto aZoom = a.first;
+				const auto bZoom = b.first;
+				const auto aX = a.second.x;
+				const auto aY = a.second.y;
+				const auto bX = b.second.x;
+				const auto bY = b.second.y;
+				const bool aLowZoom = aZoom < CLUSTER_ZOOM;
+				const bool bLowZoom = bZoom < CLUSTER_ZOOM;
 
-			boost::asio::post(pool, [=, &tile_coordinates, &pool, &sharedData, &osmStore, &io_mutex, &tc, &zoomDisplay]() {
-				std::size_t end_index = std::min(tile_coordinates.size(), start_index + interval);
-				for(std::size_t i = start_index; i < end_index; ++i) {
-					unsigned int zoom = tile_coordinates[i].first;
-					TileCoordinates coords = tile_coordinates[i].second;
-					outputProc(pool, sharedData, osmStore, GetTileData(sources, sortOrders, coords, zoom), coords, zoom);
+				// Breadth-first for z0..5
+				if (aLowZoom != bLowZoom)
+					return aLowZoom;
+
+				if (aLowZoom && bLowZoom) {
+					if (aZoom != bZoom)
+						return aZoom < bZoom;
+
+					if (aX != bX)
+						return aX < bX;
+
+					return aY < bY;
+				}
+
+				for (size_t z = CLUSTER_ZOOM; z <= baseZoom; z++) {
+					// Translate both a and b to zoom z, compare.
+					// First, sanity check: can we translate it to this zoom?
+					if (aZoom < z || bZoom < z) {
+						return aZoom < bZoom;
+					}
+
+					const auto aXz = aX / (1 << (aZoom - z));
+					const auto aYz = aY / (1 << (aZoom - z));
+					const auto bXz = bX / (1 << (bZoom - z));
+					const auto bYz = bY / (1 << (bZoom - z));
+
+					if (aXz != bXz)
+						return aXz < bXz;
+
+					if (aYz != bYz)
+						return aYz < bYz;
+				}
+
+				return false;
+			}, 
+			threadNum);
+
+		std::size_t batchSize = 0;
+		for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
+			// Compute how many tiles should be assigned to this batch --
+			// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
+			batchSize = 0;
+			size_t weight = 0;
+			while (weight < 1000 && startIndex + batchSize < tileCoordinates.size()) {
+				const auto& zoom = tileCoordinates[startIndex + batchSize].first;
+				if (zoom > 12)
+					weight++;
+				else if (zoom > 11)
+					weight += 10;
+				else if (zoom > 10)
+					weight += 100;
+				else
+					weight += 1000;
+
+				batchSize++;
+			}
+
+			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
+				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
+				for(std::size_t i = startIndex; i < endIndex; ++i) {
+					unsigned int zoom = tileCoordinates[i].first;
+					TileCoordinates coords = tileCoordinates[i].second;
+					std::vector<std::vector<OutputObjectID>> data;
+					for (auto source : sources) {
+						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+					}
+					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
-				tc += (end_index - start_index); 
+				tilesWritten += (endIndex - startIndex); 
 
-				unsigned int zoom = tile_coordinates[end_index-1].first;
-				if (zoom>zoomDisplay) zoomDisplay = zoom;
-				cout << "Zoom level " << zoomDisplay << ", writing tile " << tc << " of " << tile_coordinates.size() << "               \r" << std::flush;
+				// Show progress grouped by z6 (or lower)
+				size_t z = tileCoordinates[startIndex].first;
+				size_t x = tileCoordinates[startIndex].second.x;
+				size_t y = tileCoordinates[startIndex].second.y;
+				if (z > CLUSTER_ZOOM) {
+					x = x / (1 << (z - CLUSTER_ZOOM));
+					y = y / (1 << (z - CLUSTER_ZOOM));
+					z = CLUSTER_ZOOM;
+				}
+				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});
 		}
-		
 		// Wait for all tasks in the pool to complete.
 		pool.join();
 	}
