@@ -308,7 +308,10 @@ protected:
 	// to track the tiles that would be entirely filled.
 	//
 	// To minimize lock contention, we shard by NodeID.
-	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largePolygons;
+	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largeCoveringPolygons;
+	// Like above, but for the case where we're in the hole of the polygon,
+	// and so render nothing.
+	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largeExcludedPolygons;
 
 
 public:
@@ -447,7 +450,7 @@ public:
 
 
 private:	
-	void checkForLargePolygon(NodeID objectID, const TileBbox& bbox, const MultiPolygon& mp);
+	void updateLargePolygonMaps(NodeID objectID, const TileBbox& bbox, const MultiPolygon& mp);
 };
 
 TileCoordinatesSet getTilesAtZoom(
