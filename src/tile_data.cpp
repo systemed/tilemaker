@@ -343,7 +343,7 @@ void TileDataSource::updateLargePolygonMaps(NodeID objectID, const TileBbox& bbo
 	//
 	// If yes, flag it so future tiles at higher zooms can avoid doing an
 	// expensive clip.
-	if (bbox.zoom < 6 || bbox.zoom >= 9)
+	if (bbox.zoom < 6 || bbox.zoom > 9)
 		return;
 
 	bool isExcluded = false;
@@ -381,7 +381,7 @@ void TileDataSource::updateLargePolygonMaps(NodeID objectID, const TileBbox& bbo
 
 	std::bitset<64> covered(bits);
 
-	// We're at zoom 6, 7, or 8, so we'll cover an 8x8, 4x4 or 2x2 area
+	// We're at zoom 6, 7, 8, or 9, so we'll cover an 8x8, 4x4, 2x2 or 1x1 area
 	// of z9 tiles.
 	const size_t stride = 1 << (9 - bbox.zoom);
 
