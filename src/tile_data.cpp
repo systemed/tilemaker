@@ -2,6 +2,7 @@
 #include <iostream>
 #include "tile_data.h"
 
+#include <bitset>
 #include <ciso646>
 
 using namespace std;

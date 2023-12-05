@@ -542,7 +542,6 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
-
 					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
