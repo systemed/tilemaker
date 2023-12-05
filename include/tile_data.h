@@ -248,7 +248,7 @@ protected:
 	uint16_t z6OffsetDivisor;
 
 	// Guards objects, objectsWithIds.
-	std::vector<std::mutex> objectsMutex;
+	mutable std::vector<std::mutex> objectsMutex;
 	// The top-level vector has 1 entry per z6 tile, indexed by x*64 + y
 	// The inner vector contains the output objects that are contained in that z6 tile
 	//
@@ -290,6 +290,26 @@ protected:
 
 	std::mutex multi_linestring_store_mutex;
 	std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
+
+	// Some polygons are very large, e.g. Hudson Bay covers hundreds of thousands of
+	// z14 tiles.
+	//
+	// Because it is very large, it is expensive to clip it once, let alone hundreds
+	// of thousands of times.
+	//
+	// Fortunately, we can avoid redundant clipping. If we clip a polygon and observe
+	// that it fills its entire tile, we know that it must fill all its descendant
+	// tiles at higher zooms.
+	//
+	// We divide the map into 4,096 z6 tiles, then track polygons within that z6
+	// tile if they'd cover at least an entire z9 tile.
+	//
+	// Because z9 is 3 zooms higher than z6, we can use a uint64_t as a bitset
+	// to track the tiles that would be entirely filled.
+	//
+	// To minimize lock contention, we shard by NodeID.
+	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largePolygons;
+
 
 public:
 	TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID);
@@ -335,7 +355,7 @@ public:
 		TileCoordinates coordinates
 	);
 
-	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
+	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
@@ -427,6 +447,7 @@ public:
 
 
 private:	
+	void checkForLargePolygon(NodeID objectID, const TileBbox& bbox, const MultiPolygon& mp);
 };
 
 TileCoordinatesSet getTilesAtZoom(

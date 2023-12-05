@@ -14,7 +14,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
-	baseZoom(baseZoom)
+	baseZoom(baseZoom),
+	largePolygons(threadNum * 4)
 {
 }
 
@@ -129,7 +130,7 @@ void TileDataSource::collectLargeObjectsForTile(
 
 // Build node and way geometries
 Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, 
-                                          NodeID const objectID, const TileBbox &bbox) const {
+                                          NodeID const objectID, const TileBbox &bbox) {
 	switch(geomType) {
 		case POINT_: {
 			auto p = retrieve_point(objectID);
@@ -175,6 +176,64 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case POLYGON_: {
+			if (bbox.zoom > 6) {
+				// Truncate to the z6 x/y tile
+				const size_t baseXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
+				const size_t baseYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
+				const uint16_t z6Tile = baseXz6 * 64 + baseYz6;
+
+				const uint16_t shard = objectID % largePolygons.size();
+				const uint16_t lockShard = objectID % objectsMutex.size();
+				uint64_t bits = 0;
+				{
+					std::lock_guard<std::mutex> lock(objectsMutex[lockShard]);
+					const auto& rv = largePolygons[shard].find(std::make_pair(z6Tile, objectID));
+					if (rv != largePolygons[shard].end()) {
+						bits = rv->second;
+					}
+				}
+
+				if (bits != 0) {
+					std::bitset<64> covered(bits);
+					bool wasCovered = false;
+
+					// If zoom >= 9: can short-circuit if our z9 tile is set.
+					if (bbox.zoom >= 9) {
+						size_t z9x = bbox.index.x / (1 << (bbox.zoom - 9));
+						size_t z9y = bbox.index.y / (1 << (bbox.zoom - 9));
+						wasCovered = covered.test(z9x * 8 + z9y);
+					}
+
+					// If zoom is 7 or 8, it's a bit more involved -- we need our entire
+					// range of z9 tiles to be set.
+					if (bbox.zoom == 7 || bbox.zoom == 8) {
+						const size_t stride = 1 << (9 - bbox.zoom);
+
+						const size_t baseXz9 = baseXz6 * 8;
+						const size_t baseYz9 = baseYz6 * 8;
+
+						// Figure out where we'll start reading.
+						const size_t startX = bbox.index.x * (1 << (9 - bbox.zoom)) - baseXz9;
+						const size_t startY = bbox.index.y * (1 << (9 - bbox.zoom)) - baseYz9;
+
+						wasCovered = true;
+						for (int x = startX; x < startX + stride; x++) {
+							for (int y = startY; y < startY + stride; y++) {
+								wasCovered = wasCovered && covered.test(x * 8 + y);
+							}
+						}
+					}
+
+					if (wasCovered) {
+						MultiPolygon mp;
+						Polygon p;
+						boost::geometry::assign(p, bbox.clippingBox);
+						mp.push_back(p);
+						return mp;
+					}
+				}
+			}
+
 			auto const &input = retrieve_multi_polygon(objectID);
 
 			Box box = bbox.clippingBox;
@@ -235,17 +294,77 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
+
+					checkForLargePolygon(objectID, bbox, mp);
 					return output;
 				} else {
 					// occasionally also wrong_topological_dimension, disconnected_interior
 				}
 			}
+
+			checkForLargePolygon(objectID, bbox, mp);
 			return mp;
 		}
 
 		default:
 			throw std::runtime_error("Invalid output geometry");
 	}
+}
+
+void TileDataSource::checkForLargePolygon(NodeID objectID, const TileBbox& bbox, const MultiPolygon& mp) {
+	// Did this polygon clip to the full extent of the tile? If yes, flag it
+	// so future tiles at higher zooms can avoid doing an expensive clip.
+	if (bbox.zoom < 6 || bbox.zoom >= 9)
+		return;
+
+	if (mp.size() != 1)
+		return;
+
+	if (mp[0].outer().size() != 5)
+		return;
+
+	Polygon bboxAsPolygon;
+	boost::geometry::assign(bboxAsPolygon, bbox.clippingBox);
+
+	if (!boost::geometry::equals(mp[0], bboxAsPolygon))
+		return;
+
+	// Truncate to the z6 x/y tile
+	const size_t baseXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
+	const size_t baseYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
+
+	const uint16_t z6Tile = baseXz6 * 64 + baseYz6;
+	const uint16_t shard = objectID % largePolygons.size();
+	const uint16_t lockShard = objectID % objectsMutex.size();
+
+	uint64_t bits = 0;
+	const std::pair<uint16_t, NodeID> key = std::make_pair(z6Tile, objectID);
+	std::lock_guard<std::mutex> lock(objectsMutex[lockShard]);
+	const auto& rv = largePolygons[shard].find(key);
+	if (rv != largePolygons[shard].end())
+		bits = rv->second;
+
+	std::bitset<64> covered(bits);
+
+	// We're at zoom 6, 7, or 8, so we'll cover an 8x8, 4x4 or 2x2 area
+	// of z9 tiles.
+	const size_t stride = 1 << (9 - bbox.zoom);
+
+	const size_t baseXz9 = baseXz6 * 8;
+	const size_t baseYz9 = baseYz6 * 8;
+
+	// Figure out where we'll start writing.
+	const size_t startX = bbox.index.x * (1 << (9 - bbox.zoom)) - baseXz9;
+	const size_t startY = bbox.index.y * (1 << (9 - bbox.zoom)) - baseYz9;
+
+	for (int x = startX; x < startX + stride; x++) {
+		for (int y = startY; y < startY + stride; y++) {
+			covered.set(x * 8 + y);
+		}
+	}
+	// We'd like to set the bits for the zooms at 9, so we need to translate
+	// At zoom 6: set all bits.
+	largePolygons[shard][key] = covered.to_ullong();
 }
 
 LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, 
@@ -406,7 +525,6 @@ void TileDataSource::addGeometryToIndex(
 			tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 		}
 	}
-	
 	TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
 	for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 		TileCoordinates index = *it;

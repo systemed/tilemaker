@@ -96,7 +96,7 @@ void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
 
 template <typename T>
 void CheckNextObjectAndMerge(
-	const TileDataSource* source,
+	TileDataSource* source,
 	OutputObjectsConstIt& jt,
 	OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox& bbox,
@@ -147,7 +147,7 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 }
 
 void ProcessObjects(
-	const TileDataSource* source,
+	TileDataSource* source,
 	const AttributeStore& attributeStore,
 	OutputObjectsConstIt ooSameLayerBegin,
 	OutputObjectsConstIt ooSameLayerEnd, 

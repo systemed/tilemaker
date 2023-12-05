@@ -542,6 +542,17 @@ int main(int argc, char* argv[]) {
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
+
+					/*
+					// Only do tiles at z6/16/18 and underneath -- this is the
+					// middle of the Hudson Bay.
+					if (zoom < 6)
+						continue;
+					size_t newx = coords.x / (1 << (zoom - 6));
+					size_t newy = coords.y / (1 << (zoom - 6));
+					if (newx != 16 || newy != 18)
+						continue;
+						*/
 					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
