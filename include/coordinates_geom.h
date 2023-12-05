@@ -23,6 +23,7 @@ public:
 	TileBbox(TileCoordinates i, uint z, bool h, bool e);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
+	std::vector<Point> scaleRing(Ring const &src) const;
 	MultiPolygon scaleGeometry(MultiPolygon const &src) const;
 	std::pair<double, double> floorLatpLon(double latp, double lon) const;
 

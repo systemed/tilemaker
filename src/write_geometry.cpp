@@ -53,7 +53,7 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 		XYString points;
 		Ring ring = geom::exterior_ring(*it);
 		for (auto jt = ring.begin(); jt != ring.end(); ++jt) {
-			pair<int,int> xy(jt->get<1>(), jt->get<0>());
+			pair<int,int> xy(jt->get<0>(), jt->get<1>());
 			points.push_back(xy);
 		}
 		bool success = writeDeltaString(&points, featurePtr, &lastPos, true);
@@ -63,7 +63,7 @@ void WriteGeometryVisitor::operator()(const MultiPolygon &mp) const {
 		for (auto ii = interiors.begin(); ii != interiors.end(); ++ii) {
 			points.clear();
 			for (auto jt = ii->begin(); jt != ii->end(); ++jt) {
-				pair<int,int> xy(jt->get<1>(), jt->get<0>());
+				pair<int,int> xy(jt->get<0>(), jt->get<1>());
 				points.push_back(xy);
 			}
 			writeDeltaString(&points, featurePtr, &lastPos, true);
