@@ -559,6 +559,7 @@ void TileDataSource::addGeometryToIndex(
 			tileSet.insert(tileSetTmp.begin(), tileSetTmp.end());
 		}
 	}
+
 	TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
 	for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 		TileCoordinates index = *it;
