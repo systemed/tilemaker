@@ -16,6 +16,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	objects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
 	baseZoom(baseZoom),
+	jumboCoveringPolygons(threadNum * 4),
+	jumboExcludedPolygons(threadNum * 4),
 	largeCoveringPolygons(threadNum * 4),
 	largeExcludedPolygons(threadNum * 4)
 {
@@ -130,30 +132,31 @@ void TileDataSource::collectLargeObjectsForTile(
 	}
 }
 
-bool bboxInLargePolygonBitset(const TileBbox& bbox, uint64_t bits) {
+bool bboxInLargePolygonBitset(uint16_t rootZoom, const TileBbox& bbox, uint64_t bits) {
 	std::bitset<64> bitset(bits);
 
-	const size_t baseXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
-	const size_t baseYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
+	const uint16_t leafZoom = rootZoom + 3;
+	const size_t rootX = bbox.index.x / (1 << (bbox.zoom - rootZoom));
+	const size_t rootY = bbox.index.y / (1 << (bbox.zoom - rootZoom));
 
-	// If zoom >= 9: can short-circuit if our z9 tile is set.
-	if (bbox.zoom >= 9) {
-		size_t z9x = bbox.index.x / (1 << (bbox.zoom - 9));
-		size_t z9y = bbox.index.y / (1 << (bbox.zoom - 9));
-		return bitset.test(z9x * 8 + z9y);
+	// If zoom >= leafZoom: can short-circuit if our tile is set.
+	if (bbox.zoom >= leafZoom) {
+		size_t leafX = bbox.index.x / (1 << (bbox.zoom - leafZoom));
+		size_t leafY = bbox.index.y / (1 << (bbox.zoom - leafZoom));
+		return bitset.test((leafX - (rootX * 8)) * 8 + (leafY - (rootY * 8)));
 	}
 
 	// If zoom is 7 or 8, it's a bit more involved -- we need our entire
 	// range of z9 tiles to be set.
-	if (bbox.zoom == 7 || bbox.zoom == 8) {
-		const size_t stride = 1 << (9 - bbox.zoom);
+	if (bbox.zoom == rootZoom + 1 || bbox.zoom == rootZoom + 2) {
+		const size_t stride = 1 << (leafZoom - bbox.zoom);
 
-		const size_t baseXz9 = baseXz6 * 8;
-		const size_t baseYz9 = baseYz6 * 8;
+		const size_t leafX = rootX * 8;
+		const size_t leafY = rootY * 8;
 
 		// Figure out where we'll start reading.
-		const size_t startX = bbox.index.x * (1 << (9 - bbox.zoom)) - baseXz9;
-		const size_t startY = bbox.index.y * (1 << (9 - bbox.zoom)) - baseYz9;
+		const size_t startX = bbox.index.x * (1 << (leafZoom - bbox.zoom)) - leafX;
+		const size_t startY = bbox.index.y * (1 << (leafZoom - bbox.zoom)) - leafY;
 
 		bool success = true;
 		for (int x = startX; x < startX + stride; x++) {
@@ -164,7 +167,7 @@ bool bboxInLargePolygonBitset(const TileBbox& bbox, uint64_t bits) {
 		return success;
 	}
 
-	// You shouldn't call this for zooms <= 6.
+	// You shouldn't call this for zooms <= rootZoom.
 	return false;
 }
 
@@ -222,31 +225,56 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// This is possible for very large polygons that cover (or fail to cover)
 				// an entire z6/z7/z8/z9 tile.
 
-				const size_t baseXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
-				const size_t baseYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
-				const uint16_t z6Tile = baseXz6 * 64 + baseYz6;
+				const size_t rootXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
+				const size_t rootYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
+				const uint16_t z6Tile = rootXz6 * (1 << 6) + rootYz6;
 
-				const uint16_t coveringShard = objectID % largeCoveringPolygons.size();
-				const uint16_t excludedShard = objectID % largeExcludedPolygons.size();
+				const size_t rootXz10 = bbox.index.x / (1 << (bbox.zoom - 10));
+				const size_t rootYz10 = bbox.index.y / (1 << (bbox.zoom - 10));
+				const uint16_t z10Tile = rootXz10 * (1 << 10) + rootYz10;
+
+				const uint16_t coveringShard = objectID % jumboCoveringPolygons.size();
+				const uint16_t excludedShard = objectID % jumboExcludedPolygons.size();
 				const uint16_t lockShard = objectID % objectsMutex.size();
-				uint64_t coveringBits = 0;
-				uint64_t excludedBits = 0;
+				uint64_t jumboCoveringBits = 0;
+				uint64_t jumboExcludedBits = 0;
+				uint64_t largeCoveringBits = 0;
+				uint64_t largeExcludedBits = 0;
 				{
 					std::lock_guard<std::mutex> lock(objectsMutex[lockShard]);
 					{
-						const auto& rv = largeCoveringPolygons[coveringShard].find(std::make_pair(z6Tile, objectID));
-						if (rv != largeCoveringPolygons[coveringShard].end()) {
-							coveringBits = rv->second;
+						const auto& rv = jumboCoveringPolygons[coveringShard].find(std::make_pair(z6Tile, objectID));
+						if (rv != jumboCoveringPolygons[coveringShard].end()) {
+							jumboCoveringBits = rv->second;
 						}
 					}
 
-					const auto& rv = largeExcludedPolygons[excludedShard].find(std::make_pair(z6Tile, objectID));
-					if (rv != largeExcludedPolygons[excludedShard].end()) {
-						excludedBits = rv->second;
+					{
+						const auto& rv = jumboExcludedPolygons[excludedShard].find(std::make_pair(z6Tile, objectID));
+						if (rv != jumboExcludedPolygons[excludedShard].end()) {
+							jumboExcludedBits = rv->second;
+						}
+					}
+
+					if (bbox.zoom > 10) {
+						{
+							const auto& rv = largeCoveringPolygons[coveringShard].find(std::make_pair(z10Tile, objectID));
+							if (rv != largeCoveringPolygons[coveringShard].end()) {
+								largeCoveringBits = rv->second;
+							}
+						}
+
+						{
+							const auto& rv = largeExcludedPolygons[excludedShard].find(std::make_pair(z10Tile, objectID));
+							if (rv != largeExcludedPolygons[excludedShard].end()) {
+								largeExcludedBits = rv->second;
+							}
+						}
 					}
 				}
 
-				if (coveringBits != 0 && bboxInLargePolygonBitset(bbox, coveringBits)) {
+				if ((jumboCoveringBits != 0 && bbox.zoom > 6 && bboxInLargePolygonBitset(6, bbox, jumboCoveringBits)) ||
+						(largeCoveringBits != 0 && bbox.zoom > 10 && bboxInLargePolygonBitset(10, bbox, largeCoveringBits))) {
 					MultiPolygon mp;
 					Polygon p;
 					boost::geometry::assign(p, bbox.clippingBox);
@@ -254,11 +282,11 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					return mp;
 				}
 
-				if (excludedBits != 0 && bboxInLargePolygonBitset(bbox, excludedBits)) {
+				if ((jumboExcludedBits != 0 && bbox.zoom > 6 && bboxInLargePolygonBitset(6, bbox, jumboExcludedBits)) ||
+						(largeExcludedBits != 0 && bbox.zoom > 10 && bboxInLargePolygonBitset(10, bbox, largeExcludedBits))) {
 					MultiPolygon mp;
 					return mp;
 				}
-
 			}
 
 			auto const &input = retrieve_multi_polygon(objectID);
@@ -322,7 +350,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					geom::intersection(input, box, output);
 					geom::correct(output);
 
-					updateLargePolygonMaps(objectID, bbox, mp);
+					updateLargePolygonMaps(objectID, bbox, output);
 					return output;
 				} else {
 					// occasionally also wrong_topological_dimension, disconnected_interior
@@ -343,7 +371,7 @@ void TileDataSource::updateLargePolygonMaps(NodeID objectID, const TileBbox& bbo
 	//
 	// If yes, flag it so future tiles at higher zooms can avoid doing an
 	// expensive clip.
-	if (bbox.zoom < 6 || bbox.zoom > 9)
+	if (bbox.zoom < 6 || bbox.zoom > 13)
 		return;
 
 	bool isExcluded = false;
@@ -355,25 +383,29 @@ void TileDataSource::updateLargePolygonMaps(NodeID objectID, const TileBbox& bbo
 		Polygon bboxAsPolygon;
 		boost::geometry::assign(bboxAsPolygon, bbox.clippingBox);
 
-		if (boost::geometry::equals(mp[0], bboxAsPolygon))
-			isCovered = true;
+		isCovered = boost::geometry::equals(mp[0], bboxAsPolygon);
 	}
 
 	if (!isExcluded && !isCovered)
 		return;
 
-	// Truncate to the z6 x/y tile
-	const size_t baseXz6 = bbox.index.x / (1 << (bbox.zoom - 6));
-	const size_t baseYz6 = bbox.index.y / (1 << (bbox.zoom - 6));
+	const bool isJumbo = bbox.zoom <= 9;
+	const uint16_t rootZoom = isJumbo ? 6 : 10;
+	const uint16_t leafZoom = rootZoom + 3;
 
-	const uint16_t z6Tile = baseXz6 * 64 + baseYz6;
+	// Truncate to the root x/y tile
+	const size_t rootX = bbox.index.x / (1 << (bbox.zoom - rootZoom));
+	const size_t rootY = bbox.index.y / (1 << (bbox.zoom - rootZoom));
 
-	auto& store = isCovered ? largeCoveringPolygons : largeExcludedPolygons;
+	const uint32_t rootTile = rootX * (1 << rootZoom) + rootY;
+
+	auto& store = isJumbo ? (isCovered ? jumboCoveringPolygons : jumboExcludedPolygons)
+		: (isCovered ? largeCoveringPolygons : largeExcludedPolygons);
 	const uint16_t shard = objectID % store.size();
 	const uint16_t lockShard = objectID % objectsMutex.size();
 
 	uint64_t bits = 0;
-	const std::pair<uint16_t, NodeID> key = std::make_pair(z6Tile, objectID);
+	const std::pair<uint32_t, NodeID> key = std::make_pair(rootTile, objectID);
 	std::lock_guard<std::mutex> lock(objectsMutex[lockShard]);
 	const auto& rv = store[shard].find(key);
 	if (rv != store[shard].end())
@@ -382,15 +414,15 @@ void TileDataSource::updateLargePolygonMaps(NodeID objectID, const TileBbox& bbo
 	std::bitset<64> covered(bits);
 
 	// We're at zoom 6, 7, 8, or 9, so we'll cover an 8x8, 4x4, 2x2 or 1x1 area
-	// of z9 tiles.
-	const size_t stride = 1 << (9 - bbox.zoom);
+	// of z9 tiles, and similarly for z10, .., z13.
+	const size_t stride = 1 << (leafZoom - bbox.zoom);
 
-	const size_t baseXz9 = baseXz6 * 8;
-	const size_t baseYz9 = baseYz6 * 8;
+	const size_t leafX = rootX * 8;
+	const size_t leafY = rootY * 8;
 
 	// Figure out where we'll start writing.
-	const size_t startX = bbox.index.x * (1 << (9 - bbox.zoom)) - baseXz9;
-	const size_t startY = bbox.index.y * (1 << (9 - bbox.zoom)) - baseYz9;
+	const size_t startX = bbox.index.x * (1 << (leafZoom - bbox.zoom)) - leafX;
+	const size_t startY = bbox.index.y * (1 << (leafZoom - bbox.zoom)) - leafY;
 
 	for (int x = startX; x < startX + stride; x++) {
 		for (int y = startY; y < startY + stride; y++) {

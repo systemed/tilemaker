@@ -434,6 +434,7 @@ int main(int argc, char* argv[]) {
 
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
+		//boost::asio::thread_pool pool(2);
 
 		// Mutex is hold when IO is performed
 		std::mutex io_mutex;
@@ -543,6 +544,37 @@ int main(int argc, char* argv[]) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 					std::vector<std::vector<OutputObjectID>> data;
+
+					if (zoom >= 6) {
+						const size_t rootX = coords.x / (1 << (zoom - 6));
+						const size_t rootY = coords.y / (1 << (zoom - 6));
+
+						// drill into 6/17/20, it's a good test case.
+						//if (!(rootX == 17 && rootY == 20)) continue;
+					}
+					/*
+					if (!(
+							(zoom == 9 && 
+								((coords.x == 143 && (coords.y == 159 || coords.y == 160)) ||
+								(coords.x == 144 && (coords.y == 159 || coords.y == 160)))) ||
+							(zoom == 8 && 
+							 ((coords.x == 71 && coords.y == 79) ||
+								(coords.x == 71 && coords.y == 80) ||
+								(coords.x == 72 && coords.y == 79) ||
+								(coords.x == 72 && coords.y == 80)
+														)) ||
+							(zoom == 7 &&
+							 ((coords.x == 35 && coords.y == 39) ||
+								(coords.x == 35 && coords.y == 40) ||
+								(coords.x == 36 && coords.y == 39) ||
+								(coords.x == 36 && coords.y == 40))) ||
+							(zoom == 6 &&
+							 ((coords.x == 17 && coords.y == 19) ||
+								(coords.x == 17 && coords.y == 20) ||
+								(coords.x == 18 && coords.y == 19) ||
+								(coords.x == 18 && coords.y == 20)))
+							)) continue;
+					*/
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}

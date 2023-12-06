@@ -308,10 +308,14 @@ protected:
 	// to track the tiles that would be entirely filled.
 	//
 	// To minimize lock contention, we shard by NodeID.
-	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largeCoveringPolygons;
+	std::vector<std::map<std::pair<uint32_t, NodeID>, uint64_t>> jumboCoveringPolygons;
 	// Like above, but for the case where we're in the hole of the polygon,
 	// and so render nothing.
-	std::vector<std::map<std::pair<uint16_t, NodeID>, uint64_t>> largeExcludedPolygons;
+	std::vector<std::map<std::pair<uint32_t, NodeID>, uint64_t>> jumboExcludedPolygons;
+
+	// Like above, but cover z10..z13, rather than z6..z9
+	std::vector<std::map<std::pair<uint32_t, NodeID>, uint64_t>> largeCoveringPolygons;
+	std::vector<std::map<std::pair<uint32_t, NodeID>, uint64_t>> largeExcludedPolygons;
 
 
 public:
