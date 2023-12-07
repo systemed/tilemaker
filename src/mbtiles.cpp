@@ -13,7 +13,10 @@ using namespace sqlite;
 using namespace std;
 namespace bio = boost::iostreams;
 
-MBTiles::MBTiles() {}
+MBTiles::MBTiles():
+  pendingStatements1(std::make_shared<std::vector<PendingStatement>>()),
+  pendingStatements2(std::make_shared<std::vector<PendingStatement>>())
+{}
 
 MBTiles::~MBTiles() {
 	if (db && inTransaction) db << "COMMIT;"; // commit all the changes if open
@@ -52,18 +55,46 @@ void MBTiles::writeMetadata(string key, string value) {
 	db << "REPLACE INTO metadata (name,value) VALUES (?,?);" << key << value;
 	m.unlock();
 }
+
+void MBTiles::insertOrReplace(int zoom, int x, int y, const std::string& data, bool isMerge) {
+	// NB: assumes we have the `m` mutex
+	int tmsY = pow(2, zoom) - 1 - y;
+	int s = isMerge ? 1 : 0;
+	preparedStatements[s].reset();
+	preparedStatements[s] << zoom << x << tmsY && data;
+	preparedStatements[s].execute();
+}
+
+void MBTiles::flushPendingStatements() {
+	// NB: assumes we have the `m` mutex
+
+	for (int i = 0; i < 2; i++) {
+		while(!pendingStatements2->empty()) {
+			const PendingStatement& stmt = pendingStatements2->back();
+			insertOrReplace(stmt.zoom, stmt.x, stmt.y, stmt.data, stmt.isMerge);
+			pendingStatements2->pop_back();
+		}
+
+		std::lock_guard<std::mutex> lock(pendingStatementsMutex);
+		pendingStatements1.swap(pendingStatements2);
+	}
+}
 	
 void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
-	int tmsY = pow(2,zoom) - 1 - y;
-	int s = isMerge ? 1 : 0;
-	m.lock();
-	preparedStatements[s].reset();
-	preparedStatements[s] << zoom << x << tmsY && *data;
-	preparedStatements[s].execute();
-	m.unlock();
+	// If the lock is available, write directly to SQLite.
+	if (m.try_lock()) {
+		insertOrReplace(zoom, x, y, *data, isMerge);
+		flushPendingStatements();
+		m.unlock();
+	} else {
+		// Else buffer the write for later, copying its binary blob.
+		const std::lock_guard<std::mutex> lock(pendingStatementsMutex);
+		pendingStatements1->push_back({zoom, x, y, *data, isMerge});
+	}
 }
 
 void MBTiles::closeForWriting() {
+	flushPendingStatements();
 	db << "CREATE UNIQUE INDEX IF NOT EXISTS tile_index on tiles (zoom_level, tile_column, tile_row);";
 	preparedStatements[0].used(true);
 	preparedStatements[1].used(true);
