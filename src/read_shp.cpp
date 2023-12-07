@@ -232,7 +232,6 @@ void readShapefile(const Box &clippingBox,
 			geom::remove_spikes(multi);
 
 			string reason;
-#if BOOST_VERSION >= 105800
 			if (!geom::is_valid(multi, reason)) {
 				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 
@@ -246,13 +245,22 @@ void readShapefile(const Box &clippingBox,
 				}
 				cerr << endl;
 			}
-#else
-			if (!geom::is_valid(multi)) { geom::correct(multi); geom::remove_spikes(multi); }
-#endif
 			// clip to bounding box
-			MultiPolygon out;
-			geom::intersection(multi, clippingBox, out);
-			if (boost::size(out)>0) {
+			MultiPolygon output;
+			geom::assign(output, multi);
+			fast_clip(output, clippingBox);
+			geom::correct(output);
+			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
+			if (!geom::is_valid(output,failure)) { 
+				if (failure==geom::failure_spikes) {
+					geom::remove_spikes(output);
+				} else if (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors) {
+					// retry with Boost intersection if fast_clip has caused self-intersections
+					geom::intersection(multi, clippingBox, output);
+					geom::correct(output);
+				}
+			}
+			if (!geom::is_empty(output)) {
 
 				string name;
 				bool hasName = false;
@@ -260,7 +268,7 @@ void readShapefile(const Box &clippingBox,
 
 				// create OutputObject
 				AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, minzoom);
-				shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POLYGON_, out, isIndexed, hasName, name, minzoom, attrIdx);
+				shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POLYGON_, output, isIndexed, hasName, name, minzoom, attrIdx);
 			}
 
 		} else {
