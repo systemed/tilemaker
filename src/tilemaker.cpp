@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreCompressNodes = false, osmStoreCompressWays = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -185,8 +185,8 @@ int main(int argc, char* argv[]) {
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
-		("compress-nodes", po::bool_switch(&osmStoreCompressNodes),  "Reduce memory by compressing nodes")
-		("compress-ways", po::bool_switch(&osmStoreCompressWays),  "Reduce memory by compressing ways")
+		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
+		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
@@ -285,11 +285,6 @@ int main(int argc, char* argv[]) {
 	// For each tile, objects to be used in processing
 	shared_ptr<NodeStore> nodeStore;
 
-	if (osmStoreCompressNodes && osmStoreCompact) {
-		std::cerr << "--compress-nodes is not compatible with --compact" << std::endl;
-		return 1;
-	}
-
 	bool allPbfsHaveSortTypeThenID = true;
 	bool anyPbfHasLocationsOnWays = false;
 
@@ -303,25 +298,16 @@ int main(int argc, char* argv[]) {
 	if (osmStoreCompact)
 		nodeStore = make_shared<CompactNodeStore>();
 	else {
-		if (osmStoreCompressNodes && !allPbfsHaveSortTypeThenID) {
-			std::cerr << "--compress-nodes requires PBFs with the Sort.Type_then_ID feature" << std::endl;
-			return 1;
-		}
-
 		if (allPbfsHaveSortTypeThenID)
-			nodeStore = make_shared<SortedNodeStore>(osmStoreCompressNodes);
+			nodeStore = make_shared<SortedNodeStore>(!osmStoreUncompressedNodes);
 		else
 			nodeStore = make_shared<BinarySearchNodeStore>();
 	}
 
 	shared_ptr<WayStore> wayStore;
 	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
-		wayStore = make_shared<SortedWayStore>(osmStoreCompressWays, *nodeStore.get());
+		wayStore = make_shared<SortedWayStore>(!osmStoreUncompressedNodes, *nodeStore.get());
 	} else {
-		if (osmStoreCompressWays) {
-			std::cerr << "--compress-ways requires PBFs with the Sort.Type_then_ID feature" << std::endl;
-			return 1;
-		}
 		wayStore = make_shared<BinarySearchWayStore>();
 	}
 
