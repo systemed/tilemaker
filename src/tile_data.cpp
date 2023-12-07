@@ -100,6 +100,10 @@ void TileDataSource::collectObjectsForTile(
 		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
 		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
+		if (z6x >= 64 || z6y >= 64) {
+			if (verbose) std::cerr << "collectObjectsForTile: invalid tile z" << zoom << "/" << dstIndex.x << "/" << dstIndex.y << std::endl;
+			return;
+		}
 		iStart = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 		iEnd = iStart + 1;
 	}
