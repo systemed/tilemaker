@@ -14,7 +14,10 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
-	baseZoom(baseZoom)
+	baseZoom(baseZoom),
+	clipCache(threadNum * 4),
+	clipCacheMutex(threadNum * 4),
+	clipCacheSize(threadNum * 4)
 {
 }
 
@@ -129,7 +132,7 @@ void TileDataSource::collectLargeObjectsForTile(
 
 // Build node and way geometries
 Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, 
-                                          NodeID const objectID, const TileBbox &bbox) const {
+                                          NodeID const objectID, const TileBbox &bbox) {
 	switch(geomType) {
 		case POINT_: {
 			auto p = retrieve_point(objectID);
@@ -175,7 +178,35 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case POLYGON_: {
-			auto const &input = retrieve_multi_polygon(objectID);
+			// Look for a previously clipped version at z-1, z-2, ...
+			std::shared_ptr<MultiPolygon> cachedClip;
+			{
+				size_t zoom = bbox.zoom;
+				size_t x = bbox.index.x;
+				size_t y = bbox.index.y;
+				std::lock_guard<std::mutex> lock(clipCacheMutex[objectID % clipCacheMutex.size()]);
+				while (zoom > 0) {
+					zoom--;
+					x /= 2;
+					y /= 2;
+					const auto& cache = clipCache[objectID % clipCache.size()];
+					const auto& rv = cache.find(std::make_tuple(zoom, TileCoordinates(x, y), objectID));
+					if (rv != cache.end()) {
+						cachedClip = rv->second;
+						break;
+					}
+				}
+			}
+
+			MultiPolygon uncached;
+
+			if (cachedClip == nullptr) {
+				// The cached multipolygon uses a non-standard allocator, so copy it
+				const auto &input = retrieve_multi_polygon(objectID);
+				boost::geometry::assign(uncached, input);
+			}
+
+			const auto &input = cachedClip == nullptr ? uncached : *cachedClip;
 
 			Box box = bbox.clippingBox;
 			
@@ -235,17 +266,45 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
+					cacheClippedGeometry(bbox, objectID, output);
 					return output;
 				} else {
 					// occasionally also wrong_topological_dimension, disconnected_interior
 				}
 			}
+			cacheClippedGeometry(bbox, objectID, mp);
 			return mp;
 		}
 
 		default:
 			throw std::runtime_error("Invalid output geometry");
 	}
+}
+
+void TileDataSource::cacheClippedGeometry(const TileBbox& box, const NodeID objectID, const MultiPolygon& mp) {
+	// The point of caching is to reuse the clip, so caching at the terminal zoom is
+	// pointless.
+	if (box.zoom == baseZoom)
+		return;
+
+	std::shared_ptr<MultiPolygon> copy = std::make_shared<MultiPolygon>();
+	boost::geometry::assign(*copy, mp);
+
+	size_t index = objectID % clipCacheMutex.size();
+	std::lock_guard<std::mutex> lock(clipCacheMutex[index]);
+	auto& cache = clipCache[index];
+	// In a perfect world, this would be an LRU cache and we'd evict old entries
+	// that are unlikely to be used again.
+	//
+	// But for now, just reset the cache every so often to prevent it growing
+	// without bound.
+	clipCacheSize[index]++;
+	if (clipCacheSize[index] > 5000) {
+		clipCacheSize[index] = 0;
+		cache.clear();
+	}
+
+	cache[std::make_tuple(box.zoom, box.index, objectID)] = copy;
 }
 
 LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, 
