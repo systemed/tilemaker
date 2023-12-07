@@ -47,7 +47,7 @@ typedef class TileCoordinates_ TileCoordinates;
 namespace std {
 	template<> struct hash<TileCoordinates> {
 		size_t operator()(const TileCoordinates & obj) const {
-			return hash<TileCoordinate>()(obj.x) ^ hash<TileCoordinate>()(obj.y);
+			return 16384 * hash<TileCoordinate>()(obj.x) + hash<TileCoordinate>()(obj.y);
 		}
 	};
 }
