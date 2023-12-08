@@ -65,4 +65,3 @@ void fillCoveredTiles(std::unordered_set<TileCoordinates>& tileSet) {
 		prevX = tileX, prevY = tileY;
 	}
 }
-

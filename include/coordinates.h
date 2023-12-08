@@ -49,6 +49,15 @@ public:
 			return false;
 		return y == obj.y;
 	}
+
+	bool operator <(const TileCoordinates_ & obj) const
+	{
+		if (x != obj.x)
+			return x < obj.x;
+
+		return y < obj.y;
+	}
+
 };
 struct TileCoordinatesCompare {
     bool operator()(const class TileCoordinates_& a, const class TileCoordinates_& b) const {
@@ -63,7 +72,7 @@ typedef class TileCoordinates_ TileCoordinates;
 namespace std {
 	template<> struct hash<TileCoordinates> {
 		size_t operator()(const TileCoordinates & obj) const {
-			return hash<TileCoordinate>()(obj.x) ^ hash<TileCoordinate>()(obj.y);
+			return 16384 * hash<TileCoordinate>()(obj.x) + hash<TileCoordinate>()(obj.y);
 		}
 	};
 }
