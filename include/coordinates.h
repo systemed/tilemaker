@@ -33,6 +33,15 @@ public:
 			return false;
 		return y == obj.y;
 	}
+
+	bool operator <(const TileCoordinates_ & obj) const
+	{
+		if (x != obj.x)
+			return x < obj.x;
+
+		return y < obj.y;
+	}
+
 };
 struct TileCoordinatesCompare {
     bool operator()(const class TileCoordinates_& a, const class TileCoordinates_& b) const {

@@ -335,7 +335,7 @@ public:
 		TileCoordinates coordinates
 	);
 
-	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
+	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
@@ -427,6 +427,10 @@ public:
 
 
 private:	
+	std::vector<std::map<std::tuple<uint16_t, TileCoordinates, NodeID>, std::shared_ptr<MultiPolygon>>> clipCache;
+	std::vector<std::mutex> clipCacheMutex;
+	std::vector<size_t> clipCacheSize;
+	void cacheClippedGeometry(const TileBbox& box, const NodeID objectID, const MultiPolygon& mp);
 };
 
 TileCoordinatesSet getTilesAtZoom(
