@@ -101,6 +101,7 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 // within the last 5 points, then backtrack to the last time we added it
 std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
 	std::vector<Point> points;
+	points.reserve(src.size());
 	for(auto &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
 		bool found = false;
