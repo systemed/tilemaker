@@ -1,7 +1,9 @@
+#include <iostream>
+
 #include "osm_lua_processing.h"
 #include "attribute_store.h"
 #include "helpers.h"
-#include <iostream>
+#include "coordinates_geom.h"
 
 
 using namespace std;

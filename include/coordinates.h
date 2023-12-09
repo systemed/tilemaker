@@ -2,10 +2,26 @@
 #ifndef _COORDINATES_H
 #define _COORDINATES_H
 
-#include <iostream>
-#include "geom.h"
+// Lightweight types and functions for coordinates, for classes that don't
+// need to pull in boost::geometry.
+//
+// Things that pull in boost::geometry should go in coordinates_geom.h
+
+#include <cstdint>
 #include <utility>
+#include <vector>
+#include <deque>
 #include <unordered_set>
+
+// A 36-bit integer can store all OSM node IDs; we represent this as 16 collections
+// of 32-bit integers.
+#define NODE_SHARDS 16
+typedef uint32_t ShardedNodeID;
+typedef uint64_t NodeID;
+typedef uint64_t WayID;
+
+typedef std::vector<WayID> WayVec;
+
 
 #ifdef FAT_TILE_INDEX
 // Supports up to z22
@@ -92,18 +108,18 @@ double lat2latp(double lat);
 double latp2lat(double latp);
 
 // Tile conversions
-double lon2tilexf(double lon, uint z);
-double latp2tileyf(double latp, uint z);
-double lat2tileyf(double lat, uint z);
-uint lon2tilex(double lon, uint z);
-uint latp2tiley(double latp, uint z);
-uint lat2tiley(double lat, uint z);
-double tilex2lon(uint x, uint z);
-double tiley2latp(uint y, uint z);
-double tiley2lat(uint y, uint z);
+double lon2tilexf(double lon, uint8_t z);
+double latp2tileyf(double latp, uint8_t z);
+double lat2tileyf(double lat, uint8_t z);
+uint32_t lon2tilex(double lon, uint8_t z);
+uint32_t latp2tiley(double latp, uint8_t z);
+uint32_t lat2tiley(double lat, uint8_t z);
+double tilex2lon(uint32_t x, uint8_t z);
+double tiley2latp(uint32_t y, uint8_t z);
+double tiley2lat(uint32_t y, uint8_t z);
 
 // Get a tile index
-TileCoordinates latpLon2index(LatpLon ll, uint baseZoom);
+TileCoordinates latpLon2index(LatpLon ll, uint8_t baseZoom);
 
 // Earth's (mean) radius
 // http://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
@@ -115,36 +131,8 @@ double degp2meter(double degp, double latp);
 
 double meter2degp(double meter, double latp);
 
-void insertIntermediateTiles(Linestring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
-void insertIntermediateTiles(Ring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
-
 // the range between smallest y and largest y is filled, for each x
 void fillCoveredTiles(std::unordered_set<TileCoordinates> &tileSet);
-
-// ------------------------------------------------------
-// Helper class for dealing with spherical Mercator tiles
-
-class TileBbox { 
-
-public:
-	double minLon, maxLon, minLat, maxLat, minLatp, maxLatp;
-	double xmargin, ymargin, xscale, yscale;
-	TileCoordinates index;
-	uint zoom;
-	bool hires;
-	bool endZoom;
-	Box clippingBox;
-
-	TileBbox(TileCoordinates i, uint z, bool h, bool e);
-
-	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
-	std::vector<Point> scaleRing(Ring const &src) const;
-	MultiPolygon scaleGeometry(MultiPolygon const &src) const;
-	std::pair<double, double> floorLatpLon(double latp, double lon) const;
-
-	Box getTileBox() const;
-	Box getExtendBox() const;
-};
 
 #endif //_COORDINATES_H
 

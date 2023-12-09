@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <iostream>
 #include "tile_data.h"
+#include "coordinates_geom.h"
 
 #include <ciso646>
 

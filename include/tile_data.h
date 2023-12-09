@@ -13,6 +13,8 @@ typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
 typedef std::vector<class TileDataSource *> SourceList;
 
+class TileBbox;
+
 // We cluster output objects by z6 tile
 #define CLUSTER_ZOOM 6
 #define CLUSTER_ZOOM_WIDTH (1 << CLUSTER_ZOOM)

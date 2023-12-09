@@ -35,16 +35,18 @@
 #endif
 
 #include "geom.h"
+#include "node_stores.h"
+#include "way_stores.h"
 
 // Tilemaker code
 #include "helpers.h"
 #include "coordinates.h"
+#include "coordinates_geom.h"
 
 #include "attribute_store.h"
 #include "output_object.h"
 #include "osm_lua_processing.h"
 #include "mbtiles.h"
-#include "write_geometry.h"
 
 #include "shared_data.h"
 #include "read_pbf.h"
@@ -170,7 +172,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -183,6 +185,8 @@ int main(int argc, char* argv[]) {
 		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
 		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
+		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
+		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
@@ -279,7 +283,35 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-	OSMStore osmStore;
+	shared_ptr<NodeStore> nodeStore;
+
+	bool allPbfsHaveSortTypeThenID = true;
+	bool anyPbfHasLocationsOnWays = false;
+
+	for (const std::string& file: inputFiles) {
+		if (ends_with(file, ".pbf")) {
+			allPbfsHaveSortTypeThenID = allPbfsHaveSortTypeThenID && PbfHasOptionalFeature(file, OptionSortTypeThenID);
+			anyPbfHasLocationsOnWays = anyPbfHasLocationsOnWays || PbfHasOptionalFeature(file, OptionLocationsOnWays);
+		}
+	}
+
+	if (osmStoreCompact)
+		nodeStore = make_shared<CompactNodeStore>();
+	else {
+		if (allPbfsHaveSortTypeThenID)
+			nodeStore = make_shared<SortedNodeStore>(!osmStoreUncompressedNodes);
+		else
+			nodeStore = make_shared<BinarySearchNodeStore>();
+	}
+
+	shared_ptr<WayStore> wayStore;
+	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
+		wayStore = make_shared<SortedWayStore>(!osmStoreUncompressedNodes, *nodeStore.get());
+	} else {
+		wayStore = make_shared<BinarySearchWayStore>();
+	}
+
+	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
 	osmStore.enforce_integrity(!skipIntegrity);
 	if(!osmStoreFile.empty()) {
@@ -335,15 +367,20 @@ int main(int argc, char* argv[]) {
 			ifstream infile(inputFile, ios::in | ios::binary);
 			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
-			int ret = pbfReader.ReadPbfFile(nodeKeys, threadNum, 
-				[&]() { 
+			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
+			int ret = pbfReader.ReadPbfFile(
+				hasSortTypeThenID,
+				nodeKeys,
+				threadNum,
+				[&]() {
 					thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
 					return pbfStream;
 				},
 				[&]() {
 					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore));
 					return osmLuaProcessing;
-				});	
+				}
+			);
 			if (ret != 0) return ret;
 		} 
 		attributeStore.finalize();
@@ -420,13 +457,17 @@ int main(int argc, char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			int ret = pbfReader.ReadPbfFile(nodeKeys, 1, 
-				[&]() { 
+			int ret = pbfReader.ReadPbfFile(
+				false,
+				nodeKeys,
+				1,
+				[&]() {
 					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
 				},
 				[&]() {
 					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
-				});	
+				}
+			);
 			if (ret != 0) return ret;
 
 			tileList.pop_back();
