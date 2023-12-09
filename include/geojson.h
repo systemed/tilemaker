@@ -5,7 +5,7 @@
 /*
 	GeoJSON writer for boost::geometry objects, using RapidJSON.
 	This isn't core tilemaker functionality but helps with debugging.
-	As yet it only outputs MultiPolygons but can be extended for more types.
+	As yet it only outputs (Multi)Polygons but can be extended for more types.
 
 	Example:
 		auto gj = GeoJSON()
@@ -28,17 +28,19 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filewritestream.h"
 
+typedef boost::variant<Point,Linestring,MultiLinestring,Polygon,MultiPolygon,Ring> AnyGeometry;
+
 using namespace rapidjson;
 
 struct GeoJSON {
 	Document document;
-	std::vector<Geometry> geometries;
+	std::vector<AnyGeometry> geometries;
 
 	GeoJSON() {
 		document.SetObject();
 		document.AddMember("type", Value().SetString("FeatureCollection"), document.GetAllocator());
 	}
-	void addGeometry(Geometry geom) {
+	void addGeometry(AnyGeometry geom) {
 		geometries.emplace_back(geom);
 	}
 	struct SerialiseGeometry {
@@ -65,7 +67,21 @@ struct GeoJSON {
 		void operator()(Point &p) {} // todo
 		void operator()(Linestring &ls) {} // todo
 		void operator()(MultiLinestring &mls) {} // todo
-		void operator()(Polygon &p) {} // todo
+		void operator()(Ring &r) {
+			Value coordinates(kArrayType);
+			coordinates.PushBack(ringToArray(r), *alloc);
+			obj->AddMember("coordinates", coordinates, *alloc);
+			obj->AddMember("type", Value().SetString("Polygon"), *alloc);
+		}
+		void operator()(Polygon &p) {
+			Value coordinates(kArrayType);
+			coordinates.PushBack(ringToArray(p.outer()), *alloc);
+			for (auto &inner : p.inners()) {
+				coordinates.PushBack(ringToArray(inner), *alloc);
+			}
+			obj->AddMember("coordinates", coordinates, *alloc);
+			obj->AddMember("type", Value().SetString("Polygon"), *alloc);
+		}
 		void operator()(MultiPolygon &mp) {
 			Value coordinates(kArrayType);
 			for (auto &polygon : mp) {
@@ -82,7 +98,7 @@ struct GeoJSON {
 	};
 	void finalise(bool unproject = false) {
 		Value features(kArrayType);
-		for (Geometry &g : geometries) {
+		for (AnyGeometry &g : geometries) {
 			// type
 			Value obj(kObjectType);
 			obj.AddMember("type", Value().SetString("Feature"), document.GetAllocator());
