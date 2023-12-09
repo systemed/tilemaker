@@ -126,7 +126,8 @@ MultiPolygon simplify(MultiPolygon const &mp, double max_distance)
 	MultiPolygon result_mp;
 	for(auto const &p: mp) {
 		Polygon new_p = simplify(p, max_distance);
-    	if(!new_p.outer().empty()) {
+		if(!new_p.outer().empty()) {
+			if (new_p.outer().size()>15) geom::correct(new_p);
 			simplify_combine(result_mp, std::move(new_p));
 		}
 	}
