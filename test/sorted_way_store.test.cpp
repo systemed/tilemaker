@@ -1,5 +1,5 @@
 #include <iostream>
-#include "minunit.h"
+#include "external/minunit.h"
 #include "sorted_way_store.h"
 #include "node_store.h"
 
