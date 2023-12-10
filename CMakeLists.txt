@@ -87,33 +87,33 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
 
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
-	src/geom.cpp
-	src/mbtiles.cpp
-	src/osm_mem_tiles.cpp
-	src/output_object.cpp
-	src/read_pbf.cpp
-	src/shared_data.cpp
-	src/tile_data.cpp
-	src/tile_worker.cpp
+	src/clip_cache.cpp
 	src/coordinates.cpp
-	src/helpers.cpp
-	src/osm_lua_processing.cpp
-	src/osm_store.cpp
-	src/mmap_allocator.cpp
-	src/pbf_blocks.cpp
-	src/read_shp.cpp
-	src/shp_mem_tiles.cpp
-	src/tilemaker.cpp
-	src/write_geometry.cpp
-	src/node_stores.cpp
 	src/coordinates_geom.cpp
-	src/sorted_node_store.cpp
-	src/sorted_way_store.cpp
-	src/way_stores.cpp
 	src/external/streamvbyte_decode.cc
 	src/external/streamvbyte_encode.cc
 	src/external/streamvbyte_zigzag.cc
-
+	src/geom.cpp
+	src/helpers.cpp
+	src/mbtiles.cpp
+	src/mmap_allocator.cpp
+	src/node_stores.cpp
+	src/osm_lua_processing.cpp
+	src/osm_mem_tiles.cpp
+	src/osm_store.cpp
+	src/output_object.cpp
+	src/pbf_blocks.cpp
+	src/read_pbf.cpp
+	src/read_shp.cpp
+	src/shared_data.cpp
+	src/shp_mem_tiles.cpp
+	src/sorted_node_store.cpp
+	src/sorted_way_store.cpp
+	src/tile_data.cpp
+	src/tilemaker.cpp
+	src/tile_worker.cpp
+	src/way_stores.cpp
+	src/write_geometry.cpp
   )
 add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)

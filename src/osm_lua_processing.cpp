@@ -647,7 +647,8 @@ void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec
 
 	try {
 		if (isClosed) {
-			osmMemTiles.addGeometryToIndex(multiPolygonCached(), finalizeOutputs(), originalOsmID);
+			std::vector<OutputObject> objects = finalizeOutputs();
+			osmMemTiles.addGeometryToIndex(multiPolygonCached(), objects, originalOsmID);
 		} else {
 			osmMemTiles.addGeometryToIndex(multiLinestringCached(), finalizeOutputs(), originalOsmID);
 		}

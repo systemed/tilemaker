@@ -8,6 +8,7 @@
 #include <memory>
 #include <boost/sort/sort.hpp>
 #include "output_object.h"
+#include "clip_cache.h"
 
 typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
 
@@ -315,7 +316,7 @@ public:
 	);
 	void addGeometryToIndex(
 		const MultiPolygon& geom,
-		const std::vector<OutputObject>& outputs,
+		std::vector<OutputObject>& outputs, // so we can mutate objectID to skip clip cache
 		const uint64_t id
 	);
 
@@ -429,10 +430,7 @@ public:
 
 
 private:	
-	std::vector<std::map<std::tuple<uint16_t, TileCoordinates, NodeID>, std::shared_ptr<MultiPolygon>>> clipCache;
-	std::vector<std::mutex> clipCacheMutex;
-	std::vector<size_t> clipCacheSize;
-	void cacheClippedGeometry(const TileBbox& box, const NodeID objectID, const MultiPolygon& mp);
+	ClipCache clipCache;
 };
 
 TileCoordinatesSet getTilesAtZoom(
