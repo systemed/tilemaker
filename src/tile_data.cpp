@@ -16,7 +16,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	objects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
 	baseZoom(baseZoom),
-	clipCache(ClipCache(threadNum, baseZoom))
+	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, baseZoom)),
+	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, baseZoom))
 {
 }
 
@@ -173,16 +174,28 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case MULTILINESTRING_: {
-			auto const &mls = retrieve_multi_linestring(objectID);
+			// Look for a previously clipped version at z-1, z-2, ...
+			std::shared_ptr<MultiLinestring> cachedClip = multiLinestringClipCache.get(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
+
+			MultiLinestring uncached;
+
+			if (cachedClip == nullptr) {
+				const auto& input = retrieve_multi_linestring(objectID);
+				boost::geometry::assign(uncached, input);
+			}
+
+			const auto &mls = cachedClip == nullptr ? uncached : *cachedClip;
+
 			// investigate whether filtering the constituent linestrings improves performance
 			MultiLinestring result;
 			geom::intersection(mls, bbox.getExtendBox(), result);
+			multiLinestringClipCache.add(bbox, objectID, result);
 			return result;
 		}
 
 		case POLYGON_: {
 			// Look for a previously clipped version at z-1, z-2, ...
-			std::shared_ptr<MultiPolygon> cachedClip = clipCache.get(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
+			std::shared_ptr<MultiPolygon> cachedClip = multiPolygonClipCache.get(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
 
 			MultiPolygon uncached;
 
@@ -252,14 +265,14 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
-					clipCache.add(bbox, objectID, output);
+					multiPolygonClipCache.add(bbox, objectID, output);
 					return output;
 				} else {
 					// occasionally also wrong_topological_dimension, disconnected_interior
 				}
 			}
 
-			clipCache.add(bbox, objectID, mp);
+			multiPolygonClipCache.add(bbox, objectID, mp);
 			return mp;
 		}
 

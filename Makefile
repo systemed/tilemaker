@@ -96,7 +96,6 @@ tilemaker: \
 	include/osmformat.pb.o \
 	include/vector_tile.pb.o \
 	src/attribute_store.o \
-	src/clip_cache.o \
 	src/coordinates_geom.o \
 	src/coordinates.o \
 	src/external/streamvbyte_decode.o \

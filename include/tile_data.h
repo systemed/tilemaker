@@ -430,7 +430,8 @@ public:
 
 
 private:	
-	ClipCache clipCache;
+	ClipCache<MultiPolygon> multiPolygonClipCache;
+	ClipCache<MultiLinestring> multiLinestringClipCache;
 };
 
 TileCoordinatesSet getTilesAtZoom(

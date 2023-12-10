@@ -87,7 +87,6 @@ ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
 
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
-	src/clip_cache.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
 	src/external/streamvbyte_decode.cc
