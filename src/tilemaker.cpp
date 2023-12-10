@@ -173,6 +173,7 @@ int main(int argc, char* argv[]) {
 	string outputFile;
 	string bbox;
 	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false;
+	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -189,6 +190,7 @@ int main(int argc, char* argv[]) {
 		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
+		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
 	p.add("input", -1);
@@ -579,18 +581,37 @@ int main(int argc, char* argv[]) {
 			}
 
 			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
+				std::vector<std::string> tileTimings;
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
+
+					timespec start, end;
+
+					if (logTileTimings)
+						clock_gettime(CLOCK_MONOTONIC, &start);
 					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
+
+					if (logTileTimings) {
+						clock_gettime(CLOCK_MONOTONIC, &end);
+						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+						std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
+						tileTimings.push_back(output);
+					}
 				}
 
 				const std::lock_guard<std::mutex> lock(io_mutex);
+				if (logTileTimings) {
+					std::cout << std::endl;
+					for (const auto& output : tileTimings)
+						std::cout << output << std::endl;
+				}
+
 				tilesWritten += (endIndex - startIndex); 
 
 				// Show progress grouped by z6 (or lower)
