@@ -145,9 +145,8 @@ struct AttributePair {
 // It should be at least 2x the number of your cores -- 256 shards is probably
 // reasonable for most people.
 //
-// We also reserve the bottom shard for the hot pool. Since a shard is 16M entries,
-// but the hot pool is only 64KB entries, we're wasting a little bit of key space.
-#define SHARD_BITS 8
+// We also reserve the bottom shard for the hot pool.
+#define SHARD_BITS 14
 #define ATTRIBUTE_SHARDS (1 << SHARD_BITS)
 
 class AttributePairStore {
