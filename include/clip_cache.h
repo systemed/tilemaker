@@ -13,9 +13,9 @@ class ClipCache {
 public:
 	ClipCache(size_t threadNum, unsigned int baseZoom):
 		baseZoom(baseZoom),
-		clipCache(threadNum * 4),
-		clipCacheMutex(threadNum * 4),
-		clipCacheSize(threadNum * 4) {
+		clipCache(threadNum * 16),
+		clipCacheMutex(threadNum * 16),
+		clipCacheSize(threadNum * 16) {
 	}
 
 	const std::shared_ptr<T> get(uint zoom, TileCoordinate x, TileCoordinate y, NodeID objectID) const{
@@ -46,6 +46,7 @@ public:
 		boost::geometry::assign(*copy, output);
 
 		size_t index = objectID % clipCacheMutex.size();
+		std::vector<std::shared_ptr<T>> objects;
 		std::lock_guard<std::mutex> lock(clipCacheMutex[index]);
 		auto& cache = clipCache[index];
 		// Reset the cache periodically so it doesn't grow without bound.
@@ -54,8 +55,14 @@ public:
 		// due to the bookkeeping? We could try authoring a bounded map that
 		// evicts in FIFO order, which will have less bookkeeping.
 		clipCacheSize[index]++;
-		if (clipCacheSize[index] > 5000) {
+		if (clipCacheSize[index] > 1024) {
 			clipCacheSize[index] = 0;
+			// Copy the map's contents to a vector so that calling .clear()
+			// and releasing the lock can happen separately from running the
+			// destructors of all of the objects.
+			objects.reserve(1025);
+			for (const auto& x : cache)
+				objects.push_back(x.second);
 			cache.clear();
 		}
 
