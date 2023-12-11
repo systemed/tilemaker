@@ -94,6 +94,7 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 			std::vector<NodeID> nodeVec;
 			if (locationsOnWays) {
 				int lat=0, lon=0;
+				llVec.reserve(pbfWay.lats_size());
 				for (int k=0; k<pbfWay.lats_size(); k++) {
 					lat += pbfWay.lats(k);
 					lon += pbfWay.lons(k);
@@ -102,6 +103,8 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 				}
 			} else {
 				int64_t nodeId = 0;
+				llVec.reserve(pbfWay.refs_size());
+				nodeVec.reserve(pbfWay.refs_size());
 				for (int k=0; k<pbfWay.refs_size(); k++) {
 					nodeId += pbfWay.refs(k);
 					try {
