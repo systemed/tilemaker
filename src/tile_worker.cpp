@@ -134,7 +134,14 @@ void CheckNextObjectAndMerge(
 	}
 }
 
-void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
+void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
+	g.erase(std::remove_if(
+		g.begin(),
+		g.end(),
+		[&](const Polygon &poly) -> bool {
+			return std::fabs(geom::area(poly)) < filterArea;
+		}),
+	g.end());
 	for (auto &outer : g) {
 		outer.inners().erase(std::remove_if(
 			outer.inners().begin(), 
@@ -188,8 +195,8 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
-				if (geom::area(g)<filterArea) continue;
-				RemoveInnersBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				if (geom::is_empty(g)) continue;
 			}
 
 			//This may increment the jt iterator
