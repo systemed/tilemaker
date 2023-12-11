@@ -371,8 +371,7 @@ public:
 		return point_store->at(id);
 	}
 	
-	template<typename Input>
-	NodeID store_linestring(Input const &src) {
+	NodeID store_linestring(const Linestring& src) {
 		linestring_t dst(src.begin(), src.end());
 		std::lock_guard<std::mutex> lock(linestring_store_mutex);
 		NodeID id = linestring_store->size();
@@ -385,8 +384,7 @@ public:
 		return linestring_store->at(id);
 	}
 	
-	template<typename Input>
-	NodeID store_multi_linestring(Input const &src) {
+	NodeID store_multi_linestring(const MultiLinestring& src) {
 		multi_linestring_t dst;
 		dst.resize(src.size());
 		for (std::size_t i=0; i<src.size(); ++i) {
@@ -403,8 +401,7 @@ public:
 		return multi_linestring_store->at(id);
 	}
 
-	template<typename Input>
-	NodeID store_multi_polygon(Input const &src) {
+	NodeID store_multi_polygon(const MultiPolygon& src) {
 		multi_polygon_t dst;
 		dst.resize(src.size());
 		for(std::size_t i = 0; i < src.size(); ++i) {
