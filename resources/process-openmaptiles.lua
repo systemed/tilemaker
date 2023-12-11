@@ -342,7 +342,6 @@ function way_function(way)
 	local tourism  = way:Find("tourism")
 	local man_made = way:Find("man_made")
 	local boundary = way:Find("boundary")
-	local isClosed = way:IsClosed()
 	local housenumber = way:Find("addr:housenumber")
 	local write_name = false
 	local construction = way:Find("construction")
@@ -488,7 +487,7 @@ function way_function(way)
 
 	-- Pier
 	if man_made=="pier" then
-		way:Layer("transportation", isClosed)
+		way:Layer("transportation", way:IsClosed())
 		SetZOrder(way)
 		way:Attribute("class", "pier")
 		SetMinZoomByArea(way)
@@ -510,7 +509,7 @@ function way_function(way)
 
 	-- 'Aeroway'
 	if aeroway~="" then
-		way:Layer("aeroway", isClosed)
+		way:Layer("aeroway", way:IsClosed())
 		way:Attribute("class",aeroway)
 		way:Attribute("ref",way:Find("ref"))
 		write_name = true
@@ -531,7 +530,7 @@ function way_function(way)
 	end
 
 	-- Set 'waterway' and associated
-	if waterwayClasses[waterway] and not isClosed then
+	if waterwayClasses[waterway] and not way:IsClosed() then
 		if waterway == "river" and way:Holds("name") then
 			way:Layer("waterway", false)
 		else
@@ -541,12 +540,12 @@ function way_function(way)
 		way:Attribute("class", waterway)
 		SetNameAttributes(way)
 		SetBrunnelAttributes(way)
-	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial"); way:MinZoom(12)
-	elseif waterway == "dam"       then way:Layer("building",isClosed)
-	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial"); way:MinZoom(14)
+	elseif waterway == "boatyard"  then way:Layer("landuse", way:IsClosed()); way:Attribute("class", "industrial"); way:MinZoom(12)
+	elseif waterway == "dam"       then way:Layer("building",way:IsClosed())
+	elseif waterway == "fuel"      then way:Layer("landuse", way:IsClosed()); way:Attribute("class", "industrial"); way:MinZoom(14)
 	end
 	-- Set names on rivers
-	if waterwayClasses[waterway] and not isClosed then
+	if waterwayClasses[waterway] and not way:IsClosed() then
 		if waterway == "river" and way:Holds("name") then
 			way:Layer("water_name", false)
 		else
@@ -572,10 +571,10 @@ function way_function(way)
 
 	-- Set 'water'
 	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
-		if way:Find("covered")=="yes" or not isClosed then return end
+		if way:Find("covered")=="yes" or not way:IsClosed() then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
 		if class=="lake" and way:Find("wikidata")=="Q192770" then return end
-		if class=="ocean" and isClosed and (way:AreaIntersecting("ocean")/way:Area() > 0.98) then return end
+		if class=="ocean" and way:IsClosed() and (way:AreaIntersecting("ocean")/way:Area() > 0.98) then return end
 		way:Layer("water",true)
 		SetMinZoomByArea(way)
 		way:Attribute("class",class)
