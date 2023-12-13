@@ -270,11 +270,14 @@ bool PbfReader::ReadBlock(
 	
 		auto output_progress = [&]()
 		{
-			std::ostringstream str;
-			void_mmap_allocator::reportStoreSize(str);
-			str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
-			std::cout << str.str();
-			std::cout.flush();
+			if (ioMutex.try_lock()) {
+				std::ostringstream str;
+				void_mmap_allocator::reportStoreSize(str);
+				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
+				std::cout << str.str();
+				std::cout.flush();
+				ioMutex.unlock();
+			}
 		};
 
 		if(phase == ReadPhase::Nodes) {
