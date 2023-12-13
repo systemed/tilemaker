@@ -482,7 +482,7 @@ int main(int argc, char* argv[]) {
 		std::mutex io_mutex;
 
 		// Loop through tiles
-		size_t tilesWritten = 0;
+		std::atomic<uint64_t> tilesWritten(0);
 
 		for (auto source : sources) {
 			source->finalize(threadNum);
@@ -605,8 +605,8 @@ int main(int argc, char* argv[]) {
 					}
 				}
 
-				const std::lock_guard<std::mutex> lock(io_mutex);
 				if (logTileTimings) {
+					const std::lock_guard<std::mutex> lock(io_mutex);
 					std::cout << std::endl;
 					for (const auto& output : tileTimings)
 						std::cout << output << std::endl;
@@ -614,16 +614,19 @@ int main(int argc, char* argv[]) {
 
 				tilesWritten += (endIndex - startIndex); 
 
-				// Show progress grouped by z6 (or lower)
-				size_t z = tileCoordinates[startIndex].first;
-				size_t x = tileCoordinates[startIndex].second.x;
-				size_t y = tileCoordinates[startIndex].second.y;
-				if (z > CLUSTER_ZOOM) {
-					x = x / (1 << (z - CLUSTER_ZOOM));
-					y = y / (1 << (z - CLUSTER_ZOOM));
-					z = CLUSTER_ZOOM;
+				if (io_mutex.try_lock()) {
+					// Show progress grouped by z6 (or lower)
+					size_t z = tileCoordinates[startIndex].first;
+					size_t x = tileCoordinates[startIndex].second.x;
+					size_t y = tileCoordinates[startIndex].second.y;
+					if (z > CLUSTER_ZOOM) {
+						x = x / (1 << (z - CLUSTER_ZOOM));
+						y = y / (1 << (z - CLUSTER_ZOOM));
+						z = CLUSTER_ZOOM;
+					}
+					cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten.load() << " of " << tileCoordinates.size() << "               \r" << std::flush;
+					io_mutex.unlock();
 				}
-				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});
 		}
 		// Wait for all tasks in the pool to complete.
