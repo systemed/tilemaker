@@ -10,7 +10,7 @@ using uint = unsigned int;
 #include <limits>
 
 // boost::geometry
-#define BOOST_GEOMETRY_INCLUDE_SELF_TURNS
+#define BOOST_GEOMETRY_NO_ROBUSTNESS
 #include <boost/geometry.hpp>
 #include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/geometries/geometries.hpp>
