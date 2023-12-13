@@ -1,7 +1,21 @@
-#ifndef _STORE_LEASE_H
-#define _STORE_LEASE_H
+#ifndef _LEASED_STORE_H
+#define _LEASED_STORE_H
 
 #include "tile_data.h"
+
+// LeasedStore implements "leases" for generated geometries.
+//
+// When Lua code calls Layer(...), we need to store the point, linestring,
+// multilinestring, polygon geometry.
+//
+// Previously, we had code that would lock on each insertion:
+//
+// lock_guard<mutex> lock(mutex);
+// insert(...)
+//
+// Instead, store leases let each of N threads claim a range of 1/N of the IDs.
+// Then each thread can insert into their own stores without taking additional
+// locks.
 
 template<typename S>
 std::vector<std::pair<size_t, S*>>& getAvailableLeases(TileDataSource* source) {
