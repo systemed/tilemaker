@@ -4,6 +4,7 @@
 #include "attribute_store.h"
 #include "helpers.h"
 #include "coordinates_geom.h"
+#include "osm_mem_tiles.h"
 
 
 using namespace std;
@@ -23,19 +24,22 @@ int lua_error_handler(int errCode, const char *errMessage)
 // ----	initialization routines
 
 OsmLuaProcessing::OsmLuaProcessing(
-    OSMStore &osmStore,
-    const class Config &configIn, class LayerDefinition &layers,
+	OSMStore &osmStore,
+	const class Config &configIn,
+	class LayerDefinition &layers,
 	const string &luaFile,
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles,
-	AttributeStore &attributeStore):
+	AttributeStore &attributeStore,
+	bool materializeGeometries):
 	osmStore(osmStore),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),
 	config(configIn),
 	currentTags(NULL),
-	layers(layers) {
+	layers(layers),
+	materializeGeometries(materializeGeometries) {
 
 	// ----	Initialise Lua
 	g_luaState = &luaState;
@@ -344,12 +348,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		if (geomType==POINT_) {
 			Point p = Point(lon, latp);
 
-            if(!CorrectGeometry(p)) return;
+			if(CorrectGeometry(p) == CorrectGeometryResult::Invalid) return;
 
 			NodeID id = osmMemTiles.storePoint(p);
 			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
-            return;
+			return;
 		}
 		else if (geomType==POLYGON_) {
 			// polygon
@@ -359,6 +363,10 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			if (isRelation) {
 				try {
 					mp = multiPolygonCached();
+					if(CorrectGeometry(mp) == CorrectGeometryResult::Invalid) return;
+					NodeID id = osmMemTiles.storeMultiPolygon(mp);
+					OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+					outputs.push_back(std::make_pair(std::move(oo), attributes));
 				} catch(std::out_of_range &err) {
 					cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 					return;
@@ -369,15 +377,20 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				Linestring ls = linestringCached();
 				Polygon p;
 				geom::assign_points(p, ls);
-
 				mp.push_back(p);
+
+				auto correctionResult = CorrectGeometry(mp);
+				if(correctionResult == CorrectGeometryResult::Invalid) return;
+				NodeID id = 0;
+				if (!materializeGeometries && correctionResult == CorrectGeometryResult::Valid) {
+					id = USE_WAY_STORE | originalOsmID;
+					wayEmitted = true;
+				} else 
+					id = osmMemTiles.storeMultiPolygon(mp);
+				OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+				outputs.push_back(std::make_pair(std::move(oo), attributes));
 			}
 
-            if(!CorrectGeometry(mp)) return;
-
-			NodeID id = osmMemTiles.storeMultiPolygon(mp);
-			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
-			outputs.push_back(std::make_pair(std::move(oo), attributes));
 		}
 		else if (geomType==MULTILINESTRING_) {
 			// multilinestring
@@ -388,7 +401,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				cout << "In relation " << originalOsmID << ": " << err.what() << endl;
 				return;
 			}
-			if (!CorrectGeometry(mls)) return;
+			if (CorrectGeometry(mls) == CorrectGeometryResult::Invalid) return;
 
 			NodeID id = osmMemTiles.storeMultiLinestring(mls);
 			lastStoredGeometryId = id;
@@ -400,13 +413,27 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			// linestring
 			Linestring ls = linestringCached();
 
-            if(!CorrectGeometry(ls)) return;
+			auto correctionResult = CorrectGeometry(ls);
+			if(correctionResult == CorrectGeometryResult::Invalid) return;
 
-			NodeID id = osmMemTiles.storeLinestring(ls);
-			lastStoredGeometryId = id;
-			lastStoredGeometryType = geomType;
-			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
-			outputs.push_back(std::make_pair(std::move(oo), attributes));
+			if (isWay && !isRelation) {
+				NodeID id = 0;
+				if (!materializeGeometries && correctionResult == CorrectGeometryResult::Valid) {
+					id = USE_WAY_STORE | originalOsmID;
+					wayEmitted = true;
+				}	else 
+					id = osmMemTiles.storeLinestring(ls);
+				lastStoredGeometryId = id;
+				lastStoredGeometryType = geomType;
+				OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+				outputs.push_back(std::make_pair(std::move(oo), attributes));
+			} else {
+				NodeID id = osmMemTiles.storeLinestring(ls);
+				lastStoredGeometryId = id;
+				lastStoredGeometryType = geomType;
+				OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
+				outputs.push_back(std::make_pair(std::move(oo), attributes));
+			}
 		}
 	} catch (std::invalid_argument &err) {
 		cerr << "Error in OutputObject constructor: " << err.what() << endl;
@@ -575,8 +602,9 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 }
 
 // We are now processing a way
-void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
+bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags) {
 	reset();
+	wayEmitted = false;
 	originalOsmID = wayId;
 	isWay = true;
 	isRelation = false;
@@ -617,7 +645,10 @@ void OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 
 	if (!this->empty()) {
 		osmMemTiles.addGeometryToIndex(linestringCached(), finalizeOutputs(), originalOsmID);
+		return wayEmitted;
 	}
+
+	return false;
 }
 
 // We are now processing a relation

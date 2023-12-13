@@ -344,7 +344,7 @@ public:
 		TileCoordinates coordinates
 	);
 
-	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
@@ -363,11 +363,18 @@ public:
 	NodeID storePoint(Point const &input);
 
 	inline size_t getShard(NodeID id) const {
-		return id >> (36 - shardBits);
+		// Note: we only allocate 35 bits for the IDs. This allows us to
+		// use bit 36 for TileDataSource-specific handling (e.g.,
+		// OsmMemTiles may want to generate points/ways on the fly by
+		// referring to the WayStore).
+
+		return id >> (35 - shardBits);
 	}
 
+	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
+
 	inline size_t getId(NodeID id) const {
-		return id & (~(~0ull << (36 - shardBits)));
+		return id & (~(~0ull << (35 - shardBits)));
 	}
 
 	const Point& retrievePoint(NodeID id) const {

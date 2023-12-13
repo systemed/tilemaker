@@ -44,12 +44,15 @@ public:
 	// ----	initialization routines
 
 	OsmLuaProcessing(
-        OSMStore &osmStore,
-        const class Config &configIn, class LayerDefinition &layers, 
+		OSMStore &osmStore,
+		const class Config &configIn,
+		class LayerDefinition &layers, 
 		const std::string &luaFile,
 		const class ShpMemTiles &shpMemTiles, 
 		class OsmMemTiles &osmMemTiles,
-		AttributeStore &attributeStore);
+		AttributeStore &attributeStore,
+		bool materializeGeometries
+	);
 	~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
@@ -77,7 +80,7 @@ public:
 	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
 
 	/// \brief We are now processing a way
-	void setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
+	bool setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
@@ -123,32 +126,34 @@ public:
 	std::vector<double> Centroid();
 	Point calculateCentroid();
 
+	enum class CorrectGeometryResult: char { Invalid = 0, Valid = 1, Corrected = 2 };
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
-    template<class GeometryT>
-    bool CorrectGeometry(GeometryT &geom)
-    {
+	template<class GeometryT>
+	CorrectGeometryResult CorrectGeometry(GeometryT &geom)
+	{
 #if BOOST_VERSION >= 105800
-        geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-        if (isRelation && !geom::is_valid(geom,failure)) {
-            if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-        } else if (isWay && !geom::is_valid(geom,failure)) {
-            if (verbose && failure!=22) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-        }
+		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
+		if (isRelation && !geom::is_valid(geom,failure)) {
+			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+		} else if (isWay && !geom::is_valid(geom,failure)) {
+			if (verbose && failure!=22) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+		}
 		
 		if (failure==boost::geometry::failure_spikes)
 			geom::remove_spikes(geom);
-        if (failure == boost::geometry::failure_few_points) 
-			return false;
+		if (failure == boost::geometry::failure_few_points) 
+			return CorrectGeometryResult::Invalid;
 		if (failure) {
 			std::time_t start = std::time(0);
 			make_valid(geom);
 			if (verbose && std::time(0)-start>3) {
 				std::cout << (isRelation ? "Relation " : "Way ") << originalOsmID << " took " << (std::time(0)-start) << " seconds to correct" << std::endl;
 			}
+			return CorrectGeometryResult::Corrected;
 		}
 #endif
-		return true;
-    }
+		return CorrectGeometryResult::Valid;
+	}
 
 	// Add layer
 	void Layer(const std::string &layerName, bool area);
@@ -256,6 +261,9 @@ private:
 	const boost::container::flat_map<std::string, std::string>* currentTags;
 
 	std::vector<OutputObject> finalizeOutputs();
+
+	bool materializeGeometries;
+	bool wayEmitted;
 };
 
 #endif //_OSM_LUA_PROCESSING_H

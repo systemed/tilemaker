@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
 	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
@@ -188,6 +188,7 @@ int main(int argc, char* argv[]) {
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
 		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
+		("materialize-geometries", po::bool_switch(&materializeGeometries),  "Materialize geometries - faster, but requires more memory")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
@@ -324,13 +325,13 @@ int main(int argc, char* argv[]) {
 	AttributeStore attributeStore;
 
 	class LayerDefinition layers(config.layers);
-	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID);
+	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID, *nodeStore, *wayStore);
 	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
-		shpMemTiles, osmMemTiles, attributeStore);
+		shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
 
 	// ---- Load external shp files
 
@@ -379,7 +380,7 @@ int main(int argc, char* argv[]) {
 					return pbfStream;
 				},
 				[&]() {
-					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore));
+					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries));
 					return osmLuaProcessing;
 				}
 			);
@@ -388,7 +389,6 @@ int main(int argc, char* argv[]) {
 		attributeStore.finalize();
 		osmMemTiles.reportSize();
 		attributeStore.reportSize();
-		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
 	// ----	Initialise SharedData
 	SourceList sources = {&osmMemTiles, &shpMemTiles};
@@ -467,7 +467,7 @@ int main(int argc, char* argv[]) {
 					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
 				},
 				[&]() {
-					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
 				}
 			);
 			if (ret != 0) return ret;
@@ -651,5 +651,6 @@ int main(int argc, char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
+	void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 }
 

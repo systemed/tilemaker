@@ -223,8 +223,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 
 			if (cachedClip == nullptr) {
 				// The cached multipolygon uses a non-standard allocator, so copy it
-				const auto &input = retrieveMultiPolygon(objectID);
-				boost::geometry::assign(uncached, input);
+				populateMultiPolygon(uncached, objectID);
 			}
 
 			const auto &input = cachedClip == nullptr ? uncached : *cachedClip;
@@ -508,8 +507,7 @@ NodeID TileDataSource::storePoint(const Point& input) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(input);
-	NodeID rv = (store.first << (36 - shardBits)) + offset;
-//	std::cout << std::endl << "store.first=" << store.first << ", offset=" << offset << ", rv=" << rv << std::endl;
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
 	return rv;
 }
 
@@ -519,7 +517,7 @@ NodeID TileDataSource::storeLinestring(const Linestring& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (36 - shardBits)) + offset;
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
 	return rv;
 }
 
@@ -541,7 +539,7 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (36 - shardBits)) + offset;
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
 	return rv;
 }
 
@@ -556,7 +554,11 @@ NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (36 - shardBits)) + offset;
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
 	return rv;
 }
 
+void TileDataSource::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
+	const auto &input = retrieveMultiPolygon(objectID);
+	boost::geometry::assign(dst, input);
+}
