@@ -615,7 +615,7 @@ int main(int argc, char* argv[]) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
-#ifndef _WIN32_
+#ifndef _WIN32
 					timespec start, end;
 					if (logTileTimings)
 						clock_gettime(CLOCK_MONOTONIC, &start);
@@ -627,7 +627,7 @@ int main(int argc, char* argv[]) {
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
-#ifndef _WIN32_
+#ifndef _WIN32
 					if (logTileTimings) {
 						clock_gettime(CLOCK_MONOTONIC, &end);
 						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
