@@ -8,6 +8,34 @@
 using namespace std;
 extern bool verbose;
 
+TileCoordinatesSet::TileCoordinatesSet(uint zoom):
+	zoom(zoom),
+	tiles((1 << zoom) * (1 << zoom)) {}
+
+bool TileCoordinatesSet::test(TileCoordinate x, TileCoordinate y) const {
+	uint64_t loc = x * (1 << zoom) + y;
+	if (loc > tiles.size())
+		return false;
+
+	return tiles[loc];
+}
+
+size_t TileCoordinatesSet::size() const {
+	size_t rv = 0;
+	for (int i = 0; i < tiles.size(); i++)
+		if (tiles[i])
+			rv++;
+
+	return rv;
+}
+
+void TileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
+	uint64_t loc = x * (1 << zoom) + y;
+	if (loc > tiles.size())
+		return;
+	tiles[loc] = true;
+}
+
 thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
 thread_local LeasedStore<TileDataSource::multi_linestring_store_t> multilinestringStore;
@@ -91,8 +119,7 @@ void addCoveredTilesToOutput(const uint baseZoom, const uint zoom, const Box& bo
 	TileCoordinate maxy = box.max_corner().y() / scale;
 	for (int x=minx; x<=maxx; x++) {
 		for (int y=miny; y<=maxy; y++) {
-			TileCoordinates newIndex(x, y);
-			output.insert(newIndex);
+			output.set(x, y);
 		}
 	}
 }
@@ -343,10 +370,8 @@ TileCoordinatesSet getTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
 	unsigned int zoom
 ) {
-	TileCoordinatesSet tileCoordinates;
+	TileCoordinatesSet tileCoordinates(zoom);
 
-	// Create list of tiles
-	tileCoordinates.clear();
 	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->collectTilesWithObjectsAtZoom(zoom, tileCoordinates);
 		sources[i]->collectTilesWithLargeObjectsAtZoom(zoom, tileCoordinates);

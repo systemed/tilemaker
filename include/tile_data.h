@@ -10,8 +10,6 @@
 #include "output_object.h"
 #include "clip_cache.h"
 
-typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
-
 typedef std::vector<class TileDataSource *> SourceList;
 
 class TileBbox;
@@ -25,6 +23,18 @@ struct OutputObjectXY {
 	OutputObject oo;
 	Z6Offset x;
 	Z6Offset y;
+};
+
+class TileCoordinatesSet {
+public:
+	TileCoordinatesSet(uint zoom);
+	bool test(TileCoordinate x, TileCoordinate y) const;
+	void set(TileCoordinate x, TileCoordinate y);
+	size_t size() const;
+
+private:
+	uint zoom;
+	std::vector<bool> tiles;
 };
 
 struct OutputObjectXYID {
@@ -120,7 +130,7 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
 
 			if (lastX != x || lastY != y) {
-				output.insert(TileCoordinates(x, y));
+				output.set(x, y);
 				lastX = x;
 				lastY = y;
 			}

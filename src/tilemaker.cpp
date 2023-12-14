@@ -487,25 +487,53 @@ int main(int argc, char* argv[]) {
 		for (auto source : sources) {
 			source->finalize(threadNum);
 		}
-
 		// tiles by zoom level
+
+		// The clipping bbox check is expensive - as an optimization, compute the set of
+		// z6 tiles that are wholly covered by the clipping box. Membership in this
+		// set is quick to test.
+		std::set<TileCoordinates> coveredZ6Tiles;
+		if (hasClippingBox) {
+			for (int x = 0; x < 1 << 6; x++) {
+				for (int y = 0; y < 1 << 6; y++) {
+					if (boost::geometry::within(
+								TileBbox(TileCoordinates(x, y), 6, false, false).getTileBox(),
+								clippingBox
+							))
+						coveredZ6Tiles.insert(TileCoordinates(x, y));
+				}
+			}
+		}
+
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
-			auto zoom_result = getTilesAtZoom(sources, zoom);
-			for(auto&& it: zoom_result) {
-				// If we're constrained to a source tile, check we're within it
-				if (srcZ > -1) {
-					int x = it.x / pow(2, zoom-srcZ);
-					int y = it.y / pow(2, zoom-srcZ);
-					if (x!=srcX || y!=srcY) continue;
-				}
-			
-				if (hasClippingBox) {
-					if(!boost::geometry::intersects(TileBbox(it, zoom, false, false).getTileBox(), clippingBox)) 
+			auto zoomResult = getTilesAtZoom(sources, zoom);
+			for (int x = 0; x < 1 << zoom; x++) {
+				for (int y = 0; y < 1 << zoom; y++) {
+					if (!zoomResult.test(x, y))
 						continue;
-				}
 
-				tileCoordinates.push_back(std::make_pair(zoom, it));
+					// If we're constrained to a source tile, check we're within it
+					if (srcZ > -1) {
+						int xAtSrcZ = x / pow(2, zoom-srcZ);
+						int yAtSrcZ = y / pow(2, zoom-srcZ);
+						if (xAtSrcZ != srcX || yAtSrcZ != srcY) continue;
+					}
+				
+					if (hasClippingBox) {
+						bool isInAWhollyCoveredZ6Tile = false;
+						if (zoom >= 6) {
+							TileCoordinate z6x = x / (1 << (zoom - 6));
+							TileCoordinate z6y = y / (1 << (zoom - 6));
+							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.find(TileCoordinates(z6x, z6y)) != coveredZ6Tiles.end();
+						}
+
+						if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
+							continue;
+					}
+
+					tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
+				}
 			}
 		}
 
