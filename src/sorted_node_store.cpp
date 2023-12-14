@@ -19,6 +19,7 @@ namespace SortedNodeStoreTypes {
 	std::atomic<uint64_t> totalGroups;
 	std::atomic<uint64_t> totalNodes;
 	std::atomic<uint64_t> totalGroupSpace;
+	std::atomic<uint64_t> totalAllocatedSpace;
 	std::atomic<uint64_t> totalChunks;
 	std::atomic<uint64_t> chunkSizeFreqs[257];
 	std::atomic<uint64_t> groupSizeFreqs[257];
@@ -263,7 +264,7 @@ void SortedNodeStore::finalize(size_t threadNum) {
 
 	orphanage.clear();
 
-	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes" << std::endl;
+	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes (" << (1000ull * (totalAllocatedSpace.load() - totalGroupSpace.load()) / totalAllocatedSpace.load()) / 10.0 << "% wasted)" << std::endl;
 	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
@@ -409,28 +410,23 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 	GroupInfo* groupInfo = nullptr;
 
-	if (groupSpace < 1024) {
-		// Avoid malloc for small groups, use a shared arena of memory
-		if (arenaSpace < groupSpace) {
-			arenaSpace = 32768;
-			arenaPtr = (char*)void_mmap_allocator::allocate(arenaSpace);
-			if (arenaPtr == nullptr)
-				throw std::runtime_error("SortedNodeStore: failed to allocate arena");
-			std::lock_guard<std::mutex> lock(orphanageMutex);
-			allocatedMemory.push_back(std::make_pair((void*)arenaPtr, arenaSpace));
-		}
-
-		arenaSpace -= groupSpace;
-		groupInfo = (GroupInfo*)arenaPtr;
-		arenaPtr += groupSpace;
-	} else {
-		groupInfo = (GroupInfo*)void_mmap_allocator::allocate(groupSpace);
-		if (groupInfo == nullptr)
-			throw std::runtime_error("SortedNodeStore: failed to allocate space for group");
-
+	if (arenaSpace < groupSpace) {
+		// A full group takes ~330KB. Nodes are read _fast_, and there ends
+		// up being contention calling the allocator when reading the
+		// planet on a machine with 48 cores -- so allocate in large chunks.
+		arenaSpace = 4 * 1024 * 1024;
+		totalAllocatedSpace += arenaSpace;
+		arenaPtr = (char*)void_mmap_allocator::allocate(arenaSpace);
+		if (arenaPtr == nullptr)
+			throw std::runtime_error("SortedNodeStore: failed to allocate arena");
 		std::lock_guard<std::mutex> lock(orphanageMutex);
-		allocatedMemory.push_back(std::make_pair((void*)groupInfo, groupSpace));
+		allocatedMemory.push_back(std::make_pair((void*)arenaPtr, arenaSpace));
 	}
+
+	arenaSpace -= groupSpace;
+	groupInfo = (GroupInfo*)arenaPtr;
+	arenaPtr += groupSpace;
+
 	if (groups[groupIndex] != nullptr)
 		throw std::runtime_error("SortedNodeStore: group already present");
 	groups[groupIndex] = groupInfo;
