@@ -14,6 +14,8 @@
 // Shapelib
 #include "shapefil.h"
 
+std::mutex attributeMutex;
+
 void fillPointArrayFromShapefile(std::vector<Point> *points, SHPObject *shape, uint part);
 
 /// Read requested attributes from a shapefile, and encode into an OutputObject

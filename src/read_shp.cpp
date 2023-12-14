@@ -41,6 +41,7 @@ AttributeIndex readShapefileAttributes(
 		LayerDef &layer,
 		OsmLuaProcessing &osmLuaProcessing, uint &minzoom) {
 
+	std::lock_guard<std::mutex> lock(attributeMutex);
 	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
 
 	AttributeSet attributes;
