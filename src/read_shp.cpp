@@ -1,5 +1,10 @@
 #include "read_shp.h"
 
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp>
+
+extern bool verbose;
+
 using namespace std;
 namespace geom = boost::geometry;
 
@@ -34,7 +39,7 @@ AttributeIndex readShapefileAttributes(
 		DBFHandle &dbf,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
 		LayerDef &layer,
-		OsmLuaProcessing &osmLuaProcessing, int &minzoom) {
+		OsmLuaProcessing &osmLuaProcessing, uint &minzoom) {
 
 	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
 
@@ -99,16 +104,15 @@ AttributeIndex readShapefileAttributes(
 
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void readShapefile(const Box &clippingBox, 
-				   class LayerDefinition &layers,
+                   class LayerDefinition &layers,
                    uint baseZoom, uint layerNum,
-				   class ShpMemTiles &shpMemTiles,
-				   OsmLuaProcessing &osmLuaProcessing)
+                   uint threadNum,
+                   class ShpMemTiles &shpMemTiles,
+                   OsmLuaProcessing &osmLuaProcessing)
 {
 	LayerDef &layer = layers.layers[layerNum];
 	const string &filename = layer.source;
 	const vector<string> &columns = layer.sourceColumns;
-	const string &layerName = layer.name;
-	bool isIndexed = layer.indexed;
 	const string &indexName = layer.indexName;
 
 	// open shapefile
@@ -117,7 +121,6 @@ void readShapefile(const Box &clippingBox,
 	if(shp == nullptr || dbf == nullptr)
 		return;
 	int numEntities=0, shpType=0;
-	vector<Point> points;
 	double adfMinBound[4], adfMaxBound[4];
 	SHPGetInfo(shp, &numEntities, &shpType, adfMinBound, adfMaxBound);
 	
@@ -142,12 +145,10 @@ void readShapefile(const Box &clippingBox,
 	int indexField=-1;
 	if (indexName!="") { indexField = DBFGetFieldIndex(dbf,indexName.c_str()); }
 
+	boost::asio::thread_pool pool(threadNum);
 	for (int i=0; i<numEntities; i++) {
 		SHPObject* shape = SHPReadObject(shp, i);
 		if(shape == nullptr) { cerr << "Error loading shape from shapefile" << endl; continue; }
-
-		int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
-		int minzoom = layer.minzoom;
 
 		// Check shape is in clippingBox
 		Box shapeBox(Point(shape->dfXMin, lat2latp(shape->dfYMin)), Point(shape->dfXMax, lat2latp(shape->dfYMax)));
@@ -159,117 +160,110 @@ void readShapefile(const Box &clippingBox,
 			continue;
 		}
 
-		if (shapeType==1) {
-			// Points
-			Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
-			if (geom::within(p, clippingBox)) {
-
-				string name;
-				bool hasName = false;
-				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-
-				AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, minzoom);
-				shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POINT_, p, isIndexed, hasName, name, minzoom, attrIdx);
-			}
-
-		} else if (shapeType==3) {
-			// (Multi)-polylines
-			// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58, 
-			// so we need to create everything as polylines and clip individually :(
-			for (int j=0; j<shape->nParts; j++) {
-				Linestring ls;
-				fillPointArrayFromShapefile(&points, shape, j);
-				geom::assign_points(ls, points);
-				MultiLinestring out;
-				geom::intersection(ls, clippingBox, out);
-				for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
-
-					string name;
-					bool hasName = false;
-					if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-
-					AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, minzoom);
-					shpMemTiles.StoreShapefileGeometry(layerNum, layerName, LINESTRING_, *it, isIndexed, hasName, name, minzoom, attrIdx);
-				}
-			}
-
-		} else if (shapeType==5) {
-			// (Multi)-polygons
-			MultiPolygon multi;
-			Polygon poly;
-			Ring ring;
-			int nInteriorRings = 0;
-
-			// To avoid expensive computations, we assume the shapefile has been pre-processed
-			// such that each polygon's exterior ring is immediately followed by its interior rings.
-			for (int j=0; j<shape->nParts; j++) {
-				fillPointArrayFromShapefile(&points, shape, j);
-				// Read points into a ring
-				ring.clear();
-				geom::append(ring, points);
-
-				if (j == 0) {
-					// We assume the first part is an exterior ring of the first polygon.
-					geom::append(poly, ring);
-				}
-				else if (geom::area(ring) > 0.0) {
-					// This part has clockwise orientation - an exterior ring.
-					// Start a new polygon.
-					multi.push_back(poly);
-					poly.clear();
-					nInteriorRings = 0;
-					geom::append(poly, ring);
-				} else {
-					// This part has anti-clockwise orientation.
-					// Add another interior ring to the current polygon.
-					nInteriorRings++;
-					geom::interior_rings(poly).resize(nInteriorRings);
-					geom::append(poly, ring, nInteriorRings - 1);
-				}
-			}
-			// All parts read. Add the last polygon.
-			multi.push_back(poly);
-			geom::remove_spikes(multi);
-
-			string reason;
-#if BOOST_VERSION >= 105800
-			if (!geom::is_valid(multi, reason)) {
-				cerr << "Shapefile entity #" << i << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
-
-				// Perform make_valid operation
-				make_valid(multi);
-				
-				if (geom::is_valid(multi, reason)) {
-					cerr << "... corrected";
-				} else {
-					cerr << "... failed to correct. Reason: " << reason;
-				}
-				cerr << endl;
-			}
-#else
-			if (!geom::is_valid(multi)) { geom::correct(multi); geom::remove_spikes(multi); }
-#endif
-			// clip to bounding box
-			MultiPolygon out;
-			geom::intersection(multi, clippingBox, out);
-			if (boost::size(out)>0) {
-
-				string name;
-				bool hasName = false;
-				if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-
-				// create OutputObject
-				AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, minzoom);
-				shpMemTiles.StoreShapefileGeometry(layerNum, layerName, POLYGON_, out, isIndexed, hasName, name, minzoom, attrIdx);
-			}
-
-		} else {
-			// Not supported
-			cerr << "Shapefile entity #" << i << " type " << shapeType << " not supported" << endl;
-		}
-		SHPDestroyObject(shape);
+		boost::asio::post(pool, [&, shape]() {
+			// process attributes
+			string name;
+			bool hasName = false;
+			if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
+			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, layer.minzoom);
+			// process geometry
+			processShapeGeometry(shape, attrIdx, shpMemTiles, clippingBox, layer, layerNum, hasName, name);
+			SHPDestroyObject(shape);
+		});
 	}
-
+	pool.join();
 	SHPClose(shp);
 	DBFClose(dbf);
+}
+
+void processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx, ShpMemTiles &shpMemTiles,
+                          const Box &clippingBox, const LayerDef &layer, uint layerNum, bool hasName, const string &name) {
+	int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
+	int minzoom = layer.minzoom;
+
+	if (shapeType==1) {
+		// Points
+		Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
+		if (geom::within(p, clippingBox)) {
+			shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+		}
+
+	} else if (shapeType==3) {
+		// (Multi)-polylines
+		// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58, 
+		// so we need to create everything as polylines and clip individually :(
+		vector<Point> points;
+		for (int j=0; j<shape->nParts; j++) {
+			Linestring ls;
+			fillPointArrayFromShapefile(&points, shape, j);
+			geom::assign_points(ls, points);
+			MultiLinestring out;
+			geom::intersection(ls, clippingBox, out);
+			for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
+				shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, LINESTRING_, *it, layer.indexed, hasName, name, minzoom, attrIdx);
+			}
+		}
+
+	} else if (shapeType==5) {
+		// (Multi)-polygons
+		MultiPolygon multi;
+		Polygon poly;
+		Ring ring;
+		int nInteriorRings = 0;
+		vector<Point> points;
+
+		// To avoid expensive computations, we assume the shapefile has been pre-processed
+		// such that each polygon's exterior ring is immediately followed by its interior rings.
+		for (int j=0; j<shape->nParts; j++) {
+			fillPointArrayFromShapefile(&points, shape, j);
+			// Read points into a ring
+			ring.clear();
+			geom::append(ring, points);
+
+			if (j == 0) {
+				// We assume the first part is an exterior ring of the first polygon.
+				geom::append(poly, ring);
+			}
+			else if (geom::area(ring) > 0.0) {
+				// This part has clockwise orientation - an exterior ring.
+				// Start a new polygon.
+				multi.push_back(poly);
+				poly.clear();
+				nInteriorRings = 0;
+				geom::append(poly, ring);
+			} else {
+				// This part has anti-clockwise orientation.
+				// Add another interior ring to the current polygon.
+				nInteriorRings++;
+				geom::interior_rings(poly).resize(nInteriorRings);
+				geom::append(poly, ring, nInteriorRings - 1);
+			}
+		}
+
+		// All parts read. Add the last polygon.
+		multi.push_back(poly);
+		geom::remove_spikes(multi);
+
+		// Make valid if needs be
+		string reason;
+		if (!geom::is_valid(multi, reason)) {
+			if (verbose) cerr << "Shapefile entity " << shape->nShapeId << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
+			make_valid(multi);
+			if (verbose) {
+				if (geom::is_valid(multi, reason)) { cerr << "... corrected"; }
+				                              else { cerr << "... failed to correct. Reason: " << reason; }
+				cerr << endl;
+			}
+		}
+		// clip to bounding box
+		MultiPolygon out;
+		geom::intersection(multi, clippingBox, out);
+		if (boost::size(out)>0) {
+			shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+		}
+
+	} else {
+		// Not supported
+		cerr << "Shapefile entity #" << shape->nShapeId << " type " << shapeType << " not supported" << endl;
+	}
 }
