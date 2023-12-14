@@ -615,22 +615,26 @@ int main(int argc, char* argv[]) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
+#ifndef _WIN32_
 					timespec start, end;
-
 					if (logTileTimings)
 						clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
 					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
+#ifndef _WIN32_
 					if (logTileTimings) {
 						clock_gettime(CLOCK_MONOTONIC, &end);
 						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
 						std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
 						tileTimings.push_back(output);
 					}
+#endif
 				}
 
 				if (logTileTimings) {
