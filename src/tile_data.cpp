@@ -14,7 +14,7 @@ TileCoordinatesSet::TileCoordinatesSet(uint zoom):
 
 bool TileCoordinatesSet::test(TileCoordinate x, TileCoordinate y) const {
 	uint64_t loc = x * (1 << zoom) + y;
-	if (loc > tiles.size())
+	if (loc >= tiles.size())
 		return false;
 
 	return tiles[loc];
@@ -31,7 +31,7 @@ size_t TileCoordinatesSet::size() const {
 
 void TileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
 	uint64_t loc = x * (1 << zoom) + y;
-	if (loc > tiles.size())
+	if (loc >= tiles.size())
 		return;
 	tiles[loc] = true;
 }
