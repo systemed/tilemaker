@@ -30,8 +30,6 @@ Geometry OsmMemTiles::buildWayGeometry(
 	if (geomType == LINESTRING_ && IS_WAY(objectID)) {
 		Linestring& ls = getOrBuildLinestring(objectID);
 
-		// TODO: CorrectGeometry?
-
 		MultiLinestring out;
 		if(ls.empty())
 			return out;
