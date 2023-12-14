@@ -12,6 +12,8 @@ namespace geom = boost::geometry;
 	Read shapefiles into Boost geometries
 */
 
+std::mutex attributeMutex;
+
 void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint part) {
 	uint start = shape->panPartStart[part];
 	uint end   = (int(part)==shape->nParts-1) ? shape->nVertices : shape->panPartStart[part+1];
