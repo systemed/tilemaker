@@ -346,7 +346,8 @@ int main(int argc, char* argv[]) {
 			readShapefile(clippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
-						  shpMemTiles, osmLuaProcessing);
+			              threadNum,
+			              shpMemTiles, osmLuaProcessing);
 		}
 	}
 	shpMemTiles.reportSize();
