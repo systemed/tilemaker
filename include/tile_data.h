@@ -49,13 +49,18 @@ template<typename OO> void finalizeObjects(
 	const size_t& threadNum,
 	const unsigned int& baseZoom,
 	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator begin,
-	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator end
+	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator end,
+	typename std::vector<std::deque<OO, mmap_allocator<OO>>>& lowZoom
 	) {
 	for (auto it = begin; it != end; it++) {
 		if (it->size() == 0)
 			continue;
 
 		it->shrink_to_fit();
+
+		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
+			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
+				lowZoom[0].push_back(*objectIt);
 
 		// If the user is doing a a small extract, there are few populated
 		// entries in `object`.
@@ -103,7 +108,6 @@ template<typename OO> void finalizeObjects(
 			},
 			threadNum
 		);
-
 	}
 }
 
@@ -294,7 +298,9 @@ protected:
 	// If config.include_ids is true, objectsWithIds will be populated.
 	// Otherwise, objects.
 	std::vector<std::deque<OutputObjectXY, mmap_allocator<OutputObjectXY>>> objects;
+	std::vector<std::deque<OutputObjectXY, mmap_allocator<OutputObjectXY>>> lowZoomObjects;
 	std::vector<std::deque<OutputObjectXYID, mmap_allocator<OutputObjectXYID>>> objectsWithIds;
+	std::vector<std::deque<OutputObjectXYID, mmap_allocator<OutputObjectXYID>>> lowZoomObjectsWithIds;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;

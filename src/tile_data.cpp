@@ -47,7 +47,9 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
+	lowZoomObjects(1),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
+	lowZoomObjectsWithIds(1),
 	baseZoom(baseZoom),
 	pointStores(threadNum),
 	linestringStores(threadNum),
@@ -72,8 +74,9 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 }
 
 void TileDataSource::finalize(size_t threadNum) {
-	finalizeObjects<OutputObjectXY>(threadNum, baseZoom, objects.begin(), objects.end());
-	finalizeObjects<OutputObjectXYID>(threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end());
+	finalizeObjects<OutputObjectXY>(threadNum, baseZoom, objects.begin(), objects.end(), lowZoomObjects);
+	finalizeObjects<OutputObjectXYID>(threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
+
 }
 
 void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
@@ -139,6 +142,11 @@ void TileDataSource::collectObjectsForTile(
 	TileCoordinates dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
+	if (zoom < CLUSTER_ZOOM) {
+		collectObjectsForTileTemplate<OutputObjectXY>(baseZoom, lowZoomObjects.begin(), 0, 1, zoom, dstIndex, output);
+		collectObjectsForTileTemplate<OutputObjectXYID>(baseZoom, lowZoomObjectsWithIds.begin(), 0, 1, zoom, dstIndex, output);
+	}
+
 	size_t iStart = 0;
 	size_t iEnd = objects.size();
 
