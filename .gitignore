@@ -17,3 +17,4 @@ include/vector_tile.pb.h
 # downloaded data
 coastline
 landcover
+/test.*

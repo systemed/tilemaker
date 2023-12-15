@@ -133,7 +133,7 @@ test_sorted_way_store: \
 	src/mmap_allocator.o \
 	src/sorted_way_store.o \
 	src/sorted_way_store.test.o
-	$(CXX) $(CXXFLAGS) -o test $^ $(INC) $(LIB) $(LDFLAGS) && ./test
+	$(CXX) $(CXXFLAGS) -o test.sorted_way_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_way_store
 
 
 %.o: %.cpp

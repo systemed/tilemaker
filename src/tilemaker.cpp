@@ -172,7 +172,8 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
+	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
@@ -187,8 +188,10 @@ int main(int argc, char* argv[]) {
 		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
 		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
+		("materialize-geometries", po::bool_switch(&materializeGeometries),  "Materialize geometries - faster, but requires more memory")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
+		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
 	p.add("input", -1);
@@ -322,13 +325,13 @@ int main(int argc, char* argv[]) {
 	AttributeStore attributeStore;
 
 	class LayerDefinition layers(config.layers);
-	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID);
+	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID, *nodeStore, *wayStore);
 	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
-		shpMemTiles, osmMemTiles, attributeStore);
+		shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
 
 	// ---- Load external shp files
 
@@ -378,7 +381,7 @@ int main(int argc, char* argv[]) {
 					return pbfStream;
 				},
 				[&]() {
-					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore));
+					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries));
 					return osmLuaProcessing;
 				}
 			);
@@ -387,7 +390,6 @@ int main(int argc, char* argv[]) {
 		attributeStore.finalize();
 		osmMemTiles.reportSize();
 		attributeStore.reportSize();
-		void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 	}
 	// ----	Initialise SharedData
 	SourceList sources = {&osmMemTiles, &shpMemTiles};
@@ -466,7 +468,7 @@ int main(int argc, char* argv[]) {
 					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
 				},
 				[&]() {
-					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore);
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
 				}
 			);
 			if (ret != 0) return ret;
@@ -481,30 +483,58 @@ int main(int argc, char* argv[]) {
 		std::mutex io_mutex;
 
 		// Loop through tiles
-		size_t tilesWritten = 0;
+		std::atomic<uint64_t> tilesWritten(0);
 
 		for (auto source : sources) {
 			source->finalize(threadNum);
 		}
-
 		// tiles by zoom level
+
+		// The clipping bbox check is expensive - as an optimization, compute the set of
+		// z6 tiles that are wholly covered by the clipping box. Membership in this
+		// set is quick to test.
+		std::set<TileCoordinates> coveredZ6Tiles;
+		if (hasClippingBox) {
+			for (int x = 0; x < 1 << 6; x++) {
+				for (int y = 0; y < 1 << 6; y++) {
+					if (boost::geometry::within(
+								TileBbox(TileCoordinates(x, y), 6, false, false).getTileBox(),
+								clippingBox
+							))
+						coveredZ6Tiles.insert(TileCoordinates(x, y));
+				}
+			}
+		}
+
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
-			auto zoom_result = getTilesAtZoom(sources, zoom);
-			for(auto&& it: zoom_result) {
-				// If we're constrained to a source tile, check we're within it
-				if (srcZ > -1) {
-					int x = it.x / pow(2, zoom-srcZ);
-					int y = it.y / pow(2, zoom-srcZ);
-					if (x!=srcX || y!=srcY) continue;
-				}
-			
-				if (hasClippingBox) {
-					if(!boost::geometry::intersects(TileBbox(it, zoom, false, false).getTileBox(), clippingBox)) 
+			auto zoomResult = getTilesAtZoom(sources, zoom);
+			for (int x = 0; x < 1 << zoom; x++) {
+				for (int y = 0; y < 1 << zoom; y++) {
+					if (!zoomResult.test(x, y))
 						continue;
-				}
 
-				tileCoordinates.push_back(std::make_pair(zoom, it));
+					// If we're constrained to a source tile, check we're within it
+					if (srcZ > -1) {
+						int xAtSrcZ = x / pow(2, zoom-srcZ);
+						int yAtSrcZ = y / pow(2, zoom-srcZ);
+						if (xAtSrcZ != srcX || yAtSrcZ != srcY) continue;
+					}
+				
+					if (hasClippingBox) {
+						bool isInAWhollyCoveredZ6Tile = false;
+						if (zoom >= 6) {
+							TileCoordinate z6x = x / (1 << (zoom - 6));
+							TileCoordinate z6y = y / (1 << (zoom - 6));
+							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.find(TileCoordinates(z6x, z6y)) != coveredZ6Tiles.end();
+						}
+
+						if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
+							continue;
+					}
+
+					tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
+				}
 			}
 		}
 
@@ -580,30 +610,56 @@ int main(int argc, char* argv[]) {
 			}
 
 			boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
+				std::vector<std::string> tileTimings;
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
+
+#ifndef _WIN32
+					timespec start, end;
+					if (logTileTimings)
+						clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
 					std::vector<std::vector<OutputObjectID>> data;
 					for (auto source : sources) {
 						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
+
+#ifndef _WIN32
+					if (logTileTimings) {
+						clock_gettime(CLOCK_MONOTONIC, &end);
+						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+						std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
+						tileTimings.push_back(output);
+					}
+#endif
 				}
 
-				const std::lock_guard<std::mutex> lock(io_mutex);
+				if (logTileTimings) {
+					const std::lock_guard<std::mutex> lock(io_mutex);
+					std::cout << std::endl;
+					for (const auto& output : tileTimings)
+						std::cout << output << std::endl;
+				}
+
 				tilesWritten += (endIndex - startIndex); 
 
-				// Show progress grouped by z6 (or lower)
-				size_t z = tileCoordinates[startIndex].first;
-				size_t x = tileCoordinates[startIndex].second.x;
-				size_t y = tileCoordinates[startIndex].second.y;
-				if (z > CLUSTER_ZOOM) {
-					x = x / (1 << (z - CLUSTER_ZOOM));
-					y = y / (1 << (z - CLUSTER_ZOOM));
-					z = CLUSTER_ZOOM;
+				if (io_mutex.try_lock()) {
+					// Show progress grouped by z6 (or lower)
+					size_t z = tileCoordinates[startIndex].first;
+					size_t x = tileCoordinates[startIndex].second.x;
+					size_t y = tileCoordinates[startIndex].second.y;
+					if (z > CLUSTER_ZOOM) {
+						x = x / (1 << (z - CLUSTER_ZOOM));
+						y = y / (1 << (z - CLUSTER_ZOOM));
+						z = CLUSTER_ZOOM;
+					}
+					cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten.load() << " of " << tileCoordinates.size() << "               \r" << std::flush;
+					io_mutex.unlock();
 				}
-				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten << " of " << tileCoordinates.size() << "               \r" << std::flush;
 			});
 		}
 		// Wait for all tasks in the pool to complete.
@@ -628,5 +684,6 @@ int main(int argc, char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
+	void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 }
 

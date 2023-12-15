@@ -4,6 +4,15 @@
 
 #include "tile_data.h"
 #include "osm_store.h"
+#include "geometry_cache.h"
+
+#define OSM_THRESHOLD (1ull << 35)
+#define USE_WAY_STORE (1ull << 35)
+#define IS_WAY(x) (((x) >> 35) == (USE_WAY_STORE >> 35))
+#define OSM_ID(x) ((x) & 0b111111111111111111111111111111111)
+
+class NodeStore;
+class WayStore;
 
 /**
 	\brief OsmMemTiles stores OSM objects in memory and provides a vector of OutputObjectf for specified tiles
@@ -15,10 +24,30 @@
 class OsmMemTiles : public TileDataSource {
 
 public:
-	OsmMemTiles(size_t threadNum, uint baseZoom, bool includeID);
+	OsmMemTiles(
+		size_t threadNum,
+		uint baseZoom,
+		bool includeID,
+		const NodeStore& nodeStore,
+		const WayStore& wayStore
+	);
+
+	Geometry buildWayGeometry(
+		const OutputGeometryType geomType, 
+		const NodeID objectID,
+		const TileBbox &bbox
+	) override;
 
 
 	void Clear();
+
+private:
+	void populateLinestring(Linestring& ls, NodeID objectID);
+	Linestring& getOrBuildLinestring(NodeID objectID);
+	void populateMultiPolygon(MultiPolygon& dst, NodeID objectID) override;
+
+	const NodeStore& nodeStore;
+	const WayStore& wayStore;
 };
 
 #endif //_OSM_MEM_TILES

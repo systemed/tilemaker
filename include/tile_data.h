@@ -8,8 +8,7 @@
 #include <memory>
 #include <boost/sort/sort.hpp>
 #include "output_object.h"
-
-typedef std::set<TileCoordinates, TileCoordinatesCompare> TileCoordinatesSet;
+#include "clip_cache.h"
 
 typedef std::vector<class TileDataSource *> SourceList;
 
@@ -24,6 +23,18 @@ struct OutputObjectXY {
 	OutputObject oo;
 	Z6Offset x;
 	Z6Offset y;
+};
+
+class TileCoordinatesSet {
+public:
+	TileCoordinatesSet(uint zoom);
+	bool test(TileCoordinate x, TileCoordinate y) const;
+	void set(TileCoordinate x, TileCoordinate y);
+	size_t size() const;
+
+private:
+	uint zoom;
+	std::vector<bool> tiles;
 };
 
 struct OutputObjectXYID {
@@ -119,7 +130,7 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
 
 			if (lastX != x || lastY != y) {
-				output.insert(TileCoordinates(x, y));
+				output.set(x, y);
 				lastX = x;
 				lastY = y;
 			}
@@ -243,8 +254,31 @@ template<typename OO> void collectObjectsForTileTemplate(
 }
 
 class TileDataSource {
+public:
+	// Store for generated geometries
+	using point_store_t = std::vector<Point>;
+
+	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
+	using linestring_store_t = std::vector<linestring_t>;
+
+	using multi_linestring_t = boost::geometry::model::multi_linestring<linestring_t, std::vector, mmap_allocator>;
+	using multi_linestring_store_t = std::vector<multi_linestring_t>;
+
+	using polygon_t = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, mmap_allocator, mmap_allocator>;
+	using multi_polygon_t = boost::geometry::model::multi_polygon<polygon_t, std::vector, mmap_allocator>;
+	using multi_polygon_store_t = std::vector<multi_polygon_t>;
+
+	std::mutex storeMutex;
+	// Threads can grab one of the stores and work on them in a thread local.
+	std::vector<std::pair<size_t, point_store_t*>> availablePointStoreLeases;
+	std::vector<std::pair<size_t, linestring_store_t*>> availableLinestringStoreLeases;
+	std::vector<std::pair<size_t, multi_linestring_store_t*>> availableMultiLinestringStoreLeases;
+	std::vector<std::pair<size_t, multi_polygon_store_t*>> availableMultiPolygonStoreLeases;
+
 
 protected:	
+	size_t numShards;
+	uint8_t shardBits;
 	std::mutex mutex;
 	bool includeID;
 	uint16_t z6OffsetDivisor;
@@ -268,30 +302,13 @@ protected:
 
 	unsigned int baseZoom;
 
-	// Store for generated geometries
-	using point_store_t = std::vector<Point>;
-
-	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
-	using linestring_store_t = std::vector<linestring_t>;
-
-	using multi_linestring_t = boost::geometry::model::multi_linestring<linestring_t, std::vector, mmap_allocator>;
-	using multi_linestring_store_t = std::vector<multi_linestring_t>;
-
-	using polygon_t = boost::geometry::model::polygon<Point, true, true, std::vector, std::vector, mmap_allocator, mmap_allocator>;
-	using multi_polygon_t = boost::geometry::model::multi_polygon<polygon_t, std::vector, mmap_allocator>;
-	using multi_polygon_store_t = std::vector<multi_polygon_t>;
-
-	std::mutex point_store_mutex;
-	std::unique_ptr<point_store_t> point_store;
+	std::vector<point_store_t> pointStores;
+	std::vector<linestring_store_t> linestringStores;
+	std::vector<multi_linestring_store_t> multilinestringStores;
+	std::vector<multi_polygon_store_t> multipolygonStores;
 	
-	std::mutex linestring_store_mutex;
-	std::unique_ptr<linestring_store_t> linestring_store;
-	
-	std::mutex multi_polygon_store_mutex;
-	std::unique_ptr<multi_polygon_store_t> multi_polygon_store;
-
-	std::mutex multi_linestring_store_mutex;
-	std::unique_ptr<multi_linestring_store_t> multi_linestring_store;
+	ClipCache<MultiPolygon> multiPolygonClipCache;
+	ClipCache<MultiLinestring> multiLinestringClipCache;
 
 public:
 	TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID);
@@ -315,7 +332,7 @@ public:
 	);
 	void addGeometryToIndex(
 		const MultiPolygon& geom,
-		const std::vector<OutputObject>& outputs,
+		std::vector<OutputObject>& outputs, // so we can mutate objectID to skip clip cache
 		const uint64_t id
 	);
 
@@ -337,102 +354,76 @@ public:
 		TileCoordinates coordinates
 	);
 
-	Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
 	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
-		point_store = std::make_unique<point_store_t>();
-		linestring_store = std::make_unique<linestring_store_t>();
-		multi_polygon_store = std::make_unique<multi_polygon_store_t>();
-		multi_linestring_store = std::make_unique<multi_linestring_store_t>();
-
 		// Put something at index 0 of all stores so that 0 can be used
 		// as a sentinel.
-		point_store->push_back(Point(0,0));
-		linestring_store->push_back(linestring_t());
-		multi_polygon_store->push_back(multi_polygon_t());
-		multi_linestring_store->push_back(multi_linestring_t());
+		pointStores[0].push_back(Point(0,0));
+		linestringStores[0].push_back(linestring_t());
+		multipolygonStores[0].push_back(multi_polygon_t());
+		multilinestringStores[0].push_back(multi_linestring_t());
 	}
 	void reportSize() const;
 	
 	// Accessors for generated geometries
 	using handle_t = void *;
 
-	NodeID store_point(Point const &input) {
-		std::lock_guard<std::mutex> lock(point_store_mutex);
-		NodeID id = point_store->size();
-		point_store->emplace_back(input);
-		return id;
+	NodeID storePoint(Point const &input);
+
+	inline size_t getShard(NodeID id) const {
+		// Note: we only allocate 35 bits for the IDs. This allows us to
+		// use bit 36 for TileDataSource-specific handling (e.g.,
+		// OsmMemTiles may want to generate points/ways on the fly by
+		// referring to the WayStore).
+
+		return id >> (35 - shardBits);
 	}
 
-	Point const &retrieve_point(NodeID id) const {
-		if (id > point_store->size()) throw std::out_of_range("Could not find generated node with id " + std::to_string(id));
-		return point_store->at(id);
+	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
+
+	inline size_t getId(NodeID id) const {
+		return id & (~(~0ull << (35 - shardBits)));
+	}
+
+	const Point& retrievePoint(NodeID id) const {
+		const auto& shardId = getShard(id);
+		const auto& shard = pointStores[shardId];
+		const auto offset = getId(id);
+		if (offset > shard.size()) throw std::out_of_range("Could not find generated node with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
+		return shard.at(offset);
 	}
 	
-	template<typename Input>
-	NodeID store_linestring(Input const &src) {
-		linestring_t dst(src.begin(), src.end());
-		std::lock_guard<std::mutex> lock(linestring_store_mutex);
-		NodeID id = linestring_store->size();
-		linestring_store->emplace_back(std::move(dst));
-		return id;
-	}
+	NodeID storeLinestring(const Linestring& src);
 
-	linestring_t const &retrieve_linestring(NodeID id) const {
-		if (id > linestring_store->size()) throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id));
-		return linestring_store->at(id);
+	const linestring_t& retrieveLinestring(NodeID id) const {
+		const auto& shardId = getShard(id);
+		const auto& shard = linestringStores[shardId];
+		const auto offset = getId(id);
+		if (offset > shard.size()) throw std::out_of_range("Could not find generated linestring with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
+		return shard.at(offset);
 	}
 	
-	template<typename Input>
-	NodeID store_multi_linestring(Input const &src) {
-		multi_linestring_t dst;
-		dst.resize(src.size());
-		for (std::size_t i=0; i<src.size(); ++i) {
-			boost::geometry::assign(dst[i], src[i]);
-		}
-		std::lock_guard<std::mutex> lock(multi_linestring_store_mutex);
-		NodeID id = multi_linestring_store->size();
-		multi_linestring_store->emplace_back(std::move(dst));
-		return id;
+	NodeID storeMultiLinestring(const MultiLinestring& src);
+
+	multi_linestring_t const &retrieveMultiLinestring(NodeID id) const {
+		const auto& shardId = getShard(id);
+		const auto& shard = multilinestringStores[shardId];
+		const auto offset = getId(id);
+		if (offset > shard.size()) throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
+		return shard.at(offset);
 	}
 
-	multi_linestring_t const &retrieve_multi_linestring(NodeID id) const {
-		if (id > multi_linestring_store->size()) throw std::out_of_range("Could not find generated multi-linestring with id " + std::to_string(id));
-		return multi_linestring_store->at(id);
+	NodeID storeMultiPolygon(const MultiPolygon& src);
+
+	multi_polygon_t const &retrieveMultiPolygon(NodeID id) const {
+		const auto& shardId = getShard(id);
+		const auto& shard = multipolygonStores[shardId];
+		const auto offset = getId(id);
+		if (offset > shard.size()) throw std::out_of_range("Could not find generated multi-polygon with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
+		return shard.at(offset);
 	}
-
-	template<typename Input>
-	NodeID store_multi_polygon(Input const &src) {
-		multi_polygon_t dst;
-		dst.resize(src.size());
-		for(std::size_t i = 0; i < src.size(); ++i) {
-			dst[i].outer().resize(src[i].outer().size());
-			boost::geometry::assign(dst[i].outer(), src[i].outer());
-
-			dst[i].inners().resize(src[i].inners().size());
-			for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
-				dst[i].inners()[j].resize(src[i].inners()[j].size());
-				boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
-			}
-		}
-		std::lock_guard<std::mutex> lock(multi_polygon_store_mutex);
-		NodeID id = multi_polygon_store->size();
-		multi_polygon_store->emplace_back(std::move(dst));
-		return id;
-	}
-
-	multi_polygon_t const &retrieve_multi_polygon(NodeID id) const {
-		if (id > multi_polygon_store->size()) throw std::out_of_range("Could not find generated multi-polygon with id " + std::to_string(id));
-		return multi_polygon_store->at(id);
-	}
-
-
-private:	
-	std::vector<std::map<std::tuple<uint16_t, TileCoordinates, NodeID>, std::shared_ptr<MultiPolygon>>> clipCache;
-	std::vector<std::mutex> clipCacheMutex;
-	std::vector<size_t> clipCacheSize;
-	void cacheClippedGeometry(const TileBbox& box, const NodeID objectID, const MultiPolygon& mp);
 };
 
 TileCoordinatesSet getTilesAtZoom(

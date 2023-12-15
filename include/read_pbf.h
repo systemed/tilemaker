@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <mutex>
 #include <map>
 #include "osm_store.h"
 
@@ -103,6 +104,7 @@ private:
 	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
 	
 	OSMStore &osmStore;
+	std::mutex ioMutex;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

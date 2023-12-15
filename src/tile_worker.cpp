@@ -8,6 +8,7 @@
 using namespace std;
 extern bool verbose;
 
+thread_local bool enabledUserSignal = false;
 typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 
@@ -363,7 +364,10 @@ void outputProc(
 
 	// Loop through layers
 #ifndef _WIN32
-	signal(SIGUSR1, handleUserSignal);
+	if (!enabledUserSignal) {
+		signal(SIGUSR1, handleUserSignal);
+		enabledUserSignal = true;
+	}
 #endif
 	signalStop=false;
 
