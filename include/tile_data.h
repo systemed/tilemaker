@@ -9,6 +9,7 @@
 #include <boost/sort/sort.hpp>
 #include "output_object.h"
 #include "clip_cache.h"
+#include "mmap_allocator.h"
 
 typedef std::vector<class TileDataSource *> SourceList;
 
@@ -47,10 +48,10 @@ struct OutputObjectXYID {
 template<typename OO> void finalizeObjects(
 	const size_t& threadNum,
 	const unsigned int& baseZoom,
-	typename std::vector<std::vector<OO>>::iterator begin,
-	typename std::vector<std::vector<OO>>::iterator end
+	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator begin,
+	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator end
 	) {
-	for (typename std::vector<std::vector<OO>>::iterator it = begin; it != end; it++) {
+	for (auto it = begin; it != end; it++) {
 		if (it->size() == 0)
 			continue;
 
@@ -108,7 +109,7 @@ template<typename OO> void finalizeObjects(
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& baseZoom,
-	const typename std::vector<std::vector<OO>>::iterator objects,
+	const typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator objects,
 	const size_t size,
 	const unsigned int zoom,
 	TileCoordinatesSet& output
@@ -150,7 +151,7 @@ inline OutputObjectID outputObjectWithId<OutputObjectXYID>(const OutputObjectXYI
 
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& baseZoom,
-	typename std::vector<std::vector<OO>>::iterator objects,
+	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator objects,
 	size_t iStart,
 	size_t iEnd,
 	unsigned int zoom,
@@ -292,8 +293,8 @@ protected:
 	//
 	// If config.include_ids is true, objectsWithIds will be populated.
 	// Otherwise, objects.
-	std::vector<std::vector<OutputObjectXY>> objects;
-	std::vector<std::vector<OutputObjectXYID>> objectsWithIds;
+	std::vector<std::deque<OutputObjectXY, mmap_allocator<OutputObjectXY>>> objects;
+	std::vector<std::deque<OutputObjectXYID, mmap_allocator<OutputObjectXYID>>> objectsWithIds;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
