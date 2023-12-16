@@ -196,11 +196,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
                                           NodeID const objectID, const TileBbox &bbox) {
 	switch(geomType) {
 		case POINT_: {
-			auto p = retrievePoint(objectID);
-			if (geom::within(p, bbox.clippingBox)) {
-				return p;
-			} 
-			return MultiLinestring();
+			throw std::runtime_error("unexpected geomType in buildWayGeometry");
 		}
 
 		case LINESTRING_: {
