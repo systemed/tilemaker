@@ -22,9 +22,6 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
 /**
  * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
-
- * Possible future improvements to save memory:
- * - use a global dictionary for attribute key/values
 */
 #pragma pack(push, 4)
 class OutputObject {

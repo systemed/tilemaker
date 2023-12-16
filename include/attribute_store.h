@@ -39,17 +39,20 @@ private:
 	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
-enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
+enum class AttributePairType: char { Bool = 0, Float = 1, String = 2 };
 // AttributePair is a key/value pair (with minzoom)
+#pragma pack(push, 1)
 struct AttributePair {
-	std::string stringValue_;
-	float floatValue_;
-	short keyIndex;
-	char minzoom;
-	AttributePairType valueType;
+	short keyIndex : 9;
+	AttributePairType valueType : 3;
+	char minzoom : 4;
+	union {
+		float floatValue_;
+		std::string stringValue_;
+	};
 
 	AttributePair(uint32_t keyIndex, bool value, char minzoom)
-		: keyIndex(keyIndex), valueType(value ? AttributePairType::True : AttributePairType::False), minzoom(minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Bool), minzoom(minzoom), floatValue_(value ? 1 : 0)
 	{
 	}
 	AttributePair(uint32_t keyIndex, const std::string& value, char minzoom)
@@ -57,8 +60,47 @@ struct AttributePair {
 	{
 	}
 	AttributePair(uint32_t keyIndex, float value, char minzoom)
-		: keyIndex(keyIndex), valueType(AttributePairType::Float), floatValue_(value), minzoom(minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Float), minzoom(minzoom), floatValue_(value)
 	{
+	}
+
+	~AttributePair() {
+		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float)
+			return;
+
+		stringValue_.~basic_string();
+	}
+
+	AttributePair(const AttributePair& other):
+		keyIndex(other.keyIndex), valueType(other.valueType), minzoom(other.minzoom)
+	{
+		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
+			floatValue_ = other.floatValue_;
+			return;
+		}
+
+		new (&stringValue_) std::string;
+		stringValue_ = other.stringValue_;
+	}
+
+	AttributePair& operator=(const AttributePair& other) {
+		if (!(valueType == AttributePairType::Bool || valueType == AttributePairType::Float)) {
+			stringValue_.~basic_string();
+		}
+
+		keyIndex = other.keyIndex;
+		valueType = other.valueType;
+		minzoom = other.minzoom;
+
+		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
+			floatValue_ = other.floatValue_;
+			return *this;
+		}
+
+		new (&stringValue_) std::string;
+		stringValue_ = other.stringValue_;
+
+		return *this;
 	}
 
 	bool operator==(const AttributePair &other) const {
@@ -66,7 +108,7 @@ struct AttributePair {
 		if (valueType == AttributePairType::String)
 			return stringValue_ == other.stringValue_;
 
-		if (valueType == AttributePairType::Float)
+		if (valueType == AttributePairType::Float || valueType == AttributePairType::Bool)
 			return floatValue_ == other.floatValue_;
 
 		return true;
@@ -74,11 +116,11 @@ struct AttributePair {
 
 	bool hasStringValue() const { return valueType == AttributePairType::String; }
 	bool hasFloatValue() const { return valueType == AttributePairType::Float; }
-	bool hasBoolValue() const { return valueType == AttributePairType::True || valueType == AttributePairType::False; };
+	bool hasBoolValue() const { return valueType == AttributePairType::Bool; }
 
 	const std::string& stringValue() const { return stringValue_; }
 	float floatValue() const { return floatValue_; }
-	bool boolValue() const { return valueType == AttributePairType::True; }
+	bool boolValue() const { return floatValue_; }
 
 	static bool isHot(const AttributePair& pair, const std::string& keyName) {
 		// Is this pair a candidate for the hot pool?
@@ -137,6 +179,7 @@ struct AttributePair {
 		return rv;
 	}
 };
+#pragma pack(pop)
 
 
 // We shard the cold pools to reduce the odds of lock contention on
