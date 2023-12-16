@@ -123,7 +123,7 @@ struct AttributePair {
 	float floatValue() const { return floatValue_; }
 	bool boolValue() const { return floatValue_; }
 
-	static bool isHot(const AttributePair& pair, const std::string& keyName) {
+	static bool isHot(const std::string& keyName, const std::string& value) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -132,25 +132,11 @@ struct AttributePair {
 		// The trick is that we commit to putting them in the hot pool
 		// before we know if we were right.
 
-		// All boolean pairs are eligible.
-		if (pair.hasBoolValue())
-			return true;
-
-		// Small integers are eligible.
-		if (pair.hasFloatValue()) {
-			float v = pair.floatValue();
-
-			if (ceil(v) == v && v >= 0 && v <= 25)
-				return true;
-		}
-
-		// The remaining things should be strings, but just in case...
-		if (!pair.hasStringValue())
-			return false;
+		// The rules for floats/booleans are managed in their addAttribute call.
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: pair.stringValue()) {
+		for (const auto& c: value) {
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
