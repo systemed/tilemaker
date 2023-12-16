@@ -79,10 +79,10 @@ thread_local mmap_shm_ptr mmap_shm_thread_region_ptr;
 std::mutex mmap_allocator_mutex;
 
 mmap_file::mmap_file(std::string const &filename, std::size_t offset)
-	: mapping(filename.c_str(), boost::interprocess::read_write)
+	: filename(filename)
+	, mapping(filename.c_str(), boost::interprocess::read_write)
 	, region(mapping, boost::interprocess::read_write)
 	, buffer(boost::interprocess::create_only, reinterpret_cast<uint8_t *>(region.get_address()) + offset, region.get_size() - offset)
-	, filename(filename)
 { }
 
 mmap_file::~mmap_file()
