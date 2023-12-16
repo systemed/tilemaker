@@ -18,6 +18,27 @@ OsmMemTiles::OsmMemTiles(
 {
 }
 
+LatpLon OsmMemTiles::buildNodeGeometry(
+	OutputGeometryType const geomType, 
+	NodeID const objectID,
+	const TileBbox &bbox
+) const {
+	if (objectID < OSM_THRESHOLD) {
+		return TileDataSource::buildNodeGeometry(geomType, objectID, bbox);
+	}
+
+	switch(geomType) {
+		case POINT_: {
+			return nodeStore.at(OSM_ID(objectID));
+		}
+
+		default:
+			break;
+	}
+
+	throw std::runtime_error("Geometry type is not point");			
+}
+
 Geometry OsmMemTiles::buildWayGeometry(
 	const OutputGeometryType geomType, 
 	const NodeID objectID,

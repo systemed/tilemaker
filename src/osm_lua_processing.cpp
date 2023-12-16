@@ -350,7 +350,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			if(CorrectGeometry(p) == CorrectGeometryResult::Invalid) return;
 
-			NodeID id = osmMemTiles.storePoint(p);
+			NodeID id = USE_NODE_STORE | originalOsmID;
+			if (materializeGeometries)
+				id = osmMemTiles.storePoint(p);
 			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 			return;
