@@ -55,6 +55,16 @@ const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
 	return keys[index];
 }
 
+// AttributePair
+void AttributePair::ensureStringIsOwned() {
+	// Before we store an AttributePair in our long-term storage, we need
+	// to make sure it's not pointing to a non-long-lived std::string.
+	if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float)
+		return;
+
+	stringValue_.ensureStringIsOwned();
+}
+
 // AttributePairStore
 thread_local boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr> tlsHotShardMap;
 thread_local uint16_t tlsHotShardSize = 0;
@@ -68,6 +78,7 @@ const AttributePair& AttributePairStore::getPair(uint32_t i) const {
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
 	return pairs[shard].at(offset);
 };
+
 const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	// NB: This is unsafe if called before the PBF has been fully read.
 	// If called during the output phase, it's safe.
@@ -81,7 +92,7 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	return pairs[shard].at(offset);
 };
 
-uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
+uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (isHot) {
 		{
 			// First, check our thread-local map.
@@ -109,6 +120,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 			hotShardSize++;
 			uint32_t offset = hotShardSize.load();
 
+			pair.ensureStringIsOwned();
 			hotShard[offset] = pair;
 			const AttributePair* ptr = &hotShard[offset];
 			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
@@ -138,6 +150,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("pair shard overflow");
 
+	pair.ensureStringIsOwned();
 	pairs[shard].push_back(pair);
 	const AttributePair* ptr = &pairs[shard][offset];
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
@@ -199,7 +212,8 @@ void AttributeSet::removePairWithKey(const AttributePairStore& pairStore, uint32
 }
 
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
-	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	PooledString ps(&v);
+	AttributePair kv(keyStore.key2index(key), ps, minzoom);
 	bool isHot = AttributePair::isHot(key, v);
 	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
@@ -371,6 +385,14 @@ void AttributeStore::reportSize() const {
 			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << keyStore.getKey(pair.keyIndex) <<" stringValue=" << pair.stringValue() << " floatValue=" << pair.floatValue() << " boolValue=" << pair.boolValue() << std::endl;
 		}
 	}
+}
+
+void AttributeStore::reset() {
+	// This is only used for tests.
+	tlsKeys2Index.clear();
+	tlsKeys2IndexSize = 0;
+	tlsHotShardMap.clear();
+	tlsHotShardSize = 0;
 }
 
 void AttributeStore::finalize() {

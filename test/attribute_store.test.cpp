@@ -5,6 +5,7 @@
 
 MU_TEST(test_attribute_store) {
 	AttributeStore store;
+	store.reset();
 
 	mu_check(store.size() == 0);
 
@@ -56,11 +57,44 @@ MU_TEST(test_attribute_store) {
 	mu_check(float1 != s1Pairs.end());
 	mu_check((*float1)->hasFloatValue());
 	mu_check((*float1)->floatValue() == 42);
+}
+
+MU_TEST(test_attribute_store_reuses) {
+	AttributeStore store;
+	store.reset();
+
+	mu_check(store.size() == 0);
+
+	{
+		AttributeSet s1a;
+		store.addAttribute(s1a, "str1", std::string("someval"), 0);
+		const auto s1aIndex = store.add(s1a);
+
+		AttributeSet s1b;
+		store.addAttribute(s1b, "str1", std::string("someval"), 0);
+		const auto s1bIndex = store.add(s1b);
+
+		mu_check(s1aIndex == s1bIndex);
+	}
+
+	{
+		AttributeSet s1a;
+		store.addAttribute(s1a, "str1", std::string("this is a very long string"), 0);
+		const auto s1aIndex = store.add(s1a);
+
+		AttributeSet s1b;
+		store.addAttribute(s1b, "str1", std::string("this is a very long string"), 0);
+		const auto s1bIndex = store.add(s1b);
+
+		mu_check(s1aIndex == s1bIndex);
+	}
+
 
 }
 
 MU_TEST_SUITE(test_suite_attribute_store) {
 	MU_RUN_TEST(test_attribute_store);
+	MU_RUN_TEST(test_attribute_store_reuses);
 }
 
 int main() {

@@ -163,7 +163,6 @@ vector<string> parseBox(const string& bbox) {
  * Worker threads write the output tiles, and start in the outputProc function.
  */
 int main(int argc, char* argv[]) {
-
 	// ----	Read command-line options
 	vector<string> inputFiles;
 	string luaFile;

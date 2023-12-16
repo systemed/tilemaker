@@ -148,3 +148,23 @@ std::string PooledStringNS::PooledString::toString() const {
 	const std::string* str = *(const std::string**)((void*)(storage + 8));
 	return *str;
 }
+
+void PooledStringNS::PooledString::ensureStringIsOwned() {
+	uint8_t kind = storage[0] >> 6;
+
+	if (kind != StdString)
+		return;
+
+	*this = PooledString(toString());
+}
+
+bool PooledStringNS::PooledString::operator<(const PooledString& other) const {
+	size_t mySize = size();
+	size_t otherSize = other.size();
+
+	if (mySize != otherSize)
+		return mySize < otherSize;
+
+	return memcmp(data(), other.data(), mySize) < 0;
+}
+

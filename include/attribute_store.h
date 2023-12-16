@@ -49,27 +49,20 @@ struct AttributePair {
 	char minzoom : 4;
 	union {
 		float floatValue_;
-		std::string stringValue_;
+		PooledString stringValue_;
 	};
 
 	AttributePair(uint32_t keyIndex, bool value, char minzoom)
 		: keyIndex(keyIndex), valueType(AttributePairType::Bool), minzoom(minzoom), floatValue_(value ? 1 : 0)
 	{
 	}
-	AttributePair(uint32_t keyIndex, const std::string& value, char minzoom)
+	AttributePair(uint32_t keyIndex, const PooledString& value, char minzoom)
 		: keyIndex(keyIndex), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
 	{
 	}
 	AttributePair(uint32_t keyIndex, float value, char minzoom)
 		: keyIndex(keyIndex), valueType(AttributePairType::Float), minzoom(minzoom), floatValue_(value)
 	{
-	}
-
-	~AttributePair() {
-		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float)
-			return;
-
-		stringValue_.~basic_string();
 	}
 
 	AttributePair(const AttributePair& other):
@@ -80,15 +73,10 @@ struct AttributePair {
 			return;
 		}
 
-		new (&stringValue_) std::string;
 		stringValue_ = other.stringValue_;
 	}
 
 	AttributePair& operator=(const AttributePair& other) {
-		if (!(valueType == AttributePairType::Bool || valueType == AttributePairType::Float)) {
-			stringValue_.~basic_string();
-		}
-
 		keyIndex = other.keyIndex;
 		valueType = other.valueType;
 		minzoom = other.minzoom;
@@ -98,9 +86,7 @@ struct AttributePair {
 			return *this;
 		}
 
-		new (&stringValue_) std::string;
 		stringValue_ = other.stringValue_;
-
 		return *this;
 	}
 
@@ -119,9 +105,12 @@ struct AttributePair {
 	bool hasFloatValue() const { return valueType == AttributePairType::Float; }
 	bool hasBoolValue() const { return valueType == AttributePairType::Bool; }
 
-	const std::string& stringValue() const { return stringValue_; }
+	const PooledString& pooledString() const { return stringValue_; }
+	const std::string stringValue() const { return stringValue_.toString(); }
 	float floatValue() const { return floatValue_; }
 	bool boolValue() const { return floatValue_; }
+
+	void ensureStringIsOwned();
 
 	static bool isHot(const std::string& keyName, const std::string& value) {
 		// Is this pair a candidate for the hot pool?
@@ -153,9 +142,10 @@ struct AttributePair {
 		boost::hash_combine(rv, keyIndex);
 		boost::hash_combine(rv, valueType);
 
-		if(hasStringValue())
-			boost::hash_combine(rv, stringValue());
-		else if(hasFloatValue())
+		if(hasStringValue()) {
+			const char* data = pooledString().data();
+			boost::hash_range(rv, data, data + pooledString().size());
+		} else if(hasFloatValue())
 			boost::hash_combine(rv, floatValue());
 		else if(hasBoolValue())
 			boost::hash_combine(rv, boolValue());
@@ -198,7 +188,7 @@ public:
 	void finalize() { finalized = true; }
 	const AttributePair& getPair(uint32_t i) const;
 	const AttributePair& getPairUnsafe(uint32_t i) const;
-	uint32_t addPair(const AttributePair& pair, bool isHot);
+	uint32_t addPair(AttributePair& pair, bool isHot);
 
 	struct key_value_less_ptr {
 		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
@@ -208,7 +198,7 @@ public:
 				return lhs->keyIndex < rhs->keyIndex;
 			if (lhs->valueType != rhs->valueType) return lhs->valueType < rhs->valueType;
 
-			if (lhs->hasStringValue()) return lhs->stringValue() < rhs->stringValue();
+			if (lhs->hasStringValue()) return lhs->pooledString() < rhs->pooledString();
 			if (lhs->hasBoolValue()) return lhs->boolValue() < rhs->boolValue();
 			if (lhs->hasFloatValue()) return lhs->floatValue() < rhs->floatValue();
 			throw std::runtime_error("Invalid type in attribute store");
@@ -410,6 +400,7 @@ private:
 struct AttributeStore {
 	AttributeIndex add(AttributeSet &attributes);
 	std::vector<const AttributePair*> getUnsafe(AttributeIndex index) const;
+	void reset(); // used for testing
 	size_t size() const;
 	void reportSize() const;
 	void finalize();

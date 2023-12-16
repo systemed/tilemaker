@@ -43,10 +43,12 @@ namespace PooledStringNS {
       // pointed to is valid.
       PooledString(const std::string* str);
       size_t size() const;
+      bool operator<(const PooledString& other) const;
       bool operator==(const PooledString& other) const;
       bool operator!=(const PooledString& other) const;
       std::string toString() const;
       const char* data() const;
+      void ensureStringIsOwned();
 
     private:
       // 0..3 is index into table, 4..5 is offset, 6..7 is length
