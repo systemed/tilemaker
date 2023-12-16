@@ -2,17 +2,108 @@
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include "rapidjson/filereadstream.h"
+#include "rapidjson/filewritestream.h"
 
 using namespace std;
 using namespace rapidjson;
 
 SharedData::SharedData(Config &configIn, const class LayerDefinition &layers)
 	: layers(layers), config(configIn) {
-	sqlite=false;
+	outputMode=OUTPUT_FILE;
 	mergeSqlite=false;
 }
 
 SharedData::~SharedData() { }
+
+// Write project data to .mbtiles file
+void SharedData::writeMBTilesProjectData() {
+	mbtiles.writeMetadata("name", config.projectName);
+	mbtiles.writeMetadata("type", "baselayer");
+	mbtiles.writeMetadata("version", config.projectVersion);
+	mbtiles.writeMetadata("description", config.projectDesc);
+	mbtiles.writeMetadata("format", "pbf");
+	mbtiles.writeMetadata("minzoom", to_string(config.startZoom));
+	mbtiles.writeMetadata("maxzoom", to_string(config.endZoom));
+
+	ostringstream bounds;
+	if (mergeSqlite) {
+		double cMinLon, cMaxLon, cMinLat, cMaxLat;
+		mbtiles.readBoundingBox(cMinLon, cMaxLon, cMinLat, cMaxLat);
+		config.enlargeBbox(cMinLon, cMaxLon, cMinLat, cMaxLat);
+	}
+	bounds << fixed << config.minLon << "," << config.minLat << "," << config.maxLon << "," << config.maxLat;
+	mbtiles.writeMetadata("bounds", bounds.str());
+
+	if (!config.defaultView.empty()) {
+		mbtiles.writeMetadata("center", config.defaultView);
+	} else {
+		double centerLon = (config.minLon + config.maxLon) / 2;
+		double centerLat = (config.minLat + config.maxLat) / 2;
+		int centerZoom = floor((config.startZoom + config.endZoom) / 2);
+		ostringstream center;
+		center << fixed << centerLon << "," << centerLat << "," << centerZoom;
+		mbtiles.writeMetadata("center",center.str());
+	}
+}
+
+void SharedData::writeMBTilesMetadata(rapidjson::Document const &jsonConfig) {
+	// Write mbtiles 1.3+ json object
+	mbtiles.writeMetadata("json", layers.serialiseToJSON());
+
+	// Write user-defined metadata
+	if (jsonConfig["settings"].HasMember("metadata")) {
+		const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
+		for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
+			if (it->value.IsString()) {
+				mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
+			} else {
+				rapidjson::StringBuffer strbuf;
+				rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+				it->value.Accept(writer);
+				mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
+			}
+		}
+	}
+}
+
+void SharedData::writeFileMetadata(rapidjson::Document const &jsonConfig) {
+	if(config.compress) 
+		std::cout << "When serving compressed tiles, make sure to include 'Content-Encoding: gzip' in your webserver configuration for serving pbf files"  << std::endl;
+
+	rapidjson::Document document;
+	document.SetObject();
+
+	if (jsonConfig["settings"].HasMember("filemetadata")) {
+		const rapidjson::Value &md = jsonConfig["settings"]["filemetadata"];
+		document.CopyFrom(md, document.GetAllocator());
+	}
+
+	rapidjson::Value boundsArray(rapidjson::kArrayType);
+	boundsArray.PushBack(rapidjson::Value(config.minLon), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(config.minLat), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(config.maxLon), document.GetAllocator());
+	boundsArray.PushBack(rapidjson::Value(config.maxLat), document.GetAllocator());
+	document.AddMember("bounds", boundsArray, document.GetAllocator());
+
+	document.AddMember("name",          rapidjson::Value().SetString(config.projectName.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("version",       rapidjson::Value().SetString(config.projectVersion.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("description",   rapidjson::Value().SetString(config.projectDesc.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("minzoom",       rapidjson::Value(config.startZoom), document.GetAllocator());
+	document.AddMember("maxzoom",       rapidjson::Value(config.endZoom), document.GetAllocator());
+	document.AddMember("vector_layers", layers.serialiseToJSONValue(document.GetAllocator()), document.GetAllocator());
+
+	auto fp = std::fopen((outputFile + "/metadata.json").c_str(), "w");
+
+	char writeBuffer[65536];
+	rapidjson::FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
+	rapidjson::Writer<rapidjson::FileWriteStream> writer(os);
+	document.Accept(writer);
+
+	fclose(fp);
+}
+
+
 
 // *****************************************************************
 

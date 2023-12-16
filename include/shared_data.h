@@ -60,6 +60,10 @@ public:
 	std::string serialiseToJSON() const;
 };
 
+const int OUTPUT_FILE = 0;
+const int OUTPUT_MBTILES = 1;
+const int OUTPUT_PMTILES = 2;
+
 ///\brief Config read from JSON to control behavior of program
 class Config {
 	
@@ -86,7 +90,7 @@ class SharedData {
 
 public:
 	const class LayerDefinition &layers;
-	bool sqlite;
+	int outputMode;
 	bool mergeSqlite;
 	MBTiles mbtiles;
 	std::string outputFile;
@@ -95,6 +99,10 @@ public:
 
 	SharedData(Config &configIn, const class LayerDefinition &layers);
 	virtual ~SharedData();
+
+	void writeMBTilesProjectData();
+	void writeMBTilesMetadata(rapidjson::Document const &jsonConfig);
+	void writeFileMetadata(rapidjson::Document const &jsonConfig);	
 };
 
 #endif //_SHARED_DATA_H

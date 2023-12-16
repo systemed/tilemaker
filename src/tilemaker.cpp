@@ -72,88 +72,6 @@ namespace geom = boost::geometry;
 // Global verbose switch
 bool verbose = false;
 
-void WriteSqliteMetadata(rapidjson::Document const &jsonConfig, SharedData &sharedData, LayerDefinition const &layers)
-{
-	// Write mbtiles 1.3+ json object
-	sharedData.mbtiles.writeMetadata("json", layers.serialiseToJSON());
-
-	// Write user-defined metadata
-	if (jsonConfig["settings"].HasMember("metadata")) {
-		const rapidjson::Value &md = jsonConfig["settings"]["metadata"];
-		for(rapidjson::Value::ConstMemberIterator it=md.MemberBegin(); it != md.MemberEnd(); ++it) {
-			if (it->value.IsString()) {
-				sharedData.mbtiles.writeMetadata(it->name.GetString(), it->value.GetString());
-			} else {
-				rapidjson::StringBuffer strbuf;
-				rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-				it->value.Accept(writer);
-				sharedData.mbtiles.writeMetadata(it->name.GetString(), strbuf.GetString());
-			}
-		}
-	}
-	sharedData.mbtiles.closeForWriting();
-}
-
-void WriteFileMetadata(rapidjson::Document const &jsonConfig, SharedData const &sharedData, LayerDefinition const &layers)
-{
-	if(sharedData.config.compress) 
-		std::cout << "When serving compressed tiles, make sure to include 'Content-Encoding: gzip' in your webserver configuration for serving pbf files"  << std::endl;
-
-	rapidjson::Document document;
-	document.SetObject();
-
-	if (jsonConfig["settings"].HasMember("filemetadata")) {
-		const rapidjson::Value &md = jsonConfig["settings"]["filemetadata"];
-		document.CopyFrom(md, document.GetAllocator());
-	}
-
-	rapidjson::Value boundsArray(rapidjson::kArrayType);
-	boundsArray.PushBack(rapidjson::Value(sharedData.config.minLon), document.GetAllocator());
-	boundsArray.PushBack(rapidjson::Value(sharedData.config.minLat), document.GetAllocator());
-	boundsArray.PushBack(rapidjson::Value(sharedData.config.maxLon), document.GetAllocator());
-	boundsArray.PushBack(rapidjson::Value(sharedData.config.maxLat), document.GetAllocator());
-	document.AddMember("bounds", boundsArray, document.GetAllocator());
-
-	document.AddMember("name", rapidjson::Value().SetString(sharedData.config.projectName.c_str(), document.GetAllocator()), document.GetAllocator());
-	document.AddMember("version", rapidjson::Value().SetString(sharedData.config.projectVersion.c_str(), document.GetAllocator()), document.GetAllocator());
-	document.AddMember("description", rapidjson::Value().SetString(sharedData.config.projectDesc.c_str(), document.GetAllocator()), document.GetAllocator());
-	document.AddMember("minzoom", rapidjson::Value(sharedData.config.startZoom), document.GetAllocator());
-	document.AddMember("maxzoom", rapidjson::Value(sharedData.config.endZoom), document.GetAllocator());
-	document.AddMember("vector_layers", layers.serialiseToJSONValue(document.GetAllocator()), document.GetAllocator());
-
-	auto fp = std::fopen((sharedData.outputFile + "/metadata.json").c_str(), "w");
-
-	char writeBuffer[65536];
-	rapidjson::FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
-	rapidjson::Writer<rapidjson::FileWriteStream> writer(os);
-	document.Accept(writer);
-
-	fclose(fp);
-}
-
-double bboxElementFromStr(const string& number) {
-	try {
-		return boost::lexical_cast<double>(number);
-	} catch (boost::bad_lexical_cast&) {
-		cerr << "Failed to parse coordinate " << number << endl;
-		exit(1);
-	}
-}
-
-/**
- * Split bounding box provided as a comma-separated list of coordinates.
- */
-vector<string> parseBox(const string& bbox) {
-	vector<string> bboxParts;
-	if (!bbox.empty()) {
-		boost::split(bboxParts, bbox, boost::is_any_of(","));
-		if (bboxParts.size() != 4) {
-			cerr << "Bounding box must contain 4 elements: minlon,minlat,maxlon,maxlat" << endl;
-			exit(1);
-		}
-	}
-	return bboxParts;
-}
 
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
@@ -172,14 +90,14 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
+	bool _verbose = false, outputMode = OUTPUT_FILE, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
 	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
-		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.sqlite file")
+		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.pmtiles file")
 		("bbox",   po::value< string >(&bbox),                                   "bounding box to use if input file does not have a bbox header set, example: minlon,minlat,maxlon,maxlat")
 		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
@@ -194,7 +112,7 @@ int main(int argc, char* argv[]) {
 		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
 		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
 	po::positional_options_description p;
-	p.add("input", -1);
+	p.add("input", 1).add("output", 1);
 	po::variables_map vm;
 	try {
 		po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
@@ -210,7 +128,8 @@ int main(int argc, char* argv[]) {
 
 	vector<string> bboxElements = parseBox(bbox);
 
-	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { sqlite=true; }
+	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { outputMode = OUTPUT_MBTILES; }
+	else if (ends_with(outputFile, ".pmtiles")) { outputMode = OUTPUT_PMTILES; }
 	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
 	verbose = _verbose;
 
@@ -222,13 +141,16 @@ int main(int argc, char* argv[]) {
 
 	// ---- Remove existing .mbtiles if it exists
 
-	if (sqlite && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
+	if (outputMode==OUTPUT_MBTILES && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
 		cout << "mbtiles file exists, will overwrite (Ctrl-C to abort, rerun with --merge to keep)" << endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 		if (remove(outputFile.c_str()) != 0) {
 			cerr << "Couldn't remove existing file" << endl;
 			return 0;
 		}
+	} else if (mergeSqlite && outputMode!=OUTPUT_MBTILES) {
+		cerr << "--merge only works with .mbtiles output" << endl;
+		return 0;
 	} else if (mergeSqlite && !static_cast<bool>(std::ifstream(outputFile))) {
 		cout << "--merge specified but .mbtiles file doesn't already exist, ignoring" << endl;
 		mergeSqlite = false;
@@ -395,40 +317,14 @@ int main(int argc, char* argv[]) {
 	SourceList sources = {&osmMemTiles, &shpMemTiles};
 	class SharedData sharedData(config, layers);
 	sharedData.outputFile = outputFile;
-	sharedData.sqlite = sqlite;
+	sharedData.outputMode = outputMode;
 	sharedData.mergeSqlite = mergeSqlite;
 
 	// ----	Initialise mbtiles if required
 	
-	if (sharedData.sqlite) {
+	if (sharedData.outputMode==OUTPUT_MBTILES) {
 		sharedData.mbtiles.openForWriting(sharedData.outputFile);
-		sharedData.mbtiles.writeMetadata("name",sharedData.config.projectName);
-		sharedData.mbtiles.writeMetadata("type","baselayer");
-		sharedData.mbtiles.writeMetadata("version",sharedData.config.projectVersion);
-		sharedData.mbtiles.writeMetadata("description",sharedData.config.projectDesc);
-		sharedData.mbtiles.writeMetadata("format","pbf");
-		sharedData.mbtiles.writeMetadata("minzoom",to_string(sharedData.config.startZoom));
-		sharedData.mbtiles.writeMetadata("maxzoom",to_string(sharedData.config.endZoom));
-
-		ostringstream bounds;
-		if (mergeSqlite) {
-			double cMinLon, cMaxLon, cMinLat, cMaxLat;
-			sharedData.mbtiles.readBoundingBox(cMinLon, cMaxLon, cMinLat, cMaxLat);
-			sharedData.config.enlargeBbox(cMinLon, cMaxLon, cMinLat, cMaxLat);
-		}
-		bounds << fixed << sharedData.config.minLon << "," << sharedData.config.minLat << "," << sharedData.config.maxLon << "," << sharedData.config.maxLat;
-		sharedData.mbtiles.writeMetadata("bounds",bounds.str());
-
-		if (!sharedData.config.defaultView.empty()) {
-			sharedData.mbtiles.writeMetadata("center",sharedData.config.defaultView);
-		} else {
-			double centerLon = (sharedData.config.minLon + sharedData.config.maxLon) / 2;
-			double centerLat = (sharedData.config.minLat + sharedData.config.maxLat) / 2;
-			int centerZoom = floor((sharedData.config.startZoom + sharedData.config.endZoom) / 2);
-			ostringstream center;
-			center << fixed << centerLon << "," << centerLat << "," << centerZoom;
-			sharedData.mbtiles.writeMetadata("center",center.str());
-		}
+		sharedData.writeMBTilesProjectData();
 	}
 
 	// ----	Write out data
@@ -668,10 +564,12 @@ int main(int argc, char* argv[]) {
 
 	// ----	Close tileset
 
-	if (sqlite)
-		WriteSqliteMetadata(jsonConfig, sharedData, layers);
-	else 
-		WriteFileMetadata(jsonConfig, sharedData, layers);
+	if (outputMode==OUTPUT_MBTILES) {
+		sharedData.writeMBTilesMetadata(jsonConfig);
+		sharedData.mbtiles.closeForWriting();
+	} else {
+		sharedData.writeFileMetadata(jsonConfig);
+	}
 
 	google::protobuf::ShutdownProtobufLibrary();
 

@@ -378,7 +378,7 @@ void outputProc(
 
 	// Write to file or sqlite
 	string outputdata, compressed;
-	if (sharedData.sqlite) {
+	if (sharedData.outputMode == OUTPUT_MBTILES) {
 		// Write to sqlite
 		tile.SerializeToString(&outputdata);
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
