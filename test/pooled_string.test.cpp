@@ -21,6 +21,27 @@ MU_TEST(test_pooled_string) {
 	PooledString big2("this is also a quite long string");
 	mu_check(big != big2);
 	mu_check(big.toString() != big2.toString());
+
+	std::string shortString("short");
+	std::string longString("this is a very long string");
+
+	PooledString stdShortString(&shortString);
+	mu_check(stdShortString.size() == 5);
+	mu_check(stdShortString.toString() == "short");
+
+	PooledString stdLongString(&longString);
+	mu_check(stdLongString.size() == 26);
+	mu_check(stdLongString.toString() == "this is a very long string");
+
+	// PooledStrings that are backed by std::string have the usual
+	// == semantics.
+	mu_check(stdShortString == PooledString("short"));
+	mu_check(PooledString("short") == stdShortString);
+
+	mu_check(stdLongString == PooledString("this is a very long string"));
+	mu_check(PooledString("this is a very long string") == stdLongString);
+
+	mu_check(stdShortString != stdLongString);
 }
 
 MU_TEST_SUITE(test_suite_pooled_string) {

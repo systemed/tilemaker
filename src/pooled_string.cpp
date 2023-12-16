@@ -6,6 +6,10 @@ namespace PooledStringNS {
 	std::vector<char*> tables;
 	std::mutex mutex;
 
+	const uint8_t ShortString = 0b00;
+	const uint8_t HeapString = 0b10;
+	const uint8_t StdString = 0b11;
+
 	// Each thread has its own string table, we only take a lock
 	// to push a new table onto the vector.
 	thread_local int64_t tableIndex = -1;
@@ -52,14 +56,33 @@ PooledString::PooledString(const std::string& str) {
 	}
 }
 
+PooledString::PooledString(const std::string* str) {
+	storage[0] = StdString << 6;
+
+	*(const std::string**)((void*)(storage + 8)) = str;
+}
+
 bool PooledStringNS::PooledString::operator==(const PooledString& other) const {
 	// NOTE: We have surprising equality semantics!
 	//
-	// For short strings, you are equal if the strings are equal.
+	// If one of the strings is a StdString, it's value equality.
+	//
+	// Else, for short strings, you are equal if the strings are equal.
 	//
 	// For large strings, you are equal if you use the same heap memory locations.
 	// This implies that someone outside of PooledString is managing pooling! In our
 	// case, it is the responsibility of AttributePairStore.
+	uint8_t kind = storage[0] >> 6;
+	uint8_t otherKind = other.storage[0] >> 6;
+
+	if (kind == StdString || otherKind == StdString) {
+		size_t mySize = size();
+		if (mySize != other.size())
+			return false;
+
+		return memcmp(data(), other.data(), mySize) == 0;
+	}
+
 	return memcmp(storage, other.storage, 16) == 0;
 }
 
@@ -67,20 +90,44 @@ bool PooledStringNS::PooledString::operator!=(const PooledString& other) const {
 	return !(*this == other);
 }
 
+const char* PooledStringNS::PooledString::data() const {
+	uint8_t kind = storage[0] >> 6;
+
+	if (kind == ShortString)
+		return (char *)(storage + 1);
+
+	if (kind == StdString) {
+		const std::string* str = *(const std::string**)((void*)(storage + 8));
+		return str->data();
+	}
+
+	uint32_t tableIndex = (storage[1] << 16) + (storage[2] << 8) + storage[3];
+	uint16_t offset = (storage[4] << 8) + storage[5];
+
+	const char* data = tables[tableIndex] + offset;
+	return data;
+}
+
 size_t PooledStringNS::PooledString::size() const {
+	uint8_t kind = storage[0] >> 6;
 	// If the uppermost bit is set, we're in heap.
-	if (storage[0] >> 7) {
+	if (kind == HeapString) {
 		uint16_t length = (storage[6] << 8) + storage[7];
 		return length;
 	}
 
-	// Otherwise it's stored in the lower 7 bits of the highest byte.
-	return storage[0] & 0b01111111;
+	if (kind == ShortString)
+		// Otherwise it's stored in the lower 7 bits of the highest byte.
+		return storage[0] & 0b01111111;
+
+	const std::string* str = *(const std::string**)((void*)(storage + 8));
+	return str->size();
 }
 
 std::string PooledStringNS::PooledString::toString() const {
 	std::string rv;
-	if (storage[0] == 1 << 7) {
+	uint8_t kind = storage[0] >> 6;
+	if (kind == HeapString) {
 		// heap
 		rv.reserve(size());
 
@@ -92,7 +139,12 @@ std::string PooledStringNS::PooledString::toString() const {
 		return rv;
 	}
 
-	for (int i = 0; i < storage[0]; i++)
-		rv += storage[i + 1];
-	return rv;
+	if (kind == ShortString) {
+		for (int i = 0; i < storage[0]; i++)
+			rv += storage[i + 1];
+		return rv;
+	}
+
+	const std::string* str = *(const std::string**)((void*)(storage + 8));
+	return *str;
 }
