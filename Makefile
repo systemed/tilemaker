@@ -125,7 +125,13 @@ tilemaker: \
 	src/write_geometry.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
-test: test_pooled_string test_sorted_way_store
+test: test_attribute_store test_pooled_string test_sorted_way_store
+
+test_attribute_store: \
+	src/mmap_allocator.o \
+	src/attribute_store.o \
+	test/attribute_store.test.o
+	$(CXX) $(CXXFLAGS) -o test.attribute_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.attribute_store
 
 test_pooled_string: \
 	src/mmap_allocator.o \

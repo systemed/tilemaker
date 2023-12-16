@@ -307,11 +307,16 @@ std::vector<const AttributePair*> AttributeStore::getUnsafe(AttributeIndex index
 	}
 }
 
-void AttributeStore::reportSize() const {
+size_t AttributeStore::size() const {
 	size_t numAttributeSets = 0;
 	for (int i = 0; i < ATTRIBUTE_SHARDS; i++)
 		numAttributeSets += sets[i].size();
-	std::cout << "Attributes: " << numAttributeSets << " sets from " << lookups.load() << " objects" << std::endl;
+
+	return numAttributeSets;
+}
+
+void AttributeStore::reportSize() const {
+	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {

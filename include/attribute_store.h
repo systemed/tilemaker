@@ -10,6 +10,7 @@
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
+#include "pooled_string.h"
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -423,6 +424,7 @@ private:
 struct AttributeStore {
 	AttributeIndex add(AttributeSet &attributes);
 	std::vector<const AttributePair*> getUnsafe(AttributeIndex index) const;
+	size_t size() const;
 	void reportSize() const;
 	void finalize();
 
