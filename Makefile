@@ -111,6 +111,7 @@ tilemaker: \
 	src/osm_store.o \
 	src/output_object.o \
 	src/pbf_blocks.o \
+	src/pooled_string.o \
 	src/read_pbf.o \
 	src/read_shp.o \
 	src/shared_data.o \
@@ -124,7 +125,13 @@ tilemaker: \
 	src/write_geometry.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
-test: test_sorted_way_store
+test: test_pooled_string test_sorted_way_store
+
+test_pooled_string: \
+	src/mmap_allocator.o \
+	src/pooled_string.o \
+	test/pooled_string.test.o
+	$(CXX) $(CXXFLAGS) -o test.pooled_string $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pooled_string
 
 test_sorted_way_store: \
 	src/external/streamvbyte_decode.o \
@@ -132,7 +139,7 @@ test_sorted_way_store: \
 	src/external/streamvbyte_zigzag.o \
 	src/mmap_allocator.o \
 	src/sorted_way_store.o \
-	src/sorted_way_store.test.o
+	test/sorted_way_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.sorted_way_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_way_store
 
 
@@ -152,6 +159,6 @@ install:
 	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
 
 clean:
-	rm -f tilemaker src/*.o src/external/*.o include/*.o include/*.pb.h
+	rm -f tilemaker src/*.o src/external/*.o include/*.o include/*.pb.h test/*.o
 
 .PHONY: install

@@ -92,7 +92,7 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 		// Not found, ensure our local map is up-to-date for future calls,
 		// and fall through to the main map.
 		//
-		// Note that we can read `hotShard` without a lock
+		// Note that we can read `hotShard` without a lock, its size is fixed
 		while (tlsHotShardSize < hotShardSize.load()) {
 			tlsHotShardSize++;
 			tlsHotShardMap[&hotShard[tlsHotShardSize]] = tlsHotShardSize;
