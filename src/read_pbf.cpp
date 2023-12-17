@@ -272,8 +272,9 @@ bool PbfReader::ReadBlock(
 		{
 			if (ioMutex.try_lock()) {
 				std::ostringstream str;
+				str << "\r";
 				void_mmap_allocator::reportStoreSize(str);
-				str << "\rBlock " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  ";
+				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  ";
 				std::cout << str.str();
 				std::cout.flush();
 				ioMutex.unlock();
