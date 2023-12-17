@@ -8,6 +8,7 @@
 #include <memory>
 #include <boost/sort/sort.hpp>
 #include "output_object.h"
+#include "append_vector.h"
 #include "clip_cache.h"
 #include "mmap_allocator.h"
 
@@ -49,9 +50,9 @@ template<typename OO> void finalizeObjects(
 	const std::string& name,
 	const size_t& threadNum,
 	const unsigned int& baseZoom,
-	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator begin,
-	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator end,
-	typename std::vector<std::deque<OO, mmap_allocator<OO>>>& lowZoom
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator begin,
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator end,
+	typename std::vector<AppendVectorNS::AppendVector<OO>>& lowZoom
 	) {
 #ifdef CLOCK_MONOTONIC
 	timespec startTs, endTs;
@@ -73,8 +74,6 @@ template<typename OO> void finalizeObjects(
 		}
 		if (it->size() == 0)
 			continue;
-
-		it->shrink_to_fit();
 
 		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
 			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
@@ -133,7 +132,7 @@ template<typename OO> void finalizeObjects(
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& baseZoom,
-	const typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator objects,
+	const typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	const size_t size,
 	const unsigned int zoom,
 	TileCoordinatesSet& output
@@ -175,7 +174,7 @@ inline OutputObjectID outputObjectWithId<OutputObjectXYID>(const OutputObjectXYI
 
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& baseZoom,
-	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator objects,
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	size_t iStart,
 	size_t iEnd,
 	unsigned int zoom,
@@ -318,10 +317,10 @@ protected:
 	//
 	// If config.include_ids is true, objectsWithIds will be populated.
 	// Otherwise, objects.
-	std::vector<std::deque<OutputObjectXY, mmap_allocator<OutputObjectXY>>> objects;
-	std::vector<std::deque<OutputObjectXY, mmap_allocator<OutputObjectXY>>> lowZoomObjects;
-	std::vector<std::deque<OutputObjectXYID, mmap_allocator<OutputObjectXYID>>> objectsWithIds;
-	std::vector<std::deque<OutputObjectXYID, mmap_allocator<OutputObjectXYID>>> lowZoomObjectsWithIds;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>> objects;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>> lowZoomObjects;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>> objectsWithIds;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>> lowZoomObjectsWithIds;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
