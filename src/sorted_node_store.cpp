@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
-#include <atomic>
 #include <map>
 #include <bitset>
 #include "sorted_node_store.h"
@@ -15,15 +14,6 @@ namespace SortedNodeStoreTypes {
 	const uint16_t ChunkSize = 256;
 	const uint16_t ChunkAlignment = 16;
 	const uint32_t ChunkCompressed = 1 << 31;
-
-	std::atomic<uint64_t> totalGroups;
-	std::atomic<uint64_t> totalNodes;
-	std::atomic<uint64_t> totalGroupSpace;
-	std::atomic<uint64_t> totalAllocatedSpace;
-	std::atomic<uint64_t> totalChunks;
-	std::atomic<uint64_t> chunkSizeFreqs[257];
-	std::atomic<uint64_t> groupSizeFreqs[257];
-
 
 	// When SortedNodeStore first starts, it's not confident that it has seen an
 	// entire segment, so it's in "collecting orphans" mode. Once it crosses a
@@ -46,10 +36,7 @@ namespace SortedNodeStoreTypes {
 using namespace SortedNodeStoreTypes;
 
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
-	// Each group can store 64K nodes. If we allocate 256K slots
-	// for groups, we support 2^34 = 17B nodes, or about twice
-	// the number used by OSM as of November 2023.
-	groups.resize(256 * 1024);
+	reopen();
 }
 
 void SortedNodeStore::reopen()
@@ -61,11 +48,16 @@ void SortedNodeStore::reopen()
 	totalNodes = 0;
 	totalGroups = 0;
 	totalGroupSpace = 0;
+	totalAllocatedSpace = 0;
 	totalChunks = 0;
 	memset(chunkSizeFreqs, 0, sizeof(chunkSizeFreqs));
 	memset(groupSizeFreqs, 0, sizeof(groupSizeFreqs));
 	orphanage.clear();
 	workerBuffers.clear();
+
+	// Each group can store 64K nodes. If we allocate 256K slots
+	// for groups, we support 2^34 = 17B nodes, or about twice
+	// the number used by OSM as of November 2023.
 	groups.clear();
 	groups.resize(256 * 1024);
 }

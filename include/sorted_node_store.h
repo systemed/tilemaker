@@ -3,6 +3,7 @@
 
 #include "node_store.h"
 #include "mmap_allocator.h"
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -86,6 +87,15 @@ private:
 	// multiple threads. They'll get folded into the index during finalize()
 	std::map<NodeID, std::vector<element_t>> orphanage;
 	std::vector<std::vector<element_t>> workerBuffers;
+
+	std::atomic<uint64_t> totalGroups;
+	std::atomic<uint64_t> totalNodes;
+	std::atomic<uint64_t> totalGroupSpace;
+	std::atomic<uint64_t> totalAllocatedSpace;
+	std::atomic<uint64_t> totalChunks;
+	std::atomic<uint64_t> chunkSizeFreqs[257];
+	std::atomic<uint64_t> groupSizeFreqs[257];
+
 	void collectOrphans(const std::vector<element_t>& orphans);
 	void publishGroup(const std::vector<element_t>& nodes);
 };

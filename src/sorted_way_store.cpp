@@ -1,4 +1,3 @@
-#include <atomic>
 #include <algorithm>
 #include <bitset>
 #include <cstring>
@@ -34,20 +33,12 @@ namespace SortedWayStoreTypes {
 	thread_local int32_t int32Buffer[2000];
 	thread_local uint8_t uint8Buffer[8192];
 
-	std::atomic<uint64_t> totalWays;
-	std::atomic<uint64_t> totalNodes;
-	std::atomic<uint64_t> totalGroups;
-	std::atomic<uint64_t> totalGroupSpace;
-	std::atomic<uint64_t> totalChunks;
 }
 
 using namespace SortedWayStoreTypes;
 
 SortedWayStore::SortedWayStore(bool compressWays, const NodeStore& nodeStore): compressWays(compressWays), nodeStore(nodeStore) {
-	// Each group can store 64K ways. If we allocate 32K slots,
-	// we support 2^31 = 2B ways, or about twice the number used
-	// by OSM as of December 2023.
-	groups.resize(32 * 1024);
+	reopen();
 }
 
 SortedWayStore::~SortedWayStore() {
@@ -67,8 +58,12 @@ void SortedWayStore::reopen() {
 	totalChunks = 0;
 	orphanage.clear();
 	workerBuffers.clear();
+
+	// Each group can store 64K ways. If we allocate 32K slots,
+	// we support 2^31 = 2B ways, or about twice the number used
+	// by OSM as of December 2023.
 	groups.clear();
-	groups.resize(256 * 1024);
+	groups.resize(32 * 1024);
 
 }
 

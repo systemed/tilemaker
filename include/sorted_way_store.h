@@ -1,6 +1,7 @@
 #ifndef _SORTED_WAY_STORE_H
 #define _SORTED_WAY_STORE_H
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -117,6 +118,13 @@ private:
 	// multiple threads. They'll get folded into the index during finalize()
 	std::map<WayID, std::vector<std::pair<WayID, std::vector<NodeID>>>> orphanage;
 	std::vector<std::vector<std::pair<WayID, std::vector<NodeID>>>> workerBuffers;
+
+	std::atomic<uint64_t> totalWays;
+	std::atomic<uint64_t> totalNodes;
+	std::atomic<uint64_t> totalGroups;
+	std::atomic<uint64_t> totalGroupSpace;
+	std::atomic<uint64_t> totalChunks;
+
 	void collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans);
 	void publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways);
 };
