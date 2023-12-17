@@ -53,8 +53,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	baseZoom(baseZoom),
 	pointStores(threadNum),
 	linestringStores(threadNum),
-	multipolygonStores(threadNum),
 	multilinestringStores(threadNum),
+	multipolygonStores(threadNum),
 	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, baseZoom)),
 	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, baseZoom))
 {
@@ -108,32 +108,39 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 		});
 }
 
-void TileDataSource::collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output) {
+void TileDataSource::collectTilesWithObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms) {
 	// Scan through all shards. Convert to base zoom, then convert to the requested zoom.
-	collectTilesWithObjectsAtZoomTemplate<OutputObjectXY>(baseZoom, objects.begin(), objects.size(), zoom, output);
-	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(baseZoom, objectsWithIds.begin(), objectsWithIds.size(), zoom, output);
+	collectTilesWithObjectsAtZoomTemplate<OutputObjectXY>(baseZoom, objects.begin(), objects.size(), zooms);
+	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(baseZoom, objectsWithIds.begin(), objectsWithIds.size(), zooms);
 }
 
-void addCoveredTilesToOutput(const uint baseZoom, const uint zoom, const Box& box, TileCoordinatesSet& output) {
-	int scale = pow(2, baseZoom-zoom);
+void addCoveredTilesToOutput(const uint baseZoom, std::vector<TileCoordinatesSet>& zooms, const Box& box) {
+	size_t maxZoom = zooms.size() - 1;
+	int scale = pow(2, baseZoom - maxZoom);
 	TileCoordinate minx = box.min_corner().x() / scale;
 	TileCoordinate maxx = box.max_corner().x() / scale;
 	TileCoordinate miny = box.min_corner().y() / scale;
 	TileCoordinate maxy = box.max_corner().y() / scale;
 	for (int x=minx; x<=maxx; x++) {
 		for (int y=miny; y<=maxy; y++) {
-			output.set(x, y);
+			size_t zx = x, zy = y;
+
+			for (int zoom = maxZoom; zoom >= 0; zoom--) {
+				zooms[zoom].set(zx, zy);
+				zx /= 2;
+				zy /= 2;
+			}
 		}
 	}
 }
 
 // Find the tiles used by the "large objects" from the rtree index
-void TileDataSource::collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet &output) {
+void TileDataSource::collectTilesWithLargeObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms) {
 	for(auto const &result: boxRtree)
-		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
+		addCoveredTilesToOutput(baseZoom, zooms, result.first);
 
 	for(auto const &result: boxRtreeWithIds)
-		addCoveredTilesToOutput(baseZoom, zoom, result.first, output);
+		addCoveredTilesToOutput(baseZoom, zooms, result.first);
 }
 
 // Copy objects from the tile at dstIndex (in the dataset srcTiles) into output
@@ -369,18 +376,14 @@ void TileDataSource::reportSize() const {
 	std::cout << "Generated points: " << (points - 1) << ", lines: " << (linestrings - 2) << ", polygons: " << (polygons - 1) << std::endl;
 }
 
-TileCoordinatesSet getTilesAtZoom(
+void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	unsigned int zoom
+	std::vector<TileCoordinatesSet>& zooms
 ) {
-	TileCoordinatesSet tileCoordinates(zoom);
-
 	for(size_t i=0; i<sources.size(); i++) {
-		sources[i]->collectTilesWithObjectsAtZoom(zoom, tileCoordinates);
-		sources[i]->collectTilesWithLargeObjectsAtZoom(zoom, tileCoordinates);
+		sources[i]->collectTilesWithObjectsAtZoom(zooms);
+		sources[i]->collectTilesWithLargeObjectsAtZoom(zooms);
 	}
-
-	return tileCoordinates;
 }
 
 std::vector<OutputObjectID> TileDataSource::getObjectsForTile(

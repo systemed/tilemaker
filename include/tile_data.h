@@ -137,9 +137,9 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& baseZoom,
 	const typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	const size_t size,
-	const unsigned int zoom,
-	TileCoordinatesSet& output
+	std::vector<TileCoordinatesSet>& zooms
 ) {
+	size_t maxZoom = zooms.size() - 1;
 	uint16_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
 	int64_t lastX = -1;
 	int64_t lastY = -1;
@@ -153,13 +153,18 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 			TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
 
 			// Translate the x, y at the requested zoom level
-			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
-			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+			TileCoordinate x = baseX / (1 << (baseZoom - maxZoom));
+			TileCoordinate y = baseY / (1 << (baseZoom - maxZoom));
 
 			if (lastX != x || lastY != y) {
-				output.set(x, y);
 				lastX = x;
 				lastY = y;
+
+				for (int zoom = maxZoom; zoom >= 0; zoom--) {
+					zooms[zoom].set(x, y);
+					x /= 2;
+					y /= 2;
+				}
 			}
 		}
 	}
@@ -360,9 +365,9 @@ protected:
 public:
 	TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID);
 
-	void collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
+	void collectTilesWithObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
 
-	void collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
+	void collectTilesWithLargeObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
 
 	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
 	void finalize(size_t threadNum);
@@ -473,9 +478,9 @@ public:
 	}
 };
 
-TileCoordinatesSet getTilesAtZoom(
+void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	unsigned int zoom
+	std::vector<TileCoordinatesSet>& zooms
 );
 
 #endif //_TILE_DATA_H

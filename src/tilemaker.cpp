@@ -506,7 +506,26 @@ int main(int argc, char* argv[]) {
 		}
 
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
-		std::cout << "collecting tiles:";
+		std::vector<TileCoordinatesSet> zoomResults;
+		for (uint zoom = 0; zoom <= sharedData.config.endZoom; zoom++) {
+			zoomResults.push_back(TileCoordinatesSet(zoom));
+		}
+
+		{
+#ifdef CLOCK_MONOTONIC
+			timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+			std::cout << "collecting tiles" << std::flush;
+			populateTilesAtZoom(sources, zoomResults);
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+			std::cout << ": " << (uint32_t)(tileNs / 1e6) << "ms";
+#endif
+		}
+
+		std::cout << ", filtering tiles:" << std::flush;
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
 			std::cout << " z" << std::to_string(zoom) << std::flush;
 #ifdef CLOCK_MONOTONIC
@@ -514,7 +533,7 @@ int main(int argc, char* argv[]) {
 			clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 
-			auto zoomResult = getTilesAtZoom(sources, zoom);
+			const auto& zoomResult = zoomResults[zoom];
 			int numTiles = 0;
 			for (int x = 0; x < 1 << zoom; x++) {
 				for (int y = 0; y < 1 << zoom; y++) {
@@ -554,6 +573,7 @@ int main(int argc, char* argv[]) {
 #endif
 			std::cout << ")" << std::flush;
 		}
+		zoomResults.clear();
 
 		std::cout << std::endl;
 
