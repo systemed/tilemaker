@@ -75,19 +75,36 @@ MU_TEST(test_encode_way) {
 }
 
 MU_TEST(test_multiple_stores) {
-	TestNodeStore ns;
-	SortedWayStore s1(true, ns), s2(true, ns);
-	s1.batchStart();
-	s2.batchStart();
+	bool compressed = false;
 
-	s1.insertNodes({{ 1, { 1 } }});
-	s2.insertNodes({{ 2, { 2 } }});
+	for (int i = 0; i < 2; i++) {
+		compressed = !compressed;
+		TestNodeStore ns;
+		SortedWayStore s1(compressed, ns), s2(compressed, ns);
+		s1.batchStart();
+		s2.batchStart();
 
-	s1.finalize(1);
-	s2.finalize(1);
+		s1.insertNodes({{ 1, { 1 } }});
 
-	mu_check(s1.size() == 1);
-	mu_check(s2.size() == 1);
+		// We store small ways differently than large ways, so
+		// store both kinds for testing.
+		std::vector<NodeID> longWay;
+		for (int i = 200; i < 2048; i++)
+			longWay.push_back(i + 3 * (i % 37));
+
+		s1.insertNodes({{ 42, longWay }});
+		s2.insertNodes({{ 2, { 2 } }});
+
+		s1.finalize(1);
+		s2.finalize(1);
+
+		mu_check(s1.size() == 2);
+		mu_check(s2.size() == 1);
+
+		mu_check(s1.contains(0, 1));
+		mu_check(s1.contains(0, 42));
+		mu_check(!s1.contains(0, 2));
+	}
 }
 
 MU_TEST(test_way_store) {

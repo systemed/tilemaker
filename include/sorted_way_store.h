@@ -95,7 +95,7 @@ public:
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;
 
-	bool contains(size_t shard, WayID id) const override { throw std::runtime_error("SortedWayStore::contains not implemented"); }
+	bool contains(size_t shard, WayID id) const override;
 	size_t shard() const override { return 0; }
 	size_t shards() const override { return 1; }
 	

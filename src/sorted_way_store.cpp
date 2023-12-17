@@ -90,6 +90,56 @@ void SortedWayStore::reopen() {
 
 }
 
+bool SortedWayStore::contains(size_t shard, WayID id) const {
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+	const uint64_t chunkMaskByte = chunk / 8;
+	const uint64_t chunkMaskBit = chunk % 8;
+
+	const uint64_t wayMaskByte = (id % ChunkSize) / 8;
+	const uint64_t wayMaskBit = id % 8;
+
+	GroupInfo* groupPtr = groups[groupIndex];
+
+	if (groupPtr == nullptr)
+		return false;
+
+	size_t chunkOffset = 0;
+	{
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
+		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
+		chunkOffset += popcnt(&maskByte, 1);
+
+		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
+			return false;
+	}
+
+	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
+	const size_t numWays = popcnt(chunkPtr->smallWayMask, 32) + popcnt(chunkPtr->bigWayMask, 32);
+
+	{
+		size_t wayOffset = 0;
+		wayOffset = popcnt(chunkPtr->smallWayMask, wayMaskByte);
+		uint8_t maskByte = chunkPtr->smallWayMask[wayMaskByte];
+		maskByte = maskByte & ((1 << wayMaskBit) - 1);
+		wayOffset += popcnt(&maskByte, 1);
+		if (chunkPtr->smallWayMask[wayMaskByte] & (1 << wayMaskBit))
+			return true;
+	}
+
+	size_t wayOffset = 0;
+	wayOffset += popcnt(chunkPtr->smallWayMask, 32);
+	wayOffset += popcnt(chunkPtr->bigWayMask, wayMaskByte);
+	uint8_t maskByte = chunkPtr->bigWayMask[wayMaskByte];
+	maskByte = maskByte & ((1 << wayMaskBit) - 1);
+	wayOffset += popcnt(&maskByte, 1);
+	if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
+		return false;
+
+	return true;
+}
+
 std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
