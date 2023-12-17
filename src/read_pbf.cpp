@@ -294,8 +294,11 @@ bool PbfReader::ReadBlock(
 			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
-				std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
-				std::cout.flush();
+				if (ioMutex.try_lock()) {
+					std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
+					std::cout.flush();
+					ioMutex.unlock();
+				}
 				continue;
 			}
 		}
