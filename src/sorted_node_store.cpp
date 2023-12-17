@@ -42,13 +42,13 @@ namespace SortedNodeStoreTypes {
 	};
 
 	thread_local ThreadStorage threadStorage;
+
+	ThreadStorage& storage() {
+		return threadStorage;
+	}
 }
 
 using namespace SortedNodeStoreTypes;
-
-ThreadStorage& storage() {
-	return threadStorage;
-}
 
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
 	reopen();

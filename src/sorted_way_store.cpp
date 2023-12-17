@@ -18,21 +18,35 @@ namespace SortedWayStoreTypes {
 	const uint16_t ClosedWay = 1 << 14;
 	const uint16_t UniformUpperBits = 1 << 13;
 
-	thread_local bool collectingOrphans = true;
-	thread_local uint64_t groupStart = -1;
-	thread_local std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays = NULL;
+	struct ThreadStorage {
+		ThreadStorage():
+			collectingOrphans(true),
+			groupStart(-1),
+			localWays(nullptr) {}
 
-	thread_local std::vector<uint8_t> encodedWay;
+		bool collectingOrphans;
+		uint64_t groupStart;
+		std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays;
+		std::vector<uint8_t> encodedWay;
+	};
+
+	thread_local ThreadStorage threadStorage;
 
 	// C++ doesn't support variable length arrays declared on stack.
 	// g++ and clang support it, but msvc doesn't. Rather than pay the
 	// cost of a vector for every decode, we use a thread_local with room for at
 	// least 2,000 nodes.
+	//
+	// Note: these are scratch buffers, so they remain as true thread-locals,
+	// and aren't part of ThreadStorage.
 	thread_local uint64_t highBytes[2000];
 	thread_local uint32_t uint32Buffer[2000];
 	thread_local int32_t int32Buffer[2000];
 	thread_local uint8_t uint8Buffer[8192];
 
+	ThreadStorage& storage() {
+		return threadStorage;
+	}
 }
 
 using namespace SortedWayStoreTypes;
@@ -141,46 +155,46 @@ const void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::v
 	if (newWays.empty())
 		return;
 
-	if (localWays == nullptr) {
+	if (storage().localWays == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
 		else if (workerBuffers.size() == workerBuffers.capacity())
 			throw std::runtime_error("SortedWayStore doesn't support more than 256 cores");
 		workerBuffers.push_back(std::vector<std::pair<WayID, std::vector<NodeID>>>());
-		localWays = &workerBuffers.back();
+		storage().localWays = &workerBuffers.back();
 	}
 
-	if (groupStart == -1) {
+	if (storage().groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		storage().groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
-	while (collectingOrphans && i < newWays.size()) {
+	while (storage().collectingOrphans && i < newWays.size()) {
 		const auto& el = newWays[i];
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			collectingOrphans = false;
+		if (el.first >= storage().groupStart + (GroupSize * ChunkSize)) {
+			storage().collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
-			collectOrphans(*localWays);
-			localWays->clear();
+			storage().groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+			collectOrphans(*storage().localWays);
+			storage().localWays->clear();
 		}
-		localWays->push_back(el);
+		storage().localWays->push_back(el);
 		i++;
 	}
 
 	while(i < newWays.size()) {
 		const auto& el = newWays[i];
 
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			publishGroup(*localWays);
-			localWays->clear();
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		if (el.first >= storage().groupStart + (GroupSize * ChunkSize)) {
+			publishGroup(*storage().localWays);
+			storage().localWays->clear();
+			storage().groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
-		localWays->push_back(el);
+		storage().localWays->push_back(el);
 		i++;
 	}
 }
@@ -224,13 +238,13 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 }
 
 void SortedWayStore::batchStart() {
-	collectingOrphans = true;
-	groupStart = -1;
-	if (localWays == nullptr || localWays->size() == 0)
+	storage().collectingOrphans = true;
+	storage().groupStart = -1;
+	if (storage().localWays == nullptr || storage().localWays->size() == 0)
 		return;
 
-	collectOrphans(*localWays);
-	localWays->clear();
+	collectOrphans(*storage().localWays);
+	storage().localWays->clear();
 }
 
 void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans) {
@@ -279,7 +293,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		for (int i = 0; i < length; i++)
 			rv.push_back(highBytes[i] | lowIntData[i]);
 	} else {
-		uint16_t compressedLength = *(uint16_t*)input;
 		input += 2;
 
 		uint32_t firstInt = *(uint32_t*)(input);
@@ -446,12 +459,12 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		const WayID id = way.first;
 		lastChunk->wayIds.push_back(id % ChunkSize);
 
-		uint16_t flags = encodeWay(way.second, encodedWay, compressWays && way.second.size() >= 4);
+		uint16_t flags = encodeWay(way.second, storage().encodedWay, compressWays && way.second.size() >= 4);
 		lastChunk->wayFlags.push_back(flags);
 
 		std::vector<uint8_t> encoded;
-		encoded.resize(encodedWay.size());
-		memcpy(encoded.data(), encodedWay.data(), encodedWay.size());
+		encoded.resize(storage().encodedWay.size());
+		memcpy(encoded.data(), storage().encodedWay.data(), storage().encodedWay.size());
 
 		lastChunk->encodedWays.push_back(std::move(encoded));
 	}
