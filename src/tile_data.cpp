@@ -47,7 +47,9 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
+	lowZoomObjects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
+	lowZoomObjectsWithIds(CLUSTER_ZOOM_AREA),
 	baseZoom(baseZoom),
 	pointStores(threadNum),
 	linestringStores(threadNum),
@@ -149,8 +151,6 @@ void TileDataSource::collectObjectsForTile(
 	size_t iStart = 0;
 	size_t iEnd = objects.size();
 
-	// TODO: we could also narrow the search space for z1..z5, too.
-	//       They're less important, as they have fewer tiles.
 	if (zoom >= CLUSTER_ZOOM) {
 		// Compute the x, y at the base zoom level
 		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
