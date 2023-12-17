@@ -125,7 +125,12 @@ tilemaker: \
 	src/write_geometry.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
-test: test_append_vector test_attribute_store test_pooled_string test_sorted_way_store
+test: \
+	test_append_vector \
+	test_attribute_store \
+	test_pooled_string \
+	test_sorted_node_store \
+	test_sorted_way_store
 
 test_append_vector: \
 	src/mmap_allocator.o \
@@ -144,6 +149,16 @@ test_pooled_string: \
 	src/pooled_string.o \
 	test/pooled_string.test.o
 	$(CXX) $(CXXFLAGS) -o test.pooled_string $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pooled_string
+
+test_sorted_node_store: \
+	src/external/streamvbyte_decode.o \
+	src/external/streamvbyte_encode.o \
+	src/external/streamvbyte_zigzag.o \
+	src/mmap_allocator.o \
+	src/sorted_node_store.o \
+	test/sorted_node_store.test.o
+	$(CXX) $(CXXFLAGS) -o test.sorted_node_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_node_store
+
 
 test_sorted_way_store: \
 	src/external/streamvbyte_decode.o \
