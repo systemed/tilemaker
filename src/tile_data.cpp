@@ -47,9 +47,7 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	z6OffsetDivisor(baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
-	lowZoomObjects(1),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
-	lowZoomObjectsWithIds(1),
 	baseZoom(baseZoom),
 	pointStores(threadNum),
 	linestringStores(threadNum),
@@ -143,8 +141,9 @@ void TileDataSource::collectObjectsForTile(
 	std::vector<OutputObjectID>& output
 ) {
 	if (zoom < CLUSTER_ZOOM) {
-		collectObjectsForTileTemplate<OutputObjectXY>(baseZoom, lowZoomObjects.begin(), 0, 1, zoom, dstIndex, output);
-		collectObjectsForTileTemplate<OutputObjectXYID>(baseZoom, lowZoomObjectsWithIds.begin(), 0, 1, zoom, dstIndex, output);
+		collectLowZoomObjectsForTile<OutputObjectXY>(baseZoom, lowZoomObjects, zoom, dstIndex, output);
+		collectLowZoomObjectsForTile<OutputObjectXYID>(baseZoom, lowZoomObjectsWithIds, zoom, dstIndex, output);
+		return;
 	}
 
 	size_t iStart = 0;

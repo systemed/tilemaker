@@ -52,8 +52,9 @@ template<typename OO> void finalizeObjects(
 	const unsigned int& baseZoom,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator begin,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator end,
-	typename std::vector<AppendVectorNS::AppendVector<OO>>& lowZoom
+	typename AppendVectorNS::AppendVector<std::pair<TileCoordinates, OO>>& lowZoom
 	) {
+	size_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
 #ifdef CLOCK_MONOTONIC
 	timespec startTs, endTs;
 	clock_gettime(CLOCK_MONOTONIC, &startTs);
@@ -75,9 +76,20 @@ template<typename OO> void finalizeObjects(
 		if (it->size() == 0)
 			continue;
 
+		// We track a separate copy of low zoom objects to avoid scanning large
+		// lists of objects that may be on slow disk storage.
 		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
-			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
-				lowZoom[0].push_back(*objectIt);
+			if (objectIt->oo.minZoom < CLUSTER_ZOOM) {
+				size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+				size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+				lowZoom.push_back(std::make_pair(
+					TileCoordinates(
+						z6OffsetDivisor * z6x + objectIt->x,
+						z6OffsetDivisor * z6y + objectIt->y
+					),
+					*objectIt
+				));
+			}
 
 		// If the user is doing a a small extract, there are few populated
 		// entries in `object`.
@@ -172,6 +184,31 @@ inline OutputObjectID outputObjectWithId<OutputObjectXYID>(const OutputObjectXYI
 	return OutputObjectID({ input.oo, input.id });
 }
 
+template<typename OO> void collectLowZoomObjectsForTile(
+	const unsigned int& baseZoom,
+	typename AppendVectorNS::AppendVector<std::pair<TileCoordinates, OO>> objects,
+	unsigned int zoom,
+	const TileCoordinates& dstIndex,
+	std::vector<OutputObjectID>& output
+) {
+	for (size_t j = 0; j < objects.size(); j++) {
+		const auto& object = objects[j];
+
+		TileCoordinate baseX = object.first.x;
+		TileCoordinate baseY = object.first.y;
+
+		// Translate the x, y at the requested zoom level
+		TileCoordinate x = baseX / (1 << (baseZoom - zoom));
+		TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+
+		if (dstIndex.x == x && dstIndex.y == y) {
+			if (object.second.oo.minZoom <= zoom) {
+				output.push_back(outputObjectWithId(object.second));
+			}
+		}
+	}
+}
+
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& baseZoom,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
@@ -184,9 +221,6 @@ template<typename OO> void collectObjectsForTileTemplate(
 	uint16_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
 
 	for (size_t i = iStart; i < iEnd; i++) {
-		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
-		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
-
 		if (zoom >= CLUSTER_ZOOM) {
 			// If z >= 6, we can compute the exact bounds within the objects array.
 			// Translate to the base zoom, then do a binary search to find
@@ -258,6 +292,9 @@ template<typename OO> void collectObjectsForTileTemplate(
 
 			}
 		} else {
+			const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+			const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+
 			for (size_t j = 0; j < objects[i].size(); j++) {
 				// Compute the x, y at the base zoom level
 				TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
@@ -318,9 +355,9 @@ protected:
 	// If config.include_ids is true, objectsWithIds will be populated.
 	// Otherwise, objects.
 	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>> objects;
-	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>> lowZoomObjects;
+	AppendVectorNS::AppendVector<std::pair<TileCoordinates, OutputObjectXY>> lowZoomObjects;
 	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>> objectsWithIds;
-	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>> lowZoomObjectsWithIds;
+	AppendVectorNS::AppendVector<std::pair<TileCoordinates, OutputObjectXYID>> lowZoomObjectsWithIds;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
