@@ -91,6 +91,46 @@ SortedNodeStore::~SortedNodeStore() {
 	s(this) = ThreadStorage();
 }
 
+bool SortedNodeStore::contains(size_t shard, NodeID id) const {
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+	const uint64_t chunkMaskByte = chunk / 8;
+	const uint64_t chunkMaskBit = chunk % 8;
+
+	const uint64_t nodeMaskByte = (id % ChunkSize) / 8;
+	const uint64_t nodeMaskBit = id % 8;
+
+	GroupInfo* groupPtr = groups[groupIndex];
+
+	if (groupPtr == nullptr)
+		return false;
+
+	size_t chunkOffset = 0;
+	{
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
+		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
+		chunkOffset += popcnt(&maskByte, 1);
+
+		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
+			return false;
+	}
+
+	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
+	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * ChunkAlignment));
+
+	size_t nodeOffset = 0;
+	nodeOffset = popcnt(basePtr->nodeMask, nodeMaskByte);
+	uint8_t maskByte = basePtr->nodeMask[nodeMaskByte];
+	maskByte = maskByte & ((1 << nodeMaskBit) - 1);
+	nodeOffset += popcnt(&maskByte, 1);
+	if (!(basePtr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
+		return false;
+
+
+	return true;
+}
+
 LatpLon SortedNodeStore::at(const NodeID id) const {
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;

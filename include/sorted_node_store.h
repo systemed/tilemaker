@@ -70,7 +70,7 @@ public:
 		reopen();
 	}
 
-	bool contains(size_t shard, NodeID ID) const override { throw std::runtime_error("SortedNodeStore::contains not implemented"); }
+	bool contains(size_t shard, NodeID id) const override;
 	size_t shard() const override { return 0; }
 	size_t shards() const override { return 1; }
 
