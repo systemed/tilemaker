@@ -6,8 +6,11 @@
 using namespace AppendVectorNS;
 
 MU_TEST(test_append_vector) {
-	AppendVector<uint32_t> vec;
+	AppendVector<int32_t> vec;
+	AppendVector<int32_t> vec2;
 	mu_check(vec.size() == 0);
+	mu_check(vec.begin() == vec.end());
+	mu_check(vec.begin() != vec2.begin());
 
 	for (int i = 0; i < 10000; i++) {
 		vec.push_back(i);
@@ -16,7 +19,7 @@ MU_TEST(test_append_vector) {
 
 	mu_check(vec[25] == 25);
 
-	const AppendVector<uint32_t>::Iterator& it = vec.begin();
+	const AppendVector<int32_t>::Iterator& it = vec.begin();
 	mu_check(*it == 0);
 	mu_check(*(it + 1) == 1);
 	mu_check(*(it + 2) == 2);
@@ -52,7 +55,7 @@ MU_TEST(test_append_vector) {
 		vec.begin(),
 		vec.end(),
 		123,
-		[](const uint32_t& a, const uint32_t& toFind) {
+		[](const int32_t& a, const int32_t& toFind) {
 			return a < toFind;
 		}
 	);
@@ -64,13 +67,23 @@ MU_TEST(test_append_vector) {
 		vec.begin(),
 		vec.end(),
 		123123,
-		[](const uint32_t& a, const uint32_t& toFind) {
+		[](const int32_t& a, const int32_t& toFind) {
 			return a < toFind;
 		}
 	);
 
 	mu_check(iter == vec.end());
 
+	iter = std::lower_bound(
+		vec.begin(),
+		vec.end(),
+		-2,
+		[](const int32_t& a, const int32_t& toFind) {
+			return a < toFind;
+		}
+	);
+
+	mu_check(iter == vec.begin());
 }
 
 MU_TEST_SUITE(test_suite_append_vector) {

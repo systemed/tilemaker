@@ -158,7 +158,9 @@ namespace AppendVectorNS {
 		}
 
 		T& operator [](int idx) {
-			return vecs[idx / APPEND_VECTOR_SIZE][idx % APPEND_VECTOR_SIZE];
+			auto& vec = vecs[idx / APPEND_VECTOR_SIZE];
+			auto& el = vec[idx % APPEND_VECTOR_SIZE];
+			return el;
 		}
 
 		Iterator begin() {
