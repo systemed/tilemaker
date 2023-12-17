@@ -273,7 +273,7 @@ bool PbfReader::ReadBlock(
 			if (ioMutex.try_lock()) {
 				std::ostringstream str;
 				void_mmap_allocator::reportStoreSize(str);
-				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
+				str << "\rBlock " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  ";
 				std::cout << str.str();
 				std::cout.flush();
 				ioMutex.unlock();
@@ -293,7 +293,7 @@ bool PbfReader::ReadBlock(
 			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
-				std::cout << "(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)\r";
+				std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
 				std::cout.flush();
 				continue;
 			}
@@ -459,6 +459,11 @@ int PbfReader::ReadPbfFile(
 
 	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
+#ifdef CLOCK_MONOTONIC
+		timespec start, end;
+		clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
 		std::mutex block_mutex;
@@ -529,8 +534,8 @@ int PbfReader::ReadPbfFile(
 						if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, locationsOnWays, phase)) {
 							const std::lock_guard<std::mutex> lock(block_mutex);
 							blocks.erase(indexedBlockMetadata.index);	
-							blocksProcessed++;
 						}
+						blocksProcessed++;
 					}
 				});
 			}
@@ -538,6 +543,11 @@ int PbfReader::ReadPbfFile(
 	
 		pool.join();
 
+#ifdef CLOCK_MONOTONIC
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		uint64_t elapsedNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+		std::cout << "(" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)" << std::endl;
+#endif
 		if(phase == ReadPhase::Nodes) {
 			osmStore.nodes.finalize(threadNum);
 		}

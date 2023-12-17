@@ -46,13 +46,31 @@ struct OutputObjectXYID {
 };
 
 template<typename OO> void finalizeObjects(
+	const std::string& name,
 	const size_t& threadNum,
 	const unsigned int& baseZoom,
 	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator begin,
 	typename std::vector<std::deque<OO, mmap_allocator<OO>>>::iterator end,
 	typename std::vector<std::deque<OO, mmap_allocator<OO>>>& lowZoom
 	) {
+#ifdef CLOCK_MONOTONIC
+	timespec startTs, endTs;
+	clock_gettime(CLOCK_MONOTONIC, &startTs);
+#endif
+
+	int i = 0;
 	for (auto it = begin; it != end; it++) {
+		i++;
+		if (i % 10 == 0 || i == 4096) {
+			std::cout << "\r" << name << ": finalizing z6 tile " << i << "/" << CLUSTER_ZOOM_AREA;
+
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &endTs);
+			uint64_t elapsedNs = 1e9 * (endTs.tv_sec - startTs.tv_sec) + endTs.tv_nsec - startTs.tv_nsec;
+			std::cout << " (" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)";
+#endif
+			std::cout << std::flush;
+		}
 		if (it->size() == 0)
 			continue;
 
@@ -109,6 +127,8 @@ template<typename OO> void finalizeObjects(
 			threadNum
 		);
 	}
+
+	std::cout << std::endl;
 }
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
@@ -280,6 +300,7 @@ public:
 	std::vector<std::pair<size_t, multi_linestring_store_t*>> availableMultiLinestringStoreLeases;
 	std::vector<std::pair<size_t, multi_polygon_store_t*>> availableMultiPolygonStoreLeases;
 
+	virtual std::string name() const = 0;
 
 protected:	
 	size_t numShards;

@@ -37,6 +37,8 @@ public:
 		const WayStore& wayStore
 	);
 
+	std::string name() const override { return "osm"; }
+
 	Geometry buildWayGeometry(
 		const OutputGeometryType geomType, 
 		const NodeID objectID,

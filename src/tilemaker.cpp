@@ -506,8 +506,16 @@ int main(int argc, char* argv[]) {
 		}
 
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
+		std::cout << "collecting tiles:";
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
+			std::cout << " z" << std::to_string(zoom) << std::flush;
+#ifdef CLOCK_MONOTONIC
+			timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
 			auto zoomResult = getTilesAtZoom(sources, zoom);
+			int numTiles = 0;
 			for (int x = 0; x < 1 << zoom; x++) {
 				for (int y = 0; y < 1 << zoom; y++) {
 					if (!zoomResult.test(x, y))
@@ -533,9 +541,21 @@ int main(int argc, char* argv[]) {
 					}
 
 					tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
+					numTiles++;
 				}
 			}
+
+			std::cout << " (" << numTiles;
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+			std::cout << ", " << (uint32_t)(tileNs / 1e6) << "ms";
+
+#endif
+			std::cout << ")" << std::flush;
 		}
+
+		std::cout << std::endl;
 
 		// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 		const size_t baseZoom = config.baseZoom;
@@ -615,7 +635,7 @@ int main(int argc, char* argv[]) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
-#ifndef _WIN32
+#ifdef CLOCK_MONOTONIC
 					timespec start, end;
 					if (logTileTimings)
 						clock_gettime(CLOCK_MONOTONIC, &start);
@@ -627,7 +647,7 @@ int main(int argc, char* argv[]) {
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
-#ifndef _WIN32
+#ifdef CLOCK_MONOTONIC
 					if (logTileTimings) {
 						clock_gettime(CLOCK_MONOTONIC, &end);
 						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;

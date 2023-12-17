@@ -74,8 +74,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 }
 
 void TileDataSource::finalize(size_t threadNum) {
-	finalizeObjects<OutputObjectXY>(threadNum, baseZoom, objects.begin(), objects.end(), lowZoomObjects);
-	finalizeObjects<OutputObjectXYID>(threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
+	finalizeObjects<OutputObjectXY>(name(), threadNum, baseZoom, objects.begin(), objects.end(), lowZoomObjects);
+	finalizeObjects<OutputObjectXYID>(name(), threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
 
 }
 

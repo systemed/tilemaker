@@ -11,6 +11,8 @@ class ShpMemTiles : public TileDataSource
 public:
 	ShpMemTiles(size_t threadNum, uint baseZoom);
 
+	std::string name() const override { return "shp"; }
+
 	void CreateNamedLayerIndex(const std::string& layerName);
 
 	// Used in shape file loading
