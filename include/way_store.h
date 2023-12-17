@@ -21,6 +21,10 @@ public:
 	virtual void clear() = 0;
 	virtual std::size_t size() const = 0;
 	virtual void finalize(unsigned int threadNum) = 0;
+
+	virtual bool contains(size_t shard, WayID id) const = 0;
+	virtual size_t shard() const = 0;
+	virtual size_t shards() const = 0;
 };
 
 #endif

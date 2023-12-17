@@ -23,6 +23,10 @@ public:
 	// Accessors
 	virtual size_t size() const = 0;
 	virtual LatpLon at(NodeID i) const = 0;
+
+	virtual bool contains(size_t shard, NodeID id) const = 0;
+	virtual size_t shard() const = 0;
+	virtual size_t shards() const = 0;
 };
 
 #endif

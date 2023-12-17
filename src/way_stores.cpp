@@ -14,6 +14,14 @@ void BinarySearchWayStore::reopen() {
 	mLatpLonLists = std::make_unique<map_t>();
 }
 
+bool BinarySearchWayStore::contains(size_t shard, WayID id) const {
+	auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), id, [](auto const &e, auto id) { 
+		return e.first < id; 
+	});
+
+	return !(iter == mLatpLonLists->end() || iter->first != id);
+}
+
 std::vector<LatpLon> BinarySearchWayStore::at(WayID wayid) const {
 	std::lock_guard<std::mutex> lock(mutex);
 	

@@ -93,6 +93,10 @@ public:
 	void clear() override;
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;
+
+	bool contains(size_t shard, WayID id) const override { throw std::runtime_error("SortedWayStore::contains not implemented"); }
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
 	
 	static uint16_t encodeWay(
 		const std::vector<NodeID>& way,

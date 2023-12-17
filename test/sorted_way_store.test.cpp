@@ -13,6 +13,10 @@ class TestNodeStore : public NodeStore {
 		return { (int32_t)id, -(int32_t)id };
 	}
 	void insert(const std::vector<std::pair<NodeID, LatpLon>>& elements) override {}
+
+	bool contains(size_t shard, NodeID id) const override { return true; }
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
 };
 
 void roundtripWay(const std::vector<NodeID>& way) {

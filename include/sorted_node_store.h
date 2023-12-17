@@ -69,6 +69,10 @@ public:
 		reopen();
 	}
 
+	bool contains(size_t shard, NodeID ID) const override { throw std::runtime_error("SortedNodeStore::contains not implemented"); }
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
+
 private: 
 	// When true, store chunks compressed. Only store compressed if the
 	// chunk is sufficiently large.

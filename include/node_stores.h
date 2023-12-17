@@ -24,6 +24,11 @@ public:
 	}
 	void batchStart() {}
 
+	bool contains(size_t shard, NodeID id) const override;
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
+	
+
 private: 
 	mutable std::mutex mutex;
 	std::vector<std::shared_ptr<map_t>> mLatpLons;
@@ -50,6 +55,12 @@ public:
 	void clear() override;
 	void finalize(size_t numThreads) override {}
 	void batchStart() {}
+
+	// CompactNodeStore has no metadata to know whether or not it contains
+	// a node, so it's not suitable for used in sharded scenarios.
+	bool contains(size_t shard, NodeID id) const override { return true; }
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
 
 private: 
 	// @brief Insert a latp/lon pair.
