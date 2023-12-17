@@ -492,7 +492,7 @@ int main(int argc, char* argv[]) {
 		// The clipping bbox check is expensive - as an optimization, compute the set of
 		// z6 tiles that are wholly covered by the clipping box. Membership in this
 		// set is quick to test.
-		std::set<TileCoordinates> coveredZ6Tiles;
+		TileCoordinatesSet coveredZ6Tiles(6);
 		if (hasClippingBox) {
 			for (int x = 0; x < 1 << 6; x++) {
 				for (int y = 0; y < 1 << 6; y++) {
@@ -500,7 +500,7 @@ int main(int argc, char* argv[]) {
 								TileBbox(TileCoordinates(x, y), 6, false, false).getTileBox(),
 								clippingBox
 							))
-						coveredZ6Tiles.insert(TileCoordinates(x, y));
+						coveredZ6Tiles.set(x, y);
 				}
 			}
 		}
@@ -533,7 +533,7 @@ int main(int argc, char* argv[]) {
 						if (zoom >= 6) {
 							TileCoordinate z6x = x / (1 << (zoom - 6));
 							TileCoordinate z6y = y / (1 << (zoom - 6));
-							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.find(TileCoordinates(z6x, z6y)) != coveredZ6Tiles.end();
+							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.test(z6x, z6y);
 						}
 
 						if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
