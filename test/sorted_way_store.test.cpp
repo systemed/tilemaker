@@ -74,6 +74,22 @@ MU_TEST(test_encode_way) {
 	}
 }
 
+MU_TEST(test_multiple_stores) {
+	TestNodeStore ns;
+	SortedWayStore s1(true, ns), s2(true, ns);
+	s1.batchStart();
+	s2.batchStart();
+
+	s1.insertNodes({{ 1, { 1 } }});
+	s2.insertNodes({{ 2, { 2 } }});
+
+	s1.finalize(1);
+	s2.finalize(1);
+
+	mu_check(s1.size() == 1);
+	mu_check(s2.size() == 1);
+}
+
 MU_TEST(test_way_store) {
 	TestNodeStore ns;
 	SortedWayStore sws(true, ns);
@@ -182,6 +198,7 @@ MU_TEST(test_populate_mask) {
 
 MU_TEST_SUITE(test_suite_sorted_way_store) {
 	MU_RUN_TEST(test_encode_way);
+	MU_RUN_TEST(test_multiple_stores);
 	MU_RUN_TEST(test_way_store);
 }
 

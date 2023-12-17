@@ -87,6 +87,8 @@ void SortedNodeStore::reopen()
 SortedNodeStore::~SortedNodeStore() {
 	for (const auto entry: allocatedMemory)
 		void_mmap_allocator::deallocate(entry.first, entry.second);
+
+	s(this) = ThreadStorage();
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
