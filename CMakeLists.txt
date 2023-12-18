@@ -106,6 +106,7 @@ file(GLOB tilemaker_src_files
 	src/read_pbf.cpp
 	src/read_shp.cpp
 	src/sharded_node_store.cpp
+	src/sharded_way_store.cpp
 	src/shared_data.cpp
 	src/shp_mem_tiles.cpp
 	src/sorted_node_store.cpp

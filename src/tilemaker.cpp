@@ -171,7 +171,7 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
+	bool _verbose = false, sqlite= false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false, shardStores = false;
 	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
@@ -188,6 +188,7 @@ int main(int argc, char* argv[]) {
 		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
 		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
 		("materialize-geometries", po::bool_switch(&materializeGeometries),  "Materialize geometries - faster, but requires more memory")
+		("shard-stores", po::bool_switch(&shardStores),  "Shard stores - use an alternate reading/writing strategy for low-memory machines")
 		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
 		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
@@ -311,8 +312,7 @@ int main(int argc, char* argv[]) {
 
 	shared_ptr<NodeStore> nodeStore;
 
-	// TODO: make this a flag
-	if (true) {
+	if (shardStores) {
 		nodeStore = std::make_shared<ShardedNodeStore>(createNodeStore);
 	} else {
 		nodeStore = createNodeStore();
@@ -328,7 +328,12 @@ int main(int argc, char* argv[]) {
 		return rv;
 	};
 
-	shared_ptr<WayStore> wayStore = createWayStore();
+	shared_ptr<WayStore> wayStore;
+	if (shardStores) {
+		wayStore = std::make_shared<ShardedWayStore>(createWayStore, *nodeStore.get());
+	} else {
+		wayStore = createWayStore();
+	}
 
 	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
 	osmStore.use_compact_store(osmStoreCompact);
@@ -389,6 +394,7 @@ int main(int argc, char* argv[]) {
 			
 			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
 			int ret = pbfReader.ReadPbfFile(
+				nodeStore->shards(),
 				hasSortTypeThenID,
 				nodeKeys,
 				threadNum,
@@ -477,6 +483,7 @@ int main(int argc, char* argv[]) {
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
 			int ret = pbfReader.ReadPbfFile(
+				nodeStore->shards(),
 				false,
 				nodeKeys,
 				1,

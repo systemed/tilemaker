@@ -47,7 +47,7 @@ void BinarySearchWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &n
 	std::copy(std::make_move_iterator(newWays.begin()), std::make_move_iterator(newWays.end()), mLatpLonLists->begin() + i); 
 }
 
-const void BinarySearchWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
+void BinarySearchWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
 	throw std::runtime_error("BinarySearchWayStore does not support insertNodes");
 }
 

@@ -208,7 +208,7 @@ void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays
 	throw std::runtime_error("SortedWayStore does not support insertLatpLons");
 }
 
-const void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
+void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
 	// read_pbf can call with an empty array if the only ways it read were unable to
 	// be processed due to missing nodes, so be robust against empty way vector.
 	if (newWays.empty())

@@ -1,5 +1,7 @@
 #include "sharded_node_store.h"
 
+thread_local size_t lastNodeShard = 0;
+
 ShardedNodeStore::ShardedNodeStore(std::function<std::shared_ptr<NodeStore>()> createNodeStore):
 	createNodeStore(createNodeStore) {
 	for (int i = 0; i < shards(); i++)
@@ -20,11 +22,17 @@ void ShardedNodeStore::finalize(size_t threadNum) {
 }
 
 LatpLon ShardedNodeStore::at(NodeID id) const {
-	// TODO: look in the last store we successfully found something, using
-	// a thread local
-	for (int i = 0; i < shards(); i++)
-		if (stores[i]->contains(0, id) || i == shards() - 1)
-			return stores[i]->at(id);
+	for (int i = 0; i < shards(); i++) {
+		size_t index = (lastNodeShard + i) % shards();
+
+		if (stores[index]->contains(0, id)) {
+			lastNodeShard = index;
+			return stores[index]->at(id);
+		}
+	}
+
+	// Superfluous return to silence a compiler warning
+	return stores[shards() - 1]->at(id);
 }
 
 size_t ShardedNodeStore::size() const {

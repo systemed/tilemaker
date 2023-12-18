@@ -90,13 +90,13 @@ public:
 	std::vector<LatpLon> at(WayID wayid) const override;
 	bool requiresNodes() const override { return true; }
 	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
-	const void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;
+	void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;
 	void clear() override;
 	std::size_t size() const override;
 	void finalize(unsigned int threadNum) override;
 
 	bool contains(size_t shard, WayID id) const override;
-	size_t shard() const override { return 0; }
+	WayStore& shard(size_t shard) override { return *this; }
 	size_t shards() const override { return 1; }
 	
 	static uint16_t encodeWay(
