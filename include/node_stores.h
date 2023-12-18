@@ -5,6 +5,7 @@
 #include <memory>
 #include "node_store.h"
 #include "sorted_node_store.h"
+#include "sharded_node_store.h"
 #include "mmap_allocator.h"
 
 class BinarySearchNodeStore : public NodeStore
@@ -25,7 +26,6 @@ public:
 	void batchStart() {}
 
 	bool contains(size_t shard, NodeID id) const override;
-	size_t shard() const override { return 0; }
 	size_t shards() const override { return 1; }
 	
 
@@ -59,7 +59,6 @@ public:
 	// CompactNodeStore has no metadata to know whether or not it contains
 	// a node, so it's not suitable for used in sharded scenarios.
 	bool contains(size_t shard, NodeID id) const override { return true; }
-	size_t shard() const override { return 0; }
 	size_t shards() const override { return 1; }
 
 private: 

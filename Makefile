@@ -114,6 +114,7 @@ tilemaker: \
 	src/pooled_string.o \
 	src/read_pbf.o \
 	src/read_shp.o \
+	src/sharded_node_store.o \
 	src/shared_data.o \
 	src/shp_mem_tiles.o \
 	src/sorted_node_store.o \

@@ -285,8 +285,6 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-	shared_ptr<NodeStore> nodeStore;
-
 	bool allPbfsHaveSortTypeThenID = true;
 	bool anyPbfHasLocationsOnWays = false;
 
@@ -297,21 +295,40 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	if (osmStoreCompact)
-		nodeStore = make_shared<CompactNodeStore>();
-	else {
-		if (allPbfsHaveSortTypeThenID)
-			nodeStore = make_shared<SortedNodeStore>(!osmStoreUncompressedNodes);
-		else
-			nodeStore = make_shared<BinarySearchNodeStore>();
+	auto createNodeStore = [allPbfsHaveSortTypeThenID, osmStoreCompact, osmStoreUncompressedNodes]() {
+		if (osmStoreCompact) {
+			std::shared_ptr<NodeStore> rv = make_shared<CompactNodeStore>();
+			return rv;
+		}
+
+		if (allPbfsHaveSortTypeThenID) {
+			std::shared_ptr<NodeStore> rv = make_shared<SortedNodeStore>(!osmStoreUncompressedNodes);
+			return rv;
+		}
+		std::shared_ptr<NodeStore> rv =  make_shared<BinarySearchNodeStore>();
+		return rv;
+	};
+
+	shared_ptr<NodeStore> nodeStore;
+
+	// TODO: make this a flag
+	if (true) {
+		nodeStore = std::make_shared<ShardedNodeStore>(createNodeStore);
+	} else {
+		nodeStore = createNodeStore();
 	}
 
-	shared_ptr<WayStore> wayStore;
-	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
-		wayStore = make_shared<SortedWayStore>(!osmStoreUncompressedNodes, *nodeStore.get());
-	} else {
-		wayStore = make_shared<BinarySearchWayStore>();
-	}
+	auto createWayStore = [anyPbfHasLocationsOnWays, allPbfsHaveSortTypeThenID, osmStoreUncompressedWays, &nodeStore]() {
+		if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
+			std::shared_ptr<WayStore> rv = make_shared<SortedWayStore>(!osmStoreUncompressedWays, *nodeStore.get());
+			return rv;
+		}
+
+		std::shared_ptr<WayStore> rv = make_shared<BinarySearchWayStore>();
+		return rv;
+	};
+
+	shared_ptr<WayStore> wayStore = createWayStore();
 
 	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
 	osmStore.use_compact_store(osmStoreCompact);

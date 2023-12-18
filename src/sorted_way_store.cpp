@@ -59,6 +59,7 @@ namespace SortedWayStoreTypes {
 using namespace SortedWayStoreTypes;
 
 SortedWayStore::SortedWayStore(bool compressWays, const NodeStore& nodeStore): compressWays(compressWays), nodeStore(nodeStore) {
+	s(this); // allocate our ThreadStorage before multi-threading
 	reopen();
 }
 
@@ -116,7 +117,6 @@ bool SortedWayStore::contains(size_t shard, WayID id) const {
 	}
 
 	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
-	const size_t numWays = popcnt(chunkPtr->smallWayMask, 32) + popcnt(chunkPtr->bigWayMask, 32);
 
 	{
 		size_t wayOffset = 0;

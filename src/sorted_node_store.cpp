@@ -58,6 +58,7 @@ namespace SortedNodeStoreTypes {
 using namespace SortedNodeStoreTypes;
 
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
+	s(this); // allocate our ThreadStorage before multi-threading
 	reopen();
 }
 
@@ -320,7 +321,7 @@ void SortedNodeStore::finalize(size_t threadNum) {
 
 	orphanage.clear();
 
-	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes (" << (1000ull * (totalAllocatedSpace.load() - totalGroupSpace.load()) / totalAllocatedSpace.load()) / 10.0 << "% wasted)" << std::endl;
+	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes (" << (1000ull * (totalAllocatedSpace.load() - totalGroupSpace.load()) / (totalAllocatedSpace.load() + 1)) / 10.0 << "% wasted)" << std::endl;
 	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;

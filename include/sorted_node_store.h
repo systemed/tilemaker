@@ -71,7 +71,6 @@ public:
 	}
 
 	bool contains(size_t shard, NodeID id) const override;
-	size_t shard() const override { return 0; }
 	size_t shards() const override { return 1; }
 
 private: 
