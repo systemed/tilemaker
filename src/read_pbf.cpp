@@ -235,6 +235,7 @@ bool PbfReader::ReadRelations(
 				int64_t lastID = 0;
 				bool isInnerOuter = isBoundary || isMultiPolygon;
 				bool skipToNext = false;
+				bool firstWay = true;
 				for (int n=0; n < pbfRelation.memids_size(); n++) {
 					lastID += pbfRelation.memids(n);
 					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
@@ -242,10 +243,12 @@ bool PbfReader::ReadRelations(
 					if (role==innerKey || role==outerKey) isInnerOuter=true;
 					WayID wayId = static_cast<WayID>(lastID);
 
-					if (n == 0 && effectiveShards > 0 && !osmStore.ways.contains(shard, wayId)) {
+					if (firstWay && effectiveShards > 0 && !osmStore.ways.contains(shard, wayId)) {
 						skipToNext = true;
 						break;
 					}
+					if (firstWay)
+						firstWay = false;
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
 
