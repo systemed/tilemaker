@@ -23,6 +23,7 @@ public:
 
 	bool contains(size_t shard, WayID id) const override;
 	WayStore& shard(size_t shard) override;
+	const WayStore& shard(size_t shard) const override;
 	size_t shards() const override;
 	
 private:

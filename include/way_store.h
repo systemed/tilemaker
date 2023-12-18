@@ -24,6 +24,7 @@ public:
 
 	virtual bool contains(size_t shard, WayID id) const = 0;
 	virtual WayStore& shard(size_t shard) = 0;
+	virtual const WayStore& shard(size_t shard) const = 0;
 	virtual size_t shards() const = 0;
 };
 

@@ -73,5 +73,9 @@ WayStore& ShardedWayStore::shard(size_t shard) {
 	return *stores[shard].get();
 }
 
+const WayStore& ShardedWayStore::shard(size_t shard) const {
+	return *stores[shard].get();
+}
+
 size_t ShardedWayStore::shards() const { return nodeStore.shards(); }
 

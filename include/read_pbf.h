@@ -101,7 +101,9 @@ private:
 		OsmLuaProcessing& output,
 		PrimitiveGroup& pg,
 		const PrimitiveBlock& pb,
-		const BlockMetadata& blockMetadata
+		const BlockMetadata& blockMetadata,
+		uint shard,
+		uint effectiveShards
 	);
 
 	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {

@@ -206,7 +206,9 @@ bool PbfReader::ReadRelations(
 	OsmLuaProcessing& output,
 	PrimitiveGroup& pg,
 	const PrimitiveBlock& pb,
-	const BlockMetadata& blockMetadata
+	const BlockMetadata& blockMetadata,
+	uint shard,
+	uint effectiveShards
 ) {
 	// ----	Read relations
 
@@ -232,14 +234,23 @@ bool PbfReader::ReadRelations(
 				WayVec outerWayVec, innerWayVec;
 				int64_t lastID = 0;
 				bool isInnerOuter = isBoundary || isMultiPolygon;
+				bool skipToNext = false;
 				for (int n=0; n < pbfRelation.memids_size(); n++) {
 					lastID += pbfRelation.memids(n);
 					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 					int32_t role = pbfRelation.roles_sid(n);
 					if (role==innerKey || role==outerKey) isInnerOuter=true;
 					WayID wayId = static_cast<WayID>(lastID);
+
+					if (n == 0 && effectiveShards > 0 && !osmStore.ways.contains(shard, wayId)) {
+						skipToNext = true;
+						break;
+					}
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
+
+				if (skipToNext)
+					continue;
 
 				try {
 					tag_map_t tags;
@@ -340,7 +351,7 @@ bool PbfReader::ReadBlock(
 		}
 
 		if(phase == ReadPhase::Relations) {
-			bool done = ReadRelations(output, pg, pb, blockMetadata);
+			bool done = ReadRelations(output, pg, pb, blockMetadata, shard, effectiveShards);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -495,15 +506,19 @@ int PbfReader::ReadPbfFile(
 	for(auto phase: all_phases) {
 		uint effectiveShards = 1;
 
-		// On memory-constrained machines, we might read ways multiple times in order
-		// to keep the working set of nodes limited.
-		if (phase == ReadPhase::Ways)
+		// On memory-constrained machines, we might read ways/relations
+		// multiple times in order to keep the working set of nodes limited.
+		if (phase == ReadPhase::Ways || phase == ReadPhase::Relations)
 			effectiveShards = shards;
 
 		for (int shard = 0; shard < effectiveShards; shard++) {
 			// If we're in ReadPhase::Ways, only do a pass if there is at least one
 			// entry in the pass's shard.
 			if (phase == ReadPhase::Ways && nodeStore.shard(shard).size() == 0)
+				continue;
+
+			// Ditto, but for relations
+			if (phase == ReadPhase::Relations && wayStore.shard(shard).size() == 0)
 				continue;
 
 #ifdef CLOCK_MONOTONIC

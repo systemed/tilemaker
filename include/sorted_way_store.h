@@ -97,6 +97,7 @@ public:
 
 	bool contains(size_t shard, WayID id) const override;
 	WayStore& shard(size_t shard) override { return *this; }
+	const WayStore& shard(size_t shard) const override { return *this; }
 	size_t shards() const override { return 1; }
 	
 	static uint16_t encodeWay(
