@@ -384,6 +384,12 @@ void outputProc(
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
 		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
 
+	} else if (sharedData.outputMode == OUTPUT_PMTILES) {
+		// Write to pmtiles
+		tile.SerializeToString(&outputdata);
+		compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
+		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, compressed);
+
 	} else {
 		// Write to file
 		stringstream dirname, filename;

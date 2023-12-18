@@ -99,4 +99,5 @@ Licenses of third-party libraries:
 - sqlite_modern_cpp (Amin Roosta) is licensed under MIT
 - [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence
 - [libpopcnt](https://github.com/kimwalisch/libpopcnt) is licensed under BSD 2-clause
+- [pmtiles](https://github.com/protomaps/PMTiles) is licensed under BSD 3-clause
 - [streamvbyte](https://github.com/lemire/streamvbyte) is licensed under Apache 2

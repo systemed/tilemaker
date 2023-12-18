@@ -90,7 +90,8 @@ int main(int argc, char* argv[]) {
 	uint threadNum;
 	string outputFile;
 	string bbox;
-	bool _verbose = false, outputMode = OUTPUT_FILE, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
+	bool _verbose = false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
+	int outputMode = OUTPUT_FILE;
 	bool logTileTimings = false;
 
 	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
@@ -141,15 +142,17 @@ int main(int argc, char* argv[]) {
 
 	// ---- Remove existing .mbtiles if it exists
 
-	if (outputMode==OUTPUT_MBTILES && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
-		cout << "mbtiles file exists, will overwrite (Ctrl-C to abort, rerun with --merge to keep)" << endl;
+	if ((outputMode==OUTPUT_MBTILES || outputMode==OUTPUT_PMTILES) && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
+		cout << "Output file exists, will overwrite (Ctrl-C to abort";
+		if (outputMode==OUTPUT_MBTILES) cout << ", rerun with --merge to keep";
+		cout << ")" << endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 		if (remove(outputFile.c_str()) != 0) {
 			cerr << "Couldn't remove existing file" << endl;
 			return 0;
 		}
 	} else if (mergeSqlite && outputMode!=OUTPUT_MBTILES) {
-		cerr << "--merge only works with .mbtiles output" << endl;
+		cerr << "--merge only works with .mbtiles" << endl;
 		return 0;
 	} else if (mergeSqlite && !static_cast<bool>(std::ifstream(outputFile))) {
 		cout << "--merge specified but .mbtiles file doesn't already exist, ignoring" << endl;
@@ -320,11 +323,13 @@ int main(int argc, char* argv[]) {
 	sharedData.outputMode = outputMode;
 	sharedData.mergeSqlite = mergeSqlite;
 
-	// ----	Initialise mbtiles if required
+	// ----	Initialise mbtiles/pmtiles if required
 	
 	if (sharedData.outputMode==OUTPUT_MBTILES) {
 		sharedData.mbtiles.openForWriting(sharedData.outputFile);
 		sharedData.writeMBTilesProjectData();
+	} else if (sharedData.outputMode==OUTPUT_PMTILES) {
+		sharedData.pmtiles.open(sharedData.outputFile);
 	}
 
 	// ----	Write out data
@@ -567,6 +572,8 @@ int main(int argc, char* argv[]) {
 	if (outputMode==OUTPUT_MBTILES) {
 		sharedData.writeMBTilesMetadata(jsonConfig);
 		sharedData.mbtiles.closeForWriting();
+	} else if (outputMode==OUTPUT_PMTILES) {
+		sharedData.pmtiles.close();
 	} else {
 		sharedData.writeFileMetadata(jsonConfig);
 	}

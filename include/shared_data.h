@@ -10,6 +10,7 @@
 #include "osm_store.h"
 #include "output_object.h"
 #include "mbtiles.h"
+#include "pmtiles.h"
 #include "tile_data.h"
 
 ///\brief Defines map single layer appearance
@@ -93,6 +94,7 @@ public:
 	int outputMode;
 	bool mergeSqlite;
 	MBTiles mbtiles;
+	PMTiles pmtiles;
 	std::string outputFile;
 
 	Config &config;
