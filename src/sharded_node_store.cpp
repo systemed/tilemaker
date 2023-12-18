@@ -53,13 +53,19 @@ size_t pickStore(const LatpLon& el) {
 	// Europe still basically gets its own bucket, but probably should be split up
 	// more.
 
-	const size_t z3x = lon2tilex(el.lon / 10000000, 3);
-	const size_t z3y = latp2tiley(el.latp / 10000000, 3);
+	const size_t z4x = lon2tilex(el.lon / 10000000, 4);
+	const size_t z4y = latp2tiley(el.latp / 10000000, 4);
 
-	if (z3x == 4 && z3y == 2) return 4; // Central Europe
+	const size_t z3x = z4x / 2;
+	const size_t z3y = z4y / 2;
+
 	if (z3x == 5 && z3y == 2) return 5; // Western Russia
-	if (z3x == 4 && z3y == 3) return 6; // North Africa
-	if (z3x == 5 && z3y == 3) return 7; // India
+	if (z3x == 4 && z3y == 3) return 5; // North Africa
+	if (z3x == 5 && z3y == 3) return 5; // India
+
+	if (z4x == 8 && z4y == 5) return 4; // some of Central Europe
+
+	if (z3x == 4 && z3y == 2) return 3; // rest of Central Europe
 
 	const size_t z2x = z3x / 2;
 	const size_t z2y = z3y / 2;
@@ -69,7 +75,7 @@ size_t pickStore(const LatpLon& el) {
 	if (z2x == 0 && z2y == 1) return 1; // North America
 
 //	std::cout << "z2x=" << std::to_string(z2x) << ", z2y=" << std::to_string(z2y) << std::endl;
-	return 0; // Artic, Antartcica, Oceania
+	return 0; // Artic, Antartcica, Oceania, South Africa, South America
 }
 
 void ShardedNodeStore::insert(const std::vector<element_t>& elements) {
@@ -90,5 +96,5 @@ bool ShardedNodeStore::contains(size_t shard, NodeID id) const {
 }
 
 size_t ShardedNodeStore::shards() const {
-	return 8;
+	return 6;
 }
