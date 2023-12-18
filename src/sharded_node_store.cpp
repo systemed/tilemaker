@@ -49,21 +49,24 @@ void ShardedNodeStore::batchStart() {
 }
 
 size_t pickStore(const LatpLon& el) {
-	// Assign the element to a store. This is pretty naive, we could likely do better--
-	// Europe still basically gets its own bucket, but probably should be split up
-	// more.
+	// Assign the element to a shard. This is a pretty naive division
+	// of the globe, tuned to have max ~10GB of nodes/ways per shard.
 
-	const size_t z4x = lon2tilex(el.lon / 10000000, 4);
-	const size_t z4y = latp2tiley(el.latp / 10000000, 4);
+	const size_t z5x = lon2tilex(el.lon / 10000000, 5);
+	const size_t z5y = latp2tiley(el.latp / 10000000, 5);
+
+	const size_t z4x = z5x / 2;
+	const size_t z4y = z5y / 2;
 
 	const size_t z3x = z4x / 2;
 	const size_t z3y = z4y / 2;
 
-	if (z3x == 5 && z3y == 2) return 5; // Western Russia
-	if (z3x == 4 && z3y == 3) return 5; // North Africa
-	if (z3x == 5 && z3y == 3) return 5; // India
+	if (z3x == 5 && z3y == 2) return 6; // Western Russia
+	if (z3x == 4 && z3y == 3) return 6; // North Africa
+	if (z3x == 5 && z3y == 3) return 6; // India
 
-	if (z4x == 8 && z4y == 5) return 4; // some of Central Europe
+	if ((z5x == 16 && z5y == 10) || (z5x == 16 && z5y == 11)) return 5; // some of Central Europe
+	if ((z5x == 17 && z5y == 10) || (z5x == 17 && z5y == 11)) return 4; // some more of Central Europe
 
 	if (z3x == 4 && z3y == 2) return 3; // rest of Central Europe
 
@@ -96,5 +99,5 @@ bool ShardedNodeStore::contains(size_t shard, NodeID id) const {
 }
 
 size_t ShardedNodeStore::shards() const {
-	return 6;
+	return 7;
 }
