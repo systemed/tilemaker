@@ -405,7 +405,9 @@ int main(int argc, char* argv[]) {
 				[&]() {
 					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries));
 					return osmLuaProcessing;
-				}
+				},
+				*nodeStore,
+				*wayStore
 			);
 			if (ret != 0) return ret;
 		} 
@@ -492,7 +494,9 @@ int main(int argc, char* argv[]) {
 				},
 				[&]() {
 					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
-				}
+				},
+				*nodeStore,
+				*wayStore
 			);
 			if (ret != 0) return ret;
 

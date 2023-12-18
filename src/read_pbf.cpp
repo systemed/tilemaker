@@ -398,7 +398,9 @@ int PbfReader::ReadPbfFile(
 	unordered_set<string> const& nodeKeys,
 	unsigned int threadNum,
 	const pbfreader_generate_stream& generate_stream,
-	const pbfreader_generate_output& generate_output
+	const pbfreader_generate_output& generate_output,
+	const NodeStore& nodeStore,
+	const WayStore& wayStore
 )
 {
 	auto infile = generate_stream();
@@ -499,6 +501,11 @@ int PbfReader::ReadPbfFile(
 			effectiveShards = shards;
 
 		for (int shard = 0; shard < effectiveShards; shard++) {
+			// If we're in ReadPhase::Ways, only do a pass if there is at least one
+			// entry in the pass's shard.
+			if (phase == ReadPhase::Ways && nodeStore.shard(shard).size() == 0)
+				continue;
+
 #ifdef CLOCK_MONOTONIC
 			timespec start, end;
 			clock_gettime(CLOCK_MONOTONIC, &start);

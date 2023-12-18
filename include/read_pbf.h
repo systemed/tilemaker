@@ -58,7 +58,9 @@ public:
 		const std::unordered_set<std::string>& nodeKeys,
 		unsigned int threadNum,
 		const pbfreader_generate_stream& generate_stream,
-		const pbfreader_generate_output& generate_output
+		const pbfreader_generate_output& generate_output,
+		const NodeStore& nodeStore,
+		const WayStore& wayStore
 	);
 
 	// Read tags into a map from a way/node/relation

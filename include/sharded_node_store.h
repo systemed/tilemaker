@@ -20,6 +20,8 @@ public:
 	}
 
 	bool contains(size_t shard, NodeID id) const override;
+	NodeStore& shard(size_t shard) override { return *stores[shard]; }
+	const NodeStore& shard(size_t shard) const override { return *stores[shard]; }
 	size_t shards() const override;
 
 private:
