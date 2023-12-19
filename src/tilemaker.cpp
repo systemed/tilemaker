@@ -407,6 +407,12 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
+		// For large areas (arbitrarily defined as 100 z6 tiles), use a dense index for pmtiles
+		if (coveredZ6Tiles.size()>100 && outputMode==OUTPUT_PMTILES) {
+			std::cout << "Using dense index for .pmtiles" << std::endl;
+			sharedData.pmtiles.isSparse = false;
+		}
+
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
 			auto zoomResult = getTilesAtZoom(sources, zoom);

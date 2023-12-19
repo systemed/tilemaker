@@ -387,8 +387,7 @@ void outputProc(
 	} else if (sharedData.outputMode == OUTPUT_PMTILES) {
 		// Write to pmtiles
 		tile.SerializeToString(&outputdata);
-		compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
-		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, compressed);
+		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, outputdata);
 
 	} else {
 		// Write to file
