@@ -103,6 +103,32 @@ void SharedData::writeFileMetadata(rapidjson::Document const &jsonConfig) {
 	fclose(fp);
 }
 
+// Create JSON string with .pmtiles-format metadata
+std::string SharedData::pmTilesMetadata() {
+	rapidjson::Document document;
+	document.SetObject();
+	document.AddMember("name",          rapidjson::Value().SetString(config.projectName.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("description",   rapidjson::Value().SetString(config.projectDesc.c_str(), document.GetAllocator()), document.GetAllocator());
+	document.AddMember("vector_layers", layers.serialiseToJSONValue(document.GetAllocator()), document.GetAllocator());
+	// we don't currently write "attribution" or "type" fields, see .pmtiles spec
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	document.Accept(writer);
+	std::string json(buffer.GetString(), buffer.GetSize());
+	return json;
+}
+
+void SharedData::writePMTilesBounds() {
+	pmtiles.header.min_zoom = config.startZoom;
+	pmtiles.header.max_zoom = config.endZoom;
+	pmtiles.header.center_zoom = (config.startZoom + config.endZoom) / 2;
+	pmtiles.header.min_lon_e7 = config.minLon * 10000000;
+	pmtiles.header.min_lat_e7 = config.minLat * 10000000;
+	pmtiles.header.max_lon_e7 = config.maxLon * 10000000;
+	pmtiles.header.max_lat_e7 = config.maxLat * 10000000;
+	pmtiles.header.center_lon_e7 = (pmtiles.header.min_lon_e7 + pmtiles.header.max_lon_e7) / 2;
+	pmtiles.header.center_lat_e7 = (pmtiles.header.min_lat_e7 + pmtiles.header.max_lat_e7) / 2;
+}
 
 
 // *****************************************************************

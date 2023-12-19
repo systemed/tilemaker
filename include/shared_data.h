@@ -105,6 +105,8 @@ public:
 	void writeMBTilesProjectData();
 	void writeMBTilesMetadata(rapidjson::Document const &jsonConfig);
 	void writeFileMetadata(rapidjson::Document const &jsonConfig);	
+	std::string pmTilesMetadata();
+	void writePMTilesBounds();
 };
 
 #endif //_SHARED_DATA_H

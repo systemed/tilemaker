@@ -31,15 +31,19 @@ public:
 	PMTiles();
 	virtual ~PMTiles();
 
+	pmtiles::headerv3 header;
+
 	void open(std::string &filename);
 //	void writeMetadata(std::string key, std::string value);
 	void saveTile(int zoom, int x, int y, std::string &data);
-	void close();
+	void close(std::string &metadata);
 
 private:
 	std::ofstream outputStream;
 	std::mutex fileMutex;
 	bool isSparse = true;
+	uint64_t leafStart = 0;
+	uint64_t numTilesWritten = 0;
 	std::map<uint64_t, TileOffset> sparseIndex;
 	std::vector<TileOffset> denseIndex;
 

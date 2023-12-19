@@ -573,7 +573,9 @@ int main(int argc, char* argv[]) {
 		sharedData.writeMBTilesMetadata(jsonConfig);
 		sharedData.mbtiles.closeForWriting();
 	} else if (outputMode==OUTPUT_PMTILES) {
-		sharedData.pmtiles.close();
+		sharedData.writePMTilesBounds();
+		std::string metadata = sharedData.pmTilesMetadata();
+		sharedData.pmtiles.close(metadata);
 	} else {
 		sharedData.writeFileMetadata(jsonConfig);
 	}
