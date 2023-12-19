@@ -8,7 +8,6 @@
 
 #include "pmtiles.h"
 #include "helpers.h"
-#include "external/pmtiles.hpp"
 
 /*
 	Future enhancements:
