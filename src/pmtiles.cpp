@@ -41,7 +41,7 @@ void PMTiles::close(std::string &metadata) {
 		}
 	} else {
 		for (size_t tileId=0; tileId<denseIndex.size(); tileId++) {
-			if (denseIndex[tileId].length != 0) appendTileEntry(tileId, denseIndex[tileId], rootEntries, entries);
+			if (denseIndex[tileId].length != 0xffffff) appendTileEntry(tileId, denseIndex[tileId], rootEntries, entries);
 		}
 	}
 	flushEntries(rootEntries,entries);
@@ -163,7 +163,7 @@ void PMTiles::saveTile(int zoom, int x, int y, std::string &data) {
 	if (isSparse) {
 		sparseIndex[tileId] = offset;
 	} else {
-		if (tileId>denseIndex.size()) denseIndex.resize(tileId+10000);
+		if (tileId >= denseIndex.size()) denseIndex.resize(tileId+10000, { 0, 0xffffff });
 		denseIndex[tileId] = offset;
 	}
 
