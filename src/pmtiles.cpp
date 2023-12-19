@@ -45,8 +45,8 @@ void PMTiles::open(std::string &filename) {
 	outputStream.open(filename);
 	// **** set isSparse according to the number of tiles
 	// dummy header/root directory for now - we'll write it all later
-	char header[16384] = "PMTiles";
-	outputStream.write(header, 16384);
+	char header[HEADER_ROOT] = "PMTiles";
+	outputStream.write(header, HEADER_ROOT);
 }
 
 // Finish writing the .pmtiles file
@@ -79,7 +79,7 @@ void PMTiles::close(std::string &metadata) {
 	std::string directory = pmtiles::serialize_directory(rootEntries);
 	compressed = compress_string(directory, Z_DEFAULT_COMPRESSION, true);
 	int rootLength = compressed.size();
-	if (rootLength > 16257) { throw std::runtime_error(".pmtiles root directory was too large - please file an issue"); }
+	if (rootLength > (HEADER_ROOT-127)) { throw std::runtime_error(".pmtiles root directory was too large - please file an issue"); }
 	std::cout << "Root directory has " << rootEntries.size() << " entries and is " << rootLength << " bytes" << std::endl;
 	outputStream.seekp(127);
 	outputStream.write(compressed.c_str(), rootLength);
@@ -91,8 +91,8 @@ void PMTiles::close(std::string &metadata) {
 	header.json_metadata_bytes = jsonLength;
 	header.leaf_dirs_offset = leafStart;
 	header.leaf_dirs_bytes = leafLength;
-	header.tile_data_offset = 16384;
-	header.tile_data_bytes = leafStart - 16384;
+	header.tile_data_offset = HEADER_ROOT;
+	header.tile_data_bytes = leafStart - HEADER_ROOT;
 	header.addressed_tiles_count = numTilesWritten; // TODO - change this when we use RLE
 	header.tile_entries_count = numTilesWritten; // TODO - change this when we use RLE
 	header.tile_contents_count = numTilesWritten;
@@ -113,7 +113,7 @@ void PMTiles::close(std::string &metadata) {
 // Add an entry either to the current leaf directory, or (for lowzoom) the root directory
 void PMTiles::appendTileEntry(uint64_t tileId, TileOffset offset, std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries) {
 	pmtiles::entryv3 entry = pmtiles::entryv3(tileId, offset.offset, offset.length, 1); // 1=RLE
-	if (tileId<1365) {
+	if (tileId<FIRST_LEAF_TILE) {
 		// <z6 so root directory
 		rootEntries.emplace_back(entry);
 	} else {
@@ -139,17 +139,16 @@ void PMTiles::flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vect
 	std::cout << "Written leaf directory starting at " << startId << " at " << location << " for " << length << std::endl;
 
 	// append reference to the root directory
-	pmtiles::entryv3 rootEntry = pmtiles::entryv3(startId, location, length, 0);
+	pmtiles::entryv3 rootEntry = pmtiles::entryv3(startId, location-leafStart, length, 0);
 	rootEntries.emplace_back(rootEntry);
 }
 
 // Write a tile to file and store it in the index
 void PMTiles::saveTile(int zoom, int x, int y, std::string &data) {
 	uint64_t tileId = pmtiles::zxy_to_tileid(zoom,x,y);
-//	std::cout << "Writing tile " << zoom << "/" << x << "/" << y << " = " << tileId << std::endl;
 	std::lock_guard<std::mutex> lock(fileMutex);
 	// write to file
-	TileOffset offset = TileOffset(static_cast<uint64_t>(outputStream.tellp()), data.size());
+	TileOffset offset = TileOffset(static_cast<uint64_t>(outputStream.tellp()) - HEADER_ROOT, data.size());
 	outputStream << data;
 	numTilesWritten++;
 	// store in index

@@ -13,7 +13,12 @@ struct TileOffset {
 	TileOffset();
 };
 
+// Maximum number of tiles in a leaf directory
 #define LEAF_DIRECTORY_SIZE 10000000
+// Combined size of header and root directory (= start of tile data)
+#define HEADER_ROOT 16384
+// Tile ID at which to start using leaf directories (=z6/0/0)
+#define FIRST_LEAF_TILE 1365
 
 class PMTiles { 
 //	sqlite::database db;
