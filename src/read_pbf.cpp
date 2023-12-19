@@ -243,7 +243,7 @@ bool PbfReader::ReadRelations(
 					if (role==innerKey || role==outerKey) isInnerOuter=true;
 					WayID wayId = static_cast<WayID>(lastID);
 
-					if (firstWay && effectiveShards > 0 && !osmStore.ways.contains(shard, wayId)) {
+					if (firstWay && effectiveShards > 1 && !osmStore.ways.contains(shard, wayId)) {
 						skipToNext = true;
 						break;
 					}
