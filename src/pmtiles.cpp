@@ -9,12 +9,6 @@
 #include "pmtiles.h"
 #include "helpers.h"
 
-/*
-	Future enhancements:
-	- order tile-writing so it's in tileid order
-	- store up writes as per mbtiles.cpp?
-*/
-
 TileOffset::TileOffset() { }
 PMTiles::PMTiles() { }
 PMTiles::~PMTiles() { }

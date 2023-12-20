@@ -1,8 +1,8 @@
-# Tilemaker
+# tilemaker
 
-Tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf planet extract, as typically downloaded from providers like Geofabrik. It aims to be 'stack-free': you need no database and there is only one executable to install.
+tilemaker creates vector tiles (in Mapbox Vector Tile format) from an .osm.pbf planet extract, as typically downloaded from providers like Geofabrik. It aims to be 'stack-free': you need no database and there is only one executable to install.
 
-Vector tiles are used by many in-browser/app renderers, and can also power server-side raster rendering. They enable on-the-fly style changes and greater interactivity, while imposing less of a storage burden. You can output them to individual files, or to a SQLite (.mbtiles) database.
+Vector tiles are used by many in-browser/app renderers, and can also power server-side raster rendering. They enable on-the-fly style changes and greater interactivity, while imposing less of a storage burden. tilemaker can output them to individual files, or to .mbtiles or .pmtiles tile containers.
 
 See an example of a vector tile map produced by tilemaker at [tilemaker.org](https://tilemaker.org).
 
@@ -10,7 +10,7 @@ See an example of a vector tile map produced by tilemaker at [tilemaker.org](htt
 
 ## Installing
 
-Tilemaker is written in C++14. The chief dependencies are:
+tilemaker is written in C++14. The chief dependencies are:
 
 * Google Protocol Buffers
 * Boost (latest version advised, 1.66 minimum)
@@ -30,7 +30,7 @@ For detailed installation instructions for your operating system, see [INSTALL.m
 
 ## Out-of-the-box setup
 
-Tilemaker comes with configuration files compatible with the popular [OpenMapTiles](https://openmaptiles.org) schema, and a demonstration map server. You'll run tilemaker to make vector tiles from your `.osm.pbf` source data. To create the tiles, run this from the tilemaker directory:
+tilemaker comes with configuration files compatible with the popular [OpenMapTiles](https://openmaptiles.org) schema, and a demonstration map server. You'll run tilemaker to make vector tiles from your `.osm.pbf` source data. To create the tiles, run this from the tilemaker directory:
 
     tilemaker --input /path/to/your/input.osm.pbf \
         --output /path/to/your/output.mbtiles
@@ -88,7 +88,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 
 ## Copyright
 
-Tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
+tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
 
 Copyright tilemaker contributors, 2015-2023.
 
