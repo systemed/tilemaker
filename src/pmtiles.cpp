@@ -43,7 +43,12 @@ void PMTiles::close(std::string &metadata) {
 			if (denseIndex[tileId].length != 0xffffff) appendTileEntry(tileId, denseIndex[tileId], rootEntries, entries);
 		}
 	}
-	flushEntries(rootEntries,entries);
+	if (numTileEntries < ROOT_ONLY) {
+		rootEntries.insert(rootEntries.end(), entries.begin(), entries.end());
+		entries.clear();
+	} else {
+		flushEntries(rootEntries,entries);
+	}
 	uint64_t leafLength = static_cast<uint64_t>(outputStream.tellp()) - leafStart;
 
 	// create JSON metadata

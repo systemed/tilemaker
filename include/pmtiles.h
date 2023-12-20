@@ -19,6 +19,8 @@ struct TileOffset {
 #define HEADER_ROOT 16384
 // Tile ID at which to start using leaf directories (=z6/0/0)
 #define FIRST_LEAF_TILE 1365
+// Threshold for using the root directory only
+#define ROOT_ONLY 2200
 // Maximum size in bytes of tiles considered "tiny" (i.e. potentially repeatable)
 #define TINY_LENGTH 100
 // Expire the tiny cache when it reaches this size
