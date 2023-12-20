@@ -4,6 +4,7 @@
 
 #include "geom.h"
 #include "coordinates.h"
+#include "mmap_allocator.h"
 
 #include <utility>
 #include <vector>
@@ -13,219 +14,12 @@
 
 extern bool verbose;
 
-class void_mmap_allocator
-{
-public:
-    typedef std::size_t size_type;
-
-    static void *allocate(size_type n, const void *hint = 0);
-    static void deallocate(void *p, size_type n);
-    static void destroy(void *p);
-	static void shutdown();
-};
-
-template<typename T>
-class mmap_allocator
-{
-
-public:
-    typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-    typedef T *pointer;
-    typedef const T *const_pointer;
-    typedef const T &const_reference;
-    typedef T value_type;
-    
-    template <class U>
-    struct rebind
-    {
-        typedef mmap_allocator<U> other;
-    };
-    
-    mmap_allocator() = default;
-    
-    template<typename OtherT>
-    mmap_allocator(OtherT &)
-    { }
-    
-    pointer allocate(size_type n, const void *hint = 0)
-    {
-		return reinterpret_cast<T *>(void_mmap_allocator::allocate(n * sizeof(T), hint));
-    }
-
-    void deallocate(pointer p, size_type n)
-    {
-		void_mmap_allocator::deallocate(p, n);
-    }
-
-    void construct(pointer p, const_reference val)
-    {
-        new((void *)p) T(val);        
-    }
-
-    void destroy(pointer p) { void_mmap_allocator::destroy(p); }
-};
-
-template<typename T1, typename T2>
-static inline bool operator==(mmap_allocator<T1> &, mmap_allocator<T2> &) { return true; }
-template<typename T1, typename T2>
-static inline bool operator!=(mmap_allocator<T1> &, mmap_allocator<T2> &) { return false; }
+class NodeStore;
+class WayStore;
 
 //
 // Internal data structures.
 //
-class NodeStore
-{
-
-public:
-	using element_t = std::pair<NodeID, LatpLon>;
-	using internal_element_t = std::pair<ShardedNodeID, LatpLon>;
-	using map_t = std::deque<internal_element_t, mmap_allocator<internal_element_t>>;
-
-	void reopen()
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		for (auto i = 0; i < mLatpLons.size(); i++)
-			mLatpLons[i]->clear();
-
-		mLatpLons.clear();
-		for (auto i = 0; i < NODE_SHARDS; i++) {
-			mLatpLons.push_back(std::make_unique<map_t>());
-		}
-	}
-
-	// @brief Lookup a latp/lon pair
-	// @param i OSM ID of a node
-	// @return Latp/lon pair
-	// @exception NotFound
-	LatpLon at(NodeID i) const {
-		auto shard = mLatpLons[shardPart(i)];
-		auto id = idPart(i);
-
-		auto iter = std::lower_bound(shard->begin(), shard->end(), id, [](auto const &e, auto i) { 
-			return e.first < i; 
-		});
-
-		if(iter == shard->end() || iter->first != id)
-			throw std::out_of_range("Could not find node with id " + std::to_string(i));
-
-		return iter->second;
-	}
-
-	// @brief Return the number of stored items
-	size_t size() const { 
-		std::lock_guard<std::mutex> lock(mutex);
-		uint64_t size = 0;
-		for (auto i = 0; i < mLatpLons.size(); i++)
-			size += mLatpLons[i]->size(); 
-
-		return size;
-	}
-
-	void insert_back(std::vector<element_t> const &element) {
-		uint32_t newEntries[NODE_SHARDS] = {};
-		std::vector<map_t::iterator> iterators;
-
-		// Before taking the lock, do a pass to find out how much
-		// to grow each backing collection
-		for (auto it = element.begin(); it != element.end(); it++) {
-			newEntries[shardPart(it->first)]++;
-		}
-
-		std::lock_guard<std::mutex> lock(mutex);
-		for (auto i = 0; i < NODE_SHARDS; i++) {
-			auto size = mLatpLons[i]->size();
-			mLatpLons[i]->resize(size + newEntries[i]);
-			iterators.push_back(mLatpLons[i]->begin() + size);
-		}
-
-		for (auto it = element.begin(); it != element.end(); it++) {
-			uint32_t shard = shardPart(it->first);
-			uint32_t id = idPart(it->first);
-
-			*iterators[shard] = std::make_pair(id, it->second);
-			iterators[shard]++;
-		}
-	}
-
-	// @brief Make the store empty
-	void clear() { 
-		reopen();
-	}
-
-	void sort(unsigned int threadNum);
-
-private: 
-	mutable std::mutex mutex;
-	std::vector<std::shared_ptr<map_t>> mLatpLons;
-
-	uint32_t shardPart(NodeID id) const {
-		uint32_t rv = id >> 32;
-		return rv;
-	}
-
-	uint32_t idPart(NodeID id) const {
-		return id;
-	}
-};
-
-class CompactNodeStore
-{
-
-public:
-	using element_t = std::pair<NodeID, LatpLon>;
-	using map_t = std::deque<LatpLon, mmap_allocator<LatpLon>>;
-
-	void reopen()
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLons = std::make_unique<map_t>();
-	}
-
-	// @brief Lookup a latp/lon pair
-	// @param i OSM ID of a node
-	// @return Latp/lon pair
-	// @exception NotFound
-	LatpLon at(NodeID i) const {
-		if(i >= mLatpLons->size())
-			throw std::out_of_range("Could not find node with id " + std::to_string(i));
-		return mLatpLons->at(i);
-	}
-
-	// @brief Return the number of stored items
-	size_t size() const { 
-		std::lock_guard<std::mutex> lock(mutex);
-		return mLatpLons->size(); 
-	}
-
-	// @brief Insert a latp/lon pair.
-	// @param i OSM ID of a node
-	// @param coord a latp/lon pair to be inserted
-	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of nodes
-	//			  (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(NodeID i, LatpLon coord) {
-		if(i >= mLatpLons->size())
-			mLatpLons->resize(i + 1);
-		(*mLatpLons)[i] = coord;
-	}
-
-	void insert_back(std::vector<element_t> const &elements) {
-		std::lock_guard<std::mutex> lock(mutex);
-		for(auto const &i: elements) 
-			insert_back(i.first, i.second);
-	}
-
-	// @brief Make the store empty
-	void clear() { 
-		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLons->clear(); 
-	}
-
-private: 
-	mutable std::mutex mutex;
-	std::shared_ptr<map_t> mLatpLons;
-};
-
 // list of ways used by relations
 // by noting these in advance, we don't need to store all ways in the store
 class UsedWays {
@@ -238,6 +32,9 @@ public:
 	bool inited = false;
 
 	// Size the vector to a reasonable estimate, to avoid resizing on the fly
+	// TODO: it'd be preferable if UsedWays didn't know about compact mode --
+	//   instead, use an efficient data structure if numNodes < 1B, otherwise
+	//   use a large bitvector
 	void reserve(bool compact, size_t numNodes) {
 		std::lock_guard<std::mutex> lock(mutex);
 		if (inited) return;
@@ -308,64 +105,6 @@ public:
 	}
 };
 
-// way store
-class WayStore {
-
-public:
-	using latplon_vector_t = std::vector<LatpLon, mmap_allocator<LatpLon>>;
-	using element_t = std::pair<WayID, latplon_vector_t>;
-	using map_t = std::deque<element_t, mmap_allocator<element_t>>;
-
-	void reopen() {
-		mLatpLonLists = std::make_unique<map_t>();
-	}
-
-	// @brief Lookup a node list
-	// @param i OSM ID of a way
-	// @return A node list
-	// @exception NotFound
-	latplon_vector_t const &at(WayID wayid) const {
-		std::lock_guard<std::mutex> lock(mutex);
-		
-		auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), wayid, [](auto const &e, auto wayid) { 
-			return e.first < wayid; 
-		});
-
-		if(iter == mLatpLonLists->end() || iter->first != wayid)
-			throw std::out_of_range("Could not find way with id " + std::to_string(wayid));
-
-		return iter->second;
-	}
-
-	// @brief Insert a node list.
-	// @param i OSM ID of a way
-	// @param llVec a coordinate vector to be inserted
-	// @invariant The OSM ID i must be larger than previously inserted OSM IDs of ways
-	//			  (though unnecessarily for current impl, future impl may impose that)
-	void insert_back(std::vector<element_t> &new_ways) {
-		std::lock_guard<std::mutex> lock(mutex);
-		auto i = mLatpLonLists->size();
-		mLatpLonLists->resize(i + new_ways.size());
-		std::copy(std::make_move_iterator(new_ways.begin()), std::make_move_iterator(new_ways.end()), mLatpLonLists->begin() + i); 
-	}
-
-	// @brief Make the store empty
-	void clear() { 
-		std::lock_guard<std::mutex> lock(mutex);
-		mLatpLonLists->clear(); 
-	}
-
-	std::size_t size() const { 
-		std::lock_guard<std::mutex> lock(mutex);
-		return mLatpLonLists->size(); 
-	}
-
-	void sort(unsigned int threadNum);
-
-private:	
-	mutable std::mutex mutex;
-	std::unique_ptr<map_t> mLatpLonLists;
-};
 
 // relation store
 // (this isn't currently used as we don't need to store relations for later processing, but may be needed for nested relations)
@@ -425,56 +164,32 @@ private:
 */
 class OSMStore
 {
+public:
+	NodeStore& nodes;
+	WayStore& ways;
+
 protected:	
-	NodeStore nodes;
-	CompactNodeStore compact_nodes;
 	bool use_compact_nodes = false;
 	bool require_integrity = true;
 
-	WayStore ways;
 	RelationStore relations; // unused
 	UsedWays used_ways;
 	RelationScanStore scanned_relations;
 
-	void reopen() {
-		nodes.reopen();
-		compact_nodes.reopen();
-		ways.reopen();
-		relations.reopen();
-	}
-
 public:
 
-	OSMStore()
+	OSMStore(NodeStore& nodes, WayStore& ways): nodes(nodes), ways(ways)
 	{ 
 		reopen();
 	}
 
+	void reopen();
+
 	void open(std::string const &osm_store_filename);
 
-	void use_compact_store(bool use = true) { use_compact_nodes = use; }
-	void enforce_integrity(bool ei  = true) { require_integrity = ei; }
+	void use_compact_store(bool use) { use_compact_nodes = use; }
+	void enforce_integrity(bool ei) { require_integrity = ei; }
 	bool integrity_enforced() { return require_integrity; }
-
-	void nodes_insert_back(std::vector<NodeStore::element_t> const &new_nodes) {
-		if(!use_compact_nodes)
-			nodes.insert_back(new_nodes);
-		else
-			compact_nodes.insert_back(new_nodes);
-	}
-	void nodes_sort(unsigned int threadNum);
-	std::size_t nodes_size() {
-		return use_compact_nodes ? compact_nodes.size() : nodes.size();
-	}
-
-	LatpLon nodes_at(NodeID i) const { 
-		return use_compact_nodes ? compact_nodes.at(i) : nodes.at(i);
-	}
-
-	void ways_insert_back(std::vector<WayStore::element_t> &new_ways) {
-		ways.insert_back(new_ways);
-	}
-	void ways_sort(unsigned int threadNum);
 
 	void relations_insert_front(std::vector<RelationStore::element_t> &new_relations) {
 		relations.insert_front(new_relations);
@@ -483,10 +198,9 @@ public:
 
 	void mark_way_used(WayID i) { used_ways.insert(i); }
 	bool way_is_used(WayID i) { return used_ways.at(i); }
-	void ensure_used_ways_inited() {
-		if (!used_ways.inited) used_ways.reserve(use_compact_nodes, nodes_size());
-	}
-	
+
+	void ensureUsedWaysInited();
+
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }
 	void store_relation_tags(WayID relid, const tag_map_t &tags) { scanned_relations.store_relation_tags(relid,tags); }
@@ -494,15 +208,7 @@ public:
 	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
 	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
 
-	void clear() {
-		nodes.clear();
-		compact_nodes.clear();
-		ways.clear();
-		relations.clear();
-		used_ways.clear();
-	} 
-
-	void reportStoreSize(std::ostringstream &str);
+	void clear();
 	void reportSize() const;
 
 	// Relation -> MultiPolygon or MultiLinestring

@@ -1,11 +1,45 @@
 #include <algorithm>
 #include <iostream>
 #include "tile_data.h"
-
+#include "coordinates_geom.h"
+#include "leased_store.h"
 #include <ciso646>
 
 using namespace std;
 extern bool verbose;
+
+TileCoordinatesSet::TileCoordinatesSet(uint zoom):
+	zoom(zoom),
+	tiles((1 << zoom) * (1 << zoom)) {}
+
+bool TileCoordinatesSet::test(TileCoordinate x, TileCoordinate y) const {
+	uint64_t loc = x * (1 << zoom) + y;
+	if (loc >= tiles.size())
+		return false;
+
+	return tiles[loc];
+}
+
+size_t TileCoordinatesSet::size() const {
+	size_t rv = 0;
+	for (int i = 0; i < tiles.size(); i++)
+		if (tiles[i])
+			rv++;
+
+	return rv;
+}
+
+void TileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
+	uint64_t loc = x * (1 << zoom) + y;
+	if (loc >= tiles.size())
+		return;
+	tiles[loc] = true;
+}
+
+thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
+thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
+thread_local LeasedStore<TileDataSource::multi_linestring_store_t> multilinestringStore;
+thread_local LeasedStore<TileDataSource::multi_polygon_store_t> multipolygonStore;
 
 TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID)
 	:
@@ -14,8 +48,27 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	objectsMutex(threadNum * 4),
 	objects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
-	baseZoom(baseZoom)
+	baseZoom(baseZoom),
+	pointStores(threadNum),
+	linestringStores(threadNum),
+	multipolygonStores(threadNum),
+	multilinestringStores(threadNum),
+	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, baseZoom)),
+	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, baseZoom))
 {
+	shardBits = 0;
+	numShards = 1;
+	while(numShards < threadNum) {
+		shardBits++;
+		numShards *= 2;
+	}
+
+	for (int i = 0; i < threadNum; i++) {
+		availablePointStoreLeases.push_back(std::make_pair(i, &pointStores[i]));
+		availableLinestringStoreLeases.push_back(std::make_pair(i, &linestringStores[i]));
+		availableMultiLinestringStoreLeases.push_back(std::make_pair(i, &multilinestringStores[i]));
+		availableMultiPolygonStoreLeases.push_back(std::make_pair(i, &multipolygonStores[i]));
+	}
 }
 
 void TileDataSource::finalize(size_t threadNum) {
@@ -66,8 +119,7 @@ void addCoveredTilesToOutput(const uint baseZoom, const uint zoom, const Box& bo
 	TileCoordinate maxy = box.max_corner().y() / scale;
 	for (int x=minx; x<=maxx; x++) {
 		for (int y=miny; y<=maxy; y++) {
-			TileCoordinates newIndex(x, y);
-			output.insert(newIndex);
+			output.set(x, y);
 		}
 	}
 }
@@ -97,6 +149,10 @@ void TileDataSource::collectObjectsForTile(
 		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
 		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
+		if (z6x >= 64 || z6y >= 64) {
+			if (verbose) std::cerr << "collectObjectsForTile: invalid tile z" << zoom << "/" << dstIndex.x << "/" << dstIndex.y << std::endl;
+			return;
+		}
 		iStart = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 		iEnd = iStart + 1;
 	}
@@ -129,10 +185,10 @@ void TileDataSource::collectLargeObjectsForTile(
 
 // Build node and way geometries
 Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType, 
-                                          NodeID const objectID, const TileBbox &bbox) const {
+                                          NodeID const objectID, const TileBbox &bbox) {
 	switch(geomType) {
 		case POINT_: {
-			auto p = retrieve_point(objectID);
+			auto p = retrievePoint(objectID);
 			if (geom::within(p, bbox.clippingBox)) {
 				return p;
 			} 
@@ -140,7 +196,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case LINESTRING_: {
-			auto const &ls = retrieve_linestring(objectID);
+			auto const &ls = retrieveLinestring(objectID);
 
 			MultiLinestring out;
 			if(ls.empty())
@@ -167,15 +223,37 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case MULTILINESTRING_: {
-			auto const &mls = retrieve_multi_linestring(objectID);
+			// Look for a previously clipped version at z-1, z-2, ...
+			std::shared_ptr<MultiLinestring> cachedClip = multiLinestringClipCache.get(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
+
+			MultiLinestring uncached;
+
+			if (cachedClip == nullptr) {
+				const auto& input = retrieveMultiLinestring(objectID);
+				boost::geometry::assign(uncached, input);
+			}
+
+			const auto &mls = cachedClip == nullptr ? uncached : *cachedClip;
+
 			// investigate whether filtering the constituent linestrings improves performance
 			MultiLinestring result;
 			geom::intersection(mls, bbox.getExtendBox(), result);
+			multiLinestringClipCache.add(bbox, objectID, result);
 			return result;
 		}
 
 		case POLYGON_: {
-			auto const &input = retrieve_multi_polygon(objectID);
+			// Look for a previously clipped version at z-1, z-2, ...
+			std::shared_ptr<MultiPolygon> cachedClip = multiPolygonClipCache.get(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
+
+			MultiPolygon uncached;
+
+			if (cachedClip == nullptr) {
+				// The cached multipolygon uses a non-standard allocator, so copy it
+				populateMultiPolygon(uncached, objectID);
+			}
+
+			const auto &input = cachedClip == nullptr ? uncached : *cachedClip;
 
 			Box box = bbox.clippingBox;
 			
@@ -235,11 +313,14 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
+					multiPolygonClipCache.add(bbox, objectID, output);
 					return output;
 				} else {
 					// occasionally also wrong_topological_dimension, disconnected_interior
 				}
 			}
+
+			multiPolygonClipCache.add(bbox, objectID, mp);
 			return mp;
 		}
 
@@ -252,7 +333,7 @@ LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType,
                                           NodeID const objectID, const TileBbox &bbox) const {
 	switch(geomType) {
 		case POINT_: {
-			auto p = retrieve_point(objectID);
+			auto p = retrievePoint(objectID);
 			LatpLon out;
 			out.latp = p.y();
 			out.lon  = p.x();
@@ -269,17 +350,28 @@ LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType,
 
 // Report number of stored geometries
 void TileDataSource::reportSize() const {
-	std::cout << "Generated points: " << (point_store->size()-1) << ", lines: " << (linestring_store->size() + multi_linestring_store->size() - 2) << ", polygons: " << (multi_polygon_store->size()-1) << std::endl;
+	size_t points = 0, linestrings = 0, polygons = 0;
+	for (const auto& store : pointStores)
+		points += store.size();
+
+	for (const auto& store : linestringStores)
+		linestrings += store.size();
+
+	for (const auto& store : multilinestringStores)
+		linestrings += store.size();
+
+	for (const auto& store : multipolygonStores)
+		polygons += store.size();
+
+	std::cout << "Generated points: " << (points - 1) << ", lines: " << (linestrings - 2) << ", polygons: " << (polygons - 1) << std::endl;
 }
 
 TileCoordinatesSet getTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
 	unsigned int zoom
 ) {
-	TileCoordinatesSet tileCoordinates;
+	TileCoordinatesSet tileCoordinates(zoom);
 
-	// Create list of tiles
-	tileCoordinates.clear();
 	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->collectTilesWithObjectsAtZoom(zoom, tileCoordinates);
 		sources[i]->collectTilesWithLargeObjectsAtZoom(zoom, tileCoordinates);
@@ -391,7 +483,7 @@ void TileDataSource::addGeometryToIndex(
 
 void TileDataSource::addGeometryToIndex(
 	const MultiPolygon& geom,
-	const std::vector<OutputObject>& outputs,
+	std::vector<OutputObject>& outputs,
 	const uint64_t id
 ) {
 	unordered_set<TileCoordinates> tileSet;
@@ -415,8 +507,10 @@ void TileDataSource::addGeometryToIndex(
 		maxTileX = std::max(index.x, maxTileX);
 		maxTileY = std::max(index.y, maxTileY);
 	}
-	for (const auto& output : outputs) {
-		if (tileSet.size()>=16) {
+
+	const size_t tileSetSize = tileSet.size();
+	for (auto& output : outputs) {
+		if (tileSetSize >= 16) {
 			// Larger objects - add to rtree
 			// note that the bbox is currently the envelope of the entire multipolygon,
 			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
@@ -431,4 +525,65 @@ void TileDataSource::addGeometryToIndex(
 			}
 		}
 	}
+}
+
+NodeID TileDataSource::storePoint(const Point& input) {
+	const auto& store = pointStore.get(this);
+
+	NodeID offset = store.second->size();
+	store.second->emplace_back(input);
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	return rv;
+}
+
+NodeID TileDataSource::storeLinestring(const Linestring& src) {
+	const auto& store = linestringStore.get(this);
+	linestring_t dst(src.begin(), src.end());
+
+	NodeID offset = store.second->size();
+	store.second->emplace_back(std::move(dst));
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	return rv;
+}
+
+NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src) {
+	const auto& store = multipolygonStore.get(this);
+
+	multi_polygon_t dst;
+	dst.resize(src.size());
+	for(std::size_t i = 0; i < src.size(); ++i) {
+		dst[i].outer().resize(src[i].outer().size());
+		boost::geometry::assign(dst[i].outer(), src[i].outer());
+
+		dst[i].inners().resize(src[i].inners().size());
+		for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
+			dst[i].inners()[j].resize(src[i].inners()[j].size());
+			boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
+		}
+	}
+
+	NodeID offset = store.second->size();
+	store.second->emplace_back(std::move(dst));
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	return rv;
+}
+
+NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
+	const auto& store = multilinestringStore.get(this);
+
+	multi_linestring_t dst;
+	dst.resize(src.size());
+	for (std::size_t i=0; i<src.size(); ++i) {
+		boost::geometry::assign(dst[i], src[i]);
+	}
+
+	NodeID offset = store.second->size();
+	store.second->emplace_back(std::move(dst));
+	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	return rv;
+}
+
+void TileDataSource::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
+	const auto &input = retrieveMultiPolygon(objectID);
+	boost::geometry::assign(dst, input);
 }

@@ -8,6 +8,7 @@
 using namespace std;
 extern bool verbose;
 
+thread_local bool enabledUserSignal = false;
 typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 
@@ -96,7 +97,7 @@ void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
 
 template <typename T>
 void CheckNextObjectAndMerge(
-	const TileDataSource* source,
+	TileDataSource* source,
 	OutputObjectsConstIt& jt,
 	OutputObjectsConstIt ooSameLayerEnd, 
 	const TileBbox& bbox,
@@ -134,7 +135,14 @@ void CheckNextObjectAndMerge(
 	}
 }
 
-void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
+void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
+	g.erase(std::remove_if(
+		g.begin(),
+		g.end(),
+		[&](const Polygon &poly) -> bool {
+			return std::fabs(geom::area(poly)) < filterArea;
+		}),
+	g.end());
 	for (auto &outer : g) {
 		outer.inners().erase(std::remove_if(
 			outer.inners().begin(), 
@@ -147,7 +155,7 @@ void RemoveInnersBelowSize(MultiPolygon &g, double filterArea) {
 }
 
 void ProcessObjects(
-	const TileDataSource* source,
+	TileDataSource* source,
 	const AttributeStore& attributeStore,
 	OutputObjectsConstIt ooSameLayerBegin,
 	OutputObjectsConstIt ooSameLayerEnd, 
@@ -188,8 +196,8 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
-				if (geom::area(g)<filterArea) continue;
-				RemoveInnersBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				if (geom::is_empty(g)) continue;
 			}
 
 			//This may increment the jt iterator
@@ -356,7 +364,10 @@ void outputProc(
 
 	// Loop through layers
 #ifndef _WIN32
-	signal(SIGUSR1, handleUserSignal);
+	if (!enabledUserSignal) {
+		signal(SIGUSR1, handleUserSignal);
+		enabledUserSignal = true;
+	}
 #endif
 	signalStop=false;
 

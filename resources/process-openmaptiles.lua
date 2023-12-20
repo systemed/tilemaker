@@ -571,11 +571,10 @@ function way_function()
 	end
 
 	-- Set 'water'
-	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
+	if natural=="water" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
 		if Find("covered")=="yes" or not isClosed then return end
-		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
+		local class="lake"; if waterway~="" then class="river" end
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
-		if class=="ocean" and isClosed and (AreaIntersecting("ocean")/Area() > 0.98) then return end
 		Layer("water",true)
 		SetMinZoomByArea()
 		Attribute("class",class)

@@ -85,7 +85,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 			if (p != nullptr) {
 	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
-				NodeID oid = store_point(sp);
+				NodeID oid = storePoint(sp);
 				OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
 				if (isIndexed) indexedGeometries.push_back(oo);
 
@@ -97,7 +97,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 
 		case LINESTRING_:
 		{
-			NodeID oid = store_linestring(boost::get<Linestring>(geometry));
+			NodeID oid = storeLinestring(boost::get<Linestring>(geometry));
 			OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
 			if (isIndexed) indexedGeometries.push_back(oo);
 
@@ -108,7 +108,7 @@ void ShpMemTiles::StoreShapefileGeometry(
 
 		case POLYGON_:
 		{
-			NodeID oid = store_multi_polygon(boost::get<MultiPolygon>(geometry));
+			NodeID oid = storeMultiPolygon(boost::get<MultiPolygon>(geometry));
 			OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
 			if (isIndexed) indexedGeometries.push_back(oo);
 

@@ -8,9 +8,16 @@
 #include <boost/asio/post.hpp>
 #include <unordered_set>
 
+#include "node_store.h"
+#include "way_store.h"
 #include "osm_lua_processing.h"
+#include "mmap_allocator.h"
 
 using namespace std;
+
+const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
+const std::string OptionLocationsOnWays = "LocationsOnWays";
+std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 
 PbfReader::PbfReader(OSMStore &osmStore)
 	: osmStore(osmStore)
@@ -62,7 +69,7 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 
 		}
 
-		osmStore.nodes_insert_back(nodes);
+		osmStore.nodes.insert(nodes);
 		return true;
 	}
 	return false;
@@ -75,7 +82,10 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 		TagMap tags;
 		Way pbfWay;
 
-		std::vector<WayStore::element_t> ways;
+		const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
+
+		std::vector<WayStore::ll_element_t> llWays;
+		std::vector<std::pair<WayID, std::vector<NodeID>>> nodeWays;
 
 		for (int j=0; j<pg.ways_size(); j++) {
 			pbfWay = pg.ways(j);
@@ -84,8 +94,10 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 			// Assemble nodelist
 			LatpLonVec llVec;
+			std::vector<NodeID> nodeVec;
 			if (locationsOnWays) {
 				int lat=0, lon=0;
+				llVec.reserve(pbfWay.lats_size());
 				for (int k=0; k<pbfWay.lats_size(); k++) {
 					lat += pbfWay.lats(k);
 					lon += pbfWay.lons(k);
@@ -94,10 +106,13 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 				}
 			} else {
 				int64_t nodeId = 0;
+				llVec.reserve(pbfWay.refs_size());
+				nodeVec.reserve(pbfWay.refs_size());
 				for (int k=0; k<pbfWay.refs_size(); k++) {
 					nodeId += pbfWay.refs(k);
 					try {
-						llVec.push_back(osmStore.nodes_at(static_cast<NodeID>(nodeId)));
+						llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
+						nodeVec.push_back(nodeId);
 					} catch (std::out_of_range &err) {
 						if (osmStore.integrity_enforced()) throw err;
 					}
@@ -108,12 +123,15 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 			try {
 				tags.reset();
 				readTags(pbfWay, pb, tags);
+				bool emitted = output.setWay(static_cast<WayID>(pbfWay.id()), llVec, tags);
 
 				// If we need it for later, store the way's coordinates in the global way store
-				if (osmStore.way_is_used(wayId)) {
-					ways.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
+				if (emitted || osmStore.way_is_used(wayId)) {
+					if (wayStoreRequiresNodes)
+						nodeWays.push_back(std::make_pair(wayId, nodeVec));
+					else
+						llWays.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
 				}
-				output.setWay(static_cast<WayID>(pbfWay.id()), llVec, tags);
 
 			} catch (std::out_of_range &err) {
 				// Way is missing a node?
@@ -122,7 +140,12 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 		}
 
-		osmStore.ways_insert_back(ways);
+		if (wayStoreRequiresNodes) {
+			osmStore.ways.insertNodes(nodeWays);
+		} else {
+			osmStore.ways.insertLatpLons(llWays);
+		}
+
 		return true;
 	}
 	return false;
@@ -162,7 +185,12 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	return true;
 }
 
-bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfReader::ReadRelations(
+	OsmLuaProcessing& output,
+	PrimitiveGroup& pg,
+	const PrimitiveBlock& pb,
+	const BlockMetadata& blockMetadata
+) {
 	// ----	Read relations
 
 	if (pg.relations_size() > 0) {
@@ -176,6 +204,9 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 		int outerKey= findStringPosition(pb, "outer");
 		if (typeKey >-1 && mpKey>-1) {
 			for (int j=0; j<pg.relations_size(); j++) {
+				if (j % blockMetadata.chunks != blockMetadata.chunk)
+					continue;
+
 				Relation pbfRelation = pg.relations(j);
 				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
 				bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
@@ -213,11 +244,19 @@ bool PbfReader::ReadRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::pair<std::size_t, std::size_t> progress, std::size_t datasize, 
-                          unordered_set<string> const &nodeKeys, bool locationsOnWays, ReadPhase phase) 
+bool PbfReader::ReadBlock(
+	std::istream& infile,
+	OsmLuaProcessing& output,
+	const BlockMetadata& blockMetadata,
+	const unordered_set<string>& nodeKeys,
+	bool locationsOnWays,
+	ReadPhase phase
+) 
 {
+	infile.seekg(blockMetadata.offset);
+
 	PrimitiveBlock pb;
-	readBlock(&pb, datasize, infile);
+	readBlock(&pb, blockMetadata.length, infile);
 	if (infile.eof()) {
 		return true;
 	}
@@ -237,14 +276,17 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 	
 		auto output_progress = [&]()
 		{
-			std::ostringstream str;
-			osmStore.reportStoreSize(str);
-			str << "Block " << progress.first << "/" << progress.second << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "        \r";
-			std::cout << str.str();
-			std::cout.flush();
+			if (ioMutex.try_lock()) {
+				std::ostringstream str;
+				void_mmap_allocator::reportStoreSize(str);
+				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
+				std::cout << str.str();
+				std::cout.flush();
+				ioMutex.unlock();
+			}
 		};
 
-		if(phase == ReadPhase::Nodes || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Nodes) {
 			bool done = ReadNodes(output, pg, pb, nodeKeyPositions);
 			if(done) { 
 				output_progress();
@@ -253,17 +295,17 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			}
 		}
 
-		if(phase == ReadPhase::RelationScan || phase == ReadPhase::All) {
-			osmStore.ensure_used_ways_inited();
+		if(phase == ReadPhase::RelationScan) {
+			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
-				std::cout << "(Scanning for ways used in relations: " << (100*progress.first/progress.second) << "%)\r";
+				std::cout << "(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)\r";
 				std::cout.flush();
 				continue;
 			}
 		}
 	
-		if(phase == ReadPhase::Ways || phase == ReadPhase::All) {
+		if(phase == ReadPhase::Ways) {
 			bool done = ReadWays(output, pg, pb, locationsOnWays);
 			if(done) { 
 				output_progress();
@@ -272,8 +314,8 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 			}
 		}
 
-		if(phase == ReadPhase::Relations || phase == ReadPhase::All) {
-			bool done = ReadRelations(output, pg, pb);
+		if(phase == ReadPhase::Relations) {
+			bool done = ReadRelations(output, pg, pb, blockMetadata);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -294,11 +336,44 @@ bool PbfReader::ReadBlock(std::istream &infile, OsmLuaProcessing &output, std::p
 		return false;
 	}
 
+	// We can only delete blocks if we're confident we've processed everything,
+	// which is not possible in the case of subdivided blocks.
+	return blockMetadata.chunks == 1;
+}
+
+bool blockHasPrimitiveGroupSatisfying(
+	std::istream& infile,
+	const BlockMetadata block,
+	std::function<bool(const PrimitiveGroup&)> test
+) {
+	PrimitiveBlock pb;
+
+	// We may have previously read to EOF, so clear the internal error state
+	infile.clear();
+	infile.seekg(block.offset);
+	readBlock(&pb, block.length, infile);
+	if (infile.eof()) {
+		throw std::runtime_error("blockHasPrimitiveGroupSatisfying got unexpected eof");
+	}
+
+	for (int i=0; i<pb.primitivegroup_size(); i++) {
+		PrimitiveGroup pg;
+		pg = pb.primitivegroup(i);
+
+		if (test(pg))
+			return false;
+	}
+	
 	return true;
 }
 
-int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int threadNum, 
-		pbfreader_generate_stream const &generate_stream, pbfreader_generate_output const &generate_output)
+int PbfReader::ReadPbfFile(
+	bool hasSortTypeThenID,
+	unordered_set<string> const& nodeKeys,
+	unsigned int threadNum,
+	const pbfreader_generate_stream& generate_stream,
+	const pbfreader_generate_output& generate_output
+)
 {
 	auto infile = generate_stream();
 
@@ -309,46 +384,159 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 	readBlock(&block, readHeader(*infile).datasize(), *infile);
 	bool locationsOnWays = false;
 	for (std::string option : block.optional_features()) {
-		if (option=="LocationsOnWays") {
+		if (option == OptionLocationsOnWays) {
 			std::cout << ".osm.pbf file has locations on ways" << std::endl;
 			locationsOnWays = true;
 		}
 	}
 
-	std::map<std::size_t, std::pair< std::size_t, std::size_t> > blocks;
+	std::map<std::size_t, BlockMetadata> blocks;
 
+	// Track the filesize - note that we can't rely on tellg(), as
+	// its meant to be an opaque token useful only for seeking.
+	size_t filesize = 0;
 	while (true) {
 		BlobHeader bh = readHeader(*infile);
+		filesize += bh.datasize();
 		if (infile->eof()) {
 			break;
 		}
 
-		blocks[blocks.size()] = std::make_pair(infile->tellg(), bh.datasize());
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), true, true, true, 0, 1 };
 		infile->seekg(bh.datasize(), std::ios_base::cur);
-		
+	}
+
+	if (hasSortTypeThenID) {
+		// The PBF's blocks are sorted by type, then ID. We can do a binary search
+		// to learn where the blocks transition between object types, which
+		// enables a more efficient partitioning of work for reading.
+		std::vector<size_t> indexes;
+		for (int i = 0; i < blocks.size(); i++)
+			indexes.push_back(i);
+
+		const auto& waysStart = std::lower_bound(
+			indexes.begin(),
+			indexes.end(),
+			0,
+			[&blocks, &infile](const auto &i, const auto &ignored) {
+				return blockHasPrimitiveGroupSatisfying(
+					*infile,
+					blocks[i],
+					[](const PrimitiveGroup&pg) { return pg.ways_size() > 0 || pg.relations_size() > 0; }
+				);
+			}
+		);
+
+		const auto& relationsStart = std::lower_bound(
+			indexes.begin(),
+			indexes.end(),
+			0,
+			[&blocks, &infile](const auto &i, const auto &ignored) {
+				return blockHasPrimitiveGroupSatisfying(
+					*infile,
+					blocks[i],
+					[](const PrimitiveGroup&pg) { return pg.relations_size() > 0; }
+				);
+			}
+		);
+
+		for (auto it = indexes.begin(); it != indexes.end(); it++) {
+			blocks[*it].hasNodes = it <= waysStart;
+			blocks[*it].hasWays = it >= waysStart && it <= relationsStart;
+			blocks[*it].hasRelations = it >= relationsStart;
+		}
 	}
 
 
-	std::mutex block_mutex;
+	// PBFs generated by Osmium have 8,000 entities per block,
+	// and each block is about 64KB.
+	//
+	// PBFs generated by osmconvert (e.g., BBBike PBFs) have as
+	// many entities as fit in 31MB. Each block is about 16MB.
+	//
+	// Osmium PBFs seem to be processed about 3x faster than osmconvert
+	// PBFs, so try to hint to the user when they could speed up their
+	// pipeline.
+	if (filesize / blocks.size() > 1000000) {
+		std::cout << "warning: PBF has very large blocks, which may slow processing" << std::endl;
+		std::cout << "         to fix: osmium cat -f pbf your-file.osm.pbf -o optimized.osm.pbf" << std::endl;
+	}
 
-	std::size_t total_blocks = blocks.size();
 
 	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
 		// Launch the pool with threadNum threads
 		boost::asio::thread_pool pool(threadNum);
+		std::mutex block_mutex;
+
+		// If we're in ReadPhase::Relations and there aren't many blocks left
+		// to read, increase parallelism by letting each thread only process
+		// a portion of the block.
+		if (phase == ReadPhase::Relations && blocks.size() < threadNum * 2) {
+			std::cout << "only " << blocks.size() << " relation blocks; subdividing for better parallelism" << std::endl;
+			std::map<std::size_t, BlockMetadata> moreBlocks;
+			for (const auto& block : blocks) {
+				BlockMetadata newBlock = block.second;
+				newBlock.chunks = threadNum;
+				for (size_t i = 0; i < threadNum; i++) {
+					newBlock.chunk = i;
+					moreBlocks[moreBlocks.size()] = newBlock;
+				}
+			}
+			blocks = moreBlocks;
+		}
+
+		std::deque<std::vector<IndexedBlockMetadata>> blockRanges;
+		std::map<std::size_t, BlockMetadata> filteredBlocks;
+		for (const auto& entry : blocks) {
+			if ((phase == ReadPhase::Nodes && entry.second.hasNodes) ||
+					(phase == ReadPhase::RelationScan && entry.second.hasRelations) ||
+					(phase == ReadPhase::Ways && entry.second.hasWays) ||
+					(phase == ReadPhase::Relations && entry.second.hasRelations))
+				filteredBlocks[entry.first] = entry.second;
+		}
+
+		blocksToProcess = filteredBlocks.size();
+		blocksProcessed = 0;
+
+		// When processing blocks, we try to give each worker large batches
+		// of contiguous blocks, so that they might benefit from long runs
+		// of sorted indexes, and locality of nearby IDs.
+		const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
+
+		size_t consumed = 0;
+		auto it = filteredBlocks.begin();
+		while(it != filteredBlocks.end()) {
+			std::vector<IndexedBlockMetadata> blockRange;
+			blockRange.reserve(batchSize);
+			size_t max = consumed + batchSize;
+			for (; consumed < max && it != filteredBlocks.end(); consumed++) {
+				IndexedBlockMetadata ibm;
+				memcpy(&ibm, &it->second, sizeof(BlockMetadata));
+				ibm.index = it->first;
+				blockRange.push_back(ibm);
+				it++;
+			}
+			blockRanges.push_back(blockRange);
+		}
 
 		{
-			const std::lock_guard<std::mutex> lock(block_mutex);
-			for(auto const &block: blocks) {
-				boost::asio::post(pool, [=, progress=std::make_pair(block.first, total_blocks), block=block.second, &blocks, &block_mutex, &nodeKeys]() {
-					auto infile = generate_stream();
-					auto output = generate_output();
+			for(const std::vector<IndexedBlockMetadata>& blockRange: blockRanges) {
+				boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
+					if (phase == ReadPhase::Nodes)
+						osmStore.nodes.batchStart();
+					if (phase == ReadPhase::Ways)
+						osmStore.ways.batchStart();
 
-					infile->seekg(block.first);
-					if(ReadBlock(*infile, *output, progress, block.second, nodeKeys, locationsOnWays, phase)) {
-						const std::lock_guard<std::mutex> lock(block_mutex);
-						blocks.erase(progress.first);	
+					for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
+						auto infile = generate_stream();
+						auto output = generate_output();
+
+						if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, locationsOnWays, phase)) {
+							const std::lock_guard<std::mutex> lock(block_mutex);
+							blocks.erase(indexedBlockMetadata.index);	
+							blocksProcessed++;
+						}
 					}
 				});
 			}
@@ -357,10 +545,10 @@ int PbfReader::ReadPbfFile(unordered_set<string> const &nodeKeys, unsigned int t
 		pool.join();
 
 		if(phase == ReadPhase::Nodes) {
-			osmStore.nodes_sort(threadNum);
+			osmStore.nodes.finalize(threadNum);
 		}
 		if(phase == ReadPhase::Ways) {
-			osmStore.ways_sort(threadNum);
+			osmStore.ways.finalize(threadNum);
 		}
 	}
 	return 0;
@@ -396,3 +584,15 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 	return 0;
 }
 
+bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature) {
+	fstream infile(inputFile, ios::in | ios::binary);
+	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
+	HeaderBlock block;
+	readBlock(&block, readHeader(infile).datasize(), infile);
+
+	for (const std::string& option: block.optional_features())
+		if (option == feature)
+			return true;
+
+	return false;
+}

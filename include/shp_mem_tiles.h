@@ -51,7 +51,7 @@ public:
 		for (const auto &it : results) {
 			OutputObject oo = indexedGeometries.at(it.second);
 			if (oo.geomType!=POLYGON_) continue;
-			geom::union_(mp, retrieve_multi_polygon(oo.objectID), tmp);
+			geom::union_(mp, retrieveMultiPolygon(oo.objectID), tmp);
 			geom::assign(mp, tmp);
 		}
 		geom::correct(mp);

@@ -6,12 +6,15 @@
 #include <utility>
 #include <boost/variant.hpp>
 #include "coordinates.h"
+#include "coordinates_geom.h"
 
 // Protobuf
 #include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
 typedef std::vector<std::pair<int,int> > XYString;
+
+class TileBbox;
 
 /**
 	\brief WriteGeometryVisitor takes a boost::geometry object and writes it into a tile
