@@ -37,7 +37,8 @@ void readBlock(google::protobuf::Message *messagePtr, std::size_t datasize, istr
 	readMessage(&blob, input, datasize);
 
 	// Unzip the gzipped content
-	string contents = decompress_string(blob.zlib_data(), false);
+	string contents;
+	decompress_string(contents, blob.zlib_data().data(), blob.zlib_data().size(), false);
 	messagePtr->ParseFromString(contents);
 }
 

@@ -8,6 +8,7 @@
 #include <mutex>
 #include <map>
 #include "osm_store.h"
+#include "pbf_reader.h"
 
 // Protobuf
 #include "osmformat.pb.h"
@@ -42,12 +43,12 @@ struct IndexedBlockMetadata: BlockMetadata {
  *
  * The output class is typically OsmMemTiles, which is derived from OsmLuaProcessing
  */
-class PbfReader
+class PbfProcessor
 {
 public:	
 	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8 };
 
-	PbfReader(OSMStore &osmStore);
+	PbfProcessor(OSMStore &osmStore);
 
 	using pbfreader_generate_output = std::function< std::shared_ptr<OsmLuaProcessing> () >;
 	using pbfreader_generate_stream = std::function< std::shared_ptr<std::istream> () >;
@@ -66,12 +67,16 @@ public:
 	// Read tags into a map from a way/node/relation
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 	template<typename T>
-	void readTags(T &pbfObject, PrimitiveBlock const &pb, tag_map_t &tags) {
-		tags.reserve(pbfObject.keys_size());
-		auto keysPtr = pbfObject.mutable_keys();
-		auto valsPtr = pbfObject.mutable_vals();
-		for (uint n=0; n < pbfObject.keys_size(); n++) {
-			tags[pb.stringtable().s(keysPtr->Get(n))] = pb.stringtable().s(valsPtr->Get(n));
+	void readTags(T& pbfObject, const PbfReader::PrimitiveBlock& pb, tag_map_t& tags) {
+		tags.reserve(pbfObject.keys.size());
+		// TODO: re-enable tags once we fifx lifetimes
+		for (uint n=0; n < pbfObject.keys.size(); n++) {
+			// TODO: tags should operate on data_view, not std::string
+			auto keyIndex = pbfObject.keys[n];
+			auto valueIndex = pbfObject.vals[n];
+			std::string key(pb.stringTable[keyIndex].data(), pb.stringTable[keyIndex].size());
+			std::string value(pb.stringTable[valueIndex].data(), pb.stringTable[valueIndex].size());
+			tags[key] = value;
 		}
 	}
 
@@ -86,36 +91,36 @@ private:
 		uint shard,
 		uint effectiveShard
 	);
-	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
+	bool ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const std::unordered_set<int>& nodeKeyPositions);
 
 	bool ReadWays(
-		OsmLuaProcessing &output,
-		PrimitiveGroup &pg,
-		PrimitiveBlock const &pb,
+		OsmLuaProcessing& output,
+		PbfReader::PrimitiveGroup& pg,
+		const PbfReader::PrimitiveBlock& pb,
 		bool locationsOnWays,
 		uint shard,
 		uint effectiveShards
 	);
-	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
+	bool ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb);
 	bool ReadRelations(
 		OsmLuaProcessing& output,
-		PrimitiveGroup& pg,
-		const PrimitiveBlock& pb,
+		PbfReader::PrimitiveGroup& pg,
+		const PbfReader::PrimitiveBlock& pb,
 		const BlockMetadata& blockMetadata,
 		uint shard,
 		uint effectiveShards
 	);
 
-	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {
-		if (typeKey==-1 || val==-1) return false;
-		auto typeI = std::find(rel.keys().begin(), rel.keys().end(), typeKey);
-		if (typeI==rel.keys().end()) return false;
-		int typePos = typeI - rel.keys().begin();
-		return rel.vals().Get(typePos) == val;
+	inline bool relationIsType(const PbfReader::Relation& rel, int typeKey, int val) {
+		if (typeKey == -1 || val == -1) return false;
+		auto typeI = std::find(rel.keys.begin(), rel.keys.end(), typeKey);
+		if (typeI == rel.keys.end()) return false;
+		int typePos = typeI - rel.keys.begin();
+		return rel.vals[typePos] == val;
 	}
 
 	/// Find a string in the dictionary
-	static int findStringPosition(PrimitiveBlock const &pb, char const *str);
+	static int findStringPosition(const PbfReader::PrimitiveBlock& pb, const std::string& str);
 	
 	OSMStore &osmStore;
 	std::mutex ioMutex;

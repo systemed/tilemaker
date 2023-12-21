@@ -112,6 +112,7 @@ tilemaker: \
 	src/output_object.o \
 	src/pbf_blocks.o \
 	src/pooled_string.o \
+	src/pbf_reader.o \
 	src/read_pbf.o \
 	src/read_shp.o \
 	src/sharded_node_store.o \
@@ -130,6 +131,7 @@ tilemaker: \
 test: \
 	test_append_vector \
 	test_attribute_store \
+	test_pbf_reader \
 	test_pooled_string \
 	test_sorted_node_store \
 	test_sorted_way_store
@@ -171,6 +173,11 @@ test_sorted_way_store: \
 	test/sorted_way_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.sorted_way_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_way_store
 
+test_pbf_reader: \
+	src/helpers.o \
+	src/pbf_reader.o \
+	test/pbf_reader.test.o
+	$(CXX) $(CXXFLAGS) -o test.pbf_reader $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pbf_reader
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)

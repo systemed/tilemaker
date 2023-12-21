@@ -10,7 +10,6 @@
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
-namespace geom = boost::geometry;
 using namespace std;
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
@@ -64,7 +63,9 @@ std::string compress_string(const std::string& str,
 }
 
 // Decompress an STL string using zlib and return the original data.
-std::string decompress_string(const std::string& str, bool asGzip) {
+// The output buffer is passed in; callers are meant to re-use the buffer such
+// that eventually no allocations are needed when decompressing.
+void decompress_string(std::string& output, const char* input, uint32_t inputSize, bool asGzip) {
     z_stream zs;                        // z_stream is zlib's control structure
     memset(&zs, 0, sizeof(zs));
 
@@ -76,27 +77,27 @@ std::string decompress_string(const std::string& str, bool asGzip) {
 			throw(std::runtime_error("inflateInit failed while decompressing."));
 	}
 
-    zs.next_in = (Bytef*)str.data();
-    zs.avail_in = str.size();
+    zs.next_in = (Bytef*)input;
+    zs.avail_in = inputSize;
 
     int ret;
-    char outbuffer[32768];
-    std::string outstring;
+
+    int actualOutputSize = 0;
 
     // get the decompressed bytes blockwise using repeated calls to inflate
     do {
-        zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
-        zs.avail_out = sizeof(outbuffer);
+        if (output.size() < actualOutputSize + 32768)
+            output.resize(actualOutputSize + 32768);
+
+        zs.next_out = reinterpret_cast<Bytef*>(&output[actualOutputSize]);
+        zs.avail_out = output.size() - actualOutputSize;
 
         ret = inflate(&zs, 0);
 
-        if (outstring.size() < zs.total_out) {
-            outstring.append(outbuffer,
-                             zs.total_out - outstring.size());
-        }
-
+        actualOutputSize = zs.total_out;
     } while (ret == Z_OK);
 
+    output.resize(actualOutputSize);
     inflateEnd(&zs);
 
     if (ret != Z_STREAM_END) {          // an error occurred that was not EOF
@@ -105,8 +106,6 @@ std::string decompress_string(const std::string& str, bool asGzip) {
             << zs.msg;
         throw(std::runtime_error(oss.str()));
     }
-
-    return outstring;
 }
 
 // Parse a Boost error

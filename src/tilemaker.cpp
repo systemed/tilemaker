@@ -383,7 +383,7 @@ int main(int argc, char* argv[]) {
 
 	// ----	Read all PBFs
 	
-	PbfReader pbfReader(osmStore);
+	PbfProcessor pbfProcessor(osmStore);
 	std::vector<bool> sortOrders = layers.getSortOrders();
 
 	if (!mapsplit) {
@@ -393,7 +393,7 @@ int main(int argc, char* argv[]) {
 			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
 			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
-			int ret = pbfReader.ReadPbfFile(
+			int ret = pbfProcessor.ReadPbfFile(
 				nodeStore->shards(),
 				hasSortTypeThenID,
 				nodeKeys,
@@ -455,6 +455,8 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	exit(1);
+	return 1; // TODO
 	// ----	Write out data
 
 	// If mapsplit, read list of tiles available
@@ -484,7 +486,7 @@ int main(int argc, char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			int ret = pbfReader.ReadPbfFile(
+			int ret = pbfProcessor.ReadPbfFile(
 				nodeStore->shards(),
 				false,
 				nodeKeys,
