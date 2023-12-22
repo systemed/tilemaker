@@ -11,11 +11,20 @@
 #include <mutex>
 #include <unordered_set>
 #include <boost/container/flat_map.hpp>
+#include <protozero/data_view.hpp>
 
 extern bool verbose;
 
 class NodeStore;
 class WayStore;
+
+// A comparator for data_view so it can be used in boost's flat_map
+struct DataViewLessThan {
+	bool operator()(const protozero::data_view& a, const protozero::data_view& b) const {
+		return a < b;
+	}
+};
+
 
 //
 // Internal data structures.

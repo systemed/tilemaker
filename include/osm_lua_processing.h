@@ -13,6 +13,7 @@
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "helpers.h"
+#include <protozero/data_view.hpp>
 
 #include <boost/container/flat_map.hpp>
 
@@ -71,7 +72,7 @@ public:
 
 	// ----	Data loading methods
 
-	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 
 	// Scan non-MP relation
 	bool scanRelation(WayID id, const tag_map_t &tags);
@@ -97,7 +98,7 @@ public:
 	bool Holds(const std::string& key) const;
 
 	// Get an OSM tag for a given key (or return empty string if none)
-	const std::string& Find(const std::string& key) const;
+	const std::string Find(const std::string& key) const;
 
 	// ----	Spatial queries called from Lua
 
@@ -258,7 +259,7 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
-	const boost::container::flat_map<std::string, std::string>* currentTags;
+	const boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>* currentTags;
 
 	std::vector<OutputObject> finalizeOutputs();
 

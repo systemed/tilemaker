@@ -127,10 +127,10 @@ bool OsmLuaProcessing::Holds(const string& key) const {
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
-const string& OsmLuaProcessing::Find(const string& key) const {
+const string OsmLuaProcessing::Find(const string& key) const {
 	auto it = currentTags->find(key);
 	if(it == currentTags->end()) return EMPTY_STRING;
-	return it->second;
+	return std::string(it->second.data(), it->second.size());
 }
 
 // ----	Spatial queries called from Lua
@@ -572,7 +572,11 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	}
 	if (!relationAccepted) return false;
 	
-	osmStore.store_relation_tags(id, tags);
+	boost::container::flat_map<std::string, std::string> m;
+	for (const auto& i : tags) {
+		m[std::string(i.first.data(), i.first.size())] = std::string(i.second.data(), i.second.size());
+	}
+	osmStore.store_relation_tags(id, m);
 	return true;
 }
 

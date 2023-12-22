@@ -17,6 +17,20 @@ using namespace std;
 const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
 const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
+std::mutex pbfm;
+
+struct Counts {
+	Counts(): nodeBlocks(0), wayBlocks(0), relationBlocks(0) {}
+	~Counts() {
+		std::lock_guard<std::mutex> lock(pbfm);
+		std::cout  << "nodes=" << nodeBlocks << ", ways=" << wayBlocks << ", relations=" << relationBlocks << std::endl;
+	}
+
+	uint64_t nodeBlocks;
+	uint64_t wayBlocks;
+	uint64_t relationBlocks;
+};
+thread_local Counts counts;
 
 PbfProcessor::PbfProcessor(OSMStore &osmStore)
 	: osmStore(osmStore)
@@ -35,7 +49,6 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 		LatpLon latplon = { int(lat2latp(double(node.lat)/10000000.0)*10000000.0), node.lon };
 
 		bool significant = false;
-		// TODO: re-enable this
 		for (int i = node.tagStart; i < node.tagEnd; i += 2) {
 			auto keyIndex = pg.translateNodeKeyValue(i);
 
@@ -48,17 +61,15 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 
 		if (significant) {
 			// For tagged nodes, call Lua, then save the OutputObject
-			boost::container::flat_map<std::string, std::string> tags;
+			boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan> tags;
 			tags.reserve((node.tagEnd - node.tagStart) / 2);
 
-			// TODO: re-enable tags once we fix lifetimes of things
 			for (int n = node.tagStart; n < node.tagEnd; n += 2) {
 				auto keyIndex = pg.translateNodeKeyValue(n);
 				auto valueIndex = pg.translateNodeKeyValue(n + 1);
 
-				// TODO: tags should operate on data_view, not std::string
-				std::string key(pb.stringTable[keyIndex].data(), pb.stringTable[keyIndex].size());
-				std::string value(pb.stringTable[valueIndex].data(), pb.stringTable[valueIndex].size());
+				protozero::data_view key{pb.stringTable[keyIndex].data(), pb.stringTable[keyIndex].size()};
+				protozero::data_view value{pb.stringTable[valueIndex].data(), pb.stringTable[valueIndex].size()};
 				tags[key] = value;
 			}
 			output.setNode(static_cast<NodeID>(nodeId), latplon, tags);
@@ -66,6 +77,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 	}
 
 	if (nodes.size() > 0) {
+		counts.nodeBlocks++;
 		osmStore.nodes.insert(nodes);
 	}
 
@@ -87,6 +99,8 @@ bool PbfProcessor::ReadWays(
 		auto e = pg.ways().end();
 		if (!(b != e)) return false;
 	}
+
+	counts.wayBlocks++;
 
 	const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
 
@@ -218,6 +232,7 @@ bool PbfProcessor::ReadRelations(
 		if (!(b != e)) return false;
 	}
 
+	counts.relationBlocks++;
 	std::vector<RelationStore::element_t> relations;
 
 	int typeKey = findStringPosition(pb, "type");
@@ -569,10 +584,15 @@ int PbfProcessor::ReadPbfFile(
 			blocksToProcess = filteredBlocks.size();
 			blocksProcessed = 0;
 
-			// When processing blocks, we try to give each worker large batches
-			// of contiguous blocks, so that they might benefit from long runs
-			// of sorted indexes, and locality of nearby IDs.
-			const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
+			// Relations have very non-uniform processing times, so prefer
+			// to process them as granularly as possible.
+			size_t batchSize = 1;
+
+			// When creating NodeStore/WayStore, we try to give each worker
+			// large batches of contiguous blocks, so that they might benefit from
+			// long runs of sorted indexes, and locality of nearby IDs.
+			if (phase == ReadPhase::Nodes || phase == ReadPhase::Ways)
+				batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
 
 			size_t consumed = 0;
 			auto it = filteredBlocks.begin();

@@ -9,6 +9,7 @@
 #include <map>
 #include "osm_store.h"
 #include "pbf_reader.h"
+#include <protozero/data_view.hpp>
 
 // Protobuf
 #include "osmformat.pb.h"
@@ -65,17 +66,15 @@ public:
 	);
 
 	// Read tags into a map from a way/node/relation
-	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 	template<typename T>
 	void readTags(T& pbfObject, const PbfReader::PrimitiveBlock& pb, tag_map_t& tags) {
 		tags.reserve(pbfObject.keys.size());
-		// TODO: re-enable tags once we fifx lifetimes
 		for (uint n=0; n < pbfObject.keys.size(); n++) {
-			// TODO: tags should operate on data_view, not std::string
 			auto keyIndex = pbfObject.keys[n];
 			auto valueIndex = pbfObject.vals[n];
-			std::string key(pb.stringTable[keyIndex].data(), pb.stringTable[keyIndex].size());
-			std::string value(pb.stringTable[valueIndex].data(), pb.stringTable[valueIndex].size());
+			protozero::data_view key = pb.stringTable[keyIndex];
+			protozero::data_view value = pb.stringTable[valueIndex];
 			tags[key] = value;
 		}
 	}
