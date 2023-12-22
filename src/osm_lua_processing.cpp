@@ -477,8 +477,7 @@ Point OsmLuaProcessing::calculateCentroid() {
 	Point centroid;
 	if (isRelation) {
 		Geometry tmp;
-		tmp = osmStore.wayListMultiPolygon(
-			outerWayVecPtr->cbegin(), outerWayVecPtr->cend(), innerWayVecPtr->begin(), innerWayVecPtr->cend());
+		tmp = multiPolygonCached();
 		geom::centroid(tmp, centroid);
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
