@@ -1,4 +1,3 @@
-#include "helpers.h"
 #include <string>
 #include <stdexcept>
 #include <iostream>
@@ -6,12 +5,38 @@
 #include <sstream>
 #include <cstring>
 
+#include "helpers.h"
+
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
 namespace geom = boost::geometry;
 using namespace std;
+
+// Bounding box string parsing
+
+double bboxElementFromStr(const std::string& number) {
+	try {
+		return boost::lexical_cast<double>(number);
+	} catch (boost::bad_lexical_cast&) {
+		std::cerr << "Failed to parse coordinate " << number << std::endl;
+		exit(1);
+	}
+}
+
+// Split bounding box provided as a comma-separated list of coordinates.
+std::vector<std::string> parseBox(const std::string& bbox) {
+	std::vector<std::string> bboxParts;
+	if (!bbox.empty()) {
+		boost::split(bboxParts, bbox, boost::is_any_of(","));
+		if (bboxParts.size() != 4) {
+			std::cerr << "Bounding box must contain 4 elements: minlon,minlat,maxlon,maxlat" << std::endl;
+			exit(1);
+		}
+	}
+	return bboxParts;
+}
 
 // zlib routines from http://panthema.net/2007/0328-ZLibString.html
 
