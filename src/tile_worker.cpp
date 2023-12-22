@@ -176,7 +176,7 @@ void ProcessObjects(
 
 		if (oo.oo.geomType == POINT_) {
 			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			LatpLon pos = source->buildNodeGeometry(oo.oo.geomType, oo.oo.objectID, bbox);
+			LatpLon pos = source->buildNodeGeometry(oo.oo.objectID, bbox);
 			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));

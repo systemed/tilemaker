@@ -339,22 +339,12 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 	}
 }
 
-LatpLon TileDataSource::buildNodeGeometry(OutputGeometryType const geomType, 
-                                          NodeID const objectID, const TileBbox &bbox) const {
-	switch(geomType) {
-		case POINT_: {
-			auto p = retrievePoint(objectID);
-			LatpLon out;
-			out.latp = p.y();
-			out.lon  = p.x();
-			return out;
-		}
-
-		default:
-			break;
-	}
-
-	throw std::runtime_error("Geometry type is not point");			
+LatpLon TileDataSource::buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const {
+	auto p = retrievePoint(objectID);
+	LatpLon out;
+	out.latp = p.y();
+	out.lon  = p.x();
+	return out;
 }
 
 
@@ -538,7 +528,7 @@ NodeID TileDataSource::storePoint(const Point& input) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(input);
-	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
 
@@ -548,7 +538,7 @@ NodeID TileDataSource::storeLinestring(const Linestring& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
 
@@ -570,7 +560,7 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
 
@@ -585,7 +575,7 @@ NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
-	NodeID rv = (store.first << (35 - shardBits)) + offset;
+	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
 

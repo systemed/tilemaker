@@ -9,12 +9,12 @@
 // NB: Currently, USE_NODE_STORE and USE_WAY_STORE are equivalent.
 // If we permit LayerAsCentroid to be generated from the OSM stores,
 // this will have to change.
-#define OSM_THRESHOLD (1ull << 35)
-#define USE_NODE_STORE (1ull << 35)
-#define IS_NODE(x) (((x) >> 35) == (USE_NODE_STORE >> 35))
-#define USE_WAY_STORE (1ull << 35)
-#define IS_WAY(x) (((x) >> 35) == (USE_WAY_STORE >> 35))
-#define OSM_ID(x) ((x) & 0b11111111111111111111111111111111111)
+#define OSM_THRESHOLD (1ull << TILE_DATA_ID_SIZE)
+#define USE_NODE_STORE (2ull << TILE_DATA_ID_SIZE)
+#define IS_NODE(x) (((x) >> TILE_DATA_ID_SIZE) == (USE_NODE_STORE >> TILE_DATA_ID_SIZE))
+#define USE_WAY_STORE (1ull << TILE_DATA_ID_SIZE)
+#define IS_WAY(x) (((x) >> TILE_DATA_ID_SIZE) == (USE_WAY_STORE >> TILE_DATA_ID_SIZE))
+#define OSM_ID(x) ((x) & 0b1111111111111111111111111111111111)
 
 class NodeStore;
 class WayStore;
@@ -44,14 +44,14 @@ public:
 		const NodeID objectID,
 		const TileBbox &bbox
 	) override;
-	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const override;
+	LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const override;
 
 
 	void Clear();
 
 private:
-	void populateLinestring(Linestring& ls, NodeID objectID);
-	Linestring& getOrBuildLinestring(NodeID objectID);
+	void populateLinestring(Linestring& ls, NodeID objectID) const;
+	Linestring& getOrBuildLinestring(NodeID objectID) const;
 	void populateMultiPolygon(MultiPolygon& dst, NodeID objectID) override;
 
 	const NodeStore& nodeStore;

@@ -19,24 +19,27 @@ OsmMemTiles::OsmMemTiles(
 }
 
 LatpLon OsmMemTiles::buildNodeGeometry(
-	OutputGeometryType const geomType, 
 	NodeID const objectID,
 	const TileBbox &bbox
 ) const {
 	if (objectID < OSM_THRESHOLD) {
-		return TileDataSource::buildNodeGeometry(geomType, objectID, bbox);
+		return TileDataSource::buildNodeGeometry(objectID, bbox);
 	}
 
-	switch(geomType) {
-		case POINT_: {
-			return nodeStore.at(OSM_ID(objectID));
-		}
+	if (IS_NODE(objectID))
+		return nodeStore.at(OSM_ID(objectID));
 
-		default:
-			break;
+
+	if (IS_WAY(objectID)) {
+		Linestring& ls = getOrBuildLinestring(objectID);
+		Point centroid;
+		Polygon p;
+		geom::assign_points(p, ls);
+		geom::centroid(p, centroid);
+		return LatpLon{(int32_t)(centroid.y()*10000000.0), (int32_t)(centroid.x()*10000000.0)};
 	}
 
-	throw std::runtime_error("Geometry type is not point");			
+	throw std::runtime_error("OsmMemTiles::buildNodeGeometry: unsupported objectID");
 }
 
 Geometry OsmMemTiles::buildWayGeometry(
@@ -79,7 +82,7 @@ Geometry OsmMemTiles::buildWayGeometry(
 	throw std::runtime_error("buildWayGeometry: unexpected objectID: " + std::to_string(objectID));
 }
 
-void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) {
+void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) const {
 	std::vector<LatpLon> nodes = wayStore.at(OSM_ID(objectID));
 
 	for (const LatpLon& node : nodes) {
@@ -87,7 +90,7 @@ void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) {
 	}
 }
 
-Linestring& OsmMemTiles::getOrBuildLinestring(NodeID objectID) {
+Linestring& OsmMemTiles::getOrBuildLinestring(NodeID objectID) const {
 	// Note: this function returns a reference, not a shared_ptr.
 	//
 	// This is safe, because this function is the only thing that can
