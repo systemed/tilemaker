@@ -27,10 +27,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 	// ----	Read nodes
 	std::vector<NodeStore::element_t> nodes;		
 
-	bool hadNodes = false;
 	for (auto& node : pg.nodes()) {
-		hadNodes = true;
-
 		NodeID nodeId = node.id;
 		LatpLon latplon = { int(lat2latp(double(node.lat)/10000000.0)*10000000.0), node.lon };
 
@@ -66,7 +63,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 		osmStore.nodes.insert(nodes);
 	}
 
-	return hadNodes;
+	return !pg.nodes().empty();
 }
 
 bool PbfProcessor::ReadWays(
@@ -78,12 +75,8 @@ bool PbfProcessor::ReadWays(
 	uint effectiveShards
 ) {
 	// ----	Read ways
-	{
-		// TODO: make this less ugly
-		auto b = pg.ways().begin();
-		auto e = pg.ways().end();
-		if (!(b != e)) return false;
-	}
+	if (pg.ways().empty())
+		return false;
 
 	const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
 
@@ -166,12 +159,8 @@ bool PbfProcessor::ReadWays(
 
 bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb) {
 	// Scan relations to see which ways we need to save
-	{
-		// TODO: make this less ugly
-		auto b = pg.relations().begin();
-		auto e = pg.relations().end();
-		if (!(b != e)) return false;
-	}
+	if (pg.relations().empty())
+		return false;
 
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
@@ -208,12 +197,8 @@ bool PbfProcessor::ReadRelations(
 	uint effectiveShards
 ) {
 	// ----	Read relations
-	{
-		// TODO: make this less ugly
-		auto b = pg.relations().begin();
-		auto e = pg.relations().end();
-		if (!(b != e)) return false;
-	}
+	if (pg.relations().empty())
+		return false;
 
 	std::vector<RelationStore::element_t> relations;
 

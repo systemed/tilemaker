@@ -455,8 +455,6 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	exit(1);
-	return 1; // TODO
 	// ----	Write out data
 
 	// If mapsplit, read list of tiles available

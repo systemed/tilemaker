@@ -125,6 +125,7 @@ namespace PbfReader {
 		};
 		Iterator begin();
 		Iterator end();
+		bool empty();
 	};
 
 	struct Way {
@@ -158,6 +159,7 @@ namespace PbfReader {
 		};
 		Iterator begin();
 		Iterator end();
+		bool empty();
 
 		PrimitiveGroup* pg;
 	};
@@ -173,6 +175,7 @@ namespace PbfReader {
 		};
 		Iterator begin();
 		Iterator end();
+		bool empty();
 
 		PrimitiveGroup* pg;
 	};

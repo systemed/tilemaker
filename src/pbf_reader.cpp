@@ -52,10 +52,8 @@ BlobHeader PbfReader::readBlobHeader(std::istream& input) {
 	data.resize(size);
 	input.read(&data[0], size);
 
-	// TODO: check eofbit, failbit - https://cplusplus.com/reference/istream/istream/read/
-	if (input.eof()) {
-		throw std::runtime_error("eof");
-	}
+	if (input.eof())
+		throw std::runtime_error("readBlobHeader: unexpected eof");
 
 	protozero::pbf_message<Schema::BlobHeader> message{&data[0], data.size()};
 
@@ -89,10 +87,8 @@ BlobHeader PbfReader::readBlobHeader(std::istream& input) {
 protozero::data_view PbfReader::readBlob(int32_t datasize, std::istream& input) {
 	blobStorage.resize(datasize);
 	input.read(&blobStorage[0], datasize);
-	// TODO: check eofbit, failbit - https://cplusplus.com/reference/istream/istream/read/
-	if (input.eof()) {
-		throw std::runtime_error("eof");
-	}
+	if (input.eof())
+		throw std::runtime_error("readBlob: unexpected eof");
 
 	int32_t rawSize = -1;
 	protozero::data_view view;
@@ -344,6 +340,9 @@ PbfReader::Nodes::Node& PbfReader::Nodes::Iterator::operator*() {
 	return node;
 }
 
+bool Nodes::empty() {
+	return denseNodesIds.empty();
+}
 
 PbfReader::Nodes::Iterator Nodes::begin() {
 	auto it = Iterator {-1};
@@ -463,6 +462,9 @@ void PbfReader::Ways::Iterator::operator++() {
 PbfReader::Way& PbfReader::Ways::Iterator::operator*() {
 	return way;
 }
+bool PbfReader::Ways::empty() {
+	return pg->type() != PrimitiveGroupType::Way;
+}
 PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	if (pg->type() != PrimitiveGroupType::Way)
 		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0};
@@ -562,6 +564,9 @@ void PbfReader::Relations::Iterator::operator++() {
 }
 PbfReader::Relation& PbfReader::Relations::Iterator::operator*() {
 	return relation;
+}
+bool PbfReader::Relations::empty() {
+	return pg->type() != PrimitiveGroupType::Relation;
 }
 PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	if (pg->type() != PrimitiveGroupType::Relation)
