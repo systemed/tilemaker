@@ -17,20 +17,6 @@ using namespace std;
 const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
 const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
-std::mutex pbfm;
-
-struct Counts {
-	Counts(): nodeBlocks(0), wayBlocks(0), relationBlocks(0) {}
-	~Counts() {
-		std::lock_guard<std::mutex> lock(pbfm);
-		std::cout  << "nodes=" << nodeBlocks << ", ways=" << wayBlocks << ", relations=" << relationBlocks << std::endl;
-	}
-
-	uint64_t nodeBlocks;
-	uint64_t wayBlocks;
-	uint64_t relationBlocks;
-};
-thread_local Counts counts;
 
 PbfProcessor::PbfProcessor(OSMStore &osmStore)
 	: osmStore(osmStore)
@@ -77,7 +63,6 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 	}
 
 	if (nodes.size() > 0) {
-		counts.nodeBlocks++;
 		osmStore.nodes.insert(nodes);
 	}
 
@@ -99,8 +84,6 @@ bool PbfProcessor::ReadWays(
 		auto e = pg.ways().end();
 		if (!(b != e)) return false;
 	}
-
-	counts.wayBlocks++;
 
 	const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
 
@@ -232,7 +215,6 @@ bool PbfProcessor::ReadRelations(
 		if (!(b != e)) return false;
 	}
 
-	counts.relationBlocks++;
 	std::vector<RelationStore::element_t> relations;
 
 	int typeKey = findStringPosition(pb, "type");
