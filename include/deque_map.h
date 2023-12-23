@@ -104,7 +104,7 @@ public:
 	struct iterator {
 		const DequeMap<T>& dm;
 		size_t offset;
-		iterator(const DequeMap<T>& dm, int offset): dm(dm), offset(offset) {}
+		iterator(const DequeMap<T>& dm, size_t offset): dm(dm), offset(offset) {}
 		void operator++() { offset++; }
 		bool operator!=(iterator& other) { return offset != other.offset; }
 		const T& operator*() const { return dm.objects[dm.keys[offset]]; }
