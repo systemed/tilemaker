@@ -130,6 +130,7 @@ tilemaker: \
 test: \
 	test_append_vector \
 	test_attribute_store \
+	test_deque_map \
 	test_pooled_string \
 	test_sorted_node_store \
 	test_sorted_way_store
@@ -145,6 +146,11 @@ test_attribute_store: \
 	src/pooled_string.o \
 	test/attribute_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.attribute_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.attribute_store
+
+test_deque_map: \
+	test/deque_map.test.o
+	$(CXX) $(CXXFLAGS) -o test.deque_map $^ $(INC) $(LIB) $(LDFLAGS) && ./test.deque_map
+
 
 test_pooled_string: \
 	src/mmap_allocator.o \

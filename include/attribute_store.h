@@ -11,6 +11,7 @@
 #include <boost/container/flat_map.hpp>
 #include <vector>
 #include "pooled_string.h"
+#include "deque_map.h"
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -88,6 +89,19 @@ struct AttributePair {
 
 		stringValue_ = other.stringValue_;
 		return *this;
+	}
+
+	bool operator<(const AttributePair& other) const {
+		if (minzoom != other.minzoom)
+			return minzoom < other.minzoom;
+		if (keyIndex != other.keyIndex)
+			return keyIndex < other.keyIndex;
+		if (valueType != other.valueType) return valueType < other.valueType;
+
+		if (hasStringValue()) return pooledString() < other.pooledString();
+		if (hasBoolValue()) return boolValue() < other.boolValue();
+		if (hasFloatValue()) return floatValue() < other.floatValue();
+		throw std::runtime_error("Invalid type in attribute store");
 	}
 
 	bool operator==(const AttributePair &other) const {
@@ -173,16 +187,14 @@ class AttributePairStore {
 public:
 	AttributePairStore():
 		finalized(false),
-		pairs(ATTRIBUTE_SHARDS),
-		pairsMaps(ATTRIBUTE_SHARDS),
-		pairsMutex(ATTRIBUTE_SHARDS),
-		hotShardSize(0)
+		pairsMutex(ATTRIBUTE_SHARDS)
 	{
-		// NB: the hot shard is stored in its own, pre-allocated vector.
-		// pairs[0] is _not_ the hot shard
-		hotShard.reserve(1 << 16);
-		for (size_t i = 0; i < 1 << 16; i++)
-			hotShard.push_back(AttributePair(0, false, 0));
+		// The "hot" shard has a capacity of 64K, the others are unbounded.
+		pairs.push_back(DequeMap<AttributePair>(1 << 16));
+		// Reserve offset 0 as a sentinel
+		pairs[0].add(AttributePair(0, false, 0));
+		for (size_t i = 1; i < ATTRIBUTE_SHARDS; i++)
+			pairs.push_back(DequeMap<AttributePair>());
 	}
 
 	void finalize() { finalized = true; }
@@ -190,23 +202,7 @@ public:
 	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(AttributePair& pair, bool isHot);
 
-	struct key_value_less_ptr {
-		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
-			if (lhs->minzoom != rhs->minzoom)
-				return lhs->minzoom < rhs->minzoom;
-			if (lhs->keyIndex != rhs->keyIndex)
-				return lhs->keyIndex < rhs->keyIndex;
-			if (lhs->valueType != rhs->valueType) return lhs->valueType < rhs->valueType;
-
-			if (lhs->hasStringValue()) return lhs->pooledString() < rhs->pooledString();
-			if (lhs->hasBoolValue()) return lhs->boolValue() < rhs->boolValue();
-			if (lhs->hasFloatValue()) return lhs->floatValue() < rhs->floatValue();
-			throw std::runtime_error("Invalid type in attribute store");
-		}
-	}; 
-
-	std::vector<std::deque<AttributePair>> pairs;
-	std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
+	std::vector<DequeMap<AttributePair>> pairs;
 
 private:
 	bool finalized;
@@ -218,41 +214,37 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	mutable std::vector<std::mutex> pairsMutex;
-	std::atomic<uint32_t> hotShardSize;
-	std::vector<AttributePair> hotShard;
 };
 
 // AttributeSet is a set of AttributePairs
 // = the complete attributes for one object
 struct AttributeSet {
 
-	struct less_ptr {
-		bool operator()(const AttributeSet* lhs, const AttributeSet* rhs) const {            
-			if (lhs->useVector != rhs->useVector)
-				return lhs->useVector < rhs->useVector;
+	bool operator<(const AttributeSet& other) const {
+		if (useVector != other.useVector)
+			return useVector < other.useVector;
 
-			if (lhs->useVector) {
-				if (lhs->intValues.size() != rhs->intValues.size())
-					return lhs->intValues.size() < rhs->intValues.size();
+		if (useVector) {
+			if (intValues.size() != other.intValues.size())
+				return intValues.size() < other.intValues.size();
 
-				for (int i = 0; i < lhs->intValues.size(); i++) {
-					if (lhs->intValues[i] != rhs->intValues[i]) {
-						return lhs->intValues[i] < rhs->intValues[i];
-					}
-				}
-
-				return false;
-			}
-
-			for (int i = 0; i < sizeof(lhs->shortValues)/sizeof(lhs->shortValues[0]); i++) {
-				if (lhs->shortValues[i] != rhs->shortValues[i]) {
-					return lhs->shortValues[i] < rhs->shortValues[i];
+			for (int i = 0; i < intValues.size(); i++) {
+				if (intValues[i] != other.intValues[i]) {
+					return intValues[i] < other.intValues[i];
 				}
 			}
 
 			return false;
 		}
-	}; 
+
+		for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++) {
+			if (shortValues[i] != other.shortValues[i]) {
+				return shortValues[i] < other.shortValues[i];
+			}
+		}
+
+		return false;
+	}
 
 	size_t hash() const {
 		// Values are in canonical form after finalizeSet is called, so
@@ -273,6 +265,7 @@ struct AttributeSet {
 		return idx;
 	}
 
+	bool operator!=(const AttributeSet& other) const { return !(*this == other); }
 	bool operator==(const AttributeSet &other) const {
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
@@ -412,7 +405,6 @@ struct AttributeStore {
 	AttributeStore():
 		finalized(false),
 		sets(ATTRIBUTE_SHARDS),
-		setsMaps(ATTRIBUTE_SHARDS),
 		setsMutex(ATTRIBUTE_SHARDS),
 		lookups(0) {
 	}
@@ -422,8 +414,7 @@ struct AttributeStore {
 
 private:
 	bool finalized;
-	std::vector<std::deque<AttributeSet>> sets;
-	std::vector<boost::container::flat_map<const AttributeSet*, uint32_t, AttributeSet::less_ptr>> setsMaps;
+	std::vector<DequeMap<AttributeSet>> sets;
 	mutable std::vector<std::mutex> setsMutex;
 
 	mutable std::mutex mutex;
