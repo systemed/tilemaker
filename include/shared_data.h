@@ -10,6 +10,7 @@
 #include "osm_store.h"
 #include "output_object.h"
 #include "mbtiles.h"
+#include "pmtiles.h"
 #include "tile_data.h"
 
 ///\brief Defines map single layer appearance
@@ -60,6 +61,10 @@ public:
 	std::string serialiseToJSON() const;
 };
 
+const int OUTPUT_FILE = 0;
+const int OUTPUT_MBTILES = 1;
+const int OUTPUT_PMTILES = 2;
+
 ///\brief Config read from JSON to control behavior of program
 class Config {
 	
@@ -86,15 +91,22 @@ class SharedData {
 
 public:
 	const class LayerDefinition &layers;
-	bool sqlite;
+	int outputMode;
 	bool mergeSqlite;
 	MBTiles mbtiles;
+	PMTiles pmtiles;
 	std::string outputFile;
 
 	Config &config;
 
 	SharedData(Config &configIn, const class LayerDefinition &layers);
 	virtual ~SharedData();
+
+	void writeMBTilesProjectData();
+	void writeMBTilesMetadata(rapidjson::Document const &jsonConfig);
+	void writeFileMetadata(rapidjson::Document const &jsonConfig);	
+	std::string pmTilesMetadata();
+	void writePMTilesBounds();
 };
 
 #endif //_SHARED_DATA_H

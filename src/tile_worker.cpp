@@ -378,11 +378,16 @@ void outputProc(
 
 	// Write to file or sqlite
 	string outputdata, compressed;
-	if (sharedData.sqlite) {
+	if (sharedData.outputMode == OUTPUT_MBTILES) {
 		// Write to sqlite
 		tile.SerializeToString(&outputdata);
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
 		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
+
+	} else if (sharedData.outputMode == OUTPUT_PMTILES) {
+		// Write to pmtiles
+		tile.SerializeToString(&outputdata);
+		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, outputdata);
 
 	} else {
 		// Write to file

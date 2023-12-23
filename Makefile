@@ -111,6 +111,7 @@ tilemaker: \
 	src/osm_store.o \
 	src/output_object.o \
 	src/pbf_blocks.o \
+	src/pmtiles.o \
 	src/pooled_string.o \
 	src/read_pbf.o \
 	src/read_shp.o \
