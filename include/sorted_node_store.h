@@ -66,7 +66,7 @@ public:
 	size_t size() const override;
 	void batchStart() override;
 	void insert(const std::vector<element_t>& elements) override;
-	void clear() { 
+	void clear() override {
 		reopen();
 	}
 

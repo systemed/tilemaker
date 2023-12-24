@@ -20,10 +20,10 @@ public:
 	LatpLon at(NodeID i) const override;
 	size_t size() const override;
 	void insert(const std::vector<element_t>& elements) override;
-	void clear() { 
+	void clear() override {
 		reopen();
 	}
-	void batchStart() {}
+	void batchStart() override {}
 
 	bool contains(size_t shard, NodeID id) const override;
 	NodeStore& shard(size_t shard) override { return *this; }
@@ -56,7 +56,7 @@ public:
 	void insert(const std::vector<element_t>& elements) override;
 	void clear() override;
 	void finalize(size_t numThreads) override {}
-	void batchStart() {}
+	void batchStart() override {}
 
 	// CompactNodeStore has no metadata to know whether or not it contains
 	// a node, so it's not suitable for used in sharded scenarios.

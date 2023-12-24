@@ -37,7 +37,7 @@ po::options_description getParser(OptionsParser::Options& options) {
 		("no-compress-ways", po::bool_switch(&options.osm.uncompressedWays),  "store ways uncompressed")
 		("materialize-geometries", po::bool_switch(&options.osm.materializeGeometries),  "materialize geometries")
 		("shard-stores", po::bool_switch(&options.osm.shardStores),  "use an alternate reading/writing strategy for low-memory machines")
-		("threads",po::value< uint >(&options.threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
+		("threads",po::value<uint32_t>(&options.threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 			;
 
 	desc.add(performance);

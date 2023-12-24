@@ -35,7 +35,7 @@ namespace OptionsParser {
 		std::vector<std::string> inputFiles;
 		std::string luaFile;
 		std::string jsonFile;
-		uint threadNum = 0;
+		uint32_t threadNum = 0;
 		std::string outputFile;
 		std::string bbox;
 
