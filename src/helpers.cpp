@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <sstream>
 #include <cstring>
+#include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include "helpers.h"
 
