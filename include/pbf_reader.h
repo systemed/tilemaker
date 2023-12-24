@@ -167,15 +167,20 @@ namespace PbfReader {
 			bool operator!=(Iterator& other) const;
 			void operator++();
 			PbfReader::Way& operator*();
+
+			private:
 			void readWay(protozero::data_view data);
 		};
-		PrimitiveGroup* pg;
-		Way& way;
 
+		Ways(PrimitiveGroup* pg, Way& way): pg(pg), way(way) {}
 		Iterator begin();
 		Iterator end();
 		bool empty();
 
+		private:
+		friend PrimitiveGroup;
+		PrimitiveGroup* pg;
+		Way& way;
 	};
 
 	struct Relations {
@@ -187,15 +192,21 @@ namespace PbfReader {
 			bool operator!=(Iterator& other) const;
 			void operator++();
 			PbfReader::Relation& operator*();
+
+			private:
 			void readRelation(protozero::data_view data);
 		};
 
-		PrimitiveGroup* pg;
-		Relation& relation;
 
+		Relations(PrimitiveGroup* pg, Relation& relation): pg(pg), relation(relation) {}
 		Iterator begin();
 		Iterator end();
 		bool empty();
+
+		private:
+		friend PrimitiveGroup;
+		PrimitiveGroup* pg;
+		Relation& relation;
 	};
 
 	struct PrimitiveGroup {
@@ -225,6 +236,7 @@ namespace PbfReader {
 
 	};
 
+	class PbfReader;
 	struct PrimitiveBlock {
 		struct PrimitiveGroups {
 			struct Iterator {
@@ -238,19 +250,22 @@ namespace PbfReader {
 				PrimitiveGroup& operator*();
 			};
 
-			std::vector<PrimitiveGroup>* groups;
+
 			PrimitiveGroups(): groups(nullptr) {}
 			PrimitiveGroups(std::vector<PrimitiveGroup>& groups): groups(&groups) {}
 			Iterator begin();
 			Iterator end();
+
+			private:
+			std::vector<PrimitiveGroup>* groups;
 		};
 
 		std::vector<protozero::data_view> stringTable;
 		PrimitiveGroups& groups();
 
-		// Not meant to be called directly by client code.
+		private:
+		friend PbfReader;
 		std::vector<PrimitiveGroup> internalGroups;
-		// This is a hack, but my C++-fu isn't enough to know how to avoid it.
 		PrimitiveGroups groupsImpl;
 	};
 
