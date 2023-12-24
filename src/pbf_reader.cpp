@@ -50,7 +50,7 @@ BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) {
 				break;
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				std::cout << "BlobHeader: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				// std::cout << "BlobHeader: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
