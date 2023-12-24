@@ -17,6 +17,9 @@ const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
 const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 
+// Thread-local so that we can re-use buffers during parsing.
+thread_local PbfReader::PbfReader reader;
+
 PbfProcessor::PbfProcessor(OSMStore &osmStore)
 	: osmStore(osmStore)
 { }
@@ -271,8 +274,8 @@ bool PbfProcessor::ReadBlock(
 {
 	infile.seekg(blockMetadata.offset);
 
-	protozero::data_view blob = PbfReader::readBlob(blockMetadata.length, infile);
-	PbfReader::PrimitiveBlock& pb = PbfReader::readPrimitiveBlock(blob);
+	protozero::data_view blob = reader.readBlob(blockMetadata.length, infile);
+	PbfReader::PrimitiveBlock& pb = reader.readPrimitiveBlock(blob);
 	if (infile.eof()) {
 		return true;
 	}
@@ -375,8 +378,8 @@ bool blockHasPrimitiveGroupSatisfying(
 	// We may have previously read to EOF, so clear the internal error state
 	infile.clear();
 	infile.seekg(block.offset);
-	protozero::data_view blob = PbfReader::readBlob(block.length, infile);
-	PbfReader::PrimitiveBlock pb = PbfReader::readPrimitiveBlock(blob);
+	protozero::data_view blob = reader.readBlob(block.length, infile);
+	PbfReader::PrimitiveBlock pb = reader.readPrimitiveBlock(blob);
 
 	if (infile.eof()) {
 		throw std::runtime_error("blockHasPrimitiveGroupSatisfying got unexpected eof");
@@ -406,7 +409,7 @@ int PbfProcessor::ReadPbfFile(
 	// ----	Read PBF
 	osmStore.clear();
 
-	PbfReader::HeaderBlock block = PbfReader::readHeaderFromFile(*infile);
+	PbfReader::HeaderBlock block = reader.readHeaderFromFile(*infile);
 	bool locationsOnWays = block.optionalFeatures.find(OptionLocationsOnWays) != block.optionalFeatures.end();
 	if (locationsOnWays) {
 		std::cout << ".osm.pbf file has locations on ways" << std::endl;
@@ -418,7 +421,7 @@ int PbfProcessor::ReadPbfFile(
 	// its meant to be an opaque token useful only for seeking.
 	size_t filesize = 0;
 	while (true) {
-		PbfReader::BlobHeader bh = PbfReader::readBlobHeader(*infile);
+		PbfReader::BlobHeader bh = reader.readBlobHeader(*infile);
 		filesize += bh.datasize;
 		if (infile->eof()) {
 			break;
@@ -634,7 +637,7 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 {
 	fstream infile(inputFile, ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
-	auto header = PbfReader::readHeaderFromFile(infile);
+	auto header = reader.readHeaderFromFile(infile);
 	if (header.hasBbox) {
 		hasClippingBox = true;
 		minLon = header.bbox.minLon;
@@ -648,7 +651,7 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 
 bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature) {
 	std::ifstream infile(inputFile, std::ifstream::in);
-	auto header = PbfReader::readHeaderFromFile(infile);
+	auto header = reader.readHeaderFromFile(infile);
 	infile.close();
 	return header.optionalFeatures.find(feature) != header.optionalFeatures.end();
 }

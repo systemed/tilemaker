@@ -106,7 +106,7 @@ namespace PbfReader {
 
 	enum class PrimitiveGroupType: char { Node = 1, DenseNodes = 2, Way = 3, Relation = 4, ChangeSet = 5};
 
-	struct Nodes {
+	struct DenseNodes {
 		struct Node {
 			uint64_t id;
 			int32_t lon;
@@ -118,14 +118,24 @@ namespace PbfReader {
 		struct Iterator {
 			int32_t offset;
 			Node node;
+			DenseNodes& nodes;
 
 			bool operator!=(Iterator& other) const;
 			void operator++();
 			Node& operator*();
 		};
+
+		std::vector<uint64_t> ids;
+		std::vector<int32_t> lons;
+		std::vector<int32_t> lats;
+		std::vector<int32_t> tagStart;
+		std::vector<int32_t> tagEnd;
+		std::vector<int32_t> keyValues;
 		Iterator begin();
 		Iterator end();
 		bool empty();
+		void clear();
+		void readDenseNodes(protozero::data_view data);
 	};
 
 	struct Way {
@@ -152,37 +162,50 @@ namespace PbfReader {
 		struct Iterator {
 			protozero::pbf_message<Schema::PrimitiveGroup> message;
 			int offset;
+			Way& way;
 
 			bool operator!=(Iterator& other) const;
 			void operator++();
 			PbfReader::Way& operator*();
+			void readWay(protozero::data_view data);
 		};
+		PrimitiveGroup* pg;
+		Way& way;
+
 		Iterator begin();
 		Iterator end();
 		bool empty();
 
-		PrimitiveGroup* pg;
 	};
 
 	struct Relations {
 		struct Iterator {
 			protozero::pbf_message<Schema::PrimitiveGroup> message;
 			int offset;
+			Relation& relation;
 
 			bool operator!=(Iterator& other) const;
 			void operator++();
 			PbfReader::Relation& operator*();
+			void readRelation(protozero::data_view data);
 		};
+
+		PrimitiveGroup* pg;
+		Relation& relation;
+
 		Iterator begin();
 		Iterator end();
 		bool empty();
-
-		PrimitiveGroup* pg;
 	};
 
 	struct PrimitiveGroup {
-		PrimitiveGroup(protozero::data_view data);
-		Nodes& nodes() const;
+		PrimitiveGroup(
+			protozero::data_view data,
+			DenseNodes& nodes,
+			Way& way,
+			Relation& relation
+		);
+		DenseNodes& nodes() const;
 		Ways& ways() const;
 		Relations& relations() const;
 		PrimitiveGroupType type() const;
@@ -193,10 +216,11 @@ namespace PbfReader {
 		void ensureData();
 		protozero::data_view getDataView();
 	private:
+		protozero::data_view data;
+		DenseNodes& denseNodes;
 		mutable Ways internalWays;
 		mutable Relations internalRelations;
 		PrimitiveGroupType internalType;
-		protozero::data_view data;
 		bool denseNodesInitialized;
 
 	};
@@ -230,17 +254,28 @@ namespace PbfReader {
 		PrimitiveGroups groupsImpl;
 	};
 
-	BlobHeader readBlobHeader(std::istream& input);
-	protozero::data_view readBlob(int32_t datasize, std::istream& input);
-	HeaderBlock readHeaderBlock(protozero::data_view data);
-	HeaderBBox readHeaderBBox(protozero::data_view data);
-	PrimitiveBlock& readPrimitiveBlock(protozero::data_view data);
-	void readDenseNodes(protozero::data_view data);
-	void readWay(protozero::data_view data, Way& way);
-	void readRelation(protozero::data_view data, Relation& relation);
-	void readStringTable(protozero::data_view data, std::vector<protozero::data_view>& stringTable);
+	// This is a little weird: we use a class only to get private storage
+	// for multiple PBF readers. Due to the way we plumb the input files
+	// elsewhere in the system, the readers don't own them, and are not
+	// responsible for closing them.
+	class PbfReader {
+	public:
+		BlobHeader readBlobHeader(std::istream& input);
+		protozero::data_view readBlob(int32_t datasize, std::istream& input);
+		HeaderBlock readHeaderBlock(protozero::data_view data);
+		HeaderBBox readHeaderBBox(protozero::data_view data);
+		PrimitiveBlock& readPrimitiveBlock(protozero::data_view data);
+		void readStringTable(protozero::data_view data, std::vector<protozero::data_view>& stringTable);
+		HeaderBlock readHeaderFromFile(std::istream& input);
 
-	HeaderBlock readHeaderFromFile(std::istream& input);
+	private:
+		std::string blobStorage; // the blob as stored in the PBF
+		std::string blobStorage2; // the blob after decompression, if needed
+		PrimitiveBlock pb;
+		DenseNodes denseNodes;
+		Way way;
+		Relation relation;
+	};
 }
 
 #endif

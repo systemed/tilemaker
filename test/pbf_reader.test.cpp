@@ -12,9 +12,10 @@ MU_TEST(test_pbf_reader) {
 //	filename = "/home/cldellow/Downloads/nova-scotia-latest.osm.pbf";
 	std::ifstream monaco(filename, std::ifstream::in);
 
-	PbfReader::BlobHeader bh = PbfReader::readBlobHeader(monaco);
-	protozero::data_view blob = PbfReader::readBlob(bh.datasize, monaco);
-	PbfReader::HeaderBlock header = PbfReader::readHeaderBlock(blob);
+	PbfReader::PbfReader reader;
+	PbfReader::BlobHeader bh = reader.readBlobHeader(monaco);
+	protozero::data_view blob = reader.readBlob(bh.datasize, monaco);
+	PbfReader::HeaderBlock header = reader.readHeaderBlock(blob);
 
 	mu_check(header.hasBbox);
 	mu_check(header.optionalFeatures.size() == 1);
@@ -29,15 +30,15 @@ MU_TEST(test_pbf_reader) {
 	bool foundNode = false, foundWay = false, foundRelation = false;
 	int blocks = 0, groups = 0, strings = 0, nodes = 0, ways = 0, relations = 0;
 	while (!monaco.eof()) {
-		bh = PbfReader::readBlobHeader(monaco);
+		bh = reader.readBlobHeader(monaco);
 		if (bh.type == "eof")
 			break;
 
 
 		blocks++;
-		blob = PbfReader::readBlob(bh.datasize, monaco);
+		blob = reader.readBlob(bh.datasize, monaco);
 
-		PbfReader::PrimitiveBlock pb = PbfReader::readPrimitiveBlock(blob);
+		PbfReader::PrimitiveBlock pb = reader.readPrimitiveBlock(blob);
 
 		for (const auto str : pb.stringTable) {
 			if (strings == 200) {

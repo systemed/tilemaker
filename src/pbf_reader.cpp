@@ -9,37 +9,17 @@ using namespace PbfReader;
 // Where read_pbf.cpp has higher-level routines that populate our structures,
 // pbf_reader.cpp has low-level tools that interact with the protobuf.
 //
-// WARNING: PbfReader adopts several constraints to optimize for tilemaker's
-// use case.
-//
-// Objects returned from PbfReader can only be used on the same thread.
-// The lifetime of an object is until the earlier of:
-// - the thread calls a readXyz function at the same or higher level
+// The lifetime of an object is only until someone calls a readXyz function at
+// the same or higher level.
 //   - e.g. readPrimitiveGroup invalidates the result of a prior readPrimitiveGroup call,
 //          but not the result of a prior readBlob call
-// - the thread ends
 //
 // This allows us to re-use buffers to minimize heap churn and allocation cost.
 //
 // If you want to persist the data beyond that, you must make a copy in memory
 // that you own.
 
-namespace PbfReader {
-	thread_local std::string blobStorage; // the blob as stored in the PBF
-	thread_local std::string blobStorage2; // the blob after decompression, if needed
-	thread_local PbfReader::PrimitiveBlock pb;
-	thread_local std::vector<uint64_t> denseNodesIds;
-	thread_local std::vector<int32_t> denseNodesLons;
-	thread_local std::vector<int32_t> denseNodesLats;
-	thread_local std::vector<int32_t> denseNodesTagStart;
-	thread_local std::vector<int32_t> denseNodesTagEnd;
-	thread_local std::vector<int32_t> denseNodesKeyValues;
-	thread_local Way way;
-	thread_local Relation relation;
-	thread_local Nodes nodesImpl;
-}
-
-BlobHeader PbfReader::readBlobHeader(std::istream& input) {
+BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) {
 	// See https://wiki.openstreetmap.org/wiki/PBF_Format#File_format
 	unsigned int size;
 	input.read((char*)&size, sizeof(size));
@@ -84,7 +64,7 @@ BlobHeader PbfReader::readBlobHeader(std::istream& input) {
 	return { type, datasize };
 }
 
-protozero::data_view PbfReader::readBlob(int32_t datasize, std::istream& input) {
+protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istream& input) {
 	blobStorage.resize(datasize);
 	input.read(&blobStorage[0], datasize);
 	if (input.eof())
@@ -118,7 +98,7 @@ protozero::data_view PbfReader::readBlob(int32_t datasize, std::istream& input) 
 	return { &blobStorage2[0], blobStorage2.size() };
 }
 
-HeaderBBox PbfReader::readHeaderBBox(protozero::data_view data) {
+HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view data) {
 	HeaderBBox box{0, 0, 0, 0};
 
 	protozero::pbf_message<Schema::HeaderBBox> message{data};
@@ -144,7 +124,7 @@ HeaderBBox PbfReader::readHeaderBBox(protozero::data_view data) {
 	return box;
 }
 
-HeaderBlock PbfReader::readHeaderBlock(protozero::data_view data) {
+HeaderBlock PbfReader::PbfReader::readHeaderBlock(protozero::data_view data) {
 	HeaderBlock block{false};
 
 	protozero::pbf_message<Schema::HeaderBlock> message{data};
@@ -169,7 +149,7 @@ HeaderBlock PbfReader::readHeaderBlock(protozero::data_view data) {
 	return block;
 }
 
-void PbfReader::readStringTable(protozero::data_view data, std::vector<protozero::data_view>& stringTable) {
+void PbfReader::PbfReader::readStringTable(protozero::data_view data, std::vector<protozero::data_view>& stringTable) {
 	protozero::pbf_message<Schema::StringTable> message{data};
 	while (message.next()) {
 		switch (message.tag()) {
@@ -182,7 +162,7 @@ void PbfReader::readStringTable(protozero::data_view data, std::vector<protozero
 	}
 }
 
-PbfReader::PrimitiveBlock& PbfReader::readPrimitiveBlock(protozero::data_view data) {
+PbfReader::PrimitiveBlock& PbfReader::PbfReader::readPrimitiveBlock(protozero::data_view data) {
 	pb.stringTable.clear();
 	pb.internalGroups.clear();
 
@@ -195,7 +175,12 @@ PbfReader::PrimitiveBlock& PbfReader::readPrimitiveBlock(protozero::data_view da
 				PbfReader::readStringTable(message.get_view(), pb.stringTable);
 				break;
 			case Schema::PrimitiveBlock::repeated_PrimitiveGroup_primitivegroup: {
-				pb.internalGroups.push_back({message.get_view()});
+				pb.internalGroups.push_back(PrimitiveGroup(
+					message.get_view(),
+					denseNodes,
+					way,
+					relation
+				));
 				break;
 			}
 			default:
@@ -210,7 +195,7 @@ PbfReader::PrimitiveBlock& PbfReader::readPrimitiveBlock(protozero::data_view da
 	return pb;
 }
 
-void PbfReader::readDenseNodes(protozero::data_view data) {
+void PbfReader::DenseNodes::readDenseNodes(protozero::data_view data) {
 	protozero::pbf_message<Schema::DenseNodes> message{data};
 
 	uint64_t id = 0;
@@ -222,14 +207,14 @@ void PbfReader::readDenseNodes(protozero::data_view data) {
 				auto pi = message.get_packed_sint64();
 				for (auto i : pi) {
 					id += i;
-					denseNodesIds.push_back(id);
+					ids.push_back(id);
 				}
 				break;
 			} case Schema::DenseNodes::repeated_sint64_lat: {
 				auto pi = message.get_packed_sint64();
 				for (auto i : pi) {
 					lat += i;
-					denseNodesLats.push_back(lat);
+					lats.push_back(lat);
 				}
 				break;
 			}
@@ -237,14 +222,14 @@ void PbfReader::readDenseNodes(protozero::data_view data) {
 				auto pi = message.get_packed_sint64();
 				for (auto i : pi) {
 					lon += i;
-					denseNodesLons.push_back(lon);
+					lons.push_back(lon);
 				}
 				break;
 			}
 			case Schema::DenseNodes::repeated_int32_keys_vals: {
 				auto pi = message.get_packed_int32();
 				for (auto kv : pi) {
-					denseNodesKeyValues.push_back(kv);
+					keyValues.push_back(kv);
 				}
 				break;
 			}
@@ -256,25 +241,35 @@ void PbfReader::readDenseNodes(protozero::data_view data) {
 		}
 	}
 
-	for (uint32_t cur = 0, prev = 0; cur < denseNodesKeyValues.size(); cur++) {
-		if (denseNodesKeyValues[cur] == 0) {
-			denseNodesTagStart.push_back(prev);
-			denseNodesTagEnd.push_back(cur);
+	for (uint32_t cur = 0, prev = 0; cur < keyValues.size(); cur++) {
+		if (keyValues[cur] == 0) {
+			tagStart.push_back(prev);
+			tagEnd.push_back(cur);
 			prev = cur + 1;
 		}
 	}
 
-	while(denseNodesTagStart.size() < denseNodesIds.size()) {
-		denseNodesTagStart.push_back(0);
-		denseNodesTagEnd.push_back(0);
+	while(tagStart.size() < ids.size()) {
+		tagStart.push_back(0);
+		tagEnd.push_back(0);
 	}
 }
 
-PbfReader::PrimitiveGroup::PrimitiveGroup(protozero::data_view data): data(data), denseNodesInitialized(false) {
+PbfReader::PrimitiveGroup::PrimitiveGroup(
+	protozero::data_view data,
+	DenseNodes& denseNodes,
+	Way& way,
+	Relation& relation
+):
+	data(data),
+	denseNodes(denseNodes),
+	internalWays({this, way}),
+	internalRelations({this, relation}),
+	denseNodesInitialized(false) {
 }
 
 int32_t PbfReader::PrimitiveGroup::translateNodeKeyValue(int32_t i) const {
-	return denseNodesKeyValues.at(i);
+	return denseNodes.keyValues.at(i);
 }
 
 protozero::data_view PbfReader::PrimitiveGroup::getDataView() {
@@ -283,12 +278,7 @@ protozero::data_view PbfReader::PrimitiveGroup::getDataView() {
 
 void PbfReader::PrimitiveGroup::ensureData() {
 	// Reset our thread locals.
-	denseNodesIds.clear();
-	denseNodesLons.clear();
-	denseNodesLats.clear();
-	denseNodesTagStart.clear();
-	denseNodesTagEnd.clear();
-	denseNodesKeyValues.clear();
+	denseNodes.clear();
 	internalWays.pg = this;
 	internalRelations.pg = this;
 
@@ -300,7 +290,7 @@ void PbfReader::PrimitiveGroup::ensureData() {
 				break;
 			case Schema::PrimitiveGroup::optional_DenseNodes_dense:
 				internalType = PrimitiveGroupType::DenseNodes;
-				readDenseNodes(message.get_view());
+				denseNodes.readDenseNodes(message.get_view());
 				break;
 			case Schema::PrimitiveGroup::repeated_Way_ways:
 				internalType = PrimitiveGroupType::Way;
@@ -317,41 +307,50 @@ void PbfReader::PrimitiveGroup::ensureData() {
 	}
 }
 
-Nodes& PrimitiveGroup::nodes() const { return nodesImpl; };
+DenseNodes& PrimitiveGroup::nodes() const { return denseNodes; };
 PrimitiveBlock::PrimitiveGroups& PrimitiveBlock::groups() { return groupsImpl; };
 
-bool PbfReader::Nodes::Iterator::operator!=(Iterator& other) const {
+void PbfReader::DenseNodes::clear() {
+	ids.clear();
+	lons.clear();
+	lats.clear();
+	tagStart.clear();
+	tagEnd.clear();
+	keyValues.clear();
+}
+
+bool PbfReader::DenseNodes::Iterator::operator!=(Iterator& other) const {
 	return offset != other.offset;
 }
 
-void PbfReader::Nodes::Iterator::operator++() {
+void PbfReader::DenseNodes::Iterator::operator++() {
 	offset++;
 
-	if (offset < denseNodesIds.size()) {
-		node.id = denseNodesIds[offset];
-		node.lon = denseNodesLons[offset];
-		node.lat = denseNodesLats[offset];
-		node.tagStart = denseNodesTagStart[offset];
-		node.tagEnd = denseNodesTagEnd[offset];
+	if (offset < nodes.ids.size()) {
+		node.id = nodes.ids[offset];
+		node.lon = nodes.lons[offset];
+		node.lat = nodes.lats[offset];
+		node.tagStart = nodes.tagStart[offset];
+		node.tagEnd = nodes.tagEnd[offset];
 	}
 }
 
-PbfReader::Nodes::Node& PbfReader::Nodes::Iterator::operator*() {
+PbfReader::DenseNodes::Node& PbfReader::DenseNodes::Iterator::operator*() {
 	return node;
 }
 
-bool Nodes::empty() {
-	return denseNodesIds.empty();
+bool DenseNodes::empty() {
+	return ids.empty();
 }
 
-PbfReader::Nodes::Iterator Nodes::begin() {
-	auto it = Iterator {-1};
+PbfReader::DenseNodes::Iterator DenseNodes::begin() {
+	auto it = Iterator {-1, Node{}, *this};
 	++it;
 	return it;
 }
 
-PbfReader::Nodes::Iterator Nodes::end() {
-	return Iterator {static_cast<int32_t>(denseNodesIds.size())};
+PbfReader::DenseNodes::Iterator DenseNodes::end() {
+	return Iterator {static_cast<int32_t>(ids.size()), Node{}, *this};
 }
 
 bool PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator::operator!=(Iterator& other) const {
@@ -368,7 +367,7 @@ PrimitiveGroup& PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator::operator*(
 	return (*groups)[offset];
 }
 PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator PbfReader::PrimitiveBlock::PrimitiveGroups::begin() {
-	auto it = PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator {-1, *groups };
+	auto it = PrimitiveBlock::PrimitiveGroups::Iterator {-1, *groups };
 	++it;
 	return it;
 }
@@ -380,7 +379,7 @@ PbfReader::PrimitiveGroupType PbfReader::PrimitiveGroup::type() const {
 	return internalType;
 }
 
-void PbfReader::readWay(protozero::data_view data, Way& way) {
+void PbfReader::Ways::Iterator::readWay(protozero::data_view data) {
 	protozero::pbf_message<Schema::Way> message{data};
 
 	way.id = 0;
@@ -448,12 +447,12 @@ void PbfReader::readWay(protozero::data_view data, Way& way) {
 Ways& PbfReader::PrimitiveGroup::ways() const {
 	return internalWays;
 }
-bool PbfReader::Ways::Iterator::operator!=(PbfReader::Ways::Iterator& other) const {
+bool PbfReader::Ways::Iterator::operator!=(Ways::Iterator& other) const {
 	return offset != other.offset;
 }
 void PbfReader::Ways::Iterator::operator++() {
 	if (message.next()) {
-		readWay(message.get_view(), way);
+		readWay(message.get_view());
 		offset++;
 	} else {
 		offset = -1;
@@ -467,26 +466,26 @@ bool PbfReader::Ways::empty() {
 }
 PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	if (pg->type() != PrimitiveGroupType::Way)
-		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0};
+		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, way};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
 		protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
-		auto it = Ways::Iterator{message, -1};
+		auto it = Ways::Iterator{message, -1, way};
 		++it;
 		return it;
 	}
 
-	return Ways::Iterator{message, -1};
+	return Ways::Iterator{message, -1, way};
 }
 PbfReader::Ways::Iterator PbfReader::Ways::end() {
 	if (pg->type() != PrimitiveGroupType::Way)
-		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0};
+		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, way};
 
-	return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1};
+	return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, way};
 }
 
-void PbfReader::readRelation(protozero::data_view data, Relation& relation) {
+void PbfReader::Relations::Iterator::readRelation(protozero::data_view data) {
 	protozero::pbf_message<Schema::Relation> message{data};
 
 	relation.id = 0;
@@ -551,12 +550,12 @@ void PbfReader::readRelation(protozero::data_view data, Relation& relation) {
 Relations& PbfReader::PrimitiveGroup::relations() const {
 	return internalRelations;
 }
-bool PbfReader::Relations::Iterator::operator!=(PbfReader::Relations::Iterator& other) const {
+bool PbfReader::Relations::Iterator::operator!=(Relations::Iterator& other) const {
 	return offset != other.offset;
 }
 void PbfReader::Relations::Iterator::operator++() {
 	if (message.next()) {
-		readRelation(message.get_view(), relation);
+		readRelation(message.get_view());
 		offset++;
 	} else {
 		offset = -1;
@@ -570,29 +569,29 @@ bool PbfReader::Relations::empty() {
 }
 PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	if (pg->type() != PrimitiveGroupType::Relation)
-		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0};
+		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, relation};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
 		protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
-		auto it = Relations::Iterator{message, -1};
+		auto it = Relations::Iterator{message, -1, relation};
 		++it;
 		return it;
 	}
 
-	return Relations::Iterator{message, -1};
+	return Relations::Iterator{message, -1, relation};
 }
 PbfReader::Relations::Iterator PbfReader::Relations::end() {
 	if (pg->type() != PrimitiveGroupType::Relation)
-		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0};
+		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, relation};
 
-	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1};
+	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
 }
 
-HeaderBlock PbfReader::readHeaderFromFile(std::istream& input) {
-	PbfReader::BlobHeader bh = PbfReader::readBlobHeader(input);
-	protozero::data_view blob = PbfReader::readBlob(bh.datasize, input);
-	PbfReader::HeaderBlock header = PbfReader::readHeaderBlock(blob);
+HeaderBlock PbfReader::PbfReader::readHeaderFromFile(std::istream& input) {
+	BlobHeader bh = readBlobHeader(input);
+	protozero::data_view blob = readBlob(bh.datasize, input);
+	HeaderBlock header = readHeaderBlock(blob);
 
 	return header;
 }
