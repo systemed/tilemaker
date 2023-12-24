@@ -25,21 +25,19 @@ po::options_description getParser(OptionsParser::Options& options) {
 		("merge"  ,po::bool_switch(&options.mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&options.jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&options.luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("store",  po::value< string >(&options.osm.storeFile),  "temporary storage for node/ways/relations data")
-		("compact",po::bool_switch(&options.osm.compact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
-		("no-compress-nodes", po::bool_switch(&options.osm.uncompressedNodes),  "Store nodes uncompressed")
-		("no-compress-ways", po::bool_switch(&options.osm.uncompressedWays),  "Store ways uncompressed")
-		("materialize-geometries", po::bool_switch(&options.osm.materializeGeometries),  "Materialize geometries - faster, but requires more memory")
-		("shard-stores", po::bool_switch(&options.osm.shardStores),  "Shard stores - use an alternate reading/writing strategy for low-memory machines")
 		("verbose",po::bool_switch(&options.verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&options.osm.skipIntegrity),                       "don't enforce way/node integrity")
-		("log-tile-timings", po::bool_switch(&options.logTileTimings), "log how long each tile takes")
-		("threads",po::value< uint >(&options.threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
+		("log-tile-timings", po::bool_switch(&options.logTileTimings), "log how long each tile takes");
 	po::options_description performance("Performance options");
 	performance.add_options()
-			("help-module", po::value<std::string>(),
-					"produce a help for a given module")
-			("version", "output the version number")
+		("store",  po::value< string >(&options.osm.storeFile),  "temporary storage for node/ways/relations data")
+		("fast",   po::bool_switch(&options.osm.fast), "prefer speed at the expense of memory")
+		("compact",po::bool_switch(&options.osm.compact),  "use faster data structure for node lookups\nNOTE: This requires the input to be renumbered (osmium renumber)")
+		("no-compress-nodes", po::bool_switch(&options.osm.uncompressedNodes),  "store nodes uncompressed")
+		("no-compress-ways", po::bool_switch(&options.osm.uncompressedWays),  "store ways uncompressed")
+		("materialize-geometries", po::bool_switch(&options.osm.materializeGeometries),  "materialize geometries")
+		("shard-stores", po::bool_switch(&options.osm.shardStores),  "use an alternate reading/writing strategy for low-memory machines")
+		("threads",po::value< uint >(&options.threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 			;
 
 	desc.add(performance);
@@ -54,6 +52,7 @@ void OptionsParser::showHelp() {
 
 OptionsParser::Options OptionsParser::parse(const int argc, const char* argv[]) {
 	Options options;
+
 	po::options_description desc = getParser(options);
 	po::positional_options_description p;
 	p.add("input", 1).add("output", 1);
@@ -65,6 +64,16 @@ OptionsParser::Options OptionsParser::parse(const int argc, const char* argv[]) 
 		throw OptionException{"Unknown option: " + ex.get_option_name()};
 	}
 	po::notify(vm);
+
+	if (options.osm.storeFile.empty()) {
+		options.osm.materializeGeometries = true;
+	} else {
+		if (options.osm.fast) {
+			options.osm.materializeGeometries = true;
+		} else {
+			options.osm.shardStores = true;
+		}
+	}
 	
 	if (vm.count("help")) {
 		options.showHelp = true;

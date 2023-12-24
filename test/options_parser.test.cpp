@@ -49,6 +49,34 @@ MU_TEST(test_options_parser) {
 		mu_check(opts.inputFiles[0] == "ontario.pbf");
 		mu_check(opts.outputFile == "foo.mbtiles");
 		mu_check(opts.outputMode == OutputMode::MBTiles);
+		mu_check(opts.osm.materializeGeometries);
+		mu_check(!opts.osm.shardStores);
+	}
+
+	// --store should optimize for reduced memory
+	{
+		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--store", "/tmp/store"};
+		auto opts = parse(args);
+		mu_check(opts.inputFiles.size() == 1);
+		mu_check(opts.inputFiles[0] == "ontario.pbf");
+		mu_check(opts.outputFile == "foo.mbtiles");
+		mu_check(opts.outputMode == OutputMode::MBTiles);
+		mu_check(opts.osm.storeFile == "/tmp/store");
+		mu_check(!opts.osm.materializeGeometries);
+		mu_check(opts.osm.shardStores);
+	}
+
+	// --store --fast should optimize for speed
+	{
+		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--store", "/tmp/store", "--fast"};
+		auto opts = parse(args);
+		mu_check(opts.inputFiles.size() == 1);
+		mu_check(opts.inputFiles[0] == "ontario.pbf");
+		mu_check(opts.outputFile == "foo.mbtiles");
+		mu_check(opts.outputMode == OutputMode::MBTiles);
+		mu_check(opts.osm.storeFile == "/tmp/store");
+		mu_check(opts.osm.materializeGeometries);
+		mu_check(!opts.osm.shardStores);
 	}
 
 	ASSERT_THROWS("Couldn't open .json config", "--input", "foo", "--output", "bar", "--config", "nonexistent-config.json");

@@ -22,6 +22,7 @@ namespace OptionsParser {
 
 	struct OsmOptions {
 		std::string storeFile;
+		bool fast = false;
 		bool compact = false;
 		bool skipIntegrity = false;
 		bool uncompressedNodes = false;
