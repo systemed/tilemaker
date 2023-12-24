@@ -466,7 +466,7 @@ bool PbfReader::Ways::empty() {
 }
 PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	if (pg->type() != PrimitiveGroupType::Way)
-		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, way};
+		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, way};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
@@ -479,9 +479,6 @@ PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	return Ways::Iterator{message, -1, way};
 }
 PbfReader::Ways::Iterator PbfReader::Ways::end() {
-	if (pg->type() != PrimitiveGroupType::Way)
-		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, way};
-
 	return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, way};
 }
 
@@ -569,7 +566,7 @@ bool PbfReader::Relations::empty() {
 }
 PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	if (pg->type() != PrimitiveGroupType::Relation)
-		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, relation};
+		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
@@ -582,9 +579,6 @@ PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	return Relations::Iterator{message, -1, relation};
 }
 PbfReader::Relations::Iterator PbfReader::Relations::end() {
-	if (pg->type() != PrimitiveGroupType::Relation)
-		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, 0, relation};
-
 	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
 }
 
