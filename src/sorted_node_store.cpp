@@ -173,22 +173,23 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 
 		// Really naive caching strategy - just cache the last-used chunk.
 		// Probably good enough?
-		if (s(this).cachedChunk != neededChunk) {
-			s(this).cachedChunk = neededChunk;
-			s(this).cacheChunkLons.reserve(256);
-			s(this).cacheChunkLatps.reserve(256);
+		ThreadStorage& tls = s(this);
+		if (tls.cachedChunk != neededChunk) {
+			tls.cachedChunk = neededChunk;
+			tls.cacheChunkLons.reserve(256);
+			tls.cacheChunkLatps.reserve(256);
 
 			uint8_t* latpData = ptr->data;
 			uint8_t* lonData = ptr->data + latpSize;
 			uint32_t recovdata[256] = {0};
 
 			streamvbyte_decode(latpData, recovdata, n);
-			s(this).cacheChunkLatps[0] = ptr->firstLatp;
-			zigzag_delta_decode(recovdata, &s(this).cacheChunkLatps[1], n, s(this).cacheChunkLatps[0]);
+			tls.cacheChunkLatps[0] = ptr->firstLatp;
+			zigzag_delta_decode(recovdata, &tls.cacheChunkLatps[1], n, tls.cacheChunkLatps[0]);
 
 			streamvbyte_decode(lonData, recovdata, n);
-			s(this).cacheChunkLons[0] = ptr->firstLon;
-			zigzag_delta_decode(recovdata, &s(this).cacheChunkLons[1], n, s(this).cacheChunkLons[0]);
+			tls.cacheChunkLons[0] = ptr->firstLon;
+			zigzag_delta_decode(recovdata, &tls.cacheChunkLons[1], n, tls.cacheChunkLons[0]);
 		}
 
 		size_t nodeOffset = 0;
@@ -199,7 +200,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
 			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
-		return { s(this).cacheChunkLatps[nodeOffset], s(this).cacheChunkLons[nodeOffset] };
+		return { tls.cacheChunkLatps[nodeOffset], tls.cacheChunkLons[nodeOffset] };
 	}
 
 	UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)basePtr;
@@ -241,58 +242,60 @@ size_t SortedNodeStore::size() const {
 }
 
 void SortedNodeStore::insert(const std::vector<element_t>& elements) {
-	if (s(this).localNodes == nullptr) {
+	ThreadStorage& tls = s(this);
+	if (tls.localNodes == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
 		else if (workerBuffers.size() == workerBuffers.capacity())
 			throw std::runtime_error("SortedNodeStore doesn't support more than 256 cores");
 		workerBuffers.push_back(std::vector<element_t>());
-		s(this).localNodes = &workerBuffers.back();
+		tls.localNodes = &workerBuffers.back();
 	}
 
-	if (s(this).groupStart == -1) {
+	if (tls.groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		s(this).groupStart = elements[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		tls.groupStart = elements[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
-	while (s(this).collectingOrphans && i < elements.size()) {
+	while (tls.collectingOrphans && i < elements.size()) {
 		const element_t& el = elements[i];
-		if (el.first >= s(this).groupStart + (GroupSize * ChunkSize)) {
-			s(this).collectingOrphans = false;
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			tls.collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			s(this).groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
-			collectOrphans(*s(this).localNodes);
-			s(this).localNodes->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+			collectOrphans(*tls.localNodes);
+			tls.localNodes->clear();
 		}
-		s(this).localNodes->push_back(el);
+		tls.localNodes->push_back(el);
 		i++;
 	}
 
 	while(i < elements.size()) {
 		const element_t& el = elements[i];
 
-		if (el.first >= s(this).groupStart + (GroupSize * ChunkSize)) {
-			publishGroup(*s(this).localNodes);
-			s(this).localNodes->clear();
-			s(this).groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			publishGroup(*tls.localNodes);
+			tls.localNodes->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
-		s(this).localNodes->push_back(el);
+		tls.localNodes->push_back(el);
 		i++;
 	}
 }
 
 void SortedNodeStore::batchStart() {
-	s(this).collectingOrphans = true;
-	s(this).groupStart = -1;
-	if (s(this).localNodes == nullptr || s(this).localNodes->size() == 0)
+	ThreadStorage& tls = s(this);
+	tls.collectingOrphans = true;
+	tls.groupStart = -1;
+	if (tls.localNodes == nullptr || tls.localNodes->size() == 0)
 		return;
 
-	collectOrphans(*s(this).localNodes);
-	s(this).localNodes->clear();
+	collectOrphans(*tls.localNodes);
+	tls.localNodes->clear();
 }
 
 void SortedNodeStore::finalize(size_t threadNum) {
@@ -467,22 +470,23 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 	GroupInfo* groupInfo = nullptr;
 
-	if (s(this).arenaSpace < groupSpace) {
+	ThreadStorage& tls = s(this);
+	if (tls.arenaSpace < groupSpace) {
 		// A full group takes ~330KB. Nodes are read _fast_, and there ends
 		// up being contention calling the allocator when reading the
 		// planet on a machine with 48 cores -- so allocate in large chunks.
-		s(this).arenaSpace = 4 * 1024 * 1024;
-		totalAllocatedSpace += s(this).arenaSpace;
-		s(this).arenaPtr = (char*)void_mmap_allocator::allocate(s(this).arenaSpace);
-		if (s(this).arenaPtr == nullptr)
+		tls.arenaSpace = 4 * 1024 * 1024;
+		totalAllocatedSpace += tls.arenaSpace;
+		tls.arenaPtr = (char*)void_mmap_allocator::allocate(tls.arenaSpace);
+		if (tls.arenaPtr == nullptr)
 			throw std::runtime_error("SortedNodeStore: failed to allocate arena");
 		std::lock_guard<std::mutex> lock(orphanageMutex);
-		allocatedMemory.push_back(std::make_pair((void*)s(this).arenaPtr, s(this).arenaSpace));
+		allocatedMemory.push_back(std::make_pair((void*)tls.arenaPtr, tls.arenaSpace));
 	}
 
-	s(this).arenaSpace -= groupSpace;
-	groupInfo = (GroupInfo*)s(this).arenaPtr;
-	s(this).arenaPtr += groupSpace;
+	tls.arenaSpace -= groupSpace;
+	groupInfo = (GroupInfo*)tls.arenaPtr;
+	tls.arenaPtr += groupSpace;
 
 	if (groups[groupIndex] != nullptr)
 		throw std::runtime_error("SortedNodeStore: group already present");

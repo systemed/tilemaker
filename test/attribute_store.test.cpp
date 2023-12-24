@@ -22,7 +22,6 @@ MU_TEST(test_attribute_store) {
 
 	const auto s1Pairs = store.getUnsafe(s1Index);
 	mu_check(s1Pairs.size() == 5);
-
 	const auto str1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
 			return ap->keyIndex == store.keyStore.key2index("str1");
 	});

@@ -468,7 +468,21 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-	NodeID id = osmMemTiles.storePoint(geomp);
+	NodeID id = 0;
+	// We don't do lazy centroids for relations - calculating their centroid
+	// can be quite expensive, and there's not as many of them as there are
+	// ways.
+	if (materializeGeometries || isRelation) {
+		id = osmMemTiles.storePoint(geomp);
+	} else if (!isRelation && !isWay) {
+		// Sometimes people call LayerAsCentroid(...) on a node, because they're
+		// writing a generic handler that doesn't know if it's a node or a way,
+		// e.g. POIs.
+		id = USE_NODE_STORE | originalOsmID;
+	} else {
+		id = USE_WAY_STORE | originalOsmID;
+		wayEmitted = true;
+	}
 	OutputObject oo(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }

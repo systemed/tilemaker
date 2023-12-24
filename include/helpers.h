@@ -29,6 +29,9 @@ inline std::vector<std::string> split_string(std::string &inputStr, char sep) {
 }
 
 void decompress_string(std::string& output, const char* input, uint32_t inputSize, bool asGzip = false);
+double bboxElementFromStr(const std::string& number);
+
+std::vector<std::string> parseBox(const std::string& bbox);
 
 std::string compress_string(const std::string& str,
                             int compressionlevel = Z_DEFAULT_COMPRESSION,

@@ -12,6 +12,8 @@
 #include "clip_cache.h"
 #include "mmap_allocator.h"
 
+#define TILE_DATA_ID_SIZE 34
+
 typedef std::vector<class TileDataSource *> SourceList;
 
 class TileBbox;
@@ -407,7 +409,7 @@ public:
 	);
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
-	virtual LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
+	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
 		// Put something at index 0 of all stores so that 0 can be used
@@ -425,18 +427,18 @@ public:
 	NodeID storePoint(Point const &input);
 
 	inline size_t getShard(NodeID id) const {
-		// Note: we only allocate 35 bits for the IDs. This allows us to
-		// use bit 36 for TileDataSource-specific handling (e.g.,
+		// Note: we only allocate 34 bits for the IDs. This allows us to
+		// use bits 35 and 36 for TileDataSource-specific handling (e.g.,
 		// OsmMemTiles may want to generate points/ways on the fly by
 		// referring to the WayStore).
 
-		return id >> (35 - shardBits);
+		return id >> (TILE_DATA_ID_SIZE - shardBits);
 	}
 
 	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
 
 	inline size_t getId(NodeID id) const {
-		return id & (~(~0ull << (35 - shardBits)));
+		return id & (~(~0ull << (TILE_DATA_ID_SIZE - shardBits)));
 	}
 
 	const Point& retrievePoint(NodeID id) const {

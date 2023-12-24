@@ -32,7 +32,7 @@ namespace SortedWayStoreTypes {
 
 	thread_local std::deque<std::pair<const SortedWayStore*, ThreadStorage>> threadStorage;
 
-	ThreadStorage& s(const SortedWayStore* who) {
+	inline ThreadStorage& s(const SortedWayStore* who) {
 		for (auto& entry : threadStorage)
 			if (entry.first == who)
 				return entry.second;
@@ -214,46 +214,47 @@ void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<
 	if (newWays.empty())
 		return;
 
-	if (s(this).localWays == nullptr) {
+	ThreadStorage& tls = s(this);
+	if (tls.localWays == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
 		else if (workerBuffers.size() == workerBuffers.capacity())
 			throw std::runtime_error("SortedWayStore doesn't support more than 256 cores");
 		workerBuffers.push_back(std::vector<std::pair<WayID, std::vector<NodeID>>>());
-		s(this).localWays = &workerBuffers.back();
+		tls.localWays = &workerBuffers.back();
 	}
 
-	if (s(this).groupStart == -1) {
+	if (tls.groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		s(this).groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		tls.groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
-	while (s(this).collectingOrphans && i < newWays.size()) {
+	while (tls.collectingOrphans && i < newWays.size()) {
 		const auto& el = newWays[i];
-		if (el.first >= s(this).groupStart + (GroupSize * ChunkSize)) {
-			s(this).collectingOrphans = false;
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			tls.collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			s(this).groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
-			collectOrphans(*s(this).localWays);
-			s(this).localWays->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+			collectOrphans(*tls.localWays);
+			tls.localWays->clear();
 		}
-		s(this).localWays->push_back(el);
+		tls.localWays->push_back(el);
 		i++;
 	}
 
 	while(i < newWays.size()) {
 		const auto& el = newWays[i];
 
-		if (el.first >= s(this).groupStart + (GroupSize * ChunkSize)) {
-			publishGroup(*s(this).localWays);
-			s(this).localWays->clear();
-			s(this).groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			publishGroup(*tls.localWays);
+			tls.localWays->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
-		s(this).localWays->push_back(el);
+		tls.localWays->push_back(el);
 		i++;
 	}
 }
@@ -297,13 +298,14 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 }
 
 void SortedWayStore::batchStart() {
-	s(this).collectingOrphans = true;
-	s(this).groupStart = -1;
-	if (s(this).localWays == nullptr || s(this).localWays->size() == 0)
+	ThreadStorage& tls = s(this);
+	tls.collectingOrphans = true;
+	tls.groupStart = -1;
+	if (tls.localWays == nullptr || tls.localWays->size() == 0)
 		return;
 
-	collectOrphans(*s(this).localWays);
-	s(this).localWays->clear();
+	collectOrphans(*tls.localWays);
+	tls.localWays->clear();
 }
 
 void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans) {
@@ -476,6 +478,7 @@ void populateMask(uint8_t* mask, const std::vector<uint8_t>& ids) {
 }
 
 void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways) {
+	ThreadStorage& tls = s(this);
 	totalWays += ways.size();
 	if (ways.size() == 0) {
 		throw std::runtime_error("SortedWayStore: group is empty");
@@ -519,12 +522,12 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		const WayID id = way.first;
 		lastChunk->wayIds.push_back(id % ChunkSize);
 
-		uint16_t flags = encodeWay(way.second, s(this).encodedWay, compressWays && way.second.size() >= 4);
+		uint16_t flags = encodeWay(way.second, tls.encodedWay, compressWays && way.second.size() >= 4);
 		lastChunk->wayFlags.push_back(flags);
 
 		std::vector<uint8_t> encoded;
-		encoded.resize(s(this).encodedWay.size());
-		memcpy(encoded.data(), s(this).encodedWay.data(), s(this).encodedWay.size());
+		encoded.resize(tls.encodedWay.size());
+		memcpy(encoded.data(), tls.encodedWay.data(), tls.encodedWay.size());
 
 		lastChunk->encodedWays.push_back(std::move(encoded));
 	}

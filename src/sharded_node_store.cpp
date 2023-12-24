@@ -61,12 +61,12 @@ size_t pickStore(const LatpLon& el) {
 	const size_t z3x = z4x / 2;
 	const size_t z3y = z4y / 2;
 
-	if (z3x == 5 && z3y == 2) return 6; // Western Russia
-	if (z3x == 4 && z3y == 3) return 6; // North Africa
-	if (z3x == 5 && z3y == 3) return 6; // India
+	if (z3x == 5 && z3y == 2) return 5; // Western Russia
+	if (z3x == 4 && z3y == 3) return 5; // North Africa
+	if (z3x == 5 && z3y == 3) return 5; // India
 
-	if ((z5x == 16 && z5y == 10) || (z5x == 16 && z5y == 11)) return 5; // some of Central Europe
-	if ((z5x == 17 && z5y == 10) || (z5x == 17 && z5y == 11)) return 4; // some more of Central Europe
+	if ((z5x == 16 && z5y == 10) || (z5x == 16 && z5y == 11)) return 4; // some of Central Europe
+	if ((z5x == 17 && z5y == 10) || (z5x == 17 && z5y == 11)) return 1; // some more of Central Europe
 
 	if (z3x == 4 && z3y == 2) return 3; // rest of Central Europe
 

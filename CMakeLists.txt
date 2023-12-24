@@ -103,6 +103,7 @@ file(GLOB tilemaker_src_files
 	src/output_object.cpp
 	src/pbf_blocks.cpp
 	src/pbf_reader.cpp
+	src/pmtiles.cpp
 	src/pooled_string.cpp
 	src/read_pbf.cpp
 	src/read_shp.cpp
