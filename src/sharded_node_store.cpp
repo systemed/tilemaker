@@ -99,5 +99,5 @@ bool ShardedNodeStore::contains(size_t shard, NodeID id) const {
 }
 
 size_t ShardedNodeStore::shards() const {
-	return 7;
+	return 6;
 }
