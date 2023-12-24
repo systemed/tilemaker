@@ -93,7 +93,6 @@ INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 all: tilemaker
 
 tilemaker: \
-	include/osmformat.pb.o \
 	include/vector_tile.pb.o \
 	src/attribute_store.o \
 	src/coordinates_geom.o \
@@ -110,7 +109,6 @@ tilemaker: \
 	src/osm_mem_tiles.o \
 	src/osm_store.o \
 	src/output_object.o \
-	src/pbf_blocks.o \
 	src/pmtiles.o \
 	src/pooled_string.o \
 	src/pbf_reader.o \

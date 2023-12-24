@@ -12,7 +12,6 @@
 #include <protozero/data_view.hpp>
 
 // Protobuf
-#include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
 class OsmLuaProcessing;
