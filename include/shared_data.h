@@ -7,6 +7,7 @@
 
 #include "rapidjson/document.h"
 
+#include "options_parser.h"
 #include "osm_store.h"
 #include "output_object.h"
 #include "mbtiles.h"
@@ -61,10 +62,6 @@ public:
 	std::string serialiseToJSON() const;
 };
 
-const int OUTPUT_FILE = 0;
-const int OUTPUT_MBTILES = 1;
-const int OUTPUT_PMTILES = 2;
-
 ///\brief Config read from JSON to control behavior of program
 class Config {
 	
@@ -91,7 +88,7 @@ class SharedData {
 
 public:
 	const class LayerDefinition &layers;
-	int outputMode;
+	OptionsParser::OutputMode outputMode;
 	bool mergeSqlite;
 	MBTiles mbtiles;
 	PMTiles pmtiles;

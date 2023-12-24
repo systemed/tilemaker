@@ -106,6 +106,7 @@ tilemaker: \
 	src/mbtiles.o \
 	src/mmap_allocator.o \
 	src/node_stores.o \
+	src/options_parser.o \
 	src/osm_lua_processing.o \
 	src/osm_mem_tiles.o \
 	src/osm_store.o \
@@ -152,6 +153,10 @@ test_deque_map: \
 	test/deque_map.test.o
 	$(CXX) $(CXXFLAGS) -o test.deque_map $^ $(INC) $(LIB) $(LDFLAGS) && ./test.deque_map
 
+test_options_parser: \
+	src/options_parser.o \
+	test/options_parser.test.o
+	$(CXX) $(CXXFLAGS) -o test.options_parser $^ $(INC) $(LIB) $(LDFLAGS) && ./test.options_parser
 
 test_pooled_string: \
 	src/mmap_allocator.o \
@@ -167,7 +172,6 @@ test_sorted_node_store: \
 	src/sorted_node_store.o \
 	test/sorted_node_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.sorted_node_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_node_store
-
 
 test_sorted_way_store: \
 	src/external/streamvbyte_decode.o \

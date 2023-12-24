@@ -10,7 +10,7 @@ using namespace rapidjson;
 
 SharedData::SharedData(Config &configIn, const class LayerDefinition &layers)
 	: layers(layers), config(configIn) {
-	outputMode=OUTPUT_FILE;
+	outputMode=OptionsParser::OutputMode::File;
 	mergeSqlite=false;
 }
 
