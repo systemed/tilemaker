@@ -210,19 +210,16 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	PooledString ps(&v);
 	AttributePair kv(keyStore.key2index(key), ps, minzoom);
 	bool isHot = AttributePair::isHot(key, v);
-	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = true; // All bools are eligible to be hot pairs
-	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
-	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 

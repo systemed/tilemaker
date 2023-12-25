@@ -225,6 +225,8 @@ private:
 		lastStoredGeometryId = 0;
 	}
 
+	void removeAttributeIfNeeded(const std::string& key);
+
 	const inline Point getPoint() {
 		return Point(lon/10000000.0,latp/10000000.0);
 	}
@@ -267,6 +269,7 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
+	std::vector<std::string> outputKeys;
 
 	std::vector<OutputObject> finalizeOutputs();
 
