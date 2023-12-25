@@ -19,9 +19,10 @@ The `--config` and `--process` arguments are the paths of your JSON config file 
 processing script. These are described in CONFIGURATION.md. Here we're using the ready-made 
 OpenMapTiles-compatible script.
 
-You'll usually want to write to an .mbtiles file (which, under the hood, is an sqlite database 
-containing the vector tiles). However, you can write tiles directly to the filesystem if you 
-like, by specifying a directory path for `--output`.
+You can output to an .mbtiles or .pmtiles file. mbtiles is widely supported and easy to serve 
+(it's an sqlite database under the hood). [pmtiles](https://github.com/protomaps/PMTiles) is 
+a newer format optimised for serving over the cloud. You can also write tiles directly to the 
+filesystem by specifying a directory path for `--output`.
 
 This is all you need to know, but if you want to reduce memory requirements, read on.
 

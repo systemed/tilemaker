@@ -13,6 +13,7 @@
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "helpers.h"
+#include <protozero/data_view.hpp>
 
 #include <boost/container/flat_map.hpp>
 
@@ -87,7 +88,7 @@ public:
 
 	// ----	Data loading methods
 
-	using tag_map_t = boost::container::flat_map<std::string, std::string>;
+	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 
 	// Scan non-MP relation
 	bool scanRelation(WayID id, const TagMap& tags);

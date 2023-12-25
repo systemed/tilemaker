@@ -10,6 +10,8 @@
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
+#include "pooled_string.h"
+#include "deque_map.h"
 
 /* AttributeStore - global dictionary for attributes */
 
@@ -39,26 +41,67 @@ private:
 	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
-enum class AttributePairType: char { False = 0, True = 1, Float = 2, String = 3 };
+enum class AttributePairType: char { Bool = 0, Float = 1, String = 2 };
 // AttributePair is a key/value pair (with minzoom)
+#pragma pack(push, 1)
 struct AttributePair {
-	std::string stringValue_;
-	float floatValue_;
-	short keyIndex;
-	char minzoom;
-	AttributePairType valueType;
+	short keyIndex : 9;
+	AttributePairType valueType : 3;
+	char minzoom : 4;
+	union {
+		float floatValue_;
+		PooledString stringValue_;
+	};
 
 	AttributePair(uint32_t keyIndex, bool value, char minzoom)
-		: keyIndex(keyIndex), valueType(value ? AttributePairType::True : AttributePairType::False), minzoom(minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Bool), minzoom(minzoom), floatValue_(value ? 1 : 0)
 	{
 	}
-	AttributePair(uint32_t keyIndex, const std::string& value, char minzoom)
+	AttributePair(uint32_t keyIndex, const PooledString& value, char minzoom)
 		: keyIndex(keyIndex), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
 	{
 	}
 	AttributePair(uint32_t keyIndex, float value, char minzoom)
-		: keyIndex(keyIndex), valueType(AttributePairType::Float), floatValue_(value), minzoom(minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Float), minzoom(minzoom), floatValue_(value)
 	{
+	}
+
+	AttributePair(const AttributePair& other):
+		keyIndex(other.keyIndex), valueType(other.valueType), minzoom(other.minzoom)
+	{
+		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
+			floatValue_ = other.floatValue_;
+			return;
+		}
+
+		stringValue_ = other.stringValue_;
+	}
+
+	AttributePair& operator=(const AttributePair& other) {
+		keyIndex = other.keyIndex;
+		valueType = other.valueType;
+		minzoom = other.minzoom;
+
+		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
+			floatValue_ = other.floatValue_;
+			return *this;
+		}
+
+		stringValue_ = other.stringValue_;
+		return *this;
+	}
+
+	bool operator<(const AttributePair& other) const {
+		if (minzoom != other.minzoom)
+			return minzoom < other.minzoom;
+		if (keyIndex != other.keyIndex)
+			return keyIndex < other.keyIndex;
+		if (valueType != other.valueType) return valueType < other.valueType;
+
+		if (hasStringValue()) return pooledString() < other.pooledString();
+		if (hasBoolValue()) return boolValue() < other.boolValue();
+		if (hasFloatValue()) return floatValue() < other.floatValue();
+		throw std::runtime_error("Invalid type in attribute store");
 	}
 
 	bool operator==(const AttributePair &other) const {
@@ -66,7 +109,7 @@ struct AttributePair {
 		if (valueType == AttributePairType::String)
 			return stringValue_ == other.stringValue_;
 
-		if (valueType == AttributePairType::Float)
+		if (valueType == AttributePairType::Float || valueType == AttributePairType::Bool)
 			return floatValue_ == other.floatValue_;
 
 		return true;
@@ -74,13 +117,16 @@ struct AttributePair {
 
 	bool hasStringValue() const { return valueType == AttributePairType::String; }
 	bool hasFloatValue() const { return valueType == AttributePairType::Float; }
-	bool hasBoolValue() const { return valueType == AttributePairType::True || valueType == AttributePairType::False; };
+	bool hasBoolValue() const { return valueType == AttributePairType::Bool; }
 
-	const std::string& stringValue() const { return stringValue_; }
+	const PooledString& pooledString() const { return stringValue_; }
+	const std::string stringValue() const { return stringValue_.toString(); }
 	float floatValue() const { return floatValue_; }
-	bool boolValue() const { return valueType == AttributePairType::True; }
+	bool boolValue() const { return floatValue_; }
 
-	static bool isHot(const AttributePair& pair, const std::string& keyName) {
+	void ensureStringIsOwned();
+
+	static bool isHot(const std::string& keyName, const std::string& value) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -89,25 +135,11 @@ struct AttributePair {
 		// The trick is that we commit to putting them in the hot pool
 		// before we know if we were right.
 
-		// All boolean pairs are eligible.
-		if (pair.hasBoolValue())
-			return true;
-
-		// Small integers are eligible.
-		if (pair.hasFloatValue()) {
-			float v = pair.floatValue();
-
-			if (ceil(v) == v && v >= 0 && v <= 25)
-				return true;
-		}
-
-		// The remaining things should be strings, but just in case...
-		if (!pair.hasStringValue())
-			return false;
+		// The rules for floats/booleans are managed in their addAttribute call.
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: pair.stringValue()) {
+		for (const auto& c: value) {
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
@@ -124,9 +156,10 @@ struct AttributePair {
 		boost::hash_combine(rv, keyIndex);
 		boost::hash_combine(rv, valueType);
 
-		if(hasStringValue())
-			boost::hash_combine(rv, stringValue());
-		else if(hasFloatValue())
+		if(hasStringValue()) {
+			const char* data = pooledString().data();
+			boost::hash_range(rv, data, data + pooledString().size());
+		} else if(hasFloatValue())
 			boost::hash_combine(rv, floatValue());
 		else if(hasBoolValue())
 			boost::hash_combine(rv, boolValue());
@@ -137,6 +170,7 @@ struct AttributePair {
 		return rv;
 	}
 };
+#pragma pack(pop)
 
 
 // We shard the cold pools to reduce the odds of lock contention on
@@ -153,40 +187,22 @@ class AttributePairStore {
 public:
 	AttributePairStore():
 		finalized(false),
-		pairs(ATTRIBUTE_SHARDS),
-		pairsMaps(ATTRIBUTE_SHARDS),
-		pairsMutex(ATTRIBUTE_SHARDS),
-		hotShardSize(0)
+		pairsMutex(ATTRIBUTE_SHARDS)
 	{
-		// NB: the hot shard is stored in its own, pre-allocated vector.
-		// pairs[0] is _not_ the hot shard
-		hotShard.reserve(1 << 16);
-		for (size_t i = 0; i < 1 << 16; i++)
-			hotShard.push_back(AttributePair(0, false, 0));
+		// The "hot" shard has a capacity of 64K, the others are unbounded.
+		pairs.push_back(DequeMap<AttributePair>(1 << 16));
+		// Reserve offset 0 as a sentinel
+		pairs[0].add(AttributePair(0, false, 0));
+		for (size_t i = 1; i < ATTRIBUTE_SHARDS; i++)
+			pairs.push_back(DequeMap<AttributePair>());
 	}
 
 	void finalize() { finalized = true; }
 	const AttributePair& getPair(uint32_t i) const;
 	const AttributePair& getPairUnsafe(uint32_t i) const;
-	uint32_t addPair(const AttributePair& pair, bool isHot);
+	uint32_t addPair(AttributePair& pair, bool isHot);
 
-	struct key_value_less_ptr {
-		bool operator()(AttributePair const* lhs, AttributePair const* rhs) const {            
-			if (lhs->minzoom != rhs->minzoom)
-				return lhs->minzoom < rhs->minzoom;
-			if (lhs->keyIndex != rhs->keyIndex)
-				return lhs->keyIndex < rhs->keyIndex;
-			if (lhs->valueType != rhs->valueType) return lhs->valueType < rhs->valueType;
-
-			if (lhs->hasStringValue()) return lhs->stringValue() < rhs->stringValue();
-			if (lhs->hasBoolValue()) return lhs->boolValue() < rhs->boolValue();
-			if (lhs->hasFloatValue()) return lhs->floatValue() < rhs->floatValue();
-			throw std::runtime_error("Invalid type in attribute store");
-		}
-	}; 
-
-	std::vector<std::deque<AttributePair>> pairs;
-	std::vector<boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr>> pairsMaps;
+	std::vector<DequeMap<AttributePair>> pairs;
 
 private:
 	bool finalized;
@@ -198,41 +214,37 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	mutable std::vector<std::mutex> pairsMutex;
-	std::atomic<uint32_t> hotShardSize;
-	std::vector<AttributePair> hotShard;
 };
 
 // AttributeSet is a set of AttributePairs
 // = the complete attributes for one object
 struct AttributeSet {
 
-	struct less_ptr {
-		bool operator()(const AttributeSet* lhs, const AttributeSet* rhs) const {            
-			if (lhs->useVector != rhs->useVector)
-				return lhs->useVector < rhs->useVector;
+	bool operator<(const AttributeSet& other) const {
+		if (useVector != other.useVector)
+			return useVector < other.useVector;
 
-			if (lhs->useVector) {
-				if (lhs->intValues.size() != rhs->intValues.size())
-					return lhs->intValues.size() < rhs->intValues.size();
+		if (useVector) {
+			if (intValues.size() != other.intValues.size())
+				return intValues.size() < other.intValues.size();
 
-				for (int i = 0; i < lhs->intValues.size(); i++) {
-					if (lhs->intValues[i] != rhs->intValues[i]) {
-						return lhs->intValues[i] < rhs->intValues[i];
-					}
-				}
-
-				return false;
-			}
-
-			for (int i = 0; i < sizeof(lhs->shortValues)/sizeof(lhs->shortValues[0]); i++) {
-				if (lhs->shortValues[i] != rhs->shortValues[i]) {
-					return lhs->shortValues[i] < rhs->shortValues[i];
+			for (int i = 0; i < intValues.size(); i++) {
+				if (intValues[i] != other.intValues[i]) {
+					return intValues[i] < other.intValues[i];
 				}
 			}
 
 			return false;
 		}
-	}; 
+
+		for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++) {
+			if (shortValues[i] != other.shortValues[i]) {
+				return shortValues[i] < other.shortValues[i];
+			}
+		}
+
+		return false;
+	}
 
 	size_t hash() const {
 		// Values are in canonical form after finalizeSet is called, so
@@ -253,6 +265,7 @@ struct AttributeSet {
 		return idx;
 	}
 
+	bool operator!=(const AttributeSet& other) const { return !(*this == other); }
 	bool operator==(const AttributeSet &other) const {
 		// Equivalent if, for every value in values, there is a value in other.values
 		// whose pair is the same.
@@ -380,6 +393,8 @@ private:
 struct AttributeStore {
 	AttributeIndex add(AttributeSet &attributes);
 	std::vector<const AttributePair*> getUnsafe(AttributeIndex index) const;
+	void reset(); // used for testing
+	size_t size() const;
 	void reportSize() const;
 	void finalize();
 
@@ -390,7 +405,6 @@ struct AttributeStore {
 	AttributeStore():
 		finalized(false),
 		sets(ATTRIBUTE_SHARDS),
-		setsMaps(ATTRIBUTE_SHARDS),
 		setsMutex(ATTRIBUTE_SHARDS),
 		lookups(0) {
 	}
@@ -400,8 +414,7 @@ struct AttributeStore {
 
 private:
 	bool finalized;
-	std::vector<std::deque<AttributeSet>> sets;
-	std::vector<boost::container::flat_map<const AttributeSet*, uint32_t, AttributeSet::less_ptr>> setsMaps;
+	std::vector<DequeMap<AttributeSet>> sets;
 	mutable std::vector<std::mutex> setsMutex;
 
 	mutable std::mutex mutex;

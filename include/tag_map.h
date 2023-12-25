@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <boost/container/flat_map.hpp>
+#include <protozero/data_view.hpp>
 
 // We track tags in a special structure, which enables some tricks when
 // doing Lua interop.
@@ -27,8 +28,7 @@ public:
 	TagMap();
 	void reset();
 
-	void addTag(const std::string& key, const std::string& value);
-	const std::string* getTag(const std::string& key) const;
+	void addTag(const protozero::data_view& key, const protozero::data_view& value);
 
 	// Return -1 if key not found, else return its keyLoc.
 	int64_t getKey(const char* key, size_t size) const;
@@ -36,21 +36,21 @@ public:
 	// Return -1 if value not found, else return its keyLoc.
 	int64_t getValue(const char* key, size_t size) const;
 
-	const std::string* getValueFromKey(uint32_t keyLoc) const;
-	const std::string* getValue(uint32_t valueLoc) const;
+	const protozero::data_view* getValueFromKey(uint32_t keyLoc) const;
+	const protozero::data_view* getValue(uint32_t valueLoc) const;
 
 	boost::container::flat_map<std::string, std::string> exportToBoostMap() const;
 
 private:
 	uint32_t ensureString(
-		std::vector<std::vector<const std::string*>>& vector,
-		const std::string& value
+		std::vector<std::vector<const protozero::data_view*>>& vector,
+		const protozero::data_view& value
 	);
 
 
-	std::vector<std::vector<const std::string*>> keys;
+	std::vector<std::vector<const protozero::data_view*>> keys;
 	std::vector<std::vector<uint32_t>> key2value;
-	std::vector<std::vector<const std::string*>> values;
+	std::vector<std::vector<const protozero::data_view*>> values;
 };
 
 #endif _TAG_MAP_H

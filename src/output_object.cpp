@@ -87,9 +87,12 @@ void OutputObject::writeAttributes(
 int OutputObject::findValue(const vector<vector_tile::Tile_Value>* valueList, const AttributePair& value) const {
 	for (size_t i=0; i<valueList->size(); i++) {
 		const vector_tile::Tile_Value& v = valueList->at(i);
-		if (v.has_string_value() && value.hasStringValue() && v.string_value()==value.stringValue()) { return i; }
-		if (v.has_float_value()  && value.hasFloatValue()  && v.float_value() ==value.floatValue() ) { return i; }
-		if (v.has_bool_value()	 && value.hasBoolValue()   && v.bool_value()  ==value.boolValue()	) { return i; }
+		if (v.has_string_value() && value.hasStringValue()) {
+			const size_t valueSize = value.pooledString().size();
+			if (valueSize == v.string_value().size() && memcmp(v.string_value().data(), value.pooledString().data(), valueSize) == 0)
+				return i;
+		} else if (v.has_float_value()  && value.hasFloatValue()  && v.float_value() ==value.floatValue() ) { return i; }
+		else if (v.has_bool_value()	 && value.hasBoolValue()   && v.bool_value()  ==value.boolValue()	) { return i; }
 	}
 	return -1;
 }

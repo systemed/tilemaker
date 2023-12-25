@@ -12,7 +12,6 @@
 #include "osm_store.h"
 
 // Protobuf
-#include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
@@ -22,9 +21,6 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType);
 
 /**
  * \brief OutputObject - any object (node, linestring, polygon) to be outputted to tiles
-
- * Possible future improvements to save memory:
- * - use a global dictionary for attribute key/values
 */
 #pragma pack(push, 4)
 class OutputObject {

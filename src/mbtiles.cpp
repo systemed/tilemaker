@@ -41,7 +41,8 @@ void MBTiles::openForWriting(string &filename) {
 	db << "PRAGMA page_size = 65536;";
 	db << "VACUUM;"; // make sure page_size takes effect
 	db << "CREATE TABLE IF NOT EXISTS metadata (name text, value text, UNIQUE (name));";
-	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, UNIQUE (zoom_level, tile_column, tile_row));";
+	db << "CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob);";
+	db << "CREATE UNIQUE INDEX IF NOT EXISTS tile_index on tiles (zoom_level, tile_column, tile_row);";
 	preparedStatements.emplace_back(db << "INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);");
 	preparedStatements.emplace_back(db << "REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?,?,?,?);");
 
@@ -95,7 +96,6 @@ void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
 
 void MBTiles::closeForWriting() {
 	flushPendingStatements();
-	db << "CREATE UNIQUE INDEX IF NOT EXISTS tile_index on tiles (zoom_level, tile_column, tile_row);";
 	preparedStatements[0].used(true);
 	preparedStatements[1].used(true);
 }

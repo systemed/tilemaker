@@ -9,7 +9,6 @@
 #include "coordinates_geom.h"
 
 // Protobuf
-#include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
 typedef std::vector<std::pair<int,int> > XYString;

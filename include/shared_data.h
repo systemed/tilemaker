@@ -7,9 +7,11 @@
 
 #include "rapidjson/document.h"
 
+#include "options_parser.h"
 #include "osm_store.h"
 #include "output_object.h"
 #include "mbtiles.h"
+#include "pmtiles.h"
 #include "tile_data.h"
 
 ///\brief Defines map single layer appearance
@@ -86,15 +88,22 @@ class SharedData {
 
 public:
 	const class LayerDefinition &layers;
-	bool sqlite;
+	OptionsParser::OutputMode outputMode;
 	bool mergeSqlite;
 	MBTiles mbtiles;
+	PMTiles pmtiles;
 	std::string outputFile;
 
 	Config &config;
 
 	SharedData(Config &configIn, const class LayerDefinition &layers);
 	virtual ~SharedData();
+
+	void writeMBTilesProjectData();
+	void writeMBTilesMetadata(rapidjson::Document const &jsonConfig);
+	void writeFileMetadata(rapidjson::Document const &jsonConfig);	
+	std::string pmTilesMetadata();
+	void writePMTilesBounds();
 };
 
 #endif //_SHARED_DATA_H

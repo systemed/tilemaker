@@ -100,9 +100,11 @@ template<>  struct kaguya::lua_type_traits<PossiblyKnownTagValue> {
 
 std::string rawId() { return osmLuaProcessing->Id(); }
 bool rawHolds(const KnownTagKey& key) { return key.found; }
-const std::string& rawFind(const KnownTagKey& key) {
-	if (key.found)
-		return *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
+const std::string rawFind(const KnownTagKey& key) {
+	if (key.found) {
+		auto value = *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
+		return std::string(value.data(), value.size());
+	}
 
 	return EMPTY_STRING;
 }
@@ -463,7 +465,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 
 			if(CorrectGeometry(p) == CorrectGeometryResult::Invalid) return;
 
-			NodeID id = osmMemTiles.storePoint(p);
+			NodeID id = USE_NODE_STORE | originalOsmID;
+			if (materializeGeometries)
+				id = osmMemTiles.storePoint(p);
 			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
 			return;
@@ -579,7 +583,21 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 		return;
 	}
 
-	NodeID id = osmMemTiles.storePoint(geomp);
+	NodeID id = 0;
+	// We don't do lazy centroids for relations - calculating their centroid
+	// can be quite expensive, and there's not as many of them as there are
+	// ways.
+	if (materializeGeometries || isRelation) {
+		id = osmMemTiles.storePoint(geomp);
+	} else if (!isRelation && !isWay) {
+		// Sometimes people call LayerAsCentroid(...) on a node, because they're
+		// writing a generic handler that doesn't know if it's a node or a way,
+		// e.g. POIs.
+		id = USE_NODE_STORE | originalOsmID;
+	} else {
+		id = USE_WAY_STORE | originalOsmID;
+		wayEmitted = true;
+	}
 	OutputObject oo(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }
@@ -588,8 +606,7 @@ Point OsmLuaProcessing::calculateCentroid() {
 	Point centroid;
 	if (isRelation) {
 		Geometry tmp;
-		tmp = osmStore.wayListMultiPolygon(
-			outerWayVecPtr->cbegin(), outerWayVecPtr->cend(), innerWayVecPtr->begin(), innerWayVecPtr->cend());
+		tmp = multiPolygonCached();
 		geom::centroid(tmp, centroid);
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
@@ -614,13 +631,18 @@ void OsmLuaProcessing::Accept() {
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const PossiblyKnownTagValue& val, const char minzoom) {
-	const std::string* str = &val.fallback;
-	if (val.found)
-		str = currentTags->getValue(val.index);
+	std::string str;
 
-	if (str->size()==0) { return; }		// don't set empty strings
+	if (val.found) {
+		auto existingValue = currentTags->getValue(val.index);
+		str = std::string(existingValue->data(), existingValue->size());
+	} else {
+		str = val.fallback;
+	}
+
+	if (str.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	attributeStore.addAttribute(outputs.back().second, key, *str, minzoom);
+	attributeStore.addAttribute(outputs.back().second, key, str, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 0);
 }
 
@@ -746,17 +768,14 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 
 	currentTags = &tags;
 
-	bool ok = true;
-	if (ok) {
-		//Start Lua processing for way
-		try {
-			kaguya::LuaFunction way_function = luaState["way_function"];
-			kaguya::LuaRef ret = way_function();
-			assert(!ret);
-		} catch(luaProcessingException &e) {
-			std::cerr << "Lua error on way " << originalOsmID << std::endl;
-			exit(1);
-		}
+	//Start Lua processing for way
+	try {
+		kaguya::LuaFunction way_function = luaState["way_function"];
+		kaguya::LuaRef ret = way_function();
+		assert(!ret);
+	} catch(luaProcessingException &e) {
+		std::cerr << "Lua error on way " << originalOsmID << std::endl;
+		exit(1);
 	}
 
 	if (!this->empty()) {
