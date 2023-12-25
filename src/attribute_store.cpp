@@ -97,6 +97,13 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	return pairs[shard][offset];
 };
 
+// Remember recently queried/added pairs so that we can return them in the
+// future without taking a lock.
+thread_local uint64_t tlsPairLookups = 0;
+thread_local uint64_t tlsPairLookupsUncached = 0;
+
+thread_local std::vector<const AttributePair*> cachedAttributePairPointers(64);
+thread_local std::vector<uint32_t> cachedAttributePairIndexes(64);
 uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (isHot) {
 		{
@@ -132,6 +139,23 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	// Throw it on the pile with the rest of the pairs.
 	size_t hash = pair.hash();
 
+	const size_t candidateIndex = hash % cachedAttributePairPointers.size();
+	// Before taking a lock, see if we've seen this attribute pair recently.
+
+	tlsPairLookups++;
+	if (tlsPairLookups % 1024 == 0) {
+		lookups += 1024;
+	}
+
+
+	{
+		const AttributePair* candidate = cachedAttributePairPointers[candidateIndex];
+
+		if (candidate != nullptr && *candidate == pair)
+			return cachedAttributePairIndexes[candidateIndex];
+	}
+
+
 	size_t shard = hash % ATTRIBUTE_SHARDS;
 	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
 	if (shard == 0) shard = (hash >> 8) % ATTRIBUTE_SHARDS;
@@ -140,9 +164,19 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (shard == 0) shard = 1;
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+
+	tlsPairLookupsUncached++;
+	if (tlsPairLookupsUncached % 1024 == 0)
+		lookupsUncached += 1024;
+
 	const auto& index = pairs[shard].find(pair);
-	if (index != -1)
-		return (shard << (32 - SHARD_BITS)) + index;
+	if (index != -1) {
+		const uint32_t rv = (shard << (32 - SHARD_BITS)) + index;
+		cachedAttributePairPointers[candidateIndex] = &pairs[shard][index];
+		cachedAttributePairIndexes[candidateIndex] = rv;
+
+		return rv;
+	}
 
 	pair.ensureStringIsOwned();
 	uint32_t offset = pairs[shard].add(pair);
@@ -265,8 +299,8 @@ void AttributeSet::finalize() {
 thread_local std::vector<const AttributeSet*> cachedAttributeSetPointers(64);
 thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(64);
 
-thread_local uint64_t tlsLookups = 0;
-thread_local uint64_t tlsLookupsUncached = 0;
+thread_local uint64_t tlsSetLookups = 0;
+thread_local uint64_t tlsSetLookupsUncached = 0;
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
@@ -277,8 +311,8 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	const size_t candidateIndex = hash % cachedAttributeSetPointers.size();
 	// Before taking a lock, see if we've seen this attribute set recently.
 
-	tlsLookups++;
-	if (tlsLookups % 1024 == 0) {
+	tlsSetLookups++;
+	if (tlsSetLookups % 1024 == 0) {
 		lookups += 1024;
 	}
 
@@ -296,8 +330,8 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	shard = shard >> 2;
 
 	std::lock_guard<std::mutex> lock(setsMutex[shard]);
-	tlsLookupsUncached++;
-	if (tlsLookupsUncached % 1024 == 0)
+	tlsSetLookupsUncached++;
+	if (tlsSetLookupsUncached % 1024 == 0)
 		lookupsUncached += 1024;
 
 	const uint32_t offset = sets[shard].add(attributes);
@@ -343,7 +377,7 @@ size_t AttributeStore::size() const {
 }
 
 void AttributeStore::reportSize() const {
-	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects (" << lookupsUncached.load() << " uncached)" << std::endl;
+	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects (" << lookupsUncached.load() << " uncached), " << pairStore.lookups.load() << " pairs (" << pairStore.lookupsUncached.load() << " uncached)" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
@@ -409,6 +443,9 @@ void AttributeStore::reset() {
 
 	for (int i = 0; i < cachedAttributeSetPointers.size(); i++)
 		cachedAttributeSetPointers[i] = nullptr;
+
+	for (int i = 0; i < cachedAttributePairPointers.size(); i++)
+		cachedAttributePairPointers[i] = nullptr;
 }
 
 void AttributeStore::finalize() {
