@@ -25,9 +25,13 @@ MU_TEST(test_deque_map) {
 	mu_check(strs.size() == 4);
 
 	mu_check(strs.at(0) == "foo");
+	mu_check(strs[0] == "foo");
 	mu_check(strs.at(1) == "bar");
+	mu_check(strs[1] == "bar");
 	mu_check(strs.at(2) == "aardvark");
+	mu_check(strs[2] == "aardvark");
 	mu_check(strs.at(3) == "quux");
+	mu_check(strs[3] == "quux");
 
 	std::vector<std::string> rv;
 	for (std::string x : strs) {
