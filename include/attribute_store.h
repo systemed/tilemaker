@@ -183,15 +183,11 @@ struct AttributePair {
 #define SHARD_BITS 14
 #define ATTRIBUTE_SHARDS (1 << SHARD_BITS)
 
-class AttributeStore;
-
 class AttributePairStore {
 public:
 	AttributePairStore():
 		finalized(false),
-		pairsMutex(ATTRIBUTE_SHARDS),
-		lookups(0),
-		lookupsUncached(0)
+		pairsMutex(ATTRIBUTE_SHARDS)
 	{
 		// The "hot" shard has a capacity of 64K, the others are unbounded.
 		pairs.push_back(DequeMap<AttributePair>(1 << 16));
@@ -206,9 +202,9 @@ public:
 	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(AttributePair& pair, bool isHot);
 
-private:
-	friend class AttributeStore;
 	std::vector<DequeMap<AttributePair>> pairs;
+
+private:
 	bool finalized;
 	// We refer to all attribute pairs by index.
 	//
@@ -218,8 +214,6 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	mutable std::vector<std::mutex> pairsMutex;
-	mutable std::atomic<uint64_t> lookupsUncached;
-	mutable std::atomic<uint64_t> lookups;
 };
 
 // AttributeSet is a set of AttributePairs
@@ -412,8 +406,7 @@ struct AttributeStore {
 		finalized(false),
 		sets(ATTRIBUTE_SHARDS),
 		setsMutex(ATTRIBUTE_SHARDS),
-		lookups(0),
-		lookupsUncached(0) {
+		lookups(0) {
 	}
 
 	AttributeKeyStore keyStore;
