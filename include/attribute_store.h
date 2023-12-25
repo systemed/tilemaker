@@ -418,6 +418,7 @@ private:
 	mutable std::vector<std::mutex> setsMutex;
 
 	mutable std::mutex mutex;
+	std::atomic<uint64_t> lookupsUncached;
 	std::atomic<uint64_t> lookups;
 };
 

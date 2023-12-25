@@ -73,18 +73,18 @@ const AttributePair& AttributePairStore::getPair(uint32_t i) const {
 
 	if (shard == 0) {
 		if (offset < tlsHotShard.size())
-			return tlsHotShard.at(offset);
+			return tlsHotShard[offset];
 
 		{
 			std::lock_guard<std::mutex> lock(pairsMutex[0]);
 			tlsHotShard = pairs[0];
 		}
 
-		return tlsHotShard.at(offset);
+		return tlsHotShard[offset];
 	}
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-	return pairs[shard].at(offset);
+	return pairs[shard][offset];
 };
 
 const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
@@ -94,7 +94,7 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	uint32_t shard = i >> (32 - SHARD_BITS);
 	uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
-	return pairs[shard].at(offset);
+	return pairs[shard][offset];
 };
 
 uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
@@ -263,25 +263,54 @@ void AttributeSet::finalize() {
 }
 
 
+// Remember recently queried/added sets so that we can return them in the
+// future without taking a lock.
+thread_local std::vector<const AttributeSet*> cachedAttributeSetPointers(64);
+thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(64);
+
+thread_local uint64_t tlsLookups = 0;
+thread_local uint64_t tlsLookupsUncached = 0;
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
 	attributes.finalize();
 
 	size_t hash = attributes.hash();
+
+	const size_t candidateIndex = hash % cachedAttributeSetPointers.size();
+	// Before taking a lock, see if we've seen this attribute set recently.
+
+	tlsLookups++;
+	if (tlsLookups % 1024 == 0) {
+		lookups += 1024;
+	}
+
+
+	{
+		const AttributeSet* candidate = cachedAttributeSetPointers[candidateIndex];
+
+		if (candidate != nullptr && *candidate == attributes)
+			return cachedAttributeSetIndexes[candidateIndex];
+	}
+
 	size_t shard = hash % ATTRIBUTE_SHARDS;
 
 	// We can't use the top 2 bits (see OutputObject's bitfields)
 	shard = shard >> 2;
 
 	std::lock_guard<std::mutex> lock(setsMutex[shard]);
-	lookups++;
+	tlsLookupsUncached++;
+	if (tlsLookupsUncached % 1024 == 0)
+		lookupsUncached += 1024;
 
 	const uint32_t offset = sets[shard].add(attributes);
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("set shard overflow");
 
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
+
+	cachedAttributeSetPointers[candidateIndex] = &sets[shard][offset];
+	cachedAttributeSetIndexes[candidateIndex] = rv;
 	return rv;
 }
 
@@ -317,7 +346,7 @@ size_t AttributeStore::size() const {
 }
 
 void AttributeStore::reportSize() const {
-	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects" << std::endl;
+	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects (" << lookupsUncached.load() << " uncached)" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
@@ -380,6 +409,9 @@ void AttributeStore::reset() {
 	tlsKeys2IndexSize = 0;
 
 	tlsHotShard.clear();
+
+	for (int i = 0; i < cachedAttributeSetPointers.size(); i++)
+		cachedAttributeSetPointers[i] = nullptr;
 }
 
 void AttributeStore::finalize() {
