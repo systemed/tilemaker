@@ -98,10 +98,10 @@ file(GLOB tilemaker_src_files
 	src/osm_mem_tiles.cpp
 	src/osm_store.cpp
 	src/output_object.cpp
+	src/pbf_processor.cpp
 	src/pbf_reader.cpp
 	src/pmtiles.cpp
 	src/pooled_string.cpp
-	src/read_pbf.cpp
 	src/read_shp.cpp
 	src/sharded_node_store.cpp
 	src/sharded_way_store.cpp
