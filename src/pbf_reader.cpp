@@ -464,7 +464,7 @@ bool PbfReader::Ways::empty() {
 }
 PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	if (pg->type() != PrimitiveGroupType::Way)
-		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, way};
+		return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0ul}, -1, way};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
