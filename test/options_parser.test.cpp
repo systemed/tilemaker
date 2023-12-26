@@ -53,6 +53,19 @@ MU_TEST(test_options_parser) {
 		mu_check(!opts.osm.shardStores);
 	}
 
+	// --lazy-geometries overrides default
+	{
+		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--lazy-geometries"};
+		auto opts = parse(args);
+		mu_check(opts.inputFiles.size() == 1);
+		mu_check(opts.inputFiles[0] == "ontario.pbf");
+		mu_check(opts.outputFile == "foo.mbtiles");
+		mu_check(opts.outputMode == OutputMode::MBTiles);
+		mu_check(!opts.osm.materializeGeometries);
+		mu_check(opts.osm.lazyGeometries);
+		mu_check(!opts.osm.shardStores);
+	}
+
 	// --store should optimize for reduced memory
 	{
 		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--store", "/tmp/store"};
@@ -75,7 +88,7 @@ MU_TEST(test_options_parser) {
 		mu_check(opts.outputFile == "foo.pmtiles");
 		mu_check(opts.outputMode == OutputMode::PMTiles);
 		mu_check(opts.osm.storeFile == "/tmp/store");
-		mu_check(opts.osm.materializeGeometries);
+		mu_check(!opts.osm.materializeGeometries);
 		mu_check(!opts.osm.shardStores);
 	}
 

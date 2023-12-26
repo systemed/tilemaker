@@ -28,6 +28,9 @@ namespace OptionsParser {
 		bool uncompressedNodes = false;
 		bool uncompressedWays = false;
 		bool materializeGeometries = false;
+		// lazyGeometries is the inverse of materializeGeometries. It can be passed
+		// to override an implicit materializeGeometries, as in the non-store case.
+		bool lazyGeometries = false;
 		bool shardStores = false;
 	};
 
