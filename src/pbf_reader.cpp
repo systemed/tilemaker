@@ -48,7 +48,7 @@ PbfReader::BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) 
 				break;
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				// std::cout << "BlobHeader: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				// std::cout << "BlobHeader: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
@@ -83,7 +83,7 @@ protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istre
 				view = message.get_view();
 				break;
 			default:
-				throw std::runtime_error("Blob: unknown tag: " + std::to_string(static_cast<uint>(message.tag())));
+				throw std::runtime_error("Blob: unknown tag: " + std::to_string(static_cast<uint32_t>(message.tag())));
 		}
 	}
 
@@ -115,7 +115,7 @@ PbfReader::HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view 
 				box.maxLat = message.get_sint64() / 1000000000.0;
 				break;
 			default:
-				throw std::runtime_error("HeaderBBox: unknown tag: " + std::to_string(static_cast<uint>(message.tag())));
+				throw std::runtime_error("HeaderBBox: unknown tag: " + std::to_string(static_cast<uint32_t>(message.tag())));
 		}
 	}
 
@@ -139,7 +139,7 @@ PbfReader::HeaderBlock PbfReader::PbfReader::readHeaderBlock(protozero::data_vie
 			}
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
@@ -155,7 +155,7 @@ void PbfReader::PbfReader::readStringTable(protozero::data_view data, std::vecto
 				stringTable.push_back(message.get_view());
 				break;
 			default:
-				throw std::runtime_error("StringTable: unknown tag: " + std::to_string(static_cast<uint>(message.tag())));
+				throw std::runtime_error("StringTable: unknown tag: " + std::to_string(static_cast<uint32_t>(message.tag())));
 		}
 	}
 }
@@ -183,7 +183,7 @@ PbfReader::PrimitiveBlock& PbfReader::PbfReader::readPrimitiveBlock(protozero::d
 			}
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
@@ -234,7 +234,7 @@ void PbfReader::DenseNodes::readDenseNodes(protozero::data_view data) {
 
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				//std::cout << "HeaderBlock: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
@@ -300,7 +300,7 @@ void PbfReader::PrimitiveGroup::ensureData() {
 				internalType = PrimitiveGroupType::ChangeSet;
 				break;
 			default:
-				throw std::runtime_error("PrimitiveGroup: unknown tag: " + std::to_string(static_cast<uint>(message.tag())));
+				throw std::runtime_error("PrimitiveGroup: unknown tag: " + std::to_string(static_cast<uint32_t>(message.tag())));
 		}
 	}
 }
@@ -436,7 +436,7 @@ void PbfReader::Ways::Iterator::readWay(protozero::data_view data) {
 
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				//std::cout << "Way: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				//std::cout << "Way: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
@@ -536,7 +536,7 @@ void PbfReader::Relations::Iterator::readRelation(protozero::data_view data) {
 
 			default:
 				// ignore data for unknown tags to allow for future extensions
-				//std::cout << "Way: unknown tag: " << std::to_string(static_cast<uint>(message.tag())) << std::endl;
+				//std::cout << "Way: unknown tag: " << std::to_string(static_cast<uint32_t>(message.tag())) << std::endl;
 				message.skip();
 		}
 	}
