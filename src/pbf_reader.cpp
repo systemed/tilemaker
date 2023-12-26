@@ -477,7 +477,7 @@ PbfReader::Ways::Iterator PbfReader::Ways::begin() {
 	return Ways::Iterator{message, -1, way};
 }
 PbfReader::Ways::Iterator PbfReader::Ways::end() {
-	return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, way};
+	return Ways::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0ul}, -1, way};
 }
 
 void PbfReader::Relations::Iterator::readRelation(protozero::data_view data) {
@@ -564,7 +564,7 @@ bool PbfReader::Relations::empty() {
 }
 PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	if (pg->type() != PrimitiveGroupType::Relation)
-		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
+		return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0ul}, -1, relation};
 
 	protozero::pbf_message<Schema::PrimitiveGroup> message{pg->getDataView()};
 	if (message.next()) {
@@ -577,7 +577,7 @@ PbfReader::Relations::Iterator PbfReader::Relations::begin() {
 	return Relations::Iterator{message, -1, relation};
 }
 PbfReader::Relations::Iterator PbfReader::Relations::end() {
-	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
+	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0ul}, -1, relation};
 }
 
 PbfReader::HeaderBlock PbfReader::PbfReader::readHeaderFromFile(std::istream& input) {
