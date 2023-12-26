@@ -4,7 +4,7 @@
 #include "pbf_reader.h"
 #include "helpers.h"
 
-// Where read_pbf.cpp has higher-level routines that populate our structures,
+// Where pbf_processor.cpp has higher-level routines that populate our structures,
 // pbf_reader.cpp has low-level tools that interact with the protobuf.
 //
 // The lifetime of an object is only until someone calls a readXyz function at

@@ -50,7 +50,7 @@
 
 #include "options_parser.h"
 #include "shared_data.h"
-#include "read_pbf.h"
+#include "pbf_processor.h"
 #include "read_shp.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
