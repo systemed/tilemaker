@@ -35,7 +35,8 @@ po::options_description getParser(OptionsParser::Options& options) {
 		("compact",po::bool_switch(&options.osm.compact),  "use faster data structure for node lookups\nNOTE: This requires the input to be renumbered (osmium renumber)")
 		("no-compress-nodes", po::bool_switch(&options.osm.uncompressedNodes),  "store nodes uncompressed")
 		("no-compress-ways", po::bool_switch(&options.osm.uncompressedWays),  "store ways uncompressed")
-		("materialize-geometries", po::bool_switch(&options.osm.materializeGeometries),  "materialize geometries")
+		("lazy-geometries", po::bool_switch(&options.osm.lazyGeometries),  "generate geometries from the OSM stores; uses less memory")
+		("materialize-geometries", po::bool_switch(&options.osm.materializeGeometries),  "materialize geometries; uses more memory")
 		("shard-stores", po::bool_switch(&options.osm.shardStores),  "use an alternate reading/writing strategy for low-memory machines")
 		("threads",po::value<uint32_t>(&options.threadNum)->default_value(0),              "number of threads (automatically detected if 0)")
 			;
@@ -68,12 +69,16 @@ OptionsParser::Options OptionsParser::parse(const int argc, const char* argv[]) 
 	if (options.osm.storeFile.empty()) {
 		options.osm.materializeGeometries = true;
 	} else {
-		if (options.osm.fast) {
-			options.osm.materializeGeometries = true;
-		} else {
+		if (!options.osm.fast) {
 			options.osm.shardStores = true;
 		}
 	}
+
+	// You can pass --lazy-geometries to override the default of materialized geometries for
+	// the non-store case.
+	if (options.osm.lazyGeometries)
+		options.osm.materializeGeometries = false;
+
 	
 	if (vm.count("help")) {
 		options.showHelp = true;

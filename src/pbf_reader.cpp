@@ -4,8 +4,6 @@
 #include "pbf_reader.h"
 #include "helpers.h"
 
-using namespace PbfReader;
-
 // Where read_pbf.cpp has higher-level routines that populate our structures,
 // pbf_reader.cpp has low-level tools that interact with the protobuf.
 //
@@ -19,7 +17,7 @@ using namespace PbfReader;
 // If you want to persist the data beyond that, you must make a copy in memory
 // that you own.
 
-BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) {
+PbfReader::BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) {
 	// See https://wiki.openstreetmap.org/wiki/PBF_Format#File_format
 	unsigned int size;
 	input.read((char*)&size, sizeof(size));
@@ -98,7 +96,7 @@ protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istre
 	return { &blobStorage2[0], blobStorage2.size() };
 }
 
-HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view data) {
+PbfReader::HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view data) {
 	HeaderBBox box{0, 0, 0, 0};
 
 	protozero::pbf_message<Schema::HeaderBBox> message{data};
@@ -124,7 +122,7 @@ HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view data) {
 	return box;
 }
 
-HeaderBlock PbfReader::PbfReader::readHeaderBlock(protozero::data_view data) {
+PbfReader::HeaderBlock PbfReader::PbfReader::readHeaderBlock(protozero::data_view data) {
 	HeaderBlock block{false};
 
 	protozero::pbf_message<Schema::HeaderBlock> message{data};
@@ -307,8 +305,8 @@ void PbfReader::PrimitiveGroup::ensureData() {
 	}
 }
 
-DenseNodes& PrimitiveGroup::nodes() const { return denseNodes; };
-PrimitiveBlock::PrimitiveGroups& PrimitiveBlock::groups() { return groupsImpl; };
+PbfReader::DenseNodes& PbfReader::PrimitiveGroup::nodes() const { return denseNodes; };
+PbfReader::PrimitiveBlock::PrimitiveGroups& PbfReader::PrimitiveBlock::groups() { return groupsImpl; };
 
 void PbfReader::DenseNodes::clear() {
 	ids.clear();
@@ -339,17 +337,17 @@ PbfReader::DenseNodes::Node& PbfReader::DenseNodes::Iterator::operator*() {
 	return node;
 }
 
-bool DenseNodes::empty() {
+bool PbfReader::DenseNodes::empty() {
 	return ids.empty();
 }
 
-PbfReader::DenseNodes::Iterator DenseNodes::begin() {
+PbfReader::DenseNodes::Iterator PbfReader::DenseNodes::begin() {
 	auto it = Iterator {-1, Node{}, *this};
 	++it;
 	return it;
 }
 
-PbfReader::DenseNodes::Iterator DenseNodes::end() {
+PbfReader::DenseNodes::Iterator PbfReader::DenseNodes::end() {
 	return Iterator {static_cast<int32_t>(ids.size()), Node{}, *this};
 }
 
@@ -363,7 +361,7 @@ void PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator::operator++() {
 		(*groups)[offset].ensureData();
 	}
 }
-PrimitiveGroup& PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator::operator*() {
+PbfReader::PrimitiveGroup& PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator::operator*() {
 	return (*groups)[offset];
 }
 PbfReader::PrimitiveBlock::PrimitiveGroups::Iterator PbfReader::PrimitiveBlock::PrimitiveGroups::begin() {
@@ -444,7 +442,7 @@ void PbfReader::Ways::Iterator::readWay(protozero::data_view data) {
 	}
 }
 
-Ways& PbfReader::PrimitiveGroup::ways() const {
+PbfReader::Ways& PbfReader::PrimitiveGroup::ways() const {
 	return internalWays;
 }
 bool PbfReader::Ways::Iterator::operator!=(Ways::Iterator& other) const {
@@ -544,7 +542,7 @@ void PbfReader::Relations::Iterator::readRelation(protozero::data_view data) {
 	}
 }
 
-Relations& PbfReader::PrimitiveGroup::relations() const {
+PbfReader::Relations& PbfReader::PrimitiveGroup::relations() const {
 	return internalRelations;
 }
 bool PbfReader::Relations::Iterator::operator!=(Relations::Iterator& other) const {
@@ -582,7 +580,7 @@ PbfReader::Relations::Iterator PbfReader::Relations::end() {
 	return Relations::Iterator{protozero::pbf_message<Schema::PrimitiveGroup>{nullptr, 0}, -1, relation};
 }
 
-HeaderBlock PbfReader::PbfReader::readHeaderFromFile(std::istream& input) {
+PbfReader::HeaderBlock PbfReader::PbfReader::readHeaderFromFile(std::istream& input) {
 	BlobHeader bh = readBlobHeader(input);
 	protozero::data_view blob = readBlob(bh.datasize, input);
 	HeaderBlock header = readHeaderBlock(blob);
