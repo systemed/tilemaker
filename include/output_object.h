@@ -10,6 +10,7 @@
 #include "coordinates.h"
 #include "attribute_store.h"
 #include "osm_store.h"
+#include <vtzero/builder.hpp>
 
 // Protobuf
 #include "vector_tile.pb.h"
@@ -78,7 +79,13 @@ public:
 		std::vector<vector_tile::Tile_Value> *valueList, 
 		AttributeStore const &attributeStore,
 		vector_tile::Tile_Feature *featurePtr, char zoom) const;
-	
+
+	void writeAttributes(
+		const AttributeStore& attributeStore,
+		vtzero::feature_builder& fbuilder,
+		char zoom
+	) const;
+		
 	/**
 	 * \brief Find a value in the value dictionary
 	 * (we can't easily use find() because of the different value-type encoding - 
