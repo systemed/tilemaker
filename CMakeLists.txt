@@ -114,7 +114,6 @@ file(GLOB tilemaker_src_files
 	src/tilemaker.cpp
 	src/tile_worker.cpp
 	src/way_stores.cpp
-	src/write_geometry.cpp
   )
 add_executable(tilemaker vector_tile.pb.cc ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)

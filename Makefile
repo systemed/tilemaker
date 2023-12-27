@@ -125,8 +125,7 @@ tilemaker: \
 	src/tile_data.o \
 	src/tilemaker.o \
 	src/tile_worker.o \
-	src/way_stores.o \
-	src/write_geometry.o
+	src/way_stores.o
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
 test: \

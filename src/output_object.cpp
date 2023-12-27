@@ -31,6 +31,30 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 	return os;
 }
 
+void OutputObject::writeAttributes(
+	const AttributeStore& attributeStore,
+	vtzero::feature_builder& fbuilder,
+	char zoom
+) const {
+	auto attr = attributeStore.getUnsafe(attributes);
+
+	for(auto const &it: attr) {
+		if (it->minzoom > zoom) continue;
+
+		// TODO: consider taking a data view that is stable
+		// Look for key
+		const std::string& key = attributeStore.keyStore.getKeyUnsafe(it->keyIndex);
+		
+		if (it->hasStringValue()) {
+			fbuilder.add_property(key, it->stringValue());
+		} else if (it->hasBoolValue()) {
+			fbuilder.add_property(key, it->boolValue());
+		} else if (it->hasFloatValue()) {
+			fbuilder.add_property(key, it->floatValue());
+		}
+	}
+}
+
 
 // Write attribute key/value pairs (dictionary-encoded)
 void OutputObject::writeAttributes(

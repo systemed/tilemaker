@@ -2,9 +2,9 @@
 #include "tile_worker.h"
 #include <fstream>
 #include <boost/filesystem.hpp>
+#include <vtzero/builder.hpp>
 #include <signal.h>
 #include "helpers.h"
-#include "write_geometry.h"
 using namespace std;
 extern bool verbose;
 
@@ -154,6 +154,177 @@ void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
+void writeMultiLinestring(
+	const AttributeStore& attributeStore,
+	const SharedData& sharedData,
+	vtzero::layer_builder& vtLayer,
+	const TileBbox& bbox,
+	const OutputObjectID& oo,
+	unsigned zoom,
+	double simplifyLevel,
+	const MultiLinestring& mls
+) {
+	vtzero::linestring_feature_builder fbuilder{vtLayer};
+
+	if (sharedData.config.includeID && oo.id)
+		fbuilder.set_id(oo.id);
+
+	bool hadLine = false;
+
+	MultiLinestring tmp;
+	const MultiLinestring* toWrite = nullptr;
+
+	if (simplifyLevel>0) {
+		for(auto const &ls: mls) {
+			tmp.push_back(simplify(ls, simplifyLevel));
+		}
+		toWrite = &tmp;
+	} else {
+		toWrite = &mls;
+	}
+
+	for (const Linestring& ls : *toWrite) {
+		if (ls.size() <= 1)
+			continue;
+
+		pair<int, int> lastXy = std::make_pair(0, 0);
+
+		// vtzero dislikes linesegments that have zero-length segments,
+		// e.g. where p(x) == p(x + 1). So filter those out.
+		int points = 0;
+		for (const Point& p : ls) {
+			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
+			if (points == 0 || xy != lastXy) {
+				points++;
+				lastXy = xy;
+			}
+		}
+
+		// A line has at least 2 points.
+		if (points <= 1)
+			continue;
+
+		hadLine = true;
+		fbuilder.add_linestring(points);
+		bool firstPoint = true;
+		for (const Point& p : ls) {
+			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
+			if (firstPoint || xy != lastXy) {
+				// vtzero doesn't like linesegments with zero-length segments,
+				// so filter those out
+				fbuilder.set_point(xy.first, xy.second);
+				firstPoint = false;
+				lastXy = xy;
+			}
+		}
+	}
+
+	if (hadLine) {
+		// add the properties
+		oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+		// call commit() when you are done
+		fbuilder.commit();
+	}
+}
+
+bool writeRing(
+	vtzero::polygon_feature_builder& fbuilder,
+	const Ring& ring
+) {
+	// vtzero doesn't like zero-length segments in rings
+	pair<int, int> lastXy = std::make_pair(0, 0);
+	int points = 0;
+	for (const Point& point : ring) {
+		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
+		if (points == 0 || xy != lastXy) {
+			points++;
+			lastXy = xy;
+		}
+	}
+
+	// A ring has at least 4 points.
+	if (points <= 3)
+		return false;
+
+	bool firstPoint = true;
+	fbuilder.add_ring(points);
+	for (const Point& point : ring) {
+		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
+
+		if (firstPoint || xy != lastXy) {
+			firstPoint = false;
+			lastXy = xy;
+			fbuilder.set_point(xy.first, xy.second);
+		}
+	}
+
+	return true;
+}
+
+
+void writeMultiPolygon(
+	const AttributeStore& attributeStore,
+	const SharedData& sharedData,
+	vtzero::layer_builder& vtLayer,
+	const TileBbox& bbox,
+	const OutputObjectID& oo,
+	unsigned zoom,
+	double simplifyLevel,
+	const MultiPolygon& mp
+) {
+	MultiPolygon current = bbox.scaleGeometry(mp);
+	if (simplifyLevel>0) {
+		current = simplify(current, simplifyLevel/bbox.xscale);
+		geom::remove_spikes(current);
+	}
+	if (geom::is_empty(current))
+		return;
+
+#if BOOST_VERSION >= 105800
+	geom::validity_failure_type failure;
+	if (verbose && !geom::is_valid(current, failure)) { 
+		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+
+		if (!geom::is_valid(mp, failure)) 
+			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
+		else
+			cout << "input multipolygon valid" << endl;
+	}
+#else	
+	if (verbose && !geom::is_valid(current)) { 
+		cout << "Output multipolygon is invalid " << endl; 
+	}
+#endif
+
+	vtzero::polygon_feature_builder fbuilder{vtLayer};
+
+	if (sharedData.config.includeID && oo.id)
+		fbuilder.set_id(oo.id);
+
+	bool hadPoly = false;
+
+	for (const auto& p : current) {
+		const Ring& ring = geom::exterior_ring(p);
+
+		// If we failed to write the outer, no need to write the inners.
+		if (!writeRing(fbuilder, ring))
+			continue;
+
+		hadPoly = true;
+
+		const InteriorRing& interiors = geom::interior_rings(p);
+		for (const Ring& ring : interiors)
+			writeRing(fbuilder, ring);
+	}
+
+	if (hadPoly) {
+		// add the properties
+		oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+		// call commit() when you are done
+		fbuilder.commit();
+	}
+}
+
 void ProcessObjects(
 	TileDataSource* source,
 	const AttributeStore& attributeStore,
@@ -165,7 +336,7 @@ void ProcessObjects(
 	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
-	vector_tile::Tile_Layer* vtLayer,
+	vtzero::layer_builder& vtLayer,
 	vector<string>& keyList,
 	vector<vector_tile::Tile_Value>& valueList
 ) {
@@ -175,17 +346,14 @@ void ProcessObjects(
 		if (zoom < oo.oo.minZoom) { continue; }
 
 		if (oo.oo.geomType == POINT_) {
-			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
+			vtzero::point_feature_builder fbuilder{vtLayer};
+			if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
+
 			LatpLon pos = source->buildNodeGeometry(oo.oo.objectID, bbox);
-			featurePtr->add_geometry(9);					// moveTo, repeat x1
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-			featurePtr->add_geometry((xy.first  << 1) ^ (xy.first  >> 31));
-			featurePtr->add_geometry((xy.second << 1) ^ (xy.second >> 31));
-			featurePtr->set_type(vector_tile::Tile_GeomType_POINT);
-
-			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-
-			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
+			fbuilder.add_point(xy.first, xy.second);
+			oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+			fbuilder.commit();
 		} else {
 			Geometry g;
 			try {
@@ -212,13 +380,10 @@ void ProcessObjects(
 				oo = *jt;
 			}
 
-			vector_tile::Tile_Feature *featurePtr = vtLayer->add_features();
-			WriteGeometryVisitor w(&bbox, featurePtr, simplifyLevel);
-			boost::apply_visitor(w, g);
-			if (featurePtr->geometry_size()==0) { vtLayer->mutable_features()->RemoveLast(); continue; }
-			oo.oo.writeAttributes(&keyList, &valueList, attributeStore, featurePtr, zoom);
-			if (sharedData.config.includeID && oo.id) { featurePtr->set_id(oo.id); }
-
+			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
+				writeMultiLinestring(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, boost::get<MultiLinestring>(g));
+			else if (oo.oo.geomType == POLYGON_)
+				writeMultiPolygon(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, boost::get<MultiPolygon>(g));
 		}
 	}
 }
@@ -264,7 +429,7 @@ void ProcessLayer(
 	TileCoordinates index,
 	uint zoom, 
 	const std::vector<std::vector<OutputObjectID>>& data,
-	vector_tile::Tile& tile, 
+	vtzero::tile_builder& tile, 
 	const TileBbox& bbox,
 	const std::vector<uint>& ltx,
 	SharedData& sharedData
@@ -272,7 +437,10 @@ void ProcessLayer(
 	vector<string> keyList;
 	vector<vector_tile::Tile_Value> valueList;
 	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
-	vector_tile::Tile_Layer *vtLayer = sharedData.mergeSqlite ? findLayerByName(tile, layerName, keyList, valueList) : tile.add_layers();
+	// TODO: revive mergeSqlite
+//	vector_tile::Tile_Layer *vtLayer = sharedData.mergeSqlite ? findLayerByName(tile, layerName, keyList, valueList) : tile.add_layers();
+	vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, bbox.hires ? 8192u : 4096u};
+
 
 	//TileCoordinate tileX = index.x;
 	TileCoordinate tileY = index.y;
@@ -312,22 +480,6 @@ void ProcessLayer(
 	if (verbose && std::time(0)-start>3) {
 		std::cout << "Layer " << layerName << " at " << zoom << "/" << index.x << "/" << index.y << " took " << (std::time(0)-start) << " seconds" << std::endl;
 	}
-
-	// If there are any objects, then add tags
-	if (vtLayer->features_size()>0) {
-		vtLayer->set_name(layerName);
-		vtLayer->set_version(sharedData.config.mvtVersion);
-		vtLayer->set_extent(bbox.hires ? 8192 : 4096);
-		for (uint j=vtLayer->keys_size(); j<keyList.size(); j++) {
-			vtLayer->add_keys(keyList[j]);
-		}
-		for (uint j=vtLayer->values_size(); j<valueList.size(); j++) { 
-			vector_tile::Tile_Value *v = vtLayer->add_values();
-			*v = valueList[j];
-		}
-	} else {
-		tile.mutable_layers()->RemoveLast();
-	}
 }
 
 bool signalStop=false;
@@ -345,7 +497,9 @@ void outputProc(
 	uint zoom
 ) {
 	// Create tile
-	vector_tile::Tile tile;
+	// vector_tile::Tile tile;
+	vtzero::tile_builder tile;
+
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (
 			sharedData.config.maxLon <= bbox.minLon ||
@@ -355,12 +509,15 @@ void outputProc(
 		return;
 
 	// Read existing tile if merging
+	// TODO: revive mergeSqlite
+	/*
 	if (sharedData.mergeSqlite) {
 		std::string rawTile;
 		if (sharedData.mbtiles.readTileAndUncompress(rawTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip)) {
 			tile.ParseFromString(rawTile);
 		}
 	}
+	*/
 
 	// Loop through layers
 #ifndef _WIN32
@@ -380,13 +537,16 @@ void outputProc(
 	string outputdata, compressed;
 	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {
 		// Write to sqlite
-		tile.SerializeToString(&outputdata);
+		//tile.SerializeToString(&outputdata);
+		tile.serialize(outputdata);
+
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
 		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
 
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		// Write to pmtiles
-		tile.SerializeToString(&outputdata);
+		tile.serialize(outputdata);
+		//tile.SerializeToString(&outputdata);
 		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, outputdata);
 
 	} else {
@@ -397,12 +557,19 @@ void outputProc(
 		boost::filesystem::create_directories(dirname.str());
 		fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 		if (sharedData.config.compress) {
-			tile.SerializeToString(&outputdata);
+			//tile.SerializeToString(&outputdata);
+			tile.serialize(outputdata);
 			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
 		} else {
+			// TODO: verify this works
+			tile.serialize(outputdata);
+			outfile << outputdata;
+
+			/*
 			if (!tile.SerializeToOstream(&outfile)) {
 				cerr << "Couldn't write to " << filename.str() << endl;
 			}
+			*/
 		}
 		outfile.close();
 	}
