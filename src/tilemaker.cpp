@@ -611,8 +611,6 @@ int main(const int argc, const char* argv[]) {
 		sharedData.writeFileMetadata(jsonConfig);
 	}
 
-	google::protobuf::ShutdownProtobufLibrary();
-
 #ifndef _MSC_VER
 	if (verbose) {
 		struct rusage r_usage;

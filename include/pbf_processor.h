@@ -11,9 +11,6 @@
 #include "pbf_reader.h"
 #include <protozero/data_view.hpp>
 
-// Protobuf
-#include "vector_tile.pb.h"
-
 class OsmLuaProcessing;
 
 extern const std::string OptionSortTypeThenID;
@@ -21,7 +18,7 @@ extern const std::string OptionLocationsOnWays;
 
 struct BlockMetadata {
 	long int offset;
-	google::protobuf::int32 length;
+	int32_t length;
 	bool hasNodes;
 	bool hasWays;
 	bool hasRelations;

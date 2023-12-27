@@ -336,9 +336,7 @@ void ProcessObjects(
 	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
-	vtzero::layer_builder& vtLayer,
-	vector<string>& keyList,
-	vector<vector_tile::Tile_Value>& valueList
+	vtzero::layer_builder& vtLayer
 ) {
 
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
@@ -388,23 +386,6 @@ void ProcessObjects(
 	}
 }
 
-vector_tile::Tile_Layer* findLayerByName(
-	vector_tile::Tile& tile,
-	std::string& layerName,
-	vector<string>& keyList,
-	vector<vector_tile::Tile_Value>& valueList
-) {
-	for (unsigned i=0; i<tile.layers_size(); i++) {
-		if (tile.layers(i).name()!=layerName) continue;
-		// we already have this layer, so copy the key/value lists, and return it
-		for (unsigned j=0; j<tile.layers(i).keys_size(); j++) keyList.emplace_back(tile.layers(i).keys(j));
-		for (unsigned j=0; j<tile.layers(i).values_size(); j++) valueList.emplace_back(tile.layers(i).values(j));
-		return tile.mutable_layers(i);
-	}
-	// not found, so add new layer
-	return tile.add_layers();
-}
-
 OutputObjectsConstItPair getObjectsAtSubLayer(
 	const std::vector<OutputObjectID>& data,
 	uint_least8_t layerNum
@@ -434,8 +415,6 @@ void ProcessLayer(
 	const std::vector<uint>& ltx,
 	SharedData& sharedData
 ) {
-	vector<string> keyList;
-	vector<vector_tile::Tile_Value> valueList;
 	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
 	// TODO: revive mergeSqlite
 //	vector_tile::Tile_Layer *vtLayer = sharedData.mergeSqlite ? findLayerByName(tile, layerName, keyList, valueList) : tile.add_layers();
@@ -474,7 +453,7 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, keyList, valueList);
+				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {
@@ -497,7 +476,6 @@ void outputProc(
 	uint zoom
 ) {
 	// Create tile
-	// vector_tile::Tile tile;
 	vtzero::tile_builder tile;
 
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);

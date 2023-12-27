@@ -88,7 +88,6 @@ AttributeIndex readShapefileAttributes(
 		for (auto it : columnMap) {
 			int pos = it.first;
 			string key = it.second;
-			vector_tile::Tile_Value v;
 			switch (columnTypeMap[pos]) {
 				case 1:  attributeStore.addAttribute(attributes, key, (float)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 1;
