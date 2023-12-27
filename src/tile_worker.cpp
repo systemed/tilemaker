@@ -410,16 +410,28 @@ void ProcessLayer(
 	TileCoordinates index,
 	uint zoom, 
 	const std::vector<std::vector<OutputObjectID>>& data,
+	vtzero::vector_tile existingTile,
 	vtzero::tile_builder& tile, 
 	const TileBbox& bbox,
 	const std::vector<uint>& ltx,
 	SharedData& sharedData
 ) {
 	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
-	// TODO: revive mergeSqlite
-//	vector_tile::Tile_Layer *vtLayer = sharedData.mergeSqlite ? findLayerByName(tile, layerName, keyList, valueList) : tile.add_layers();
 	vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, bbox.hires ? 8192u : 4096u};
 
+	vtzero::layer existingLayer = existingTile.get_layer_by_name(layerName);
+	if (existingLayer) {
+		while (auto feature = existingLayer.next_feature()) {
+			vtzero::geometry_feature_builder fb{vtLayer};
+			if (feature.has_id())
+				fb.set_id(feature.id());
+			fb.set_geometry(feature.geometry());
+			while (auto property = feature.next_property()) {
+				fb.add_property(property.key(), property.value());
+			}
+			fb.commit();
+		}
+	}
 
 	//TileCoordinate tileX = index.x;
 	TileCoordinate tileY = index.y;
@@ -487,15 +499,11 @@ void outputProc(
 		return;
 
 	// Read existing tile if merging
-	// TODO: revive mergeSqlite
-	/*
+	std::string rawExistingTile;
 	if (sharedData.mergeSqlite) {
-		std::string rawTile;
-		if (sharedData.mbtiles.readTileAndUncompress(rawTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip)) {
-			tile.ParseFromString(rawTile);
-		}
+		sharedData.mbtiles.readTileAndUncompress(rawExistingTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip);
 	}
-	*/
+	vtzero::vector_tile existingTile{rawExistingTile};
 
 	// Loop through layers
 #ifndef _WIN32
@@ -508,7 +516,7 @@ void outputProc(
 
 	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
 		if (signalStop) break;
-		ProcessLayer(sources, attributeStore, coordinates, zoom, data, tile, bbox, *lt, sharedData);
+		ProcessLayer(sources, attributeStore, coordinates, zoom, data, existingTile, tile, bbox, *lt, sharedData);
 	}
 
 	// Write to file or sqlite
@@ -524,7 +532,6 @@ void outputProc(
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		// Write to pmtiles
 		tile.serialize(outputdata);
-		//tile.SerializeToString(&outputdata);
 		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, outputdata);
 
 	} else {
@@ -539,15 +546,8 @@ void outputProc(
 			tile.serialize(outputdata);
 			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
 		} else {
-			// TODO: verify this works
 			tile.serialize(outputdata);
 			outfile << outputdata;
-
-			/*
-			if (!tile.SerializeToOstream(&outfile)) {
-				cerr << "Couldn't write to " << filename.str() << endl;
-			}
-			*/
 		}
 		outfile.close();
 	}
