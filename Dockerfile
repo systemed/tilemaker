@@ -9,9 +9,7 @@ RUN apt-get update && \
       build-essential \
       liblua5.1-0 \
       liblua5.1-0-dev \
-      libprotobuf-dev \
       libsqlite3-dev \
-      protobuf-compiler \
       shapelib \
       libshp-dev \
       libboost-program-options-dev \
@@ -36,7 +34,6 @@ FROM debian:bullseye-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       liblua5.1-0 \
-      libprotobuf-dev \
       libshp-dev \
       libsqlite3-dev \
       libboost-filesystem-dev \
