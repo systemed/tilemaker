@@ -10,9 +10,7 @@
 #include "coordinates.h"
 #include "attribute_store.h"
 #include "osm_store.h"
-
-// Protobuf
-#include "vector_tile.pb.h"
+#include <vtzero/builder.hpp>
 
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
 
@@ -73,18 +71,11 @@ public:
 		this->attributes = attributes;
 	}
 
-	//\brief Write attribute key/value pairs (dictionary-encoded)
-	void writeAttributes(std::vector<std::string> *keyList, 
-		std::vector<vector_tile::Tile_Value> *valueList, 
-		AttributeStore const &attributeStore,
-		vector_tile::Tile_Feature *featurePtr, char zoom) const;
-	
-	/**
-	 * \brief Find a value in the value dictionary
-	 * (we can't easily use find() because of the different value-type encoding - 
-	 *	should be possible to improve this though)
-	 */
-	int findValue(const std::vector<vector_tile::Tile_Value>* valueList, const AttributePair& value) const;
+	void writeAttributes(
+		const AttributeStore& attributeStore,
+		vtzero::feature_builder& fbuilder,
+		char zoom
+	) const;
 };
 #pragma pack(pop)
 
@@ -96,10 +87,5 @@ struct OutputObjectID {
 // Comparison functions
 bool operator==(const OutputObject& x, const OutputObject& y);
 bool operator==(const OutputObjectID& x, const OutputObjectID& y);
-
-namespace vector_tile {
-	bool operator==(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
-	bool operator<(const vector_tile::Tile_Value &x, const vector_tile::Tile_Value &y);
-}
 
 #endif //_OUTPUT_OBJECT_H

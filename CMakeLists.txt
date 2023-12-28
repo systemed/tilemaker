@@ -33,10 +33,6 @@ ENDIF ()
 
 find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
 
-set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
-find_package(Protobuf REQUIRED)
-set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
-
 find_package(libshp REQUIRED)
 
 find_package(Rapidjson REQUIRED)
@@ -72,15 +68,6 @@ else()
   	set(THREAD_LIB pthread)
 endif()
 
-if(NOT PROTOBUF_PROTOC_EXECUTABLE)
-	set (PROTOBUF_PROTOC_EXECUTABLE "protobuf::protoc")
-endif()
-
-
-ADD_CUSTOM_COMMAND(OUTPUT vector_tile.pb.cc vector_tile.pb.h
-                   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
-		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/vector_tile.proto)
-
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
@@ -113,15 +100,13 @@ file(GLOB tilemaker_src_files
 	src/tilemaker.cpp
 	src/tile_worker.cpp
 	src/way_stores.cpp
-	src/write_geometry.cpp
   )
-add_executable(tilemaker vector_tile.pb.cc ${tilemaker_src_files})
+add_executable(tilemaker ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)
 target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
 target_link_libraries(tilemaker
 		${THREAD_LIB} ${CMAKE_DL_LIBS}
 		${LUA_LIBRARIES}
-		protobuf::libprotobuf
 		shapelib::shp
 		SQLite::SQLite3
 		ZLIB::ZLIB
