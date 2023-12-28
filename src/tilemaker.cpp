@@ -50,7 +50,7 @@
 
 #include "options_parser.h"
 #include "shared_data.h"
-#include "read_pbf.h"
+#include "pbf_processor.h"
 #include "read_shp.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
@@ -266,7 +266,7 @@ int main(const int argc, const char* argv[]) {
 
 	// ----	Read all PBFs
 	
-	PbfReader pbfReader(osmStore);
+	PbfProcessor pbfProcessor(osmStore);
 	std::vector<bool> sortOrders = layers.getSortOrders();
 
 	if (!mapsplit) {
@@ -276,7 +276,7 @@ int main(const int argc, const char* argv[]) {
 			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
 			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
-			int ret = pbfReader.ReadPbfFile(
+			int ret = pbfProcessor.ReadPbfFile(
 				nodeStore->shards(),
 				hasSortTypeThenID,
 				nodeKeys,
@@ -343,7 +343,7 @@ int main(const int argc, const char* argv[]) {
 			cout << "Reading tile " << srcZ << ": " << srcX << "," << srcY << " (" << (run+1) << "/" << runs << ")" << endl;
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
-			int ret = pbfReader.ReadPbfFile(
+			int ret = pbfProcessor.ReadPbfFile(
 				nodeStore->shards(),
 				false,
 				nodeKeys,

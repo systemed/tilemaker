@@ -81,10 +81,6 @@ ADD_CUSTOM_COMMAND(OUTPUT vector_tile.pb.cc vector_tile.pb.h
                    COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
 		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/vector_tile.proto)
 
-ADD_CUSTOM_COMMAND(OUTPUT osmformat.pb.cc osmformat.pb.h
-                   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
-		   ARGS --cpp_out ${CMAKE_BINARY_DIR} -I ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/osmformat.proto)
-
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
@@ -102,10 +98,10 @@ file(GLOB tilemaker_src_files
 	src/osm_mem_tiles.cpp
 	src/osm_store.cpp
 	src/output_object.cpp
-	src/pbf_blocks.cpp
+	src/pbf_processor.cpp
+	src/pbf_reader.cpp
 	src/pmtiles.cpp
 	src/pooled_string.cpp
-	src/read_pbf.cpp
 	src/read_shp.cpp
 	src/sharded_node_store.cpp
 	src/sharded_way_store.cpp
@@ -119,7 +115,7 @@ file(GLOB tilemaker_src_files
 	src/way_stores.cpp
 	src/write_geometry.cpp
   )
-add_executable(tilemaker vector_tile.pb.cc osmformat.pb.cc ${tilemaker_src_files})
+add_executable(tilemaker vector_tile.pb.cc ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)
 target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
 target_link_libraries(tilemaker

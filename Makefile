@@ -93,7 +93,6 @@ INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 all: tilemaker
 
 tilemaker: \
-	include/osmformat.pb.o \
 	include/vector_tile.pb.o \
 	src/attribute_store.o \
 	src/coordinates_geom.o \
@@ -111,10 +110,10 @@ tilemaker: \
 	src/osm_mem_tiles.o \
 	src/osm_store.o \
 	src/output_object.o \
-	src/pbf_blocks.o \
+	src/pbf_processor.o \
+	src/pbf_reader.o \
 	src/pmtiles.o \
 	src/pooled_string.o \
-	src/read_pbf.o \
 	src/read_shp.o \
 	src/sharded_node_store.o \
 	src/sharded_way_store.o \
@@ -133,6 +132,7 @@ test: \
 	test_append_vector \
 	test_attribute_store \
 	test_deque_map \
+	test_pbf_reader \
 	test_pooled_string \
 	test_sorted_node_store \
 	test_sorted_way_store
@@ -182,6 +182,11 @@ test_sorted_way_store: \
 	test/sorted_way_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.sorted_way_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_way_store
 
+test_pbf_reader: \
+	src/helpers.o \
+	src/pbf_reader.o \
+	test/pbf_reader.test.o
+	$(CXX) $(CXXFLAGS) -o test.pbf_reader $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pbf_reader
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)

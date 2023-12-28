@@ -12,7 +12,6 @@
 #include "osm_store.h"
 
 // Protobuf
-#include "osmformat.pb.h"
 #include "vector_tile.pb.h"
 
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };

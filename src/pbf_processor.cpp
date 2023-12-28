@@ -1,8 +1,7 @@
 #include <iostream>
-#include "read_pbf.h"
-#include "pbf_blocks.h"
+#include "pbf_processor.h"
+#include "pbf_reader.h"
 
-#include <boost/interprocess/streams/bufferstream.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 #include <unordered_set>
@@ -18,170 +17,160 @@ const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
 const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 
-PbfReader::PbfReader(OSMStore &osmStore)
+// Thread-local so that we can re-use buffers during parsing.
+thread_local PbfReader::PbfReader reader;
+
+PbfProcessor::PbfProcessor(OSMStore &osmStore)
 	: osmStore(osmStore)
 { }
 
-bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const unordered_set<int> &nodeKeyPositions)
+bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const unordered_set<int>& nodeKeyPositions)
 {
 	// ----	Read nodes
+	std::vector<NodeStore::element_t> nodes;		
 
-	if (pg.has_dense()) {
-		int64_t nodeId  = 0;
-		int lon = 0;
-		int lat = 0;
-		int kvPos = 0;
-		DenseNodes dense = pg.dense();
+	for (auto& node : pg.nodes()) {
+		NodeID nodeId = node.id;
+		LatpLon latplon = { int(lat2latp(double(node.lat)/10000000.0)*10000000.0), node.lon };
 
-		std::vector<NodeStore::element_t> nodes;		
-		for (int j=0; j<dense.id_size(); j++) {
-			nodeId += dense.id(j);
-			lon    += dense.lon(j);
-			lat    += dense.lat(j);
-			LatpLon node = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
+		bool significant = false;
+		for (int i = node.tagStart; i < node.tagEnd; i += 2) {
+			auto keyIndex = pg.translateNodeKeyValue(i);
 
-			bool significant = false;
-			int kvStart = kvPos;
-			if (dense.keys_vals_size()>0) {
-				while (dense.keys_vals(kvPos)>0) {
-					if (nodeKeyPositions.find(dense.keys_vals(kvPos)) != nodeKeyPositions.end()) {
-						significant = true;
-					}
-					kvPos+=2;
-				}
-				kvPos++;
+			if (nodeKeyPositions.find(keyIndex) != nodeKeyPositions.end()) {
+				significant = true;
 			}
-
-			nodes.push_back(std::make_pair(static_cast<NodeID>(nodeId), node));
-
-			if (significant) {
-				// For tagged nodes, call Lua, then save the OutputObject
-				boost::container::flat_map<std::string, std::string> tags;
-				tags.reserve(kvPos / 2);
-
-				for (uint n=kvStart; n<kvPos-1; n+=2) {
-					tags[pb.stringtable().s(dense.keys_vals(n))] = pb.stringtable().s(dense.keys_vals(n+1));
-				}
-				output.setNode(static_cast<NodeID>(nodeId), node, tags);
-			} 
-
 		}
 
-		osmStore.nodes.insert(nodes);
-		return true;
+		nodes.push_back(std::make_pair(static_cast<NodeID>(nodeId), latplon));
+
+		if (significant) {
+			// For tagged nodes, call Lua, then save the OutputObject
+			boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan> tags;
+			tags.reserve((node.tagEnd - node.tagStart) / 2);
+
+			for (int n = node.tagStart; n < node.tagEnd; n += 2) {
+				auto keyIndex = pg.translateNodeKeyValue(n);
+				auto valueIndex = pg.translateNodeKeyValue(n + 1);
+
+				protozero::data_view key{pb.stringTable[keyIndex].data(), pb.stringTable[keyIndex].size()};
+				protozero::data_view value{pb.stringTable[valueIndex].data(), pb.stringTable[valueIndex].size()};
+				tags[key] = value;
+			}
+			output.setNode(static_cast<NodeID>(nodeId), latplon, tags);
+		} 
 	}
-	return false;
+
+	if (nodes.size() > 0) {
+		osmStore.nodes.insert(nodes);
+	}
+
+	return !pg.nodes().empty();
 }
 
-bool PbfReader::ReadWays(
+bool PbfProcessor::ReadWays(
 	OsmLuaProcessing &output,
-	PrimitiveGroup &pg,
-	PrimitiveBlock const &pb,
+	PbfReader::PrimitiveGroup& pg,
+	const PbfReader::PrimitiveBlock& pb,
 	bool locationsOnWays,
 	uint shard,
 	uint effectiveShards
 ) {
 	// ----	Read ways
+	if (pg.ways().empty())
+		return false;
 
-	if (pg.ways_size() > 0) {
-		Way pbfWay;
+	const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
 
-		const bool wayStoreRequiresNodes = osmStore.ways.requiresNodes();
+	std::vector<WayStore::ll_element_t> llWays;
+	std::vector<std::pair<WayID, std::vector<NodeID>>> nodeWays;
+	LatpLonVec llVec;
+	std::vector<NodeID> nodeVec;
 
-		std::vector<WayStore::ll_element_t> llWays;
-		std::vector<std::pair<WayID, std::vector<NodeID>>> nodeWays;
-		LatpLonVec llVec;
-		std::vector<NodeID> nodeVec;
+	for (PbfReader::Way pbfWay : pg.ways()) {
+		llVec.clear();
+		nodeVec.clear();
 
-		for (int j=0; j<pg.ways_size(); j++) {
-			llVec.clear();
-			nodeVec.clear();
+		WayID wayId = static_cast<WayID>(pbfWay.id);
+		if (wayId >= pow(2,42)) throw std::runtime_error("Way ID negative or too large: "+std::to_string(wayId));
 
-			pbfWay = pg.ways(j);
-			WayID wayId = static_cast<WayID>(pbfWay.id());
-			if (wayId >= pow(2,42)) throw std::runtime_error("Way ID negative or too large: "+std::to_string(wayId));
-
-			// Assemble nodelist
-			if (locationsOnWays) {
-				int lat=0, lon=0;
-				llVec.reserve(pbfWay.lats_size());
-				for (int k=0; k<pbfWay.lats_size(); k++) {
-					lat += pbfWay.lats(k);
-					lon += pbfWay.lons(k);
-					LatpLon ll = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
-					llVec.push_back(ll);
-				}
-			} else {
-				int64_t nodeId = 0;
-				llVec.reserve(pbfWay.refs_size());
-				nodeVec.reserve(pbfWay.refs_size());
-
-				bool skipToNext = false;
-
-				for (int k=0; k<pbfWay.refs_size(); k++) {
-					nodeId += pbfWay.refs(k);
-
-					if (k == 0 && effectiveShards > 1 && !osmStore.nodes.contains(shard, nodeId)) {
-						skipToNext = true;
-						break;
-					}
-
-					try {
-						llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
-						nodeVec.push_back(nodeId);
-					} catch (std::out_of_range &err) {
-						if (osmStore.integrity_enforced()) throw err;
-					}
-				}
-
-				if (skipToNext)
-					continue;
+		// Assemble nodelist
+		if (locationsOnWays) {
+			llVec.reserve(pbfWay.lats.size());
+			for (int k=0; k<pbfWay.lats.size(); k++) {
+				int lat = pbfWay.lats[k];
+				int lon = pbfWay.lons[k];
+				LatpLon ll = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
+				llVec.push_back(ll);
 			}
-			if (llVec.empty()) continue;
-
-			try {
-				tag_map_t tags;
-				readTags(pbfWay, pb, tags);
-				bool emitted = output.setWay(static_cast<WayID>(pbfWay.id()), llVec, tags);
-
-				// If we need it for later, store the way's coordinates in the global way store
-				if (emitted || osmStore.way_is_used(wayId)) {
-					if (wayStoreRequiresNodes)
-						nodeWays.push_back(std::make_pair(wayId, nodeVec));
-					else
-						llWays.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
-				}
-
-			} catch (std::out_of_range &err) {
-				// Way is missing a node?
-				cerr << endl << err.what() << endl;
-			}
-
-		}
-
-		if (wayStoreRequiresNodes) {
-			osmStore.ways.shard(shard).insertNodes(nodeWays);
 		} else {
-			osmStore.ways.shard(shard).insertLatpLons(llWays);
+			llVec.reserve(pbfWay.refs.size());
+			nodeVec.reserve(pbfWay.refs.size());
+
+			bool skipToNext = false;
+
+			for (int k=0; k<pbfWay.refs.size(); k++) {
+				NodeID nodeId = pbfWay.refs[k];
+
+				if (k == 0 && effectiveShards > 1 && !osmStore.nodes.contains(shard, nodeId)) {
+					skipToNext = true;
+					break;
+				}
+
+				try {
+					llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
+					nodeVec.push_back(nodeId);
+				} catch (std::out_of_range &err) {
+					if (osmStore.integrity_enforced()) throw err;
+				}
+			}
+
+			if (skipToNext)
+				continue;
+		}
+		if (llVec.empty()) continue;
+
+		try {
+			tag_map_t tags;
+			readTags(pbfWay, pb, tags);
+			bool emitted = output.setWay(static_cast<WayID>(pbfWay.id), llVec, tags);
+
+			// If we need it for later, store the way's coordinates in the global way store
+			if (emitted || osmStore.way_is_used(wayId)) {
+				if (wayStoreRequiresNodes)
+					nodeWays.push_back(std::make_pair(wayId, nodeVec));
+				else
+					llWays.push_back(std::make_pair(wayId, WayStore::latplon_vector_t(llVec.begin(), llVec.end())));
+			}
+
+		} catch (std::out_of_range &err) {
+			// Way is missing a node?
+			cerr << endl << err.what() << endl;
 		}
 
-		return true;
 	}
-	return false;
+
+	if (wayStoreRequiresNodes) {
+		osmStore.ways.shard(shard).insertNodes(nodeWays);
+	} else {
+		osmStore.ways.shard(shard).insertLatpLons(llWays);
+	}
+
+	return true;
 }
 
-bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb) {
+bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb) {
 	// Scan relations to see which ways we need to save
-	if (pg.relations_size()==0) return false;
+	if (pg.relations().empty())
+		return false;
 
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 
-	for (int j=0; j<pg.relations_size(); j++) {
-		Relation pbfRelation = pg.relations(j);
-		bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
+	for (PbfReader::Relation pbfRelation : pg.relations()) {
+		bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
 		bool isAccepted = false;
-		WayID relid = static_cast<WayID>(pbfRelation.id());
+		WayID relid = static_cast<WayID>(pbfRelation.id);
 		if (!isMultiPolygon) {
 			if (output.canReadRelations()) {
 				tag_map_t tags;
@@ -190,10 +179,9 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 			}
 			if (!isAccepted) continue;
 		}
-		int64_t lastID = 0;
-		for (int n=0; n < pbfRelation.memids_size(); n++) {
-			lastID += pbfRelation.memids(n);
-			if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
+		for (int n=0; n < pbfRelation.memids.size(); n++) {
+			uint64_t lastID = pbfRelation.memids[n];
+			if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
 			if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
 			osmStore.mark_way_used(static_cast<WayID>(lastID));
 			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
@@ -202,79 +190,78 @@ bool PbfReader::ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, Prim
 	return true;
 }
 
-bool PbfReader::ReadRelations(
+bool PbfProcessor::ReadRelations(
 	OsmLuaProcessing& output,
-	PrimitiveGroup& pg,
-	const PrimitiveBlock& pb,
+	PbfReader::PrimitiveGroup& pg,
+	const PbfReader::PrimitiveBlock& pb,
 	const BlockMetadata& blockMetadata,
 	uint shard,
 	uint effectiveShards
 ) {
 	// ----	Read relations
+	if (pg.relations().empty())
+		return false;
 
-	if (pg.relations_size() > 0) {
-		std::vector<RelationStore::element_t> relations;
+	std::vector<RelationStore::element_t> relations;
 
-		int typeKey = findStringPosition(pb, "type");
-		int mpKey   = findStringPosition(pb, "multipolygon");
-		int boundaryKey = findStringPosition(pb, "boundary");
-		int innerKey= findStringPosition(pb, "inner");
-		int outerKey= findStringPosition(pb, "outer");
-		if (typeKey >-1 && mpKey>-1) {
-			for (int j=0; j<pg.relations_size(); j++) {
-				if (j % blockMetadata.chunks != blockMetadata.chunk)
-					continue;
+	int typeKey = findStringPosition(pb, "type");
+	int mpKey   = findStringPosition(pb, "multipolygon");
+	int boundaryKey = findStringPosition(pb, "boundary");
+	int innerKey= findStringPosition(pb, "inner");
+	int outerKey= findStringPosition(pb, "outer");
+	if (typeKey >-1 && mpKey>-1) {
+		int j = -1;
+		for (PbfReader::Relation pbfRelation : pg.relations()) {
+			j++;
+			if (j % blockMetadata.chunks != blockMetadata.chunk)
+				continue;
 
-				Relation pbfRelation = pg.relations(j);
-				bool isMultiPolygon = RelationIsType(pbfRelation, typeKey, mpKey);
-				bool isBoundary = RelationIsType(pbfRelation, typeKey, boundaryKey);
-				if (!isMultiPolygon && !isBoundary && !output.canWriteRelations()) continue;
+			bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
+			bool isBoundary = relationIsType(pbfRelation, typeKey, boundaryKey);
+			if (!isMultiPolygon && !isBoundary && !output.canWriteRelations()) continue;
 
-				// Read relation members
-				WayVec outerWayVec, innerWayVec;
-				int64_t lastID = 0;
-				bool isInnerOuter = isBoundary || isMultiPolygon;
-				bool skipToNext = false;
-				bool firstWay = true;
-				for (int n=0; n < pbfRelation.memids_size(); n++) {
-					lastID += pbfRelation.memids(n);
-					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
-					int32_t role = pbfRelation.roles_sid(n);
-					if (role==innerKey || role==outerKey) isInnerOuter=true;
-					WayID wayId = static_cast<WayID>(lastID);
+			// Read relation members
+			WayVec outerWayVec, innerWayVec;
+			bool isInnerOuter = isBoundary || isMultiPolygon;
+			bool skipToNext = false;
+			bool firstWay = true;
+			for (int n = 0; n < pbfRelation.memids.size(); n++) {
+				uint64_t lastID = pbfRelation.memids[n];
+				if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
+				int32_t role = pbfRelation.roles_sid[n];
+				if (role==innerKey || role==outerKey) isInnerOuter=true;
+				WayID wayId = static_cast<WayID>(lastID);
 
-					if (firstWay && effectiveShards > 1 && !osmStore.ways.contains(shard, wayId)) {
-						skipToNext = true;
-						break;
-					}
-					if (firstWay)
-						firstWay = false;
-					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
+				if (firstWay && effectiveShards > 1 && !osmStore.ways.contains(shard, wayId)) {
+					skipToNext = true;
+					break;
 				}
+				if (firstWay)
+					firstWay = false;
+				(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
+			}
 
-				if (skipToNext)
-					continue;
+			if (skipToNext)
+				continue;
 
-				try {
-					tag_map_t tags;
-					readTags(pbfRelation, pb, tags);
-					output.setRelation(pbfRelation.id(), outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
+			try {
+				tag_map_t tags;
+				readTags(pbfRelation, pb, tags);
+				output.setRelation(pbfRelation.id, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
-				} catch (std::out_of_range &err) {
-					// Relation is missing a member?
-					cerr << endl << err.what() << endl;
-				}
+			} catch (std::out_of_range &err) {
+				// Relation is missing a member?
+				cerr << endl << err.what() << endl;
 			}
 		}
-
-		osmStore.relations_insert_front(relations);
-		return true;
 	}
-	return false;
+
+	osmStore.relations_insert_front(relations);
+	return true;
 }
 
 // Returns true when block was completely handled, thus could be omited by another phases.
-bool PbfReader::ReadBlock(
+bool PbfProcessor::ReadBlock(
 	std::istream& infile,
 	OsmLuaProcessing& output,
 	const BlockMetadata& blockMetadata,
@@ -287,8 +274,8 @@ bool PbfReader::ReadBlock(
 {
 	infile.seekg(blockMetadata.offset);
 
-	PrimitiveBlock pb;
-	readBlock(&pb, blockMetadata.length, infile);
+	protozero::data_view blob = reader.readBlob(blockMetadata.length, infile);
+	PbfReader::PrimitiveBlock& pb = reader.readPrimitiveBlock(blob);
 	if (infile.eof()) {
 		return true;
 	}
@@ -299,12 +286,14 @@ bool PbfReader::ReadBlock(
 	// Read the string table, and pre-calculate the positions of valid node keys
 	unordered_set<int> nodeKeyPositions;
 	for (auto it : nodeKeys) {
-		nodeKeyPositions.insert(findStringPosition(pb, it.c_str()));
+		//nodeKeyPositions.insert(findStringPosition(pb, it));
+		auto rv = findStringPosition(pb, it);
+		nodeKeyPositions.insert(rv);
 	}
 
-	for (int i=0; i<pb.primitivegroup_size(); i++) {
-		PrimitiveGroup pg;
-		pg = pb.primitivegroup(i);
+	int primitiveGroupSize = 0;
+	for (auto& pg : pb.groups()) {
+		primitiveGroupSize++;
 	
 		auto output_progress = [&]()
 		{
@@ -315,7 +304,8 @@ bool PbfReader::ReadBlock(
 				if (effectiveShards > 1)
 					str << std::to_string(shard + 1) << "/" << std::to_string(effectiveShards) << " ";
 
-				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  ";
+				// TODO: revive showing the # of ways/relations?
+				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ";
 				std::cout << str.str();
 				std::cout.flush();
 				ioMutex.unlock();
@@ -371,7 +361,7 @@ bool PbfReader::ReadBlock(
 	// In later case block would not be handled during this phase, and should be
 	// read again in remaining phases. Thus we return false to indicate that the
 	// block was not handled completelly.
-	if(read_groups != pb.primitivegroup_size()) {
+	if(read_groups != primitiveGroupSize) {
 		return false;
 	}
 
@@ -383,22 +373,19 @@ bool PbfReader::ReadBlock(
 bool blockHasPrimitiveGroupSatisfying(
 	std::istream& infile,
 	const BlockMetadata block,
-	std::function<bool(const PrimitiveGroup&)> test
+	std::function<bool(const PbfReader::PrimitiveGroup&)> test
 ) {
-	PrimitiveBlock pb;
-
 	// We may have previously read to EOF, so clear the internal error state
 	infile.clear();
 	infile.seekg(block.offset);
-	readBlock(&pb, block.length, infile);
+	protozero::data_view blob = reader.readBlob(block.length, infile);
+	PbfReader::PrimitiveBlock pb = reader.readPrimitiveBlock(blob);
+
 	if (infile.eof()) {
 		throw std::runtime_error("blockHasPrimitiveGroupSatisfying got unexpected eof");
 	}
 
-	for (int i=0; i<pb.primitivegroup_size(); i++) {
-		PrimitiveGroup pg;
-		pg = pb.primitivegroup(i);
-
+	for (auto& pg : pb.groups()) {
 		if (test(pg))
 			return false;
 	}
@@ -406,7 +393,7 @@ bool blockHasPrimitiveGroupSatisfying(
 	return true;
 }
 
-int PbfReader::ReadPbfFile(
+int PbfProcessor::ReadPbfFile(
 	uint shards,
 	bool hasSortTypeThenID,
 	unordered_set<string> const& nodeKeys,
@@ -422,14 +409,10 @@ int PbfReader::ReadPbfFile(
 	// ----	Read PBF
 	osmStore.clear();
 
-	HeaderBlock block;
-	readBlock(&block, readHeader(*infile).datasize(), *infile);
-	bool locationsOnWays = false;
-	for (std::string option : block.optional_features()) {
-		if (option == OptionLocationsOnWays) {
-			std::cout << ".osm.pbf file has locations on ways" << std::endl;
-			locationsOnWays = true;
-		}
+	PbfReader::HeaderBlock block = reader.readHeaderFromFile(*infile);
+	bool locationsOnWays = block.optionalFeatures.find(OptionLocationsOnWays) != block.optionalFeatures.end();
+	if (locationsOnWays) {
+		std::cout << ".osm.pbf file has locations on ways" << std::endl;
 	}
 
 	std::map<std::size_t, BlockMetadata> blocks;
@@ -438,14 +421,14 @@ int PbfReader::ReadPbfFile(
 	// its meant to be an opaque token useful only for seeking.
 	size_t filesize = 0;
 	while (true) {
-		BlobHeader bh = readHeader(*infile);
-		filesize += bh.datasize();
+		PbfReader::BlobHeader bh = reader.readBlobHeader(*infile);
+		filesize += bh.datasize;
 		if (infile->eof()) {
 			break;
 		}
 
-		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize(), true, true, true, 0, 1 };
-		infile->seekg(bh.datasize(), std::ios_base::cur);
+		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize, true, true, true, 0, 1 };
+		infile->seekg(bh.datasize, std::ios_base::cur);
 	}
 
 	if (hasSortTypeThenID) {
@@ -464,7 +447,11 @@ int PbfReader::ReadPbfFile(
 				return blockHasPrimitiveGroupSatisfying(
 					*infile,
 					blocks[i],
-					[](const PrimitiveGroup&pg) { return pg.ways_size() > 0 || pg.relations_size() > 0; }
+					[](const PbfReader::PrimitiveGroup& pg) {
+						for(auto w : pg.ways()) return true;
+						for(auto r : pg.relations()) return true;
+						return false;
+					}
 				);
 			}
 		);
@@ -477,7 +464,10 @@ int PbfReader::ReadPbfFile(
 				return blockHasPrimitiveGroupSatisfying(
 					*infile,
 					blocks[i],
-					[](const PrimitiveGroup&pg) { return pg.relations_size() > 0; }
+					[](const PbfReader::PrimitiveGroup& pg) {
+						for (auto r : pg.relations()) return true;
+						return false;
+					}
 				);
 			}
 		);
@@ -563,10 +553,15 @@ int PbfReader::ReadPbfFile(
 			blocksToProcess = filteredBlocks.size();
 			blocksProcessed = 0;
 
-			// When processing blocks, we try to give each worker large batches
-			// of contiguous blocks, so that they might benefit from long runs
-			// of sorted indexes, and locality of nearby IDs.
-			const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
+			// Relations have very non-uniform processing times, so prefer
+			// to process them as granularly as possible.
+			size_t batchSize = 1;
+
+			// When creating NodeStore/WayStore, we try to give each worker
+			// large batches of contiguous blocks, so that they might benefit from
+			// long runs of sorted indexes, and locality of nearby IDs.
+			if (phase == ReadPhase::Nodes || phase == ReadPhase::Ways)
+				batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
 
 			size_t consumed = 0;
 			auto it = filteredBlocks.begin();
@@ -626,9 +621,9 @@ int PbfReader::ReadPbfFile(
 }
 
 // Find a string in the dictionary
-int PbfReader::findStringPosition(PrimitiveBlock const &pb, char const *str) {
-	for (int i=0; i<pb.stringtable().s_size(); i++) {
-		if(pb.stringtable().s(i) == str)
+int PbfProcessor::findStringPosition(const PbfReader::PrimitiveBlock& pb, const std::string& str) {
+	for (int i = 0; i < pb.stringTable.size(); i++) {
+		if(str.size() == pb.stringTable[i].size() && memcmp(str.data(), pb.stringTable[i].data(), str.size()) == 0)
 			return i;
 	}
 	return -1;
@@ -642,28 +637,21 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 {
 	fstream infile(inputFile, ios::in | ios::binary);
 	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
-	HeaderBlock block;
-	readBlock(&block, readHeader(infile).datasize(), infile);
-	if (block.has_bbox()) {
-		hasClippingBox = true;		
-		minLon = block.bbox().left()  /1000000000.0;
-		maxLon = block.bbox().right() /1000000000.0;
-		minLat = block.bbox().bottom()/1000000000.0;
-		maxLat = block.bbox().top()   /1000000000.0;
+	auto header = reader.readHeaderFromFile(infile);
+	if (header.hasBbox) {
+		hasClippingBox = true;
+		minLon = header.bbox.minLon;
+		maxLon = header.bbox.maxLon;
+		minLat = header.bbox.minLat;
+		maxLat = header.bbox.maxLat;
 	}
 	infile.close();
 	return 0;
 }
 
 bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature) {
-	fstream infile(inputFile, ios::in | ios::binary);
-	if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
-	HeaderBlock block;
-	readBlock(&block, readHeader(infile).datasize(), infile);
-
-	for (const std::string& option: block.optional_features())
-		if (option == feature)
-			return true;
-
-	return false;
+	std::ifstream infile(inputFile, std::ifstream::in);
+	auto header = reader.readHeaderFromFile(infile);
+	infile.close();
+	return header.optionalFeatures.find(feature) != header.optionalFeatures.end();
 }
