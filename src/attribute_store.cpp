@@ -55,19 +55,38 @@ const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
 	return keys[index];
 }
 
+// AttributePair
+void AttributePair::ensureStringIsOwned() {
+	// Before we store an AttributePair in our long-term storage, we need
+	// to make sure it's not pointing to a non-long-lived std::string.
+	if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float)
+		return;
+
+	stringValue_.ensureStringIsOwned();
+}
+
 // AttributePairStore
-thread_local boost::container::flat_map<const AttributePair*, uint32_t, AttributePairStore::key_value_less_ptr> tlsHotShardMap;
-thread_local uint16_t tlsHotShardSize = 0;
+thread_local DequeMap<AttributePair> tlsHotShard(1 << 16);
 const AttributePair& AttributePairStore::getPair(uint32_t i) const {
 	uint32_t shard = i >> (32 - SHARD_BITS);
 	uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
-	if (shard == 0)
-		return hotShard[offset];
+	if (shard == 0) {
+		if (offset < tlsHotShard.size())
+			return tlsHotShard.at(offset);
+
+		{
+			std::lock_guard<std::mutex> lock(pairsMutex[0]);
+			tlsHotShard = pairs[0];
+		}
+
+		return tlsHotShard.at(offset);
+	}
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
 	return pairs[shard].at(offset);
 };
+
 const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	// NB: This is unsafe if called before the PBF has been fully read.
 	// If called during the output phase, it's safe.
@@ -75,44 +94,36 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 	uint32_t shard = i >> (32 - SHARD_BITS);
 	uint32_t offset = i & (~(~0u << (32 - SHARD_BITS)));
 
-	if (shard == 0)
-		return hotShard[offset];
-
 	return pairs[shard].at(offset);
 };
 
-uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
+uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (isHot) {
 		{
 			// First, check our thread-local map.
-			const auto& it = tlsHotShardMap.find(&pair);
-			if (it != tlsHotShardMap.end())
-				return it->second;
+			const auto& index = tlsHotShard.find(pair);
+			if (index != -1)
+				return index;
 		}
+
 		// Not found, ensure our local map is up-to-date for future calls,
 		// and fall through to the main map.
-		//
-		// Note that we can read `hotShard` without a lock
-		while (tlsHotShardSize < hotShardSize.load()) {
-			tlsHotShardSize++;
-			tlsHotShardMap[&hotShard[tlsHotShardSize]] = tlsHotShardSize;
+		if (!tlsHotShard.full()) {
+			std::lock_guard<std::mutex> lock(pairsMutex[0]);
+			tlsHotShard = pairs[0];
 		}
 
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		const auto& it = pairsMaps[0].find(&pair);
-		if (it != pairsMaps[0].end())
-			return it->second;
+		const auto& index = pairs[0].find(pair);
+		if (index != -1)
+			return index;
 
-		if (hotShardSize.load() < 1 << 16) {
-			hotShardSize++;
-			uint32_t offset = hotShardSize.load();
-
-			hotShard[offset] = pair;
-			const AttributePair* ptr = &hotShard[offset];
+		if (!pairs[0].full()) {
+			pair.ensureStringIsOwned();
+			uint32_t offset = pairs[0].add(pair);
 			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
-			pairsMaps[0][ptr] = rv;
 			return rv;
 		}
 	}
@@ -129,20 +140,17 @@ uint32_t AttributePairStore::addPair(const AttributePair& pair, bool isHot) {
 	if (shard == 0) shard = 1;
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-	const auto& it = pairsMaps[shard].find(&pair);
-	if (it != pairsMaps[shard].end())
-		return it->second;
+	const auto& index = pairs[shard].find(pair);
+	if (index != -1)
+		return (shard << (32 - SHARD_BITS)) + index;
 
-	uint32_t offset = pairs[shard].size();
+	pair.ensureStringIsOwned();
+	uint32_t offset = pairs[shard].add(pair);
 
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("pair shard overflow");
 
-	pairs[shard].push_back(pair);
-	const AttributePair* ptr = &pairs[shard][offset];
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
-
-	pairsMaps[shard][ptr] = rv;
 	return rv;
 };
 
@@ -199,20 +207,21 @@ void AttributeSet::removePairWithKey(const AttributePairStore& pairStore, uint32
 }
 
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
-	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, key);
+	PooledString ps(&v);
+	AttributePair kv(keyStore.key2index(key), ps, minzoom);
+	bool isHot = AttributePair::isHot(key, v);
 	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, key);
+	bool isHot = true; // All bools are eligible to be hot pairs
 	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
-	bool isHot = AttributePair::isHot(kv, key);
+	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
 	attributeSet.removePairWithKey(pairStore, kv.keyIndex);
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
@@ -268,19 +277,11 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	std::lock_guard<std::mutex> lock(setsMutex[shard]);
 	lookups++;
 
-	// Do we already have it?
-	const auto& existing = setsMaps[shard].find(&attributes);
-	if (existing != setsMaps[shard].end()) return existing->second;
-
-	// No, so add and return the index
-	uint32_t offset = sets[shard].size();
+	const uint32_t offset = sets[shard].add(attributes);
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("set shard overflow");
-	sets[shard].push_back(attributes);
 
-	const AttributeSet* ptr = &sets[shard][offset];
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
-	setsMaps[shard][ptr] = rv;
 	return rv;
 }
 
@@ -307,16 +308,21 @@ std::vector<const AttributePair*> AttributeStore::getUnsafe(AttributeIndex index
 	}
 }
 
-void AttributeStore::reportSize() const {
+size_t AttributeStore::size() const {
 	size_t numAttributeSets = 0;
 	for (int i = 0; i < ATTRIBUTE_SHARDS; i++)
 		numAttributeSets += sets[i].size();
-	std::cout << "Attributes: " << numAttributeSets << " sets from " << lookups.load() << " objects" << std::endl;
+
+	return numAttributeSets;
+}
+
+void AttributeStore::reportSize() const {
+	std::cout << "Attributes: " << size() << " sets from " << lookups.load() << " objects" << std::endl;
 
 	// Print detailed histogram of frequencies of attributes.
 	if (false) {
 		for (int i = 0; i < ATTRIBUTE_SHARDS; i++) {
-			std::cout << "pairsMaps[" << i << "] has " << pairStore.pairsMaps[i].size() << " entries" << std::endl;
+			std::cout << "pairs[" << i << "] has " << pairStore.pairs[i].size() << " entries" << std::endl;
 		}
 
 		std::map<uint32_t, uint32_t> tagCountDist;
@@ -366,6 +372,14 @@ void AttributeStore::reportSize() const {
 			std::cout << "attrpair freq= " << entry.second << " hot=" << (entry.first < 65536 ? 1 : 0) << " key=" << keyStore.getKey(pair.keyIndex) <<" stringValue=" << pair.stringValue() << " floatValue=" << pair.floatValue() << " boolValue=" << pair.boolValue() << std::endl;
 		}
 	}
+}
+
+void AttributeStore::reset() {
+	// This is only used for tests.
+	tlsKeys2Index.clear();
+	tlsKeys2IndexSize = 0;
+
+	tlsHotShard.clear();
 }
 
 void AttributeStore::finalize() {

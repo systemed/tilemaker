@@ -73,7 +73,14 @@ bool PbfReader::ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitiv
 	return false;
 }
 
-bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays) {
+bool PbfReader::ReadWays(
+	OsmLuaProcessing &output,
+	PrimitiveGroup &pg,
+	PrimitiveBlock const &pb,
+	bool locationsOnWays,
+	uint shard,
+	uint effectiveShards
+) {
 	// ----	Read ways
 
 	if (pg.ways_size() > 0) {
@@ -83,15 +90,18 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 
 		std::vector<WayStore::ll_element_t> llWays;
 		std::vector<std::pair<WayID, std::vector<NodeID>>> nodeWays;
+		LatpLonVec llVec;
+		std::vector<NodeID> nodeVec;
 
 		for (int j=0; j<pg.ways_size(); j++) {
+			llVec.clear();
+			nodeVec.clear();
+
 			pbfWay = pg.ways(j);
 			WayID wayId = static_cast<WayID>(pbfWay.id());
 			if (wayId >= pow(2,42)) throw std::runtime_error("Way ID negative or too large: "+std::to_string(wayId));
 
 			// Assemble nodelist
-			LatpLonVec llVec;
-			std::vector<NodeID> nodeVec;
 			if (locationsOnWays) {
 				int lat=0, lon=0;
 				llVec.reserve(pbfWay.lats_size());
@@ -105,8 +115,17 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 				int64_t nodeId = 0;
 				llVec.reserve(pbfWay.refs_size());
 				nodeVec.reserve(pbfWay.refs_size());
+
+				bool skipToNext = false;
+
 				for (int k=0; k<pbfWay.refs_size(); k++) {
 					nodeId += pbfWay.refs(k);
+
+					if (k == 0 && effectiveShards > 1 && !osmStore.nodes.contains(shard, nodeId)) {
+						skipToNext = true;
+						break;
+					}
+
 					try {
 						llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
 						nodeVec.push_back(nodeId);
@@ -114,6 +133,9 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 						if (osmStore.integrity_enforced()) throw err;
 					}
 				}
+
+				if (skipToNext)
+					continue;
 			}
 			if (llVec.empty()) continue;
 
@@ -138,9 +160,9 @@ bool PbfReader::ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, Primitive
 		}
 
 		if (wayStoreRequiresNodes) {
-			osmStore.ways.insertNodes(nodeWays);
+			osmStore.ways.shard(shard).insertNodes(nodeWays);
 		} else {
-			osmStore.ways.insertLatpLons(llWays);
+			osmStore.ways.shard(shard).insertLatpLons(llWays);
 		}
 
 		return true;
@@ -184,7 +206,9 @@ bool PbfReader::ReadRelations(
 	OsmLuaProcessing& output,
 	PrimitiveGroup& pg,
 	const PrimitiveBlock& pb,
-	const BlockMetadata& blockMetadata
+	const BlockMetadata& blockMetadata,
+	uint shard,
+	uint effectiveShards
 ) {
 	// ----	Read relations
 
@@ -210,14 +234,26 @@ bool PbfReader::ReadRelations(
 				WayVec outerWayVec, innerWayVec;
 				int64_t lastID = 0;
 				bool isInnerOuter = isBoundary || isMultiPolygon;
+				bool skipToNext = false;
+				bool firstWay = true;
 				for (int n=0; n < pbfRelation.memids_size(); n++) {
 					lastID += pbfRelation.memids(n);
 					if (pbfRelation.types(n) != Relation_MemberType_WAY) { continue; }
 					int32_t role = pbfRelation.roles_sid(n);
 					if (role==innerKey || role==outerKey) isInnerOuter=true;
 					WayID wayId = static_cast<WayID>(lastID);
+
+					if (firstWay && effectiveShards > 1 && !osmStore.ways.contains(shard, wayId)) {
+						skipToNext = true;
+						break;
+					}
+					if (firstWay)
+						firstWay = false;
 					(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 				}
+
+				if (skipToNext)
+					continue;
 
 				try {
 					tag_map_t tags;
@@ -244,7 +280,9 @@ bool PbfReader::ReadBlock(
 	const BlockMetadata& blockMetadata,
 	const unordered_set<string>& nodeKeys,
 	bool locationsOnWays,
-	ReadPhase phase
+	ReadPhase phase,
+	uint shard,
+	uint effectiveShards
 ) 
 {
 	infile.seekg(blockMetadata.offset);
@@ -272,8 +310,12 @@ bool PbfReader::ReadBlock(
 		{
 			if (ioMutex.try_lock()) {
 				std::ostringstream str;
+				str << "\r";
 				void_mmap_allocator::reportStoreSize(str);
-				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  \r";
+				if (effectiveShards > 1)
+					str << std::to_string(shard + 1) << "/" << std::to_string(effectiveShards) << " ";
+
+				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ways " << pg.ways_size() << " relations " << pg.relations_size() << "                  ";
 				std::cout << str.str();
 				std::cout.flush();
 				ioMutex.unlock();
@@ -293,14 +335,17 @@ bool PbfReader::ReadBlock(
 			osmStore.ensureUsedWaysInited();
 			bool done = ScanRelations(output, pg, pb);
 			if(done) { 
-				std::cout << "(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)\r";
-				std::cout.flush();
+				if (ioMutex.try_lock()) {
+					std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
+					std::cout.flush();
+					ioMutex.unlock();
+				}
 				continue;
 			}
 		}
 	
 		if(phase == ReadPhase::Ways) {
-			bool done = ReadWays(output, pg, pb, locationsOnWays);
+			bool done = ReadWays(output, pg, pb, locationsOnWays, shard, effectiveShards);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -309,7 +354,7 @@ bool PbfReader::ReadBlock(
 		}
 
 		if(phase == ReadPhase::Relations) {
-			bool done = ReadRelations(output, pg, pb, blockMetadata);
+			bool done = ReadRelations(output, pg, pb, blockMetadata, shard, effectiveShards);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -332,7 +377,7 @@ bool PbfReader::ReadBlock(
 
 	// We can only delete blocks if we're confident we've processed everything,
 	// which is not possible in the case of subdivided blocks.
-	return blockMetadata.chunks == 1;
+	return (shard + 1 == effectiveShards) && blockMetadata.chunks == 1;
 }
 
 bool blockHasPrimitiveGroupSatisfying(
@@ -362,11 +407,14 @@ bool blockHasPrimitiveGroupSatisfying(
 }
 
 int PbfReader::ReadPbfFile(
+	uint shards,
 	bool hasSortTypeThenID,
 	unordered_set<string> const& nodeKeys,
 	unsigned int threadNum,
 	const pbfreader_generate_stream& generate_stream,
-	const pbfreader_generate_output& generate_output
+	const pbfreader_generate_output& generate_output,
+	const NodeStore& nodeStore,
+	const WayStore& wayStore
 )
 {
 	auto infile = generate_stream();
@@ -459,84 +507,113 @@ int PbfReader::ReadPbfFile(
 
 	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
-		// Launch the pool with threadNum threads
-		boost::asio::thread_pool pool(threadNum);
-		std::mutex block_mutex;
+		uint effectiveShards = 1;
 
-		// If we're in ReadPhase::Relations and there aren't many blocks left
-		// to read, increase parallelism by letting each thread only process
-		// a portion of the block.
-		if (phase == ReadPhase::Relations && blocks.size() < threadNum * 2) {
-			std::cout << "only " << blocks.size() << " relation blocks; subdividing for better parallelism" << std::endl;
-			std::map<std::size_t, BlockMetadata> moreBlocks;
-			for (const auto& block : blocks) {
-				BlockMetadata newBlock = block.second;
-				newBlock.chunks = threadNum;
-				for (size_t i = 0; i < threadNum; i++) {
-					newBlock.chunk = i;
-					moreBlocks[moreBlocks.size()] = newBlock;
+		// On memory-constrained machines, we might read ways/relations
+		// multiple times in order to keep the working set of nodes limited.
+		if (phase == ReadPhase::Ways || phase == ReadPhase::Relations)
+			effectiveShards = shards;
+
+		for (int shard = 0; shard < effectiveShards; shard++) {
+			// If we're in ReadPhase::Ways, only do a pass if there is at least one
+			// entry in the pass's shard.
+			if (phase == ReadPhase::Ways && nodeStore.shard(shard).size() == 0)
+				continue;
+
+			// Ditto, but for relations
+			if (phase == ReadPhase::Relations && wayStore.shard(shard).size() == 0)
+				continue;
+
+#ifdef CLOCK_MONOTONIC
+			timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
+			// Launch the pool with threadNum threads
+			boost::asio::thread_pool pool(threadNum);
+			std::mutex block_mutex;
+
+			// If we're in ReadPhase::Relations and there aren't many blocks left
+			// to read, increase parallelism by letting each thread only process
+			// a portion of the block.
+			if (phase == ReadPhase::Relations && blocks.size() < threadNum * 2) {
+				std::cout << "only " << blocks.size() << " relation blocks; subdividing for better parallelism" << std::endl;
+				std::map<std::size_t, BlockMetadata> moreBlocks;
+				for (const auto& block : blocks) {
+					BlockMetadata newBlock = block.second;
+					newBlock.chunks = threadNum;
+					for (size_t i = 0; i < threadNum; i++) {
+						newBlock.chunk = i;
+						moreBlocks[moreBlocks.size()] = newBlock;
+					}
 				}
+				blocks = moreBlocks;
 			}
-			blocks = moreBlocks;
-		}
 
-		std::deque<std::vector<IndexedBlockMetadata>> blockRanges;
-		std::map<std::size_t, BlockMetadata> filteredBlocks;
-		for (const auto& entry : blocks) {
-			if ((phase == ReadPhase::Nodes && entry.second.hasNodes) ||
-					(phase == ReadPhase::RelationScan && entry.second.hasRelations) ||
-					(phase == ReadPhase::Ways && entry.second.hasWays) ||
-					(phase == ReadPhase::Relations && entry.second.hasRelations))
-				filteredBlocks[entry.first] = entry.second;
-		}
-
-		blocksToProcess = filteredBlocks.size();
-		blocksProcessed = 0;
-
-		// When processing blocks, we try to give each worker large batches
-		// of contiguous blocks, so that they might benefit from long runs
-		// of sorted indexes, and locality of nearby IDs.
-		const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
-
-		size_t consumed = 0;
-		auto it = filteredBlocks.begin();
-		while(it != filteredBlocks.end()) {
-			std::vector<IndexedBlockMetadata> blockRange;
-			blockRange.reserve(batchSize);
-			size_t max = consumed + batchSize;
-			for (; consumed < max && it != filteredBlocks.end(); consumed++) {
-				IndexedBlockMetadata ibm;
-				memcpy(&ibm, &it->second, sizeof(BlockMetadata));
-				ibm.index = it->first;
-				blockRange.push_back(ibm);
-				it++;
+			std::deque<std::vector<IndexedBlockMetadata>> blockRanges;
+			std::map<std::size_t, BlockMetadata> filteredBlocks;
+			for (const auto& entry : blocks) {
+				if ((phase == ReadPhase::Nodes && entry.second.hasNodes) ||
+						(phase == ReadPhase::RelationScan && entry.second.hasRelations) ||
+						(phase == ReadPhase::Ways && entry.second.hasWays) ||
+						(phase == ReadPhase::Relations && entry.second.hasRelations))
+					filteredBlocks[entry.first] = entry.second;
 			}
-			blockRanges.push_back(blockRange);
-		}
 
-		{
-			for(const std::vector<IndexedBlockMetadata>& blockRange: blockRanges) {
-				boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
-					if (phase == ReadPhase::Nodes)
-						osmStore.nodes.batchStart();
-					if (phase == ReadPhase::Ways)
-						osmStore.ways.batchStart();
+			blocksToProcess = filteredBlocks.size();
+			blocksProcessed = 0;
 
-					for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
-						auto infile = generate_stream();
-						auto output = generate_output();
+			// When processing blocks, we try to give each worker large batches
+			// of contiguous blocks, so that they might benefit from long runs
+			// of sorted indexes, and locality of nearby IDs.
+			const size_t batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
 
-						if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, locationsOnWays, phase)) {
-							const std::lock_guard<std::mutex> lock(block_mutex);
-							blocks.erase(indexedBlockMetadata.index);	
+			size_t consumed = 0;
+			auto it = filteredBlocks.begin();
+			while(it != filteredBlocks.end()) {
+				std::vector<IndexedBlockMetadata> blockRange;
+				blockRange.reserve(batchSize);
+				size_t max = consumed + batchSize;
+				for (; consumed < max && it != filteredBlocks.end(); consumed++) {
+					IndexedBlockMetadata ibm;
+					memcpy(&ibm, &it->second, sizeof(BlockMetadata));
+					ibm.index = it->first;
+					blockRange.push_back(ibm);
+					it++;
+				}
+				blockRanges.push_back(blockRange);
+			}
+
+			{
+				for(const std::vector<IndexedBlockMetadata>& blockRange: blockRanges) {
+					boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys]() {
+						if (phase == ReadPhase::Nodes)
+							osmStore.nodes.batchStart();
+						if (phase == ReadPhase::Ways)
+							osmStore.ways.batchStart();
+
+						for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
+							auto infile = generate_stream();
+							auto output = generate_output();
+
+							if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, locationsOnWays, phase, shard, effectiveShards)) {
+								const std::lock_guard<std::mutex> lock(block_mutex);
+								blocks.erase(indexedBlockMetadata.index);	
+							}
 							blocksProcessed++;
 						}
-					}
-				});
+					});
+				}
 			}
+		
+			pool.join();
+
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			uint64_t elapsedNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+			std::cout << "(" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)" << std::endl;
+#endif
 		}
-	
-		pool.join();
 
 		if(phase == ReadPhase::Nodes) {
 			osmStore.nodes.finalize(threadNum);

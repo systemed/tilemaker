@@ -97,14 +97,18 @@ file(GLOB tilemaker_src_files
 	src/mbtiles.cpp
 	src/mmap_allocator.cpp
 	src/node_stores.cpp
+	src/options_parser.cpp
 	src/osm_lua_processing.cpp
 	src/osm_mem_tiles.cpp
 	src/osm_store.cpp
 	src/output_object.cpp
 	src/pbf_blocks.cpp
 	src/pmtiles.cpp
+	src/pooled_string.cpp
 	src/read_pbf.cpp
 	src/read_shp.cpp
+	src/sharded_node_store.cpp
+	src/sharded_way_store.cpp
 	src/shared_data.cpp
 	src/shp_mem_tiles.cpp
 	src/sorted_node_store.cpp

@@ -53,11 +53,14 @@ public:
 	using pbfreader_generate_stream = std::function< std::shared_ptr<std::istream> () >;
 
 	int ReadPbfFile(
+		uint shards,
 		bool hasSortTypeThenID,
 		const std::unordered_set<std::string>& nodeKeys,
 		unsigned int threadNum,
 		const pbfreader_generate_stream& generate_stream,
-		const pbfreader_generate_output& generate_output
+		const pbfreader_generate_output& generate_output,
+		const NodeStore& nodeStore,
+		const WayStore& wayStore
 	);
 
 	// Read tags into a map from a way/node/relation
@@ -79,17 +82,28 @@ private:
 		const BlockMetadata& blockMetadata,
 		const std::unordered_set<std::string>& nodeKeys,
 		bool locationsOnWays,
-		ReadPhase phase
+		ReadPhase phase,
+		uint shard,
+		uint effectiveShard
 	);
 	bool ReadNodes(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, const std::unordered_set<int> &nodeKeyPositions);
 
-	bool ReadWays(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb, bool locationsOnWays);
+	bool ReadWays(
+		OsmLuaProcessing &output,
+		PrimitiveGroup &pg,
+		PrimitiveBlock const &pb,
+		bool locationsOnWays,
+		uint shard,
+		uint effectiveShards
+	);
 	bool ScanRelations(OsmLuaProcessing &output, PrimitiveGroup &pg, PrimitiveBlock const &pb);
 	bool ReadRelations(
 		OsmLuaProcessing& output,
 		PrimitiveGroup& pg,
 		const PrimitiveBlock& pb,
-		const BlockMetadata& blockMetadata
+		const BlockMetadata& blockMetadata,
+		uint shard,
+		uint effectiveShards
 	);
 
 	inline bool RelationIsType(Relation const &rel, int typeKey, int val) {

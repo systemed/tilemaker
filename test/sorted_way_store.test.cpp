@@ -13,6 +13,10 @@ class TestNodeStore : public NodeStore {
 		return { (int32_t)id, -(int32_t)id };
 	}
 	void insert(const std::vector<std::pair<NodeID, LatpLon>>& elements) override {}
+
+	bool contains(size_t shard, NodeID id) const override { return true; }
+	size_t shard() const override { return 0; }
+	size_t shards() const override { return 1; }
 };
 
 void roundtripWay(const std::vector<NodeID>& way) {
@@ -67,6 +71,39 @@ MU_TEST(test_encode_way) {
 		const uint16_t l2 = output.size();
 
 		mu_check(l1 < l2);
+	}
+}
+
+MU_TEST(test_multiple_stores) {
+	bool compressed = false;
+
+	for (int i = 0; i < 2; i++) {
+		compressed = !compressed;
+		TestNodeStore ns;
+		SortedWayStore s1(compressed, ns), s2(compressed, ns);
+		s1.batchStart();
+		s2.batchStart();
+
+		s1.insertNodes({{ 1, { 1 } }});
+
+		// We store small ways differently than large ways, so
+		// store both kinds for testing.
+		std::vector<NodeID> longWay;
+		for (int i = 200; i < 2048; i++)
+			longWay.push_back(i + 3 * (i % 37));
+
+		s1.insertNodes({{ 42, longWay }});
+		s2.insertNodes({{ 2, { 2 } }});
+
+		s1.finalize(1);
+		s2.finalize(1);
+
+		mu_check(s1.size() == 2);
+		mu_check(s2.size() == 1);
+
+		mu_check(s1.contains(0, 1));
+		mu_check(s1.contains(0, 42));
+		mu_check(!s1.contains(0, 2));
 	}
 }
 
@@ -178,6 +215,7 @@ MU_TEST(test_populate_mask) {
 
 MU_TEST_SUITE(test_suite_sorted_way_store) {
 	MU_RUN_TEST(test_encode_way);
+	MU_RUN_TEST(test_multiple_stores);
 	MU_RUN_TEST(test_way_store);
 }
 

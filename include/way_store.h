@@ -17,10 +17,15 @@ public:
 	virtual std::vector<LatpLon> at(WayID wayid) const = 0;
 	virtual bool requiresNodes() const = 0;
 	virtual void insertLatpLons(std::vector<ll_element_t>& newWays) = 0;
-	virtual const void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) = 0;
+	virtual void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) = 0;
 	virtual void clear() = 0;
 	virtual std::size_t size() const = 0;
 	virtual void finalize(unsigned int threadNum) = 0;
+
+	virtual bool contains(size_t shard, WayID id) const = 0;
+	virtual WayStore& shard(size_t shard) = 0;
+	virtual const WayStore& shard(size_t shard) const = 0;
+	virtual size_t shards() const = 0;
 };
 
 #endif

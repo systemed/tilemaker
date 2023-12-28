@@ -1,4 +1,3 @@
-#include <atomic>
 #include <algorithm>
 #include <bitset>
 #include <cstring>
@@ -19,40 +18,56 @@ namespace SortedWayStoreTypes {
 	const uint16_t ClosedWay = 1 << 14;
 	const uint16_t UniformUpperBits = 1 << 13;
 
-	thread_local bool collectingOrphans = true;
-	thread_local uint64_t groupStart = -1;
-	thread_local std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays = NULL;
+	struct ThreadStorage {
+		ThreadStorage():
+			collectingOrphans(true),
+			groupStart(-1),
+			localWays(nullptr) {}
 
-	thread_local std::vector<uint8_t> encodedWay;
+		bool collectingOrphans;
+		uint64_t groupStart;
+		std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays;
+		std::vector<uint8_t> encodedWay;
+	};
+
+	thread_local std::deque<std::pair<const SortedWayStore*, ThreadStorage>> threadStorage;
+
+	inline ThreadStorage& s(const SortedWayStore* who) {
+		for (auto& entry : threadStorage)
+			if (entry.first == who)
+				return entry.second;
+
+		threadStorage.push_back(std::make_pair(who, ThreadStorage()));
+
+		auto& rv = threadStorage.back();
+		return rv.second;
+	}
 
 	// C++ doesn't support variable length arrays declared on stack.
 	// g++ and clang support it, but msvc doesn't. Rather than pay the
 	// cost of a vector for every decode, we use a thread_local with room for at
 	// least 2,000 nodes.
+	//
+	// Note: these are scratch buffers, so they remain as true thread-locals,
+	// and aren't part of ThreadStorage.
 	thread_local uint64_t highBytes[2000];
 	thread_local uint32_t uint32Buffer[2000];
 	thread_local int32_t int32Buffer[2000];
 	thread_local uint8_t uint8Buffer[8192];
-
-	std::atomic<uint64_t> totalWays;
-	std::atomic<uint64_t> totalNodes;
-	std::atomic<uint64_t> totalGroups;
-	std::atomic<uint64_t> totalGroupSpace;
-	std::atomic<uint64_t> totalChunks;
 }
 
 using namespace SortedWayStoreTypes;
 
 SortedWayStore::SortedWayStore(bool compressWays, const NodeStore& nodeStore): compressWays(compressWays), nodeStore(nodeStore) {
-	// Each group can store 64K ways. If we allocate 32K slots,
-	// we support 2^31 = 2B ways, or about twice the number used
-	// by OSM as of December 2023.
-	groups.resize(32 * 1024);
+	s(this); // allocate our ThreadStorage before multi-threading
+	reopen();
 }
 
 SortedWayStore::~SortedWayStore() {
 	for (const auto entry: allocatedMemory)
 		void_mmap_allocator::deallocate(entry.first, entry.second);
+
+	s(this) = ThreadStorage();
 }
 
 void SortedWayStore::reopen() {
@@ -67,9 +82,62 @@ void SortedWayStore::reopen() {
 	totalChunks = 0;
 	orphanage.clear();
 	workerBuffers.clear();
-	groups.clear();
-	groups.resize(256 * 1024);
 
+	// Each group can store 64K ways. If we allocate 32K slots,
+	// we support 2^31 = 2B ways, or about twice the number used
+	// by OSM as of December 2023.
+	groups.clear();
+	groups.resize(32 * 1024);
+
+}
+
+bool SortedWayStore::contains(size_t shard, WayID id) const {
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+	const uint64_t chunkMaskByte = chunk / 8;
+	const uint64_t chunkMaskBit = chunk % 8;
+
+	const uint64_t wayMaskByte = (id % ChunkSize) / 8;
+	const uint64_t wayMaskBit = id % 8;
+
+	GroupInfo* groupPtr = groups[groupIndex];
+
+	if (groupPtr == nullptr)
+		return false;
+
+	size_t chunkOffset = 0;
+	{
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
+		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
+		chunkOffset += popcnt(&maskByte, 1);
+
+		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
+			return false;
+	}
+
+	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
+
+	{
+		size_t wayOffset = 0;
+		wayOffset = popcnt(chunkPtr->smallWayMask, wayMaskByte);
+		uint8_t maskByte = chunkPtr->smallWayMask[wayMaskByte];
+		maskByte = maskByte & ((1 << wayMaskBit) - 1);
+		wayOffset += popcnt(&maskByte, 1);
+		if (chunkPtr->smallWayMask[wayMaskByte] & (1 << wayMaskBit))
+			return true;
+	}
+
+	size_t wayOffset = 0;
+	wayOffset += popcnt(chunkPtr->smallWayMask, 32);
+	wayOffset += popcnt(chunkPtr->bigWayMask, wayMaskByte);
+	uint8_t maskByte = chunkPtr->bigWayMask[wayMaskByte];
+	maskByte = maskByte & ((1 << wayMaskBit) - 1);
+	wayOffset += popcnt(&maskByte, 1);
+	if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
+		return false;
+
+	return true;
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID id) const {
@@ -140,52 +208,53 @@ void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays
 	throw std::runtime_error("SortedWayStore does not support insertLatpLons");
 }
 
-const void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
+void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) {
 	// read_pbf can call with an empty array if the only ways it read were unable to
 	// be processed due to missing nodes, so be robust against empty way vector.
 	if (newWays.empty())
 		return;
 
-	if (localWays == nullptr) {
+	ThreadStorage& tls = s(this);
+	if (tls.localWays == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
 		else if (workerBuffers.size() == workerBuffers.capacity())
 			throw std::runtime_error("SortedWayStore doesn't support more than 256 cores");
 		workerBuffers.push_back(std::vector<std::pair<WayID, std::vector<NodeID>>>());
-		localWays = &workerBuffers.back();
+		tls.localWays = &workerBuffers.back();
 	}
 
-	if (groupStart == -1) {
+	if (tls.groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		tls.groupStart = newWays[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
-	while (collectingOrphans && i < newWays.size()) {
+	while (tls.collectingOrphans && i < newWays.size()) {
 		const auto& el = newWays[i];
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			collectingOrphans = false;
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			tls.collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
-			collectOrphans(*localWays);
-			localWays->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+			collectOrphans(*tls.localWays);
+			tls.localWays->clear();
 		}
-		localWays->push_back(el);
+		tls.localWays->push_back(el);
 		i++;
 	}
 
 	while(i < newWays.size()) {
 		const auto& el = newWays[i];
 
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			publishGroup(*localWays);
-			localWays->clear();
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			publishGroup(*tls.localWays);
+			tls.localWays->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
-		localWays->push_back(el);
+		tls.localWays->push_back(el);
 		i++;
 	}
 }
@@ -229,13 +298,14 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 }
 
 void SortedWayStore::batchStart() {
-	collectingOrphans = true;
-	groupStart = -1;
-	if (localWays == nullptr || localWays->size() == 0)
+	ThreadStorage& tls = s(this);
+	tls.collectingOrphans = true;
+	tls.groupStart = -1;
+	if (tls.localWays == nullptr || tls.localWays->size() == 0)
 		return;
 
-	collectOrphans(*localWays);
-	localWays->clear();
+	collectOrphans(*tls.localWays);
+	tls.localWays->clear();
 }
 
 void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans) {
@@ -244,6 +314,7 @@ void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vect
 
 	std::vector<std::pair<WayID, std::vector<NodeID>>>& vec = orphanage[groupIndex];
 	const size_t i = vec.size();
+
 	vec.resize(i + orphans.size());
 	std::copy(orphans.begin(), orphans.end(), vec.begin() + i);
 }
@@ -284,7 +355,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 		for (int i = 0; i < length; i++)
 			rv.push_back(highBytes[i] | lowIntData[i]);
 	} else {
-		uint16_t compressedLength = *(uint16_t*)input;
 		input += 2;
 
 		uint32_t firstInt = *(uint32_t*)(input);
@@ -408,6 +478,7 @@ void populateMask(uint8_t* mask, const std::vector<uint8_t>& ids) {
 }
 
 void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways) {
+	ThreadStorage& tls = s(this);
 	totalWays += ways.size();
 	if (ways.size() == 0) {
 		throw std::runtime_error("SortedWayStore: group is empty");
@@ -451,12 +522,12 @@ void SortedWayStore::publishGroup(const std::vector<std::pair<WayID, std::vector
 		const WayID id = way.first;
 		lastChunk->wayIds.push_back(id % ChunkSize);
 
-		uint16_t flags = encodeWay(way.second, encodedWay, compressWays && way.second.size() >= 4);
+		uint16_t flags = encodeWay(way.second, tls.encodedWay, compressWays && way.second.size() >= 4);
 		lastChunk->wayFlags.push_back(flags);
 
 		std::vector<uint8_t> encoded;
-		encoded.resize(encodedWay.size());
-		memcpy(encoded.data(), encodedWay.data(), encodedWay.size());
+		encoded.resize(tls.encodedWay.size());
+		memcpy(encoded.data(), tls.encodedWay.data(), tls.encodedWay.size());
 
 		lastChunk->encodedWays.push_back(std::move(encoded));
 	}

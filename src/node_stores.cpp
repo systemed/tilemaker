@@ -14,6 +14,17 @@ void BinarySearchNodeStore::reopen()
 	}
 }
 
+bool BinarySearchNodeStore::contains(size_t shard, NodeID i) const {
+	auto internalShard = mLatpLons[shardPart(i)];
+	auto id = idPart(i);
+
+	auto iter = std::lower_bound(internalShard->begin(), internalShard->end(), id, [](auto const &e, auto i) { 
+		return e.first < i; 
+	});
+
+	return !(iter == internalShard->end() || iter->first != id);
+}
+
 LatpLon BinarySearchNodeStore::at(NodeID i) const {
 	auto shard = mLatpLons[shardPart(i)];
 	auto id = idPart(i);

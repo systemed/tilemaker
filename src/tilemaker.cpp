@@ -48,6 +48,7 @@
 #include "osm_lua_processing.h"
 #include "mbtiles.h"
 
+#include "options_parser.h"
 #include "shared_data.h"
 #include "read_pbf.h"
 #include "read_shp.h"
@@ -80,89 +81,46 @@ bool verbose = false;
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
-int main(int argc, char* argv[]) {
-
+int main(const int argc, const char* argv[]) {
 	// ----	Read command-line options
-	vector<string> inputFiles;
-	string luaFile;
-	string osmStoreFile;
-	string jsonFile;
-	uint threadNum;
-	string outputFile;
-	string bbox;
-	bool _verbose = false, mergeSqlite = false, mapsplit = false, osmStoreCompact = false, skipIntegrity = false, osmStoreUncompressedNodes = false, osmStoreUncompressedWays = false, materializeGeometries = false;
-	int outputMode = OUTPUT_FILE;
-	bool logTileTimings = false;
-
-	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
-	desc.add_options()
-		("help",                                                                 "show help message")
-		("input",  po::value< vector<string> >(&inputFiles),                     "source .osm.pbf file")
-		("output", po::value< string >(&outputFile),                             "target directory or .mbtiles/.pmtiles file")
-		("bbox",   po::value< string >(&bbox),                                   "bounding box to use if input file does not have a bbox header set, example: minlon,minlat,maxlon,maxlat")
-		("merge"  ,po::bool_switch(&mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
-		("config", po::value< string >(&jsonFile)->default_value("config.json"), "config JSON file")
-		("process",po::value< string >(&luaFile)->default_value("process.lua"),  "tag-processing Lua file")
-		("store",  po::value< string >(&osmStoreFile),  "temporary storage for node/ways/relations data")
-		("compact",po::bool_switch(&osmStoreCompact),  "Reduce overall memory usage (compact mode).\nNOTE: This requires the input to be renumbered (osmium renumber)")
-		("no-compress-nodes", po::bool_switch(&osmStoreUncompressedNodes),  "Store nodes uncompressed")
-		("no-compress-ways", po::bool_switch(&osmStoreUncompressedWays),  "Store ways uncompressed")
-		("materialize-geometries", po::bool_switch(&materializeGeometries),  "Materialize geometries - faster, but requires more memory")
-		("verbose",po::bool_switch(&_verbose),                                   "verbose error output")
-		("skip-integrity",po::bool_switch(&skipIntegrity),                       "don't enforce way/node integrity")
-		("log-tile-timings", po::bool_switch(&logTileTimings), "log how long each tile takes")
-		("threads",po::value< uint >(&threadNum)->default_value(0),              "number of threads (automatically detected if 0)");
-	po::positional_options_description p;
-	p.add("input", 1).add("output", 1);
-	po::variables_map vm;
+	OptionsParser::Options options;
 	try {
-		po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
-	} catch (const po::unknown_option& ex) {
-		cerr << "Unknown option: " << ex.get_option_name() << endl;
-		return -1;
+		options = OptionsParser::parse(argc, argv);
+	} catch (OptionsParser::OptionException& e) {
+		cerr << e.what() << endl;
+		return 1;
 	}
-	po::notify(vm);
-	
-	if (vm.count("help")) { cout << desc << endl; return 0; }
-	if (vm.count("output")==0) { cerr << "You must specify an output file or directory. Run with --help to find out more." << endl; return -1; }
-	if (vm.count("input")==0) { cout << "No source .osm.pbf file supplied" << endl; }
 
-	vector<string> bboxElements = parseBox(bbox);
+	if (options.showHelp) { OptionsParser::showHelp(); return 0; }
 
-	if (ends_with(outputFile, ".mbtiles") || ends_with(outputFile, ".sqlite")) { outputMode = OUTPUT_MBTILES; }
-	else if (ends_with(outputFile, ".pmtiles")) { outputMode = OUTPUT_PMTILES; }
-	if (threadNum == 0) { threadNum = max(thread::hardware_concurrency(), 1u); }
-	verbose = _verbose;
+	verbose = options.verbose;
 
-
-	// ---- Check config
-	
-	if (!boost::filesystem::exists(jsonFile)) { cerr << "Couldn't open .json config: " << jsonFile << endl; return -1; }
-	if (!boost::filesystem::exists(luaFile )) { cerr << "Couldn't open .lua script: "  << luaFile  << endl; return -1; }
+	vector<string> bboxElements = parseBox(options.bbox);
 
 	// ---- Remove existing .mbtiles if it exists
-
-	if ((outputMode==OUTPUT_MBTILES || outputMode==OUTPUT_PMTILES) && !mergeSqlite && static_cast<bool>(std::ifstream(outputFile))) {
+	if ((options.outputMode == OptionsParser::OutputMode::MBTiles || options.outputMode == OptionsParser::OutputMode::PMTiles) && !options.mergeSqlite && static_cast<bool>(std::ifstream(options.outputFile))) {
 		cout << "Output file exists, will overwrite (Ctrl-C to abort";
-		if (outputMode==OUTPUT_MBTILES) cout << ", rerun with --merge to keep";
+		if (options.outputMode == OptionsParser::OutputMode::MBTiles) cout << ", rerun with --merge to keep";
 		cout << ")" << endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-		if (remove(outputFile.c_str()) != 0) {
+		if (remove(options.outputFile.c_str()) != 0) {
 			cerr << "Couldn't remove existing file" << endl;
 			return 0;
 		}
-	} else if (mergeSqlite && outputMode!=OUTPUT_MBTILES) {
+	} else if (options.mergeSqlite && options.outputMode != OptionsParser::OutputMode::MBTiles) {
 		cerr << "--merge only works with .mbtiles" << endl;
 		return 0;
-	} else if (mergeSqlite && !static_cast<bool>(std::ifstream(outputFile))) {
+	} else if (options.mergeSqlite && !static_cast<bool>(std::ifstream(options.outputFile))) {
 		cout << "--merge specified but .mbtiles file doesn't already exist, ignoring" << endl;
-		mergeSqlite = false;
+		options.mergeSqlite = false;
 	}
+
 
 	// ----	Read bounding box from first .pbf (if there is one) or mapsplit file
 
 	bool hasClippingBox = false;
 	Box clippingBox;
+	bool mapsplit = false;
 	MBTiles mapsplitFile;
 	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
 	if (!bboxElements.empty()) {
@@ -172,14 +130,14 @@ int main(int argc, char* argv[]) {
 		maxLon = bboxElementFromStr(bboxElements.at(2));
 		maxLat = bboxElementFromStr(bboxElements.at(3));
 
-	} else if (inputFiles.size()==1 && (ends_with(inputFiles[0], ".mbtiles") || ends_with(inputFiles[0], ".sqlite") || ends_with(inputFiles[0], ".msf"))) {
+	} else if (options.inputFiles.size()==1 && (ends_with(options.inputFiles[0], ".mbtiles") || ends_with(options.inputFiles[0], ".sqlite") || ends_with(options.inputFiles[0], ".msf"))) {
 		mapsplit = true;
-		mapsplitFile.openForReading(inputFiles[0]);
+		mapsplitFile.openForReading(options.inputFiles[0]);
 		mapsplitFile.readBoundingBox(minLon, maxLon, minLat, maxLat);
 		hasClippingBox = true;
 
-	} else if (inputFiles.size()>0) {
-		int ret = ReadPbfBoundingBox(inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
+	} else if (options.inputFiles.size()>0) {
+		int ret = ReadPbfBoundingBox(options.inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
 		if(ret != 0) return ret;
 	}
 
@@ -193,7 +151,7 @@ int main(int argc, char* argv[]) {
 	rapidjson::Document jsonConfig;
 	class Config config;
 	try {
-		FILE* fp = fopen(jsonFile.c_str(), "r");
+		FILE* fp = fopen(options.jsonFile.c_str(), "r");
 		char readBuffer[65536];
 		rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
 		jsonConfig.ParseStream(is);
@@ -211,52 +169,73 @@ int main(int argc, char* argv[]) {
 	}
 
 	// For each tile, objects to be used in processing
-	shared_ptr<NodeStore> nodeStore;
-
 	bool allPbfsHaveSortTypeThenID = true;
 	bool anyPbfHasLocationsOnWays = false;
 
-	for (const std::string& file: inputFiles) {
+	for (const std::string& file: options.inputFiles) {
 		if (ends_with(file, ".pbf")) {
 			allPbfsHaveSortTypeThenID = allPbfsHaveSortTypeThenID && PbfHasOptionalFeature(file, OptionSortTypeThenID);
 			anyPbfHasLocationsOnWays = anyPbfHasLocationsOnWays || PbfHasOptionalFeature(file, OptionLocationsOnWays);
 		}
 	}
 
-	if (osmStoreCompact)
-		nodeStore = make_shared<CompactNodeStore>();
-	else {
-		if (allPbfsHaveSortTypeThenID)
-			nodeStore = make_shared<SortedNodeStore>(!osmStoreUncompressedNodes);
-		else
-			nodeStore = make_shared<BinarySearchNodeStore>();
+	auto createNodeStore = [allPbfsHaveSortTypeThenID, options]() {
+		if (options.osm.compact) {
+			std::shared_ptr<NodeStore> rv = make_shared<CompactNodeStore>();
+			return rv;
+		}
+
+		if (allPbfsHaveSortTypeThenID) {
+			std::shared_ptr<NodeStore> rv = make_shared<SortedNodeStore>(!options.osm.uncompressedNodes);
+			return rv;
+		}
+		std::shared_ptr<NodeStore> rv =  make_shared<BinarySearchNodeStore>();
+		return rv;
+	};
+
+	shared_ptr<NodeStore> nodeStore;
+
+	if (options.osm.shardStores) {
+		nodeStore = std::make_shared<ShardedNodeStore>(createNodeStore);
+	} else {
+		nodeStore = createNodeStore();
 	}
 
+	auto createWayStore = [anyPbfHasLocationsOnWays, allPbfsHaveSortTypeThenID, options, &nodeStore]() {
+		if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
+			std::shared_ptr<WayStore> rv = make_shared<SortedWayStore>(!options.osm.uncompressedWays, *nodeStore.get());
+			return rv;
+		}
+
+		std::shared_ptr<WayStore> rv = make_shared<BinarySearchWayStore>();
+		return rv;
+	};
+
 	shared_ptr<WayStore> wayStore;
-	if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
-		wayStore = make_shared<SortedWayStore>(!osmStoreUncompressedNodes, *nodeStore.get());
+	if (options.osm.shardStores) {
+		wayStore = std::make_shared<ShardedWayStore>(createWayStore, *nodeStore.get());
 	} else {
-		wayStore = make_shared<BinarySearchWayStore>();
+		wayStore = createWayStore();
 	}
 
 	OSMStore osmStore(*nodeStore.get(), *wayStore.get());
-	osmStore.use_compact_store(osmStoreCompact);
-	osmStore.enforce_integrity(!skipIntegrity);
-	if(!osmStoreFile.empty()) {
-		std::cout << "Using osm store file: " << osmStoreFile << std::endl;
-		osmStore.open(osmStoreFile);
+	osmStore.use_compact_store(options.osm.compact);
+	osmStore.enforce_integrity(!options.osm.skipIntegrity);
+	if(!options.osm.storeFile.empty()) {
+		std::cout << "Using osm store file: " << options.osm.storeFile << std::endl;
+		osmStore.open(options.osm.storeFile);
 	}
 
 	AttributeStore attributeStore;
 
 	class LayerDefinition layers(config.layers);
-	class OsmMemTiles osmMemTiles(threadNum, config.baseZoom, config.includeID, *nodeStore, *wayStore);
-	class ShpMemTiles shpMemTiles(threadNum, config.baseZoom);
+	class OsmMemTiles osmMemTiles(options.threadNum, config.baseZoom, config.includeID, *nodeStore, *wayStore);
+	class ShpMemTiles shpMemTiles(options.threadNum, config.baseZoom);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
-	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, luaFile, 
-		shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
+	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, options.luaFile, 
+		shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries);
 
 	// ---- Load external shp files
 
@@ -274,7 +253,7 @@ int main(int argc, char* argv[]) {
 			readShapefile(clippingBox,
 			              layers,
 			              config.baseZoom, layerNum,
-			              threadNum,
+			              options.threadNum,
 			              shpMemTiles, osmLuaProcessing);
 		}
 	}
@@ -291,24 +270,27 @@ int main(int argc, char* argv[]) {
 	std::vector<bool> sortOrders = layers.getSortOrders();
 
 	if (!mapsplit) {
-		for (auto inputFile : inputFiles) {
+		for (auto inputFile : options.inputFiles) {
 			cout << "Reading .pbf " << inputFile << endl;
 			ifstream infile(inputFile, ios::in | ios::binary);
 			if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 			
 			const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
 			int ret = pbfReader.ReadPbfFile(
+				nodeStore->shards(),
 				hasSortTypeThenID,
 				nodeKeys,
-				threadNum,
+				options.threadNum,
 				[&]() {
 					thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
 					return pbfStream;
 				},
 				[&]() {
-					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries));
+					thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries));
 					return osmLuaProcessing;
-				}
+				},
+				*nodeStore,
+				*wayStore
 			);
 			if (ret != 0) return ret;
 		} 
@@ -319,16 +301,16 @@ int main(int argc, char* argv[]) {
 	// ----	Initialise SharedData
 	SourceList sources = {&osmMemTiles, &shpMemTiles};
 	class SharedData sharedData(config, layers);
-	sharedData.outputFile = outputFile;
-	sharedData.outputMode = outputMode;
-	sharedData.mergeSqlite = mergeSqlite;
+	sharedData.outputFile = options.outputFile;
+	sharedData.outputMode = options.outputMode;
+	sharedData.mergeSqlite = options.mergeSqlite;
 
 	// ----	Initialise mbtiles/pmtiles if required
 	
-	if (sharedData.outputMode==OUTPUT_MBTILES) {
+	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {
 		sharedData.mbtiles.openForWriting(sharedData.outputFile);
 		sharedData.writeMBTilesProjectData();
-	} else if (sharedData.outputMode==OUTPUT_PMTILES) {
+	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.pmtiles.open(sharedData.outputFile);
 	}
 
@@ -362,6 +344,7 @@ int main(int argc, char* argv[]) {
 			vector<char> pbf = mapsplitFile.readTile(srcZ,srcX,tmsY);
 
 			int ret = pbfReader.ReadPbfFile(
+				nodeStore->shards(),
 				false,
 				nodeKeys,
 				1,
@@ -369,8 +352,10 @@ int main(int argc, char* argv[]) {
 					return make_unique<boost::interprocess::bufferstream>(pbf.data(), pbf.size(),  ios::in | ios::binary);
 				},
 				[&]() {
-					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, luaFile, shpMemTiles, osmMemTiles, attributeStore, materializeGeometries);
-				}
+					return std::make_unique<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries);
+				},
+				*nodeStore,
+				*wayStore
 			);
 			if (ret != 0) return ret;
 
@@ -378,7 +363,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		// Launch the pool with threadNum threads
-		boost::asio::thread_pool pool(threadNum);
+		boost::asio::thread_pool pool(options.threadNum);
 
 		// Mutex is hold when IO is performed
 		std::mutex io_mutex;
@@ -387,14 +372,14 @@ int main(int argc, char* argv[]) {
 		std::atomic<uint64_t> tilesWritten(0);
 
 		for (auto source : sources) {
-			source->finalize(threadNum);
+			source->finalize(options.threadNum);
 		}
 		// tiles by zoom level
 
 		// The clipping bbox check is expensive - as an optimization, compute the set of
 		// z6 tiles that are wholly covered by the clipping box. Membership in this
 		// set is quick to test.
-		std::set<TileCoordinates> coveredZ6Tiles;
+		TileCoordinatesSet coveredZ6Tiles(6);
 		if (hasClippingBox) {
 			for (int x = 0; x < 1 << 6; x++) {
 				for (int y = 0; y < 1 << 6; y++) {
@@ -402,20 +387,47 @@ int main(int argc, char* argv[]) {
 								TileBbox(TileCoordinates(x, y), 6, false, false).getTileBox(),
 								clippingBox
 							))
-						coveredZ6Tiles.insert(TileCoordinates(x, y));
+						coveredZ6Tiles.set(x, y);
 				}
 			}
 		}
 
 		// For large areas (arbitrarily defined as 100 z6 tiles), use a dense index for pmtiles
-		if (coveredZ6Tiles.size()>100 && outputMode==OUTPUT_PMTILES) {
+		if (coveredZ6Tiles.size()>100 && options.outputMode == OptionsParser::OutputMode::PMTiles) {
 			std::cout << "Using dense index for .pmtiles" << std::endl;
 			sharedData.pmtiles.isSparse = false;
 		}
 
 		std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
+		std::vector<TileCoordinatesSet> zoomResults;
+		for (uint zoom = 0; zoom <= sharedData.config.endZoom; zoom++) {
+			zoomResults.push_back(TileCoordinatesSet(zoom));
+		}
+
+		{
+#ifdef CLOCK_MONOTONIC
+			timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+			std::cout << "collecting tiles" << std::flush;
+			populateTilesAtZoom(sources, zoomResults);
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+			std::cout << ": " << (uint32_t)(tileNs / 1e6) << "ms";
+#endif
+		}
+
+		std::cout << ", filtering tiles:" << std::flush;
 		for (uint zoom=sharedData.config.startZoom; zoom <= sharedData.config.endZoom; zoom++) {
-			auto zoomResult = getTilesAtZoom(sources, zoom);
+			std::cout << " z" << std::to_string(zoom) << std::flush;
+#ifdef CLOCK_MONOTONIC
+			timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
+
+			const auto& zoomResult = zoomResults[zoom];
+			int numTiles = 0;
 			for (int x = 0; x < 1 << zoom; x++) {
 				for (int y = 0; y < 1 << zoom; y++) {
 					if (!zoomResult.test(x, y))
@@ -433,7 +445,7 @@ int main(int argc, char* argv[]) {
 						if (zoom >= 6) {
 							TileCoordinate z6x = x / (1 << (zoom - 6));
 							TileCoordinate z6y = y / (1 << (zoom - 6));
-							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.find(TileCoordinates(z6x, z6y)) != coveredZ6Tiles.end();
+							isInAWhollyCoveredZ6Tile = coveredZ6Tiles.test(z6x, z6y);
 						}
 
 						if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
@@ -441,9 +453,22 @@ int main(int argc, char* argv[]) {
 					}
 
 					tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
+					numTiles++;
 				}
 			}
+
+			std::cout << " (" << numTiles;
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &end);
+			uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+			std::cout << ", " << (uint32_t)(tileNs / 1e6) << "ms";
+
+#endif
+			std::cout << ")" << std::flush;
 		}
+		zoomResults.clear();
+
+		std::cout << std::endl;
 
 		// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 		const size_t baseZoom = config.baseZoom;
@@ -494,7 +519,7 @@ int main(int argc, char* argv[]) {
 
 				return false;
 			}, 
-			threadNum);
+			options.threadNum);
 
 		std::size_t batchSize = 0;
 		for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
@@ -523,9 +548,9 @@ int main(int argc, char* argv[]) {
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
-#ifndef _WIN32
+#ifdef CLOCK_MONOTONIC
 					timespec start, end;
-					if (logTileTimings)
+					if (options.logTileTimings)
 						clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 
@@ -535,8 +560,8 @@ int main(int argc, char* argv[]) {
 					}
 					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
-#ifndef _WIN32
-					if (logTileTimings) {
+#ifdef CLOCK_MONOTONIC
+					if (options.logTileTimings) {
 						clock_gettime(CLOCK_MONOTONIC, &end);
 						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
 						std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
@@ -545,7 +570,7 @@ int main(int argc, char* argv[]) {
 #endif
 				}
 
-				if (logTileTimings) {
+				if (options.logTileTimings) {
 					const std::lock_guard<std::mutex> lock(io_mutex);
 					std::cout << std::endl;
 					for (const auto& output : tileTimings)
@@ -575,10 +600,10 @@ int main(int argc, char* argv[]) {
 
 	// ----	Close tileset
 
-	if (outputMode==OUTPUT_MBTILES) {
+	if (options.outputMode == OptionsParser::OutputMode::MBTiles) {
 		sharedData.writeMBTilesMetadata(jsonConfig);
 		sharedData.mbtiles.closeForWriting();
-	} else if (outputMode==OUTPUT_PMTILES) {
+	} else if (options.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.writePMTilesBounds();
 		std::string metadata = sharedData.pmTilesMetadata();
 		sharedData.pmtiles.close(metadata);

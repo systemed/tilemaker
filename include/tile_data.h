@@ -8,7 +8,11 @@
 #include <memory>
 #include <boost/sort/sort.hpp>
 #include "output_object.h"
+#include "append_vector.h"
 #include "clip_cache.h"
+#include "mmap_allocator.h"
+
+#define TILE_DATA_ID_SIZE 34
 
 typedef std::vector<class TileDataSource *> SourceList;
 
@@ -45,16 +49,40 @@ struct OutputObjectXYID {
 };
 
 template<typename OO> void finalizeObjects(
+	const std::string& name,
 	const size_t& threadNum,
 	const unsigned int& baseZoom,
-	typename std::vector<std::vector<OO>>::iterator begin,
-	typename std::vector<std::vector<OO>>::iterator end
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator begin,
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator end,
+	typename std::vector<std::vector<OO>>& lowZoom
 	) {
-	for (typename std::vector<std::vector<OO>>::iterator it = begin; it != end; it++) {
+	size_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
+#ifdef CLOCK_MONOTONIC
+	timespec startTs, endTs;
+	clock_gettime(CLOCK_MONOTONIC, &startTs);
+#endif
+
+	int i = -1;
+	for (auto it = begin; it != end; it++) {
+		i++;
+		if (it->size() > 0 || i % 10 == 0 || i == 4095) {
+			std::cout << "\r" << name << ": finalizing z6 tile " << (i + 1) << "/" << CLUSTER_ZOOM_AREA;
+
+#ifdef CLOCK_MONOTONIC
+			clock_gettime(CLOCK_MONOTONIC, &endTs);
+			uint64_t elapsedNs = 1e9 * (endTs.tv_sec - startTs.tv_sec) + endTs.tv_nsec - startTs.tv_nsec;
+			std::cout << " (" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)";
+#endif
+			std::cout << std::flush;
+		}
 		if (it->size() == 0)
 			continue;
 
-		it->shrink_to_fit();
+		// We track a separate copy of low zoom objects to avoid scanning large
+		// lists of objects that may be on slow disk storage.
+		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
+			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
+				lowZoom[i].push_back(*objectIt);
 
 		// If the user is doing a a small extract, there are few populated
 		// entries in `object`.
@@ -102,17 +130,18 @@ template<typename OO> void finalizeObjects(
 			},
 			threadNum
 		);
-
 	}
+
+	std::cout << std::endl;
 }
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& baseZoom,
-	const typename std::vector<std::vector<OO>>::iterator objects,
+	const typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	const size_t size,
-	const unsigned int zoom,
-	TileCoordinatesSet& output
+	std::vector<TileCoordinatesSet>& zooms
 ) {
+	size_t maxZoom = zooms.size() - 1;
 	uint16_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
 	int64_t lastX = -1;
 	int64_t lastY = -1;
@@ -126,13 +155,18 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 			TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
 
 			// Translate the x, y at the requested zoom level
-			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
-			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+			TileCoordinate x = baseX / (1 << (baseZoom - maxZoom));
+			TileCoordinate y = baseY / (1 << (baseZoom - maxZoom));
 
 			if (lastX != x || lastY != y) {
-				output.set(x, y);
 				lastX = x;
 				lastY = y;
+
+				for (int zoom = maxZoom; zoom >= 0; zoom--) {
+					zooms[zoom].set(x, y);
+					x /= 2;
+					y /= 2;
+				}
 			}
 		}
 	}
@@ -148,107 +182,124 @@ inline OutputObjectID outputObjectWithId<OutputObjectXYID>(const OutputObjectXYI
 	return OutputObjectID({ input.oo, input.id });
 }
 
+template<typename OO> void collectLowZoomObjectsForTile(
+	const unsigned int& baseZoom,
+	typename std::vector<std::vector<OO>> objects,
+	unsigned int zoom,
+	const TileCoordinates& dstIndex,
+	std::vector<OutputObjectID>& output
+) {
+	if (zoom >= CLUSTER_ZOOM)
+		throw std::runtime_error("collectLowZoomObjectsForTile should not be called for high zooms");
+
+	uint16_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
+
+	for (size_t i = 0; i < objects.size(); i++) {
+		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+
+		for (size_t j = 0; j < objects[i].size(); j++) {
+			// Compute the x, y at the base zoom level
+			TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
+			TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
+
+			// Translate the x, y at the requested zoom level
+			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
+			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+
+			if (dstIndex.x == x && dstIndex.y == y) {
+				if (objects[i][j].oo.minZoom <= zoom) {
+					output.push_back(outputObjectWithId(objects[i][j]));
+				}
+			}
+		}
+	}
+}
+
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& baseZoom,
-	typename std::vector<std::vector<OO>>::iterator objects,
+	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	size_t iStart,
 	size_t iEnd,
 	unsigned int zoom,
 	const TileCoordinates& dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
+	if (zoom < CLUSTER_ZOOM)
+		throw std::runtime_error("collectObjectsForTileTemplate should not be called for low zooms");
+
 	uint16_t z6OffsetDivisor = baseZoom >= CLUSTER_ZOOM ? (1 << (baseZoom - CLUSTER_ZOOM)) : 1;
 
 	for (size_t i = iStart; i < iEnd; i++) {
-		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
-		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+		// If z >= 6, we can compute the exact bounds within the objects array.
+		// Translate to the base zoom, then do a binary search to find
+		// the starting point.
+		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
+		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
-		if (zoom >= CLUSTER_ZOOM) {
-			// If z >= 6, we can compute the exact bounds within the objects array.
-			// Translate to the base zoom, then do a binary search to find
-			// the starting point.
-			TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
-			TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
+		TileCoordinate baseX = dstIndex.x * (1 << (baseZoom - zoom));
+		TileCoordinate baseY = dstIndex.y * (1 << (baseZoom - zoom));
 
-			TileCoordinate baseX = dstIndex.x * (1 << (baseZoom - zoom));
-			TileCoordinate baseY = dstIndex.y * (1 << (baseZoom - zoom));
+		Z6Offset needleX = baseX - z6x * z6OffsetDivisor;
+		Z6Offset needleY = baseY - z6y * z6OffsetDivisor;
 
-			Z6Offset needleX = baseX - z6x * z6OffsetDivisor;
-			Z6Offset needleY = baseY - z6y * z6OffsetDivisor;
+		// Kind of gross that we have to do this. Might be better if we split
+		// into two arrays, one of x/y and one of OOs. Would have better locality for
+		// searching, too.
+		OutputObject dummyOo(POINT_, 0, 0, 0, 0);
+		const size_t bz = baseZoom;
 
-			// Kind of gross that we have to do this. Might be better if we split
-			// into two arrays, one of x/y and one of OOs. Would have better locality for
-			// searching, too.
-			OutputObject dummyOo(POINT_, 0, 0, 0, 0);
-			const size_t bz = baseZoom;
+		const OO targetXY = {dummyOo, needleX, needleY };
+		auto iter = std::lower_bound(
+			objects[i].begin(),
+			objects[i].end(),
+			targetXY,
+			[bz](const OO& a, const OO& b) {
+				// Cluster by parent zoom, so that a subsequent search
+				// can find a contiguous range of entries for any tile
+				// at zoom 6 or higher.
+				const size_t aX = a.x;
+				const size_t aY = a.y;
+				const size_t bX = b.x;
+				const size_t bY = b.y;
+				for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
+					const auto aXz = aX / (1 << (bz - z));
+					const auto aYz = aY / (1 << (bz - z));
+					const auto bXz = bX / (1 << (bz - z));
+					const auto bYz = bY / (1 << (bz - z));
 
-			const OO targetXY = {dummyOo, needleX, needleY };
-			auto iter = std::lower_bound(
-				objects[i].begin(),
-				objects[i].end(),
-				targetXY,
-				[bz](const OO& a, const OO& b) {
-					// Cluster by parent zoom, so that a subsequent search
-					// can find a contiguous range of entries for any tile
-					// at zoom 6 or higher.
-					const size_t aX = a.x;
-					const size_t aY = a.y;
-					const size_t bX = b.x;
-					const size_t bY = b.y;
-					for (size_t z = CLUSTER_ZOOM; z <= bz; z++) {
-						const auto aXz = aX / (1 << (bz - z));
-						const auto aYz = aY / (1 << (bz - z));
-						const auto bXz = bX / (1 << (bz - z));
-						const auto bYz = bY / (1 << (bz - z));
+					if (aXz != bXz)
+						return aXz < bXz;
 
-						if (aXz != bXz)
-							return aXz < bXz;
-
-						if (aYz != bYz)
-							return aYz < bYz;
-					}
-					return false;
+					if (aYz != bYz)
+						return aYz < bYz;
 				}
-			);
-			for (; iter != objects[i].end(); iter++) {
-				// Compute the x, y at the base zoom level
-				TileCoordinate baseX = z6x * z6OffsetDivisor + iter->x;
-				TileCoordinate baseY = z6y * z6OffsetDivisor + iter->y;
-
-				// Translate the x, y at the requested zoom level
-				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
-				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
-
-				if (dstIndex.x == x && dstIndex.y == y) {
-					if (iter->oo.minZoom <= zoom) {
-						output.push_back(outputObjectWithId(*iter));
-					}
-				} else {
-					// Short-circuit when we're confident we'd no longer see relevant matches.
-					// We've ordered the entries in `objects` such that all objects that
-					// share the same tile at any zoom are in contiguous runs.
-					//
-					// Thus, as soon as we fail to find a match, we can stop looking.
-					break;
-				}
-
+				return false;
 			}
-		} else {
-			for (size_t j = 0; j < objects[i].size(); j++) {
-				// Compute the x, y at the base zoom level
-				TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
-				TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
+		);
 
-				// Translate the x, y at the requested zoom level
-				TileCoordinate x = baseX / (1 << (baseZoom - zoom));
-				TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+		for (; iter != objects[i].end(); iter++) {
+			// Compute the x, y at the base zoom level
+			TileCoordinate baseX = z6x * z6OffsetDivisor + iter->x;
+			TileCoordinate baseY = z6y * z6OffsetDivisor + iter->y;
 
-				if (dstIndex.x == x && dstIndex.y == y) {
-					if (objects[i][j].oo.minZoom <= zoom) {
-						output.push_back(outputObjectWithId(objects[i][j]));
-					}
+			// Translate the x, y at the requested zoom level
+			TileCoordinate x = baseX / (1 << (baseZoom - zoom));
+			TileCoordinate y = baseY / (1 << (baseZoom - zoom));
+
+			if (dstIndex.x == x && dstIndex.y == y) {
+				if (iter->oo.minZoom <= zoom) {
+					output.push_back(outputObjectWithId(*iter));
 				}
+			} else {
+				// Short-circuit when we're confident we'd no longer see relevant matches.
+				// We've ordered the entries in `objects` such that all objects that
+				// share the same tile at any zoom are in contiguous runs.
+				//
+				// Thus, as soon as we fail to find a match, we can stop looking.
+				break;
 			}
+
 		}
 	}
 }
@@ -275,6 +326,7 @@ public:
 	std::vector<std::pair<size_t, multi_linestring_store_t*>> availableMultiLinestringStoreLeases;
 	std::vector<std::pair<size_t, multi_polygon_store_t*>> availableMultiPolygonStoreLeases;
 
+	virtual std::string name() const = 0;
 
 protected:	
 	size_t numShards;
@@ -292,8 +344,10 @@ protected:
 	//
 	// If config.include_ids is true, objectsWithIds will be populated.
 	// Otherwise, objects.
-	std::vector<std::vector<OutputObjectXY>> objects;
-	std::vector<std::vector<OutputObjectXYID>> objectsWithIds;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>> objects;
+	std::vector<std::vector<OutputObjectXY>> lowZoomObjects;
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>> objectsWithIds;
+	std::vector<std::vector<OutputObjectXYID>> lowZoomObjectsWithIds;
 	
 	// rtree index of large objects
 	using oo_rtree_param_type = boost::geometry::index::quadratic<128>;
@@ -313,9 +367,9 @@ protected:
 public:
 	TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID);
 
-	void collectTilesWithObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
+	void collectTilesWithObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
 
-	void collectTilesWithLargeObjectsAtZoom(uint zoom, TileCoordinatesSet& output);
+	void collectTilesWithLargeObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
 
 	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
 	void finalize(size_t threadNum);
@@ -355,7 +409,7 @@ public:
 	);
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
-	LatpLon buildNodeGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox) const;
+	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
 		// Put something at index 0 of all stores so that 0 can be used
@@ -373,18 +427,18 @@ public:
 	NodeID storePoint(Point const &input);
 
 	inline size_t getShard(NodeID id) const {
-		// Note: we only allocate 35 bits for the IDs. This allows us to
-		// use bit 36 for TileDataSource-specific handling (e.g.,
+		// Note: we only allocate 34 bits for the IDs. This allows us to
+		// use bits 35 and 36 for TileDataSource-specific handling (e.g.,
 		// OsmMemTiles may want to generate points/ways on the fly by
 		// referring to the WayStore).
 
-		return id >> (35 - shardBits);
+		return id >> (TILE_DATA_ID_SIZE - shardBits);
 	}
 
 	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
 
 	inline size_t getId(NodeID id) const {
-		return id & (~(~0ull << (35 - shardBits)));
+		return id & (~(~0ull << (TILE_DATA_ID_SIZE - shardBits)));
 	}
 
 	const Point& retrievePoint(NodeID id) const {
@@ -426,9 +480,9 @@ public:
 	}
 };
 
-TileCoordinatesSet getTilesAtZoom(
+void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	unsigned int zoom
+	std::vector<TileCoordinatesSet>& zooms
 );
 
 #endif //_TILE_DATA_H

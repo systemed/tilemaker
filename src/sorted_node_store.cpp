@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
-#include <atomic>
 #include <map>
 #include <bitset>
 #include "sorted_node_store.h"
@@ -16,40 +15,51 @@ namespace SortedNodeStoreTypes {
 	const uint16_t ChunkAlignment = 16;
 	const uint32_t ChunkCompressed = 1 << 31;
 
-	std::atomic<uint64_t> totalGroups;
-	std::atomic<uint64_t> totalNodes;
-	std::atomic<uint64_t> totalGroupSpace;
-	std::atomic<uint64_t> totalAllocatedSpace;
-	std::atomic<uint64_t> totalChunks;
-	std::atomic<uint64_t> chunkSizeFreqs[257];
-	std::atomic<uint64_t> groupSizeFreqs[257];
+	struct ThreadStorage {
+		ThreadStorage():
+			collectingOrphans(true),
+			groupStart(-1),
+			localNodes(nullptr),
+			cachedChunk(-1),
+			arenaSpace(0),
+			arenaPtr(nullptr) {}
+		// When SortedNodeStore first starts, it's not confident that it has seen an
+		// entire segment, so it's in "collecting orphans" mode. Once it crosses a
+		// threshold of 64K elements, it ceases to be in this mode.
+		//
+		// Orphans are rounded up across multiple threads, and dealt with in
+		// the finalize step.
+		bool collectingOrphans = true;
+		uint64_t groupStart = -1;
+		std::vector<NodeStore::element_t>* localNodes = nullptr;
 
+		int64_t cachedChunk = -1;
+		std::vector<int32_t> cacheChunkLons;
+		std::vector<int32_t> cacheChunkLatps;
 
-	// When SortedNodeStore first starts, it's not confident that it has seen an
-	// entire segment, so it's in "collecting orphans" mode. Once it crosses a
-	// threshold of 64K elements, it ceases to be in this mode.
-	//
-	// Orphans are rounded up across multiple threads, and dealt with in
-	// the finalize step.
-	thread_local bool collectingOrphans = true;
-	thread_local uint64_t groupStart = -1;
-	thread_local std::vector<NodeStore::element_t>* localNodes = nullptr;
+		uint32_t arenaSpace = 0;
+		char* arenaPtr = nullptr;
+	};
 
-	thread_local int64_t cachedChunk = -1;
-	thread_local std::vector<int32_t> cacheChunkLons;
-	thread_local std::vector<int32_t> cacheChunkLatps;
+	thread_local std::deque<std::pair<const SortedNodeStore*, ThreadStorage>> threadStorage;
 
-	thread_local uint32_t arenaSpace = 0;
-	thread_local char* arenaPtr = nullptr;
+	ThreadStorage& s(const SortedNodeStore* who) {
+		for (auto& entry : threadStorage)
+			if (entry.first == who)
+				return entry.second;
+
+		threadStorage.push_back(std::make_pair(who, ThreadStorage()));
+
+		auto& rv = threadStorage.back();
+		return rv.second;
+	}
 }
 
 using namespace SortedNodeStoreTypes;
 
 SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNodes) {
-	// Each group can store 64K nodes. If we allocate 256K slots
-	// for groups, we support 2^34 = 17B nodes, or about twice
-	// the number used by OSM as of November 2023.
-	groups.resize(256 * 1024);
+	s(this); // allocate our ThreadStorage before multi-threading
+	reopen();
 }
 
 void SortedNodeStore::reopen()
@@ -61,11 +71,16 @@ void SortedNodeStore::reopen()
 	totalNodes = 0;
 	totalGroups = 0;
 	totalGroupSpace = 0;
+	totalAllocatedSpace = 0;
 	totalChunks = 0;
 	memset(chunkSizeFreqs, 0, sizeof(chunkSizeFreqs));
 	memset(groupSizeFreqs, 0, sizeof(groupSizeFreqs));
 	orphanage.clear();
 	workerBuffers.clear();
+
+	// Each group can store 64K nodes. If we allocate 256K slots
+	// for groups, we support 2^34 = 17B nodes, or about twice
+	// the number used by OSM as of November 2023.
 	groups.clear();
 	groups.resize(256 * 1024);
 }
@@ -73,6 +88,48 @@ void SortedNodeStore::reopen()
 SortedNodeStore::~SortedNodeStore() {
 	for (const auto entry: allocatedMemory)
 		void_mmap_allocator::deallocate(entry.first, entry.second);
+
+	s(this) = ThreadStorage();
+}
+
+bool SortedNodeStore::contains(size_t shard, NodeID id) const {
+	const size_t groupIndex = id / (GroupSize * ChunkSize);
+	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+	const uint64_t chunkMaskByte = chunk / 8;
+	const uint64_t chunkMaskBit = chunk % 8;
+
+	const uint64_t nodeMaskByte = (id % ChunkSize) / 8;
+	const uint64_t nodeMaskBit = id % 8;
+
+	GroupInfo* groupPtr = groups[groupIndex];
+
+	if (groupPtr == nullptr)
+		return false;
+
+	size_t chunkOffset = 0;
+	{
+		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
+		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
+		chunkOffset += popcnt(&maskByte, 1);
+
+		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
+			return false;
+	}
+
+	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
+	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * ChunkAlignment));
+
+	size_t nodeOffset = 0;
+	nodeOffset = popcnt(basePtr->nodeMask, nodeMaskByte);
+	uint8_t maskByte = basePtr->nodeMask[nodeMaskByte];
+	maskByte = maskByte & ((1 << nodeMaskBit) - 1);
+	nodeOffset += popcnt(&maskByte, 1);
+	if (!(basePtr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
+		return false;
+
+
+	return true;
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
@@ -109,29 +166,30 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
 		// TODO: we don't actually need the lonSize to decompress the data.
 		//       May as well store it as a sanity check for now.
-		size_t lonSize = ptr->flags & ((1 << 10) - 1);
+		// size_t lonSize = ptr->flags & ((1 << 10) - 1);
 		size_t n = popcnt(ptr->nodeMask, 32) - 1;
 
 		const size_t neededChunk = groupIndex * ChunkSize + chunk;
 
 		// Really naive caching strategy - just cache the last-used chunk.
 		// Probably good enough?
-		if (cachedChunk != neededChunk) {
-			cachedChunk = neededChunk;
-			cacheChunkLons.reserve(256);
-			cacheChunkLatps.reserve(256);
+		ThreadStorage& tls = s(this);
+		if (tls.cachedChunk != neededChunk) {
+			tls.cachedChunk = neededChunk;
+			tls.cacheChunkLons.reserve(256);
+			tls.cacheChunkLatps.reserve(256);
 
 			uint8_t* latpData = ptr->data;
 			uint8_t* lonData = ptr->data + latpSize;
 			uint32_t recovdata[256] = {0};
 
 			streamvbyte_decode(latpData, recovdata, n);
-			cacheChunkLatps[0] = ptr->firstLatp;
-			zigzag_delta_decode(recovdata, &cacheChunkLatps[1], n, cacheChunkLatps[0]);
+			tls.cacheChunkLatps[0] = ptr->firstLatp;
+			zigzag_delta_decode(recovdata, &tls.cacheChunkLatps[1], n, tls.cacheChunkLatps[0]);
 
 			streamvbyte_decode(lonData, recovdata, n);
-			cacheChunkLons[0] = ptr->firstLon;
-			zigzag_delta_decode(recovdata, &cacheChunkLons[1], n, cacheChunkLons[0]);
+			tls.cacheChunkLons[0] = ptr->firstLon;
+			zigzag_delta_decode(recovdata, &tls.cacheChunkLons[1], n, tls.cacheChunkLons[0]);
 		}
 
 		size_t nodeOffset = 0;
@@ -142,7 +200,7 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
 			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
-		return { cacheChunkLatps[nodeOffset], cacheChunkLons[nodeOffset] };
+		return { tls.cacheChunkLatps[nodeOffset], tls.cacheChunkLons[nodeOffset] };
 	}
 
 	UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)basePtr;
@@ -184,58 +242,60 @@ size_t SortedNodeStore::size() const {
 }
 
 void SortedNodeStore::insert(const std::vector<element_t>& elements) {
-	if (localNodes == nullptr) {
+	ThreadStorage& tls = s(this);
+	if (tls.localNodes == nullptr) {
 		std::lock_guard<std::mutex> lock(orphanageMutex);
 		if (workerBuffers.size() == 0)
 			workerBuffers.reserve(256);
 		else if (workerBuffers.size() == workerBuffers.capacity())
 			throw std::runtime_error("SortedNodeStore doesn't support more than 256 cores");
 		workerBuffers.push_back(std::vector<element_t>());
-		localNodes = &workerBuffers.back();
+		tls.localNodes = &workerBuffers.back();
 	}
 
-	if (groupStart == -1) {
+	if (tls.groupStart == -1) {
 		// Mark where the first full group starts, so we know when to transition
 		// out of collecting orphans.
-		groupStart = elements[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		tls.groupStart = elements[0].first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 	}
 
 	int i = 0;
-	while (collectingOrphans && i < elements.size()) {
+	while (tls.collectingOrphans && i < elements.size()) {
 		const element_t& el = elements[i];
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			collectingOrphans = false;
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			tls.collectingOrphans = false;
 			// Calculate new groupStart, rounding to previous boundary.
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
-			collectOrphans(*localNodes);
-			localNodes->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+			collectOrphans(*tls.localNodes);
+			tls.localNodes->clear();
 		}
-		localNodes->push_back(el);
+		tls.localNodes->push_back(el);
 		i++;
 	}
 
 	while(i < elements.size()) {
 		const element_t& el = elements[i];
 
-		if (el.first >= groupStart + (GroupSize * ChunkSize)) {
-			publishGroup(*localNodes);
-			localNodes->clear();
-			groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
+		if (el.first >= tls.groupStart + (GroupSize * ChunkSize)) {
+			publishGroup(*tls.localNodes);
+			tls.localNodes->clear();
+			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 		}
 
-		localNodes->push_back(el);
+		tls.localNodes->push_back(el);
 		i++;
 	}
 }
 
 void SortedNodeStore::batchStart() {
-	collectingOrphans = true;
-	groupStart = -1;
-	if (localNodes == nullptr || localNodes->size() == 0)
+	ThreadStorage& tls = s(this);
+	tls.collectingOrphans = true;
+	tls.groupStart = -1;
+	if (tls.localNodes == nullptr || tls.localNodes->size() == 0)
 		return;
 
-	collectOrphans(*localNodes);
-	localNodes->clear();
+	collectOrphans(*tls.localNodes);
+	tls.localNodes->clear();
 }
 
 void SortedNodeStore::finalize(size_t threadNum) {
@@ -264,7 +324,7 @@ void SortedNodeStore::finalize(size_t threadNum) {
 
 	orphanage.clear();
 
-	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes (" << (1000ull * (totalAllocatedSpace.load() - totalGroupSpace.load()) / totalAllocatedSpace.load()) / 10.0 << "% wasted)" << std::endl;
+	std::cout << "SortedNodeStore: " << totalGroups << " groups, " << totalChunks << " chunks, " << totalNodes.load() << " nodes, " << totalGroupSpace.load() << " bytes (" << (1000ull * (totalAllocatedSpace.load() - totalGroupSpace.load()) / (totalAllocatedSpace.load() + 1)) / 10.0 << "% wasted)" << std::endl;
 	/*
 	for (int i = 0; i < 257; i++)
 		std::cout << "chunkSizeFreqs[ " << i << " ]= " << chunkSizeFreqs[i].load() << std::endl;
@@ -410,22 +470,23 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 
 	GroupInfo* groupInfo = nullptr;
 
-	if (arenaSpace < groupSpace) {
+	ThreadStorage& tls = s(this);
+	if (tls.arenaSpace < groupSpace) {
 		// A full group takes ~330KB. Nodes are read _fast_, and there ends
 		// up being contention calling the allocator when reading the
 		// planet on a machine with 48 cores -- so allocate in large chunks.
-		arenaSpace = 4 * 1024 * 1024;
-		totalAllocatedSpace += arenaSpace;
-		arenaPtr = (char*)void_mmap_allocator::allocate(arenaSpace);
-		if (arenaPtr == nullptr)
+		tls.arenaSpace = 4 * 1024 * 1024;
+		totalAllocatedSpace += tls.arenaSpace;
+		tls.arenaPtr = (char*)void_mmap_allocator::allocate(tls.arenaSpace);
+		if (tls.arenaPtr == nullptr)
 			throw std::runtime_error("SortedNodeStore: failed to allocate arena");
 		std::lock_guard<std::mutex> lock(orphanageMutex);
-		allocatedMemory.push_back(std::make_pair((void*)arenaPtr, arenaSpace));
+		allocatedMemory.push_back(std::make_pair((void*)tls.arenaPtr, tls.arenaSpace));
 	}
 
-	arenaSpace -= groupSpace;
-	groupInfo = (GroupInfo*)arenaPtr;
-	arenaPtr += groupSpace;
+	tls.arenaSpace -= groupSpace;
+	groupInfo = (GroupInfo*)tls.arenaPtr;
+	tls.arenaPtr += groupSpace;
 
 	if (groups[groupIndex] != nullptr)
 		throw std::runtime_error("SortedNodeStore: group already present");

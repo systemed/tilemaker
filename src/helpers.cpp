@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <sstream>
 #include <cstring>
+#include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include "helpers.h"
 
@@ -11,7 +13,6 @@
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
-namespace geom = boost::geometry;
 using namespace std;
 
 // Bounding box string parsing
