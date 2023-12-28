@@ -5,12 +5,7 @@
 #include "pbf_reader.h"
 
 MU_TEST(test_pbf_reader) {
-	std::string filename;
-	filename = "test/monaco.pbf";
-//	filename = "/home/cldellow/Downloads/north-america-latest.osm.pbf";
-//	filename = "/home/cldellow/Downloads/great-britain-latest.osm.pbf";
-//	filename = "/home/cldellow/Downloads/nova-scotia-latest.osm.pbf";
-	std::ifstream monaco(filename, std::ifstream::in);
+	std::ifstream monaco("test/monaco.pbf", std::ifstream::in);
 
 	PbfReader::PbfReader reader;
 	PbfReader::BlobHeader bh = reader.readBlobHeader(monaco);
