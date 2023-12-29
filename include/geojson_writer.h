@@ -1,6 +1,6 @@
 /*! \file */ 
-#ifndef _GEOJSON_H
-#define _GEOJSON_H
+#ifndef _GEOJSON_WRITER_H
+#define _GEOJSON_WRITER_H
 
 /*
 	GeoJSON writer for boost::geometry objects, using RapidJSON.
@@ -8,7 +8,7 @@
 	As yet it only outputs (Multi)Polygons but can be extended for more types.
 
 	Example:
-		auto gj = GeoJSON()
+		auto gj = GeoJSONWriter()
 		gj.addGeometry(myMultiPolygon);
 		gj.finalise();
 		std::cout << gj.toString() << std::endl;
@@ -32,11 +32,11 @@ typedef boost::variant<Point,Linestring,MultiLinestring,Polygon,MultiPolygon,Rin
 
 using namespace rapidjson;
 
-struct GeoJSON {
+struct GeoJSONWriter {
 	Document document;
 	std::vector<AnyGeometry> geometries;
 
-	GeoJSON() {
+	GeoJSONWriter() {
 		document.SetObject();
 		document.AddMember("type", Value().SetString("FeatureCollection"), document.GetAllocator());
 	}
@@ -134,4 +134,4 @@ struct GeoJSON {
 	}
 };
 
-#endif //_GEOJSON_H
+#endif //_GEOJSON_WRITER_H

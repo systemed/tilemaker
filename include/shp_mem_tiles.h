@@ -16,7 +16,7 @@ public:
 	void CreateNamedLayerIndex(const std::string& layerName);
 
 	// Used in shape file loading
-	void StoreShapefileGeometry(
+	void StoreGeometry(
 		uint_least8_t layerNum,
 		const std::string& layerName, 
 		enum OutputGeometryType geomType,

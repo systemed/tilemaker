@@ -55,7 +55,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 }
 
-void ShpMemTiles::StoreShapefileGeometry(
+void ShpMemTiles::StoreGeometry(
 	uint_least8_t layerNum,
 	const std::string& layerName,
 	enum OutputGeometryType geomType,
@@ -114,9 +114,22 @@ void ShpMemTiles::StoreShapefileGeometry(
 
 			std::vector<OutputObject> oolist { oo };
 			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
+
+		} break;
+
+		case MULTILINESTRING_:
+		{
+			NodeID oid = storeMultiLinestring(boost::get<MultiLinestring>(geometry));
+			OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
+			if (isIndexed) indexedGeometries.push_back(oo);
+
+			std::vector<OutputObject> oolist { oo };
+			addGeometryToIndex(boost::get<MultiLinestring>(geometry), oolist, 0);
+
 		} break;
 
 		default:
+			std::cerr << "Unknown geometry type" << std::endl;
 			break;
 	}
 }
