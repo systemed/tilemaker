@@ -28,7 +28,7 @@ If it fails, check that the LIB and INC lines in the Makefile correspond with yo
 
 Start with:
 
-    dnf install lua-devel luajit-devel sqlite-devel shapelib-devel rapidjson
+    dnf install lua-devel luajit-devel sqlite-devel shapelib-devel rapidjson-devel boost-devel zlib-devel
 
 then build either with lua:
 

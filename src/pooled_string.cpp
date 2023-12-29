@@ -1,4 +1,5 @@
 #include "pooled_string.h"
+#include <stdexcept>
 #include <mutex>
 #include <cstring>
 
