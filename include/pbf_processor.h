@@ -8,6 +8,7 @@
 #include <mutex>
 #include <map>
 #include "osm_store.h"
+#include "significant_tags.h"
 #include "pbf_reader.h"
 #include "tag_map.h"
 #include <protozero/data_view.hpp>
@@ -44,7 +45,7 @@ struct IndexedBlockMetadata: BlockMetadata {
 class PbfProcessor
 {
 public:	
-	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8 };
+	enum class ReadPhase { Nodes = 1, Ways = 2, Relations = 4, RelationScan = 8, WayScan = 16 };
 
 	PbfProcessor(OSMStore &osmStore);
 
@@ -54,7 +55,8 @@ public:
 	int ReadPbfFile(
 		uint shards,
 		bool hasSortTypeThenID,
-		const std::unordered_set<std::string>& nodeKeys,
+		const SignificantTags& nodeKeys,
+		const SignificantTags& wayKeys,
 		unsigned int threadNum,
 		const pbfreader_generate_stream& generate_stream,
 		const pbfreader_generate_output& generate_output,
@@ -77,28 +79,32 @@ private:
 		std::istream &infile,
 		OsmLuaProcessing &output,
 		const BlockMetadata& blockMetadata,
-		const std::unordered_set<std::string>& nodeKeys,
+		const SignificantTags& nodeKeys,
+		const SignificantTags& wayKeys,
 		bool locationsOnWays,
 		ReadPhase phase,
 		uint shard,
 		uint effectiveShard
 	);
-	bool ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const std::unordered_set<int>& nodeKeyPositions);
+	bool ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& nodeKeys);
 
 	bool ReadWays(
 		OsmLuaProcessing& output,
 		PbfReader::PrimitiveGroup& pg,
 		const PbfReader::PrimitiveBlock& pb,
+		const SignificantTags& wayKeys,
 		bool locationsOnWays,
 		uint shard,
 		uint effectiveShards
 	);
-	bool ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb);
+	bool ScanWays(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys);
+	bool ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys);
 	bool ReadRelations(
 		OsmLuaProcessing& output,
 		PbfReader::PrimitiveGroup& pg,
 		const PbfReader::PrimitiveBlock& pb,
 		const BlockMetadata& blockMetadata,
+		const SignificantTags& wayKeys,
 		uint shard,
 		uint effectiveShards
 	);

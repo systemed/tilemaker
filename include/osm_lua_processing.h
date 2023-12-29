@@ -18,6 +18,7 @@
 #include <boost/container/flat_map.hpp>
 
 class TagMap;
+class SignificantTags;
 
 // Lua
 extern "C" {
@@ -72,6 +73,7 @@ public:
 	~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
+	void handleUserSignal(int signum);
 
 	// Has this object been assigned to any layers?
 	bool empty();
@@ -93,7 +95,7 @@ public:
 	bool scanRelation(WayID id, const TagMap& tags);
 
 	/// \brief We are now processing a significant node
-	void setNode(NodeID id, LatpLon node, const TagMap& tags);
+	bool setNode(NodeID id, LatpLon node, const TagMap& tags);
 
 	/// \brief We are now processing a way
 	bool setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags);
@@ -194,7 +196,8 @@ public:
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 
-	std::vector<std::string> GetSignificantNodeKeys();
+	SignificantTags GetSignificantNodeKeys();
+	SignificantTags GetSignificantWayKeys();
 
 	// ---- Cached geometries creation
 

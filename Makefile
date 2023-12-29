@@ -118,6 +118,7 @@ tilemaker: \
 	src/sharded_way_store.o \
 	src/shared_data.o \
 	src/shp_mem_tiles.o \
+	src/significant_tags.o \
 	src/sorted_node_store.o \
 	src/sorted_way_store.o \
 	src/tag_map.o \
@@ -133,6 +134,7 @@ test: \
 	test_deque_map \
 	test_pbf_reader \
 	test_pooled_string \
+	test_significant_tags \
 	test_sorted_node_store \
 	test_sorted_way_store
 
@@ -162,6 +164,12 @@ test_pooled_string: \
 	src/pooled_string.o \
 	test/pooled_string.test.o
 	$(CXX) $(CXXFLAGS) -o test.pooled_string $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pooled_string
+
+test_significant_tags: \
+	src/significant_tags.o \
+	src/tag_map.o \
+	test/significant_tags.test.o
+	$(CXX) $(CXXFLAGS) -o test.significant_tags $^ $(INC) $(LIB) $(LDFLAGS) && ./test.significant_tags
 
 test_sorted_node_store: \
 	src/external/streamvbyte_decode.o \

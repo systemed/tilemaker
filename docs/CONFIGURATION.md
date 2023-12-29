@@ -109,16 +109,19 @@ For example:
 
 Your Lua file needs to supply a few things:
 
-1. `node_keys`, a list of those OSM keys which indicate that a node should be processed
-2. `node_function()`, a function to process an OSM node and add it to layers
-3. `way_function()`, a function to process an OSM way and add it to layers
-4. (optional) `init_function(name)`, a function to initialize Lua logic
-5. (optional) `exit_function`, a function to finalize Lua logic (useful to show statistics)
-6. (optional) `relation_scan_function`, a function to determine whether your Lua file wishes to process the given relation 
-7. (optional) `relation_function`, a function to process an OSM relation and add it to layers
-8. (optional) `attribute_function`, a function to remap attributes from shapefiles
+1. (optional) `node_keys`, a list of those OSM tags which indicate that a node should be processed
+2. (optional) `way_keys`, a list of those OSM tags which indicate that a way should be processed
+3. `node_function()`, a function to process an OSM node and add it to layers
+4. `way_function()`, a function to process an OSM way and add it to layers
+5. (optional) `init_function(name)`, a function to initialize Lua logic
+6. (optional) `exit_function`, a function to finalize Lua logic (useful to show statistics)
+7. (optional) `relation_scan_function`, a function to determine whether your Lua file wishes to process the given relation 
+8. (optional) `relation_function`, a function to process an OSM relation and add it to layers
+9. (optional) `attribute_function`, a function to remap attributes from shapefiles
 
-`node_keys` is a simple list (or in Lua parlance, a 'table') of OSM tag keys. If a node has one of those keys, it will be processed by `node_function`; if not, it'll be skipped. For example, if you wanted to show highway crossings and railway stations, it should be `{ "highway", "railway" }`. (This avoids the need to process the vast majority of nodes which contain no important tags at all.)
+`node_keys` is a simple list (or in Lua parlance, a 'table') of OSM tags. If a node has one of those keys, it will be processed by `node_function`; if not, it'll be skipped. For example, if you wanted to show highway crossings and railway stations, it should be `{ "highway", "railway" }`. (This avoids the need to process the vast majority of nodes which contain no important tags at all.)
+
+`way_keys` is similar to `node_keys`, but for ways. For ways, you may also wish to express the filter in terms of the tag value, or as an inversion. For example, to exclude buildings: `way_keys = {"~building"}`. To build a map only of major roads: `way_keys = {"highway=motorway", "highway=trunk", "highway=primary", "highway=secondary"}`
 
 `node_function` and `way_function` work the same way. They are called with an OSM object; you then inspect the tags of that object, and put it in your vector tiles' layers based on those tags. In essence, the process is:
 
