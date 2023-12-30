@@ -1,5 +1,5 @@
 #include "Simple-Web-Server/server_http.hpp"
-#include "sqlite_modern_cpp.h"
+#include "external/sqlite_modern_cpp.h"
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include "rapidjson/document.h"
@@ -51,10 +51,14 @@ const std::string urldecode (const std::string& str) {
 
 int main(int argc, char* argv[]) {
     string input;
-    po::options_description desc("tilemaker-server");
+    string staticPath;
+    unsigned port;
+    po::options_description desc("tilemaker-server\nServe tiles from an .mbtiles archive\n\nAvailable options");
     desc.add_options()
         ("help","show help message")
-        ("input",po::value< string >(&input),"Source MBTiles");
+        ("input",po::value< string >(&input),"source .mbtiles")
+        ("static", po::value< string >(&staticPath)->default_value("static"), "path of static files")
+        ("port",po::value< unsigned >(&port)->default_value(8080), "port to serve tiles");
     po::positional_options_description p;
     p.add("input", -1);
     po::variables_map vm;
@@ -65,12 +69,14 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     po::notify(vm);
+    if (vm.count("help")) { std::cout << desc << std::endl; return 1; }
+    if (vm.count("input") == 0) { std::cerr << "You must specify an .mbtiles file. Run with --help to find out more." << std::endl; return -1; }
 
-    cout << "Starting local server" << endl;
     HttpServer server;
-    server.config.port = 8080;
+    server.config.port = port;
     sqlite::database db;
     db.init(input);
+    cout << "Starting local server on port " << server.config.port << endl;
 
     server.resource["^/([0-9]+)/([0-9]+)/([0-9]+).pbf$"]["GET"] = [&db](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
         int32_t zoom = stoi(request->path_match[1]);
@@ -109,11 +115,11 @@ int main(int argc, char* argv[]) {
        response->write(stringbuf.GetString());
     };
 
-    server.default_resource["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    server.default_resource["GET"] = [&staticPath](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
         try {
             auto pathstr = urldecode(request->path);
             if (pathstr == "/") pathstr = "/index.html";
-            auto web_root_path = boost::filesystem::canonical("static");
+            auto web_root_path = boost::filesystem::canonical(staticPath);
             auto path = boost::filesystem::canonical(web_root_path / pathstr);
             if(distance(web_root_path.begin(), web_root_path.end()) > distance(path.begin(), path.end()) ||
                 !equal(web_root_path.begin(), web_root_path.end(), path.begin()))

@@ -90,7 +90,7 @@ INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 # Targets
 .PHONY: test
 
-all: tilemaker
+all: tilemaker server
 
 tilemaker: \
 	src/attribute_store.o \
@@ -186,6 +186,10 @@ test_pbf_reader: \
 	test/pbf_reader.test.o
 	$(CXX) $(CXXFLAGS) -o test.pbf_reader $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pbf_reader
 
+server: \
+	server/server.o 
+	$(CXX) $(CXXFLAGS) -o tilemaker-server $^ $(INC) $(LIB) $(LDFLAGS)
+
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)
 
@@ -195,10 +199,11 @@ test_pbf_reader: \
 install:
 	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
 	install -m 0755 tilemaker $(DESTDIR)$(prefix)/bin/
+	install -m 0755 tilemaker-server $(DESTDIR)$(prefix)/bin/
 	install -m 0755 -d ${DESTDIR}${MANPREFIX}/man1/
 	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
 
 clean:
-	rm -f tilemaker src/*.o src/external/*.o include/*.o include/*.pb.h test/*.o
+	rm -f tilemaker tilemaker-server src/*.o src/external/*.o include/*.o include/*.pb.h server/*.o test/*.o
 
 .PHONY: install
