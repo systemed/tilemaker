@@ -196,30 +196,28 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 
 	for (PbfReader::Relation pbfRelation : pg.relations()) {
 		bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
+		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id);
 		tags.reset();
 		readTags(pbfRelation, pb, tags);
 
-		bool isAccepted = wayKeys.filter(tags);
 		if (!isMultiPolygon) {
 			if (output.canReadRelations()) {
-				// NB: even if the relation is already accepted due to matching the wayKeys
-				// filter, we still need to call scanRelation, as other side effects can
-				// happen if the relation is Accept()ed.
-				isAccepted = output.scanRelation(relid, tags) || isAccepted;
+				isAccepted = output.scanRelation(relid, tags);
 			}
+
+			if (!isAccepted) continue;
+		} else {
+			if (!wayKeys.filter(tags))
+				continue;
 		}
-
-		if (!isAccepted)
-			continue;
-
 		osmStore.usedRelations.set(relid);
 		for (int n=0; n < pbfRelation.memids.size(); n++) {
 			uint64_t lastID = pbfRelation.memids[n];
 			if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
 			if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
 			osmStore.mark_way_used(static_cast<WayID>(lastID));
-			osmStore.relation_contains_way(relid, lastID);
+			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
 		}
 	}
 	return true;
