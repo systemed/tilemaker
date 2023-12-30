@@ -122,6 +122,7 @@ endif()
 install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
 
 add_executable(tilemaker-server server/server.cpp)
-target_link_libraries(tilemaker-server ${SQLITE3_LIBRARIES} Boost::filesystem Boost::program_options)
+target_include_directories(tilemaker-server PRIVATE include)
+target_link_libraries(tilemaker-server SQLite::SQLite3 Boost::filesystem Boost::program_options)
 
 install(TARGETS tilemaker tilemaker-server RUNTIME DESTINATION bin)
