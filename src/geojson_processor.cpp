@@ -24,16 +24,18 @@ void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
 	if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
 	fclose(fp);
 
-	// If it's just a single top-level feature, process that and return
 	if (strcmp(doc["type"].GetString(), "FeatureCollection") != 0) { 
-		processFeature(std::move(doc.GetObject()), layer, layerNum);
-		return;
+		throw std::runtime_error("Top-level GeoJSON object must be a FeatureCollection.");
 	}
 
-	// Otherwise process each feature
+	// Process each feature
+	boost::asio::thread_pool pool(threadNum);
 	for (auto &feature : doc["features"].GetArray()) { 
-		processFeature(std::move(feature.GetObject()), layer, layerNum);
+		boost::asio::post(pool, [&]() {
+			processFeature(std::move(feature.GetObject()), layer, layerNum);
+		});
 	}
+	pool.join();
 }
 
 template <bool Flag, typename T>
