@@ -17,7 +17,8 @@ RUN apt-get update && \
       libboost-system-dev \
       libboost-iostreams-dev \
       rapidjson-dev \
-      cmake
+      cmake \
+      zlib1g-dev
 
 COPY CMakeLists.txt /
 COPY cmake /cmake

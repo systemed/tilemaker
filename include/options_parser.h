@@ -1,6 +1,7 @@
 #ifndef OPTIONS_PARSER_H
 #define OPTIONS_PARSER_H
 
+#include <cstdint>
 #include <exception>
 #include <string>
 #include <vector>
