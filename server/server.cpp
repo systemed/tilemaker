@@ -11,6 +11,7 @@ namespace po = boost::program_options;
 using HttpServer = SimpleWeb::Server<SimpleWeb::HTTP>;
 
 #include <iostream>
+#include <fstream>
 
 inline unsigned char from_hex (unsigned char ch) {
     if (ch <= '9' && ch >= '0')
