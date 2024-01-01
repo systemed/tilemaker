@@ -75,6 +75,7 @@ file(GLOB tilemaker_src_files
 	src/external/streamvbyte_decode.cc
 	src/external/streamvbyte_encode.cc
 	src/external/streamvbyte_zigzag.cc
+	src/geojson_processor.cpp
 	src/geom.cpp
 	src/helpers.cpp
 	src/mbtiles.cpp
@@ -89,11 +90,11 @@ file(GLOB tilemaker_src_files
 	src/pbf_reader.cpp
 	src/pmtiles.cpp
 	src/pooled_string.cpp
-	src/read_shp.cpp
 	src/sharded_node_store.cpp
 	src/sharded_way_store.cpp
 	src/shared_data.cpp
 	src/shp_mem_tiles.cpp
+	src/shp_processor.cpp
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
 	src/tile_data.cpp

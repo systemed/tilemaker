@@ -1,4 +1,4 @@
-#include "read_shp.h"
+#include "shp_processor.h"
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
@@ -12,9 +12,7 @@ namespace geom = boost::geometry;
 	Read shapefiles into Boost geometries
 */
 
-std::mutex attributeMutex;
-
-void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint part) {
+void ShpProcessor::fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint part) {
 	uint start = shape->panPartStart[part];
 	uint end   = (int(part)==shape->nParts-1) ? shape->nVertices : shape->panPartStart[part+1];
     double* const x = shape->padfX;
@@ -37,11 +35,10 @@ void fillPointArrayFromShapefile(vector<Point> *points, SHPObject *shape, uint p
 }
 
 // Read requested attributes from a shapefile, and encode into an OutputObject
-AttributeIndex readShapefileAttributes(
+AttributeIndex ShpProcessor::readShapefileAttributes(
 		DBFHandle &dbf,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
-		LayerDef &layer,
-		OsmLuaProcessing &osmLuaProcessing, uint &minzoom) {
+		LayerDef &layer, uint &minzoom) {
 
 	std::lock_guard<std::mutex> lock(attributeMutex);
 	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
@@ -105,14 +102,8 @@ AttributeIndex readShapefileAttributes(
 }
 
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
-void readShapefile(const Box &clippingBox, 
-                   class LayerDefinition &layers,
-                   uint baseZoom, uint layerNum,
-                   uint threadNum,
-                   class ShpMemTiles &shpMemTiles,
-                   OsmLuaProcessing &osmLuaProcessing)
+void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 {
-	LayerDef &layer = layers.layers[layerNum];
 	const string &filename = layer.source;
 	const vector<string> &columns = layer.sourceColumns;
 	const string &indexName = layer.indexName;
@@ -167,9 +158,9 @@ void readShapefile(const Box &clippingBox,
 			string name;
 			bool hasName = false;
 			if (indexField>-1) { name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;}
-			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, osmLuaProcessing, layer.minzoom);
+			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, layer.minzoom);
 			// process geometry
-			processShapeGeometry(shape, attrIdx, shpMemTiles, clippingBox, layer, layerNum, hasName, name);
+			processShapeGeometry(shape, attrIdx, layer, layerNum, hasName, name);
 			SHPDestroyObject(shape);
 		});
 	}
@@ -178,8 +169,8 @@ void readShapefile(const Box &clippingBox,
 	DBFClose(dbf);
 }
 
-void processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx, ShpMemTiles &shpMemTiles,
-                          const Box &clippingBox, const LayerDef &layer, uint layerNum, bool hasName, const string &name) {
+void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx,
+                                        const LayerDef &layer, uint layerNum, bool hasName, const string &name) {
 	int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
 	int minzoom = layer.minzoom;
 
@@ -187,7 +178,7 @@ void processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx, ShpMemTiles 
 		// Points
 		Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
 		if (geom::within(p, clippingBox)) {
-			shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
 		}
 
 	} else if (shapeType==3) {
@@ -202,7 +193,7 @@ void processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx, ShpMemTiles 
 			MultiLinestring out;
 			geom::intersection(ls, clippingBox, out);
 			for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
-				shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, LINESTRING_, *it, layer.indexed, hasName, name, minzoom, attrIdx);
+				shpMemTiles.StoreGeometry(layerNum, layer.name, LINESTRING_, *it, layer.indexed, hasName, name, minzoom, attrIdx);
 			}
 		}
 
@@ -261,7 +252,7 @@ void processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx, ShpMemTiles 
 		MultiPolygon out;
 		geom::intersection(multi, clippingBox, out);
 		if (boost::size(out)>0) {
-			shpMemTiles.StoreShapefileGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
 		}
 
 	} else {

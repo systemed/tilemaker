@@ -99,6 +99,7 @@ tilemaker: \
 	src/external/streamvbyte_decode.o \
 	src/external/streamvbyte_encode.o \
 	src/external/streamvbyte_zigzag.o \
+	src/geojson_processor.o \
 	src/geom.o \
 	src/helpers.o \
 	src/mbtiles.o \
@@ -113,11 +114,11 @@ tilemaker: \
 	src/pbf_reader.o \
 	src/pmtiles.o \
 	src/pooled_string.o \
-	src/read_shp.o \
 	src/sharded_node_store.o \
 	src/sharded_way_store.o \
 	src/shared_data.o \
 	src/shp_mem_tiles.o \
+	src/shp_processor.o \
 	src/sorted_node_store.o \
 	src/sorted_way_store.o \
 	src/tile_data.o \

@@ -51,7 +51,8 @@
 #include "options_parser.h"
 #include "shared_data.h"
 #include "pbf_processor.h"
-#include "read_shp.h"
+#include "geojson_processor.h"
+#include "shp_processor.h"
 #include "tile_worker.h"
 #include "osm_mem_tiles.h"
 #include "shp_mem_tiles.h"
@@ -237,24 +238,27 @@ int main(const int argc, const char* argv[]) {
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, options.luaFile, 
 		shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries);
 
-	// ---- Load external shp files
+	// ---- Load external sources (shp/geojson)
 
-	for (size_t layerNum=0; layerNum<layers.layers.size(); layerNum++) {
-		// External layer sources
-		LayerDef &layer = layers.layers[layerNum];
-		if(layer.indexed) { shpMemTiles.CreateNamedLayerIndex(layer.name); }
+	{
+		ShpProcessor shpProcessor(clippingBox, options.threadNum, shpMemTiles, osmLuaProcessing);
+		GeoJSONProcessor geoJSONProcessor(clippingBox, options.threadNum, shpMemTiles, osmLuaProcessing);
+		for (size_t layerNum=0; layerNum<layers.layers.size(); layerNum++) {
+			LayerDef &layer = layers.layers[layerNum];
+			if(layer.indexed) { shpMemTiles.CreateNamedLayerIndex(layer.name); }
 
-		if (layer.source.size()>0) {
-			if (!hasClippingBox) {
-				cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
-				exit(EXIT_FAILURE);
+			if (layer.source.size()>0) {
+				if (!hasClippingBox) {
+					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
+					exit(EXIT_FAILURE);
+				} else if (ends_with(layer.source, "json") || ends_with(layer.source, "JSON")) {
+					cout << "Reading GeoJSON " << layer.name << endl;
+					geoJSONProcessor.read(layers.layers[layerNum], layerNum);
+				} else {
+					cout << "Reading shapefile " << layer.name << endl;
+					shpProcessor.read(layers.layers[layerNum], layerNum);
+				}
 			}
-			cout << "Reading .shp " << layer.name << endl;
-			readShapefile(clippingBox,
-			              layers,
-			              config.baseZoom, layerNum,
-			              options.threadNum,
-			              shpMemTiles, osmLuaProcessing);
 		}
 	}
 	shpMemTiles.reportSize();

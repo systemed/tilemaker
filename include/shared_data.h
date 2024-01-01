@@ -36,6 +36,10 @@ struct LayerDef {
 	std::string indexName;
 	std::map<std::string, uint> attributeMap;
 	bool writeTo;
+	
+	const bool useColumn(std::string &col) {
+		return allSourceColumns || (std::find(sourceColumns.begin(), sourceColumns.end(), col) != sourceColumns.end());
+	}
 };
 
 ///\brief Defines layers used in map rendering
