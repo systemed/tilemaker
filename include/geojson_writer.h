@@ -8,7 +8,7 @@
 	As yet it only outputs (Multi)Polygons but can be extended for more types.
 
 	Example:
-		auto gj = GeoJSONWriter()
+		auto gj = GeoJSONWriter();
 		gj.addGeometry(myMultiPolygon);
 		gj.finalise();
 		std::cout << gj.toString() << std::endl;

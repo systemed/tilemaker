@@ -89,8 +89,10 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 	} else if (geomType=="Polygon") {
 		// coordinates is [ Ring, Ring, Ring... ]
 		// where Ring is [[x,y],[x,y],[x,y]...]
+		Polygon polygon = polygonFromGeoJSONArray(coords);
+		geom::correct(polygon);
 		MultiPolygon out;
-		geom::intersection(polygonFromGeoJSONArray(coords), clippingBox, out);
+		geom::intersection(polygon, clippingBox, out);
 		if (!geom::is_empty(out)) {
 			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
 		}
@@ -124,6 +126,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		for (auto &p : coords) {
 			mp.emplace_back(polygonFromGeoJSONArray(p.GetArray()));
 		}
+		geom::correct(mp);
 		MultiPolygon out;
 		geom::intersection(mp, clippingBox, out);
 		if (!geom::is_empty(out)) {
@@ -161,8 +164,8 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 	AttributeSet attributes;
 
 	// Name for indexing?
-	if (name.length()>0) {
-		auto n = pr.FindMember(name.c_str());
+	if (layer.indexName.length()>0) {
+		auto n = pr.FindMember(layer.indexName.c_str());
 		if (n != pr.MemberEnd()) {
 			hasName = true;
 			name = n->value.GetString();

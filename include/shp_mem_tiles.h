@@ -64,6 +64,7 @@ private:
 	std::vector<OutputObject> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
+	std::mutex indexMutex;
 };
 
 #endif //_OSM_MEM_TILES
