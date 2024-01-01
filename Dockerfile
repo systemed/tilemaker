@@ -24,12 +24,14 @@ COPY CMakeLists.txt /
 COPY cmake /cmake
 COPY src /src
 COPY include /include
+COPY server /server
 
 WORKDIR /build
 
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
 RUN cmake --build .
 RUN strip tilemaker
+RUN strip tilemaker-server
 
 FROM debian:bullseye-slim
 RUN apt-get update && \
