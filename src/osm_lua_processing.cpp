@@ -582,7 +582,7 @@ template<>  struct kaguya::lua_type_traits<OsmLuaProcessing::OptionalRelation> {
 OsmLuaProcessing::OptionalRelation OsmLuaProcessing::NextRelation() {
 	relationSubscript++;
 	if (relationSubscript >= relationList.size()) return { true };
-	return { false, relationList[relationSubscript].first, relationList[relationSubscript].second };
+	return { false, static_cast<lua_Integer>(relationList[relationSubscript].first), relationList[relationSubscript].second };
 }
 
 void OsmLuaProcessing::RestartRelations() {
