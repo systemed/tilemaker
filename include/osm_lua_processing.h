@@ -174,7 +174,7 @@ public:
 
 	struct OptionalRelation {
 		bool done;
-		int id;
+		lua_Integer id;
 		std::string role;
 	};
 	OptionalRelation NextRelation();
