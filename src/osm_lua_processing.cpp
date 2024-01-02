@@ -550,10 +550,39 @@ void OsmLuaProcessing::ZOrder(const double z) {
 }
 
 // Read scanned relations
-kaguya::optional<int> OsmLuaProcessing::NextRelation() {
+// Kaguya doesn't support optional<tuple<int,string>>, so we write a custom serializer
+// to either return nil or a tuple.
+template<>  struct kaguya::lua_type_traits<OsmLuaProcessing::OptionalRelation> {
+	typedef OsmLuaProcessing::OptionalRelation get_type;
+	typedef const OsmLuaProcessing::OptionalRelation& push_type;
+
+	static bool strictCheckType(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static bool checkType(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static get_type get(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static int push(lua_State* l, push_type s)
+	{
+		if (s.done)
+			return 0;
+
+		lua_pushinteger(l, s.id);
+		lua_pushlstring(l, s.role.data(), s.role.size());
+		return 2;
+	}
+};
+
+OsmLuaProcessing::OptionalRelation OsmLuaProcessing::NextRelation() {
 	relationSubscript++;
-	if (relationSubscript >= relationList.size()) return kaguya::nullopt_t();
-	return relationList[relationSubscript];
+	if (relationSubscript >= relationList.size()) return { true };
+	return { false, relationList[relationSubscript].first, relationList[relationSubscript].second };
 }
 
 void OsmLuaProcessing::RestartRelations() {
@@ -561,7 +590,7 @@ void OsmLuaProcessing::RestartRelations() {
 }
 
 std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
-	return osmStore.get_relation_tag(relationList[relationSubscript], key);
+	return osmStore.get_relation_tag(relationList[relationSubscript].first, key);
 }
 
 // Record attribute name/type for vector_layers table
@@ -603,6 +632,10 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	latp= node.latp;
 	currentTags = &tags;
 
+	if (supportsReadingRelations && osmStore.node_in_any_relations(id)) {
+		relationList = osmStore.relations_for_node(id);
+	}
+
 	//Start Lua processing for node
 	try {
 		luaState["node_function"](this);
@@ -634,8 +667,6 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 
 	if (supportsReadingRelations && osmStore.way_in_any_relations(wayId)) {
 		relationList = osmStore.relations_for_way(wayId);
-	} else {
-		relationList.clear();
 	}
 
 	try {

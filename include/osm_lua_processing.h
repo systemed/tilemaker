@@ -171,7 +171,13 @@ public:
 	void ZOrder(const double z);
 	
 	// Relation scan support
-	kaguya::optional<int> NextRelation();
+
+	struct OptionalRelation {
+		bool done;
+		int id;
+		std::string role;
+	};
+	OptionalRelation NextRelation();
 	void RestartRelations();
 	std::string FindInRelation(const std::string &key);
 	void Accept();
@@ -213,6 +219,7 @@ private:
 		polygonInited = false;
 		multiPolygonInited = false;
 		relationAccepted = false;
+		relationList.clear();
 		relationSubscript = -1;
 		lastStoredGeometryId = 0;
 	}
@@ -235,7 +242,7 @@ private:
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
-	std::vector<WayID> relationList;		// in processWay, list of relations this way is in
+	std::vector<std::pair<WayID, std::string>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
 	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates

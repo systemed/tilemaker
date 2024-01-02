@@ -167,6 +167,11 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 
+	int innerKey= findStringPosition(pb, "inner");
+	int outerKey= findStringPosition(pb, "outer");
+	int labelKey = findStringPosition(pb, "label");
+	int adminCentreKey = findStringPosition(pb, "admin_centre");
+
 	for (PbfReader::Relation pbfRelation : pg.relations()) {
 		bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
 		bool isAccepted = false;
@@ -181,10 +186,30 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 		}
 		for (int n=0; n < pbfRelation.memids.size(); n++) {
 			uint64_t lastID = pbfRelation.memids[n];
-			if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
-			if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
-			osmStore.mark_way_used(static_cast<WayID>(lastID));
-			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
+
+			if (pbfRelation.types[n] == PbfReader::Relation::MemberType::NODE) {
+				if (isAccepted) {
+					std::string role;
+					if (pbfRelation.roles_sid[n] == labelKey)
+						role = "label";
+					else if (pbfRelation.roles_sid[n] == adminCentreKey)
+						role = "admin_centre";
+
+					osmStore.relation_contains_node(relid, lastID, role);
+				}
+			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
+				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
+				osmStore.mark_way_used(static_cast<WayID>(lastID));
+				if (isAccepted) {
+					std::string role;
+					if (pbfRelation.roles_sid[n] == outerKey)
+						role = "outer";
+					else if (pbfRelation.roles_sid[n] == innerKey)
+						role = "inner";
+
+					osmStore.relation_contains_way(relid, lastID, role);
+				}
+			}
 		}
 	}
 	return true;
@@ -495,7 +520,7 @@ int PbfProcessor::ReadPbfFile(
 	}
 
 
-	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
+	std::vector<ReadPhase> all_phases = { ReadPhase::RelationScan, ReadPhase::Nodes, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
 		uint effectiveShards = 1;
 

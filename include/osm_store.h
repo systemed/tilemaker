@@ -81,14 +81,19 @@ class RelationScanStore {
 
 private:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-	std::map<WayID, std::vector<WayID>> relationsForWays;
+	std::map<WayID, std::vector<std::pair<WayID, std::string>>> relationsForWays;
+	std::map<NodeID, std::vector<std::pair<WayID, std::string>>> relationsForNodes;
 	std::map<WayID, tag_map_t> relationTags;
 	mutable std::mutex mutex;
 
 public:
-	void relation_contains_way(WayID relid, WayID wayid) {
+	void relation_contains_way(WayID relid, WayID wayid, std::string role) {
 		std::lock_guard<std::mutex> lock(mutex);
-		relationsForWays[wayid].emplace_back(relid);
+		relationsForWays[wayid].emplace_back(std::make_pair(relid, role));
+	}
+	void relation_contains_node(WayID relid, NodeID nodeId, std::string role) {
+		std::lock_guard<std::mutex> lock(mutex);
+		relationsForNodes[nodeId].emplace_back(std::make_pair(relid, role));
 	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
 		std::lock_guard<std::mutex> lock(mutex);
@@ -97,8 +102,14 @@ public:
 	bool way_in_any_relations(WayID wayid) {
 		return relationsForWays.find(wayid) != relationsForWays.end();
 	}
-	std::vector<WayID> relations_for_way(WayID wayid) {
+	bool node_in_any_relations(NodeID nodeId) {
+		return relationsForNodes.find(nodeId) != relationsForNodes.end();
+	}
+	std::vector<std::pair<WayID, std::string>> relations_for_way(WayID wayid) {
 		return relationsForWays[wayid];
+	}
+	std::vector<std::pair<WayID, std::string>> relations_for_node(NodeID nodeId) {
+		return relationsForNodes[nodeId];
 	}
 	std::string get_relation_tag(WayID relid, const std::string &key) {
 		auto it = relationTags.find(relid);
@@ -211,10 +222,13 @@ public:
 	void ensureUsedWaysInited();
 
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }
+	void relation_contains_way(WayID relid, WayID wayid, std::string role) { scanned_relations.relation_contains_way(relid, wayid, role); }
+	void relation_contains_node(WayID relid, NodeID nodeId, std::string role) { scanned_relations.relation_contains_node(relid, nodeId, role); }
 	void store_relation_tags(WayID relid, const tag_map_t &tags) { scanned_relations.store_relation_tags(relid,tags); }
 	bool way_in_any_relations(WayID wayid) { return scanned_relations.way_in_any_relations(wayid); }
-	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
+	bool node_in_any_relations(NodeID nodeId) { return scanned_relations.node_in_any_relations(nodeId); }
+	std::vector<std::pair<WayID, std::string>> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
+	std::vector<std::pair<NodeID, std::string>> relations_for_node(NodeID nodeId) { return scanned_relations.relations_for_node(nodeId); }
 	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
 
 	void clear();
