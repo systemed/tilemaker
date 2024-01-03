@@ -259,7 +259,7 @@ bool PbfProcessor::ReadRelations(
 			try {
 				tag_map_t tags;
 				readTags(pbfRelation, pb, tags);
-				output.setRelation(pbfRelation.id, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
+				output.setRelation(pb.stringTable, pbfRelation, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
 			} catch (std::out_of_range &err) {
 				// Relation is missing a member?

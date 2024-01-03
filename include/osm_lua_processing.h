@@ -13,6 +13,7 @@
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "helpers.h"
+#include "pbf_reader.h"
 #include <protozero/data_view.hpp>
 
 #include <boost/container/flat_map.hpp>
@@ -87,7 +88,15 @@ public:
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, bool isNativeMP, bool isInnerOuter);
+	void setRelation(
+		const std::vector<protozero::data_view>& stringTable,
+		const PbfReader::Relation& relation,
+		const WayVec& outerWayVec,
+		const WayVec& innerWayVec,
+		const tag_map_t& tags,
+		bool isNativeMP,
+		bool isInnerOuter
+	);
 
 	// ----	Metadata queries called from Lua
 
@@ -158,7 +167,7 @@ public:
 
 	// Add layer
 	void Layer(const std::string &layerName, bool area);
-	void LayerAsCentroid(const std::string &layerName);
+	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
 	void Attribute(const std::string &key, const std::string &val);
@@ -211,6 +220,8 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
+		currentRelation = nullptr;
+		stringTable = nullptr;
 		llVecPtr = nullptr;
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
@@ -267,6 +278,8 @@ private:
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
 	const boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>* currentTags;
+	const PbfReader::Relation* currentRelation;
+	const std::vector<protozero::data_view>* stringTable;
 
 	std::vector<OutputObject> finalizeOutputs();
 

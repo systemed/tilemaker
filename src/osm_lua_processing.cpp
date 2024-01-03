@@ -5,7 +5,7 @@
 #include "helpers.h"
 #include "coordinates_geom.h"
 #include "osm_mem_tiles.h"
-
+#include "node_store.h"
 
 using namespace std;
 
@@ -442,16 +442,60 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	}
 }
 
-void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
+// Emit a point. This function can be called for nodes, ways or relations.
+//
+// When called for a relation, it accepts a variadic list of relation roles whose
+// node position should be used as the centroid. The first matching node is selected.
+//
+// As a fallback, or if no list is provided, we'll compute the geometric centroid
+// of the relation.
+void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::VariadicArgType relationRoles) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}	
+
+	// This will be non-zero if we ultimately used a node from a relation to
+	// label the point.
+	NodeID relationNode = 0;
 
 	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
 	AttributeSet attributes;
 	Point geomp;
 	try {
-		geomp = calculateCentroid();
+		// If we're a relation, see if the user would prefer we use one of its members
+		// to label the point.
+		if (isRelation) {
+			for (auto needleRef : relationRoles) {
+				const std::string needle = needleRef.get<std::string>();
+
+				// We do a linear search of the relation's members. This is not very efficient
+				// for relations like Tongass National Park (ID 6535292, 29,000 members),
+				// but in general, it's probably fine.
+				//
+				// I note that relation members seem to be sorted nodes first, then ways,
+				// then relations. I'm not sure if we can rely on that, so I don't
+				// short-circuit on the first non-node.
+				for (int i = 0; i < currentRelation->memids.size(); i++) {
+					if (currentRelation->types[i] != PbfReader::Relation::MemberType::NODE)
+						continue;
+
+					const protozero::data_view role = stringTable->at(currentRelation->roles_sid[i]);
+					if (role.size() == needle.size() && 0 == memcmp(role.data(), needle.data(), role.size())) {
+						relationNode = currentRelation->memids[i];
+						const auto ll = osmStore.nodes.at(relationNode);
+						geomp = Point(ll.lon, ll.latp);
+						break;
+					}
+				}
+
+				if (relationNode != 0)
+					break;
+			}
+		}
+
+		if (geom::is_empty(geomp))
+			geomp = calculateCentroid();
+
 		if(geom::is_empty(geomp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
@@ -472,8 +516,10 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	// We don't do lazy centroids for relations - calculating their centroid
 	// can be quite expensive, and there's not as many of them as there are
 	// ways.
-	if (materializeGeometries || isRelation) {
+	if (materializeGeometries || (isRelation && relationNode == 0)) {
 		id = osmMemTiles.storePoint(geomp);
+	} else if (relationNode != 0) {
+		id = USE_NODE_STORE | relationNode;
 	} else if (!isRelation && !isWay) {
 		// Sometimes people call LayerAsCentroid(...) on a node, because they're
 		// writing a generic handler that doesn't know if it's a node or a way,
@@ -702,11 +748,19 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 }
 
 // We are now processing a relation
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, 
-                                   bool isNativeMP,      // only OSM type=multipolygon
-                                   bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
+void OsmLuaProcessing::setRelation(
+	const std::vector<protozero::data_view>& stringTable,
+	const PbfReader::Relation& relation,
+	const WayVec& outerWayVec,
+	const WayVec& innerWayVec,
+	const tag_map_t &tags,
+	bool isNativeMP, // only OSM type=multipolygon
+	bool isInnerOuter // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
+) {
 	reset();
-	originalOsmID = relationId;
+	this->stringTable = &stringTable;
+	currentRelation = &relation;
+	originalOsmID = relation.id;
 	isWay = true;
 	isRelation = true;
 	isClosed = isNativeMP || isInnerOuter;
