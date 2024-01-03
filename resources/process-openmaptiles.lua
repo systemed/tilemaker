@@ -566,7 +566,7 @@ function way_function(way)
 
 	-- Set 'housenumber'
 	if housenumber~="" then
-		way:LayerAsCentroid("housenumber", false)
+		way:LayerAsCentroid("housenumber")
 		way:Attribute("housenumber", housenumber)
 	end
 
