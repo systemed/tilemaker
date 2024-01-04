@@ -114,6 +114,7 @@ tilemaker: \
 	src/pbf_reader.o \
 	src/pmtiles.o \
 	src/pooled_string.o \
+	src/relation_roles.o \
 	src/sharded_node_store.o \
 	src/sharded_way_store.o \
 	src/shared_data.o \
@@ -133,6 +134,7 @@ test: \
 	test_deque_map \
 	test_pbf_reader \
 	test_pooled_string \
+	test_relation_roles \
 	test_sorted_node_store \
 	test_sorted_way_store
 
@@ -162,6 +164,11 @@ test_pooled_string: \
 	src/pooled_string.o \
 	test/pooled_string.test.o
 	$(CXX) $(CXXFLAGS) -o test.pooled_string $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pooled_string
+
+test_relation_roles: \
+	src/relation_roles.o \
+	test/relation_roles.test.o
+	$(CXX) $(CXXFLAGS) -o test.relation_roles $^ $(INC) $(LIB) $(LDFLAGS) && ./test.relation_roles
 
 test_sorted_node_store: \
 	src/external/streamvbyte_decode.o \

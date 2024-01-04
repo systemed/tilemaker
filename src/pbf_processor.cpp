@@ -186,7 +186,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 				if (isAccepted) {
 					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
 					std::string role(roleView.data(), roleView.size());
-					osmStore.relation_contains_node(relid, lastID, role);
+					osmStore.scannedRelations.relation_contains_node(relid, lastID, role);
 				}
 			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
 				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
@@ -194,7 +194,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 				if (isAccepted) {
 					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
 					std::string role(roleView.data(), roleView.size());
-					osmStore.relation_contains_way(relid, lastID, role);
+					osmStore.scannedRelations.relation_contains_way(relid, lastID, role);
 				}
 			}
 		}

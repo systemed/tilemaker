@@ -659,7 +659,12 @@ template<>  struct kaguya::lua_type_traits<OsmLuaProcessing::OptionalRelation> {
 OsmLuaProcessing::OptionalRelation OsmLuaProcessing::NextRelation() {
 	relationSubscript++;
 	if (relationSubscript >= relationList.size()) return { true };
-	return { false, static_cast<lua_Integer>(relationList[relationSubscript].first), relationList[relationSubscript].second };
+
+	return {
+		false,
+		static_cast<lua_Integer>(relationList[relationSubscript].first),
+		osmStore.scannedRelations.getRole(relationList[relationSubscript].second)
+	};
 }
 
 void OsmLuaProcessing::RestartRelations() {
@@ -667,7 +672,7 @@ void OsmLuaProcessing::RestartRelations() {
 }
 
 std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
-	return osmStore.get_relation_tag(relationList[relationSubscript].first, key);
+	return osmStore.scannedRelations.get_relation_tag(relationList[relationSubscript].first, key);
 }
 
 // Record attribute name/type for vector_layers table
@@ -695,7 +700,7 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	for (const auto& i : tags) {
 		m[std::string(i.first.data(), i.first.size())] = std::string(i.second.data(), i.second.size());
 	}
-	osmStore.store_relation_tags(id, m);
+	osmStore.scannedRelations.store_relation_tags(id, m);
 	return true;
 }
 
@@ -709,8 +714,8 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	latp= node.latp;
 	currentTags = &tags;
 
-	if (supportsReadingRelations && osmStore.node_in_any_relations(id)) {
-		relationList = osmStore.relations_for_node(id);
+	if (supportsReadingRelations && osmStore.scannedRelations.node_in_any_relations(id)) {
+		relationList = osmStore.scannedRelations.relations_for_node(id);
 	}
 
 	//Start Lua processing for node
@@ -742,8 +747,8 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
 
-	if (supportsReadingRelations && osmStore.way_in_any_relations(wayId)) {
-		relationList = osmStore.relations_for_way(wayId);
+	if (supportsReadingRelations && osmStore.scannedRelations.way_in_any_relations(wayId)) {
+		relationList = osmStore.scannedRelations.relations_for_way(wayId);
 	}
 
 	try {

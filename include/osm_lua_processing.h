@@ -256,7 +256,7 @@ private:
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
-	std::vector<std::pair<WayID, std::string>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
+	std::vector<std::pair<WayID, uint16_t>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
 	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
