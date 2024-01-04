@@ -134,7 +134,10 @@ public:
 	
 	// Return centroid lat/lon
 	std::vector<double> Centroid();
-	Point calculateCentroid();
+
+	enum class CentroidAlgorithm: char { Centroid = 0, Polylabel = 1 };
+	const CentroidAlgorithm defaultCentroidAlgorithm() const { return CentroidAlgorithm::Polylabel; }
+	Point calculateCentroid(CentroidAlgorithm algorithm);
 
 	enum class CorrectGeometryResult: char { Invalid = 0, Valid = 1, Corrected = 2 };
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer

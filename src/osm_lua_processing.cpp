@@ -6,6 +6,7 @@
 #include "coordinates_geom.h"
 #include "osm_mem_tiles.h"
 #include "node_store.h"
+#include "polylabel.h"
 
 using namespace std;
 
@@ -461,6 +462,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
 	AttributeSet attributes;
 	Point geomp;
+	bool centroidFound = false;
 	try {
 		// If we're a relation, see if the user would prefer we use one of its members
 		// to label the point.
@@ -484,6 +486,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 						relationNode = currentRelation->memids[i];
 						const auto ll = osmStore.nodes.at(relationNode);
 						geomp = Point(ll.lon, ll.latp);
+						centroidFound = true;
 						break;
 					}
 				}
@@ -493,9 +496,12 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 			}
 		}
 
-		if (geom::is_empty(geomp))
-			geomp = calculateCentroid();
+		if (!centroidFound)
+			// TODO: make this configurable via the 2nd argument
+			geomp = calculateCentroid(CentroidAlgorithm::Polylabel);
 
+		// TODO: I think geom::is_empty always returns false for Points?
+		// See https://github.com/boostorg/geometry/blob/fa3623528ea27ba2c3c1327e4b67408a2b567038/include/boost/geometry/algorithms/is_empty.hpp#L103
 		if(geom::is_empty(geomp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
@@ -526,6 +532,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 		// e.g. POIs.
 		id = USE_NODE_STORE | originalOsmID;
 	} else {
+		// TODO: encode the centroid algorithm in the ID
 		id = USE_WAY_STORE | originalOsmID;
 		wayEmitted = true;
 	}
@@ -533,17 +540,40 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }
 
-Point OsmLuaProcessing::calculateCentroid() {
+Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 	Point centroid;
 	if (isRelation) {
-		Geometry tmp;
+		MultiPolygon tmp;
 		tmp = multiPolygonCached();
-		geom::centroid(tmp, centroid);
+
+		if (algorithm == CentroidAlgorithm::Polylabel) {
+			int index = 0;
+
+			// CONSIDER: pick precision intelligently
+			// Polylabel works on polygons, so for multipolygons we'll label the biggest outer.
+			double biggestSize = 0;
+			for (int i = 0; i < tmp.size(); i++) {
+				double size = geom::area(tmp[i]);
+				if (size > biggestSize) {
+					biggestSize = size;
+					index = i;
+				}
+			}
+			centroid = mapbox::polylabel(tmp[index]);
+		} else {
+			geom::centroid(tmp, centroid);
+		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
 		Polygon p;
 		geom::assign_points(p, linestringCached());
-		geom::centroid(p, centroid);
+
+		if (algorithm == CentroidAlgorithm::Polylabel) {
+			// CONSIDER: pick precision intelligently
+			centroid = mapbox::polylabel(p);
+		} else {
+			geom::centroid(p, centroid);
+		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else {
 		return Point(lon, latp);
@@ -551,7 +581,8 @@ Point OsmLuaProcessing::calculateCentroid() {
 }
 
 std::vector<double> OsmLuaProcessing::Centroid() {
-	Point c = calculateCentroid();
+	// TODO: make this configurable by a parameter
+	Point c = calculateCentroid(CentroidAlgorithm::Polylabel);
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
