@@ -577,6 +577,9 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 					index = i;
 				}
 			}
+
+			if (tmp.size() == 0)
+				throw geom::centroid_exception();
 			centroid = mapbox::polylabel(tmp[index]);
 		} else {
 			geom::centroid(tmp, centroid);
