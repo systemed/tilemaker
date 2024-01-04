@@ -443,17 +443,27 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	}
 }
 
+// LayerAsCentroid(layerName, [centroid-algorithm, [role, [role, ...]]])
+//
 // Emit a point. This function can be called for nodes, ways or relations.
 //
-// When called for a relation, it accepts a variadic list of relation roles whose
-// node position should be used as the centroid. The first matching node is selected.
+// When called for a 2D geometry, you can pass a preferred centroid algorithm
+// in `centroid-algorithm`. Currently `polylabel` and `centroid` are supported.
 //
-// As a fallback, or if no list is provided, we'll compute the geometric centroid
-// of the relation.
-void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::VariadicArgType relationRoles) {
+// When called for a relation, you can pass a list of roles. The point of a node
+// with that role will be used if available.
+void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::VariadicArgType varargs) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}	
+
+	CentroidAlgorithm algorithm = defaultCentroidAlgorithm();
+
+	for (auto needleRef : varargs) {
+		const std::string needle = needleRef.get<std::string>();
+		algorithm = parseCentroidAlgorithm(needle);
+		break;
+	}
 
 	// This will be non-zero if we ultimately used a node from a relation to
 	// label the point.
@@ -467,7 +477,11 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 		// If we're a relation, see if the user would prefer we use one of its members
 		// to label the point.
 		if (isRelation) {
-			for (auto needleRef : relationRoles) {
+			size_t i = 0;
+			for (auto needleRef : varargs) {
+				// Skip the first vararg, it's the algorithm.
+				if (i == 0) continue;
+				i++;
 				const std::string needle = needleRef.get<std::string>();
 
 				// We do a linear search of the relation's members. This is not very efficient
@@ -497,8 +511,7 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 		}
 
 		if (!centroidFound)
-			// TODO: make this configurable via the 2nd argument
-			geomp = calculateCentroid(CentroidAlgorithm::Polylabel);
+			geomp = calculateCentroid(algorithm);
 
 		// TODO: I think geom::is_empty always returns false for Points?
 		// See https://github.com/boostorg/geometry/blob/fa3623528ea27ba2c3c1327e4b67408a2b567038/include/boost/geometry/algorithms/is_empty.hpp#L103
