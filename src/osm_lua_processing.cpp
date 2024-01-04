@@ -580,9 +580,22 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 	}
 }
 
-std::vector<double> OsmLuaProcessing::Centroid() {
-	// TODO: make this configurable by a parameter
-	Point c = calculateCentroid(CentroidAlgorithm::Polylabel);
+OsmLuaProcessing::CentroidAlgorithm OsmLuaProcessing::parseCentroidAlgorithm(const std::string& algorithm) const {
+	if (algorithm == "polylabel") return OsmLuaProcessing::CentroidAlgorithm::Polylabel;
+	if (algorithm == "centroid") return OsmLuaProcessing::CentroidAlgorithm::Centroid;
+
+	throw std::runtime_error("unknown centroid algorithm " + algorithm);
+}
+
+std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithmArgs) {
+	CentroidAlgorithm algorithm = defaultCentroidAlgorithm();
+
+	for (auto needleRef : algorithmArgs) {
+		const std::string needle = needleRef.get<std::string>();
+		algorithm = parseCentroidAlgorithm(needle);
+		break;
+	}
+	Point c = calculateCentroid(algorithm);
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
