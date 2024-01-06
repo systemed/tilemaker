@@ -61,7 +61,7 @@ endif()
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
 	add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
-	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI)
+	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI -D__restrict__=__restrict)
   	set(THREAD_LIB "")
 else()
 	find_package(SQLite3 REQUIRED)
@@ -72,9 +72,9 @@ file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
-	src/external/streamvbyte_decode.cc
-	src/external/streamvbyte_encode.cc
-	src/external/streamvbyte_zigzag.cc
+	src/external/streamvbyte_decode.c
+	src/external/streamvbyte_encode.c
+	src/external/streamvbyte_zigzag.c
 	src/geojson_processor.cpp
 	src/geom.cpp
 	src/helpers.cpp
