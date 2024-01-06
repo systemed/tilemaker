@@ -172,7 +172,17 @@ function node_function(node)
 		node:MinZoom(mz)
 		if rank then node:AttributeNumeric("rank", rank) end
 		if capital then node:AttributeNumeric("capital", capital) end
-		if place=="country" then node:Attribute("iso_a2", node:Find("ISO3166-1:alpha2")) end
+		if place=="country" then
+			local iso_a2 = node:Find("ISO3166-1:alpha2")
+			while iso_a2 == "" do
+				local rel, role = node:NextRelation()
+				if not rel then break end
+				if role == 'label' then
+					iso_a2 = node:FindInRelation("ISO3166-1:alpha2")
+				end
+			end
+			node:Attribute("iso_a2", iso_a2)
+		end
 		SetNameAttributes(node)
 		return
 	end
