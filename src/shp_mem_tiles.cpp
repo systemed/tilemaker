@@ -55,6 +55,36 @@ vector<string> ShpMemTiles::namesOfGeometries(const vector<uint>& ids) const {
 
 void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
+
+	bitIndices[layerName] = std::vector<bool>();
+	const uint8_t indexZoom = std::min(baseZoom, 14u);
+	bitIndices[layerName].resize((1 << indexZoom) * (1 << indexZoom));
+}
+
+bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) const {
+	// Check if any tiles in the bitmap might intersect this shape.
+	// If none, downstream code can skip querying the r-tree.
+	auto& bitvec = bitIndices.at(layerName);
+	const uint8_t indexZoom = std::min(baseZoom, 14u);
+
+	double lon1 = box.min_corner().x();
+	double lat1 = box.min_corner().y();
+	double lon2 = box.max_corner().x();
+	double lat2 = box.max_corner().y();
+
+	uint32_t x1 = lon2tilex(lon1, indexZoom);
+	uint32_t x2 = lon2tilex(lon2, indexZoom);
+	uint32_t y1 = lat2tiley(lat1, indexZoom);
+	uint32_t y2 = lat2tiley(lat2, indexZoom);
+
+	for (int x = std::min(x1, x2); x < std::max(x1, x2); x++) {
+		for (int y = std::min(y1, y2); y < std::max(y1, y2); y++) {
+			if (bitvec[x * (1 << indexZoom) + y])
+				return true;
+		}
+	}
+
+	return false;
 }
 
 void ShpMemTiles::StoreGeometry(
@@ -126,4 +156,24 @@ void ShpMemTiles::StoreGeometry(
 	indices.at(layerName).insert(std::make_pair(box, id));
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
+
+	// Store a bitmap of which tiles at the basezoom might intersect
+	// this shape.
+	auto& bitvec = bitIndices.at(layerName);
+	const uint8_t indexZoom = std::min(baseZoom, 14u);
+	double lon1 = box.min_corner().x();
+	double lat1 = box.min_corner().y();
+	double lon2 = box.max_corner().x();
+	double lat2 = box.max_corner().y();
+
+	uint32_t x1 = lon2tilex(lon1, indexZoom);
+	uint32_t x2 = lon2tilex(lon2, indexZoom);
+	uint32_t y1 = lat2tiley(lat1, indexZoom);
+	uint32_t y2 = lat2tiley(lat2, indexZoom);
+
+	for (int x = std::min(x1, x2); x < std::max(x1, x2); x++) {
+		for (int y = std::min(y1, y2); y < std::max(y1, y2); y++) {
+			bitvec[x * (1 << indexZoom) + y] = true;
+		}
+	}
 }
