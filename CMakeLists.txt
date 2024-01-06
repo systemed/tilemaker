@@ -72,9 +72,9 @@ file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
-	src/external/streamvbyte_decode.cc
-	src/external/streamvbyte_encode.cc
-	src/external/streamvbyte_zigzag.cc
+	src/external/streamvbyte_decode.c
+	src/external/streamvbyte_encode.c
+	src/external/streamvbyte_zigzag.c
 	src/geojson_processor.cpp
 	src/geom.cpp
 	src/helpers.cpp
