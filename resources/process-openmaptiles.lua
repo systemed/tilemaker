@@ -172,7 +172,17 @@ function node_function()
 		MinZoom(mz)
 		if rank then AttributeNumeric("rank", rank) end
 		if capital then AttributeNumeric("capital", capital) end
-		if place=="country" then Attribute("iso_a2", Find("ISO3166-1:alpha2")) end
+		if place=="country" then
+			local iso_a2 = Find("ISO3166-1:alpha2")
+			while iso_a2 == "" do
+				local rel, role = NextRelation()
+				if not rel then break end
+				if role == 'label' then
+					iso_a2 = FindInRelation("ISO3166-1:alpha2")
+				end
+			end
+			Attribute("iso_a2", iso_a2)
+		end
 		SetNameAttributes()
 		return
 	end
@@ -566,7 +576,7 @@ function way_function()
 
 	-- Set 'housenumber'
 	if housenumber~="" then
-		LayerAsCentroid("housenumber", false)
+		LayerAsCentroid("housenumber")
 		Attribute("housenumber", housenumber)
 	end
 

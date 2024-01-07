@@ -13,6 +13,7 @@
 #include "shp_mem_tiles.h"
 #include "osm_mem_tiles.h"
 #include "helpers.h"
+#include "pbf_reader.h"
 #include <protozero/data_view.hpp>
 
 #include <boost/container/flat_map.hpp>
@@ -102,7 +103,15 @@ public:
 	 * (note that we store relations as ways with artificial IDs, and that
 	 *  we use decrementing positive IDs to give a bit more space for way IDs)
 	 */
-	void setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const TagMap& tags, bool isNativeMP, bool isInnerOuter);
+	void setRelation(
+		const std::vector<protozero::data_view>& stringTable,
+		const PbfReader::Relation& relation,
+		const WayVec& outerWayVec,
+		const WayVec& innerWayVec,
+		const TagMap& tags,
+		bool isNativeMP,
+		bool isInnerOuter
+	);
 
 	// ----	Metadata queries called from Lua
 
@@ -133,8 +142,12 @@ public:
 	double Length();
 	
 	// Return centroid lat/lon
-	std::vector<double> Centroid();
-	Point calculateCentroid();
+	std::vector<double> Centroid(kaguya::VariadicArgType algorithm);
+
+	enum class CentroidAlgorithm: char { Centroid = 0, Polylabel = 1 };
+	CentroidAlgorithm defaultCentroidAlgorithm() const { return CentroidAlgorithm::Polylabel; }
+	CentroidAlgorithm parseCentroidAlgorithm(const std::string& algorithm) const;
+	Point calculateCentroid(CentroidAlgorithm algorithm);
 
 	enum class CorrectGeometryResult: char { Invalid = 0, Valid = 1, Corrected = 2 };
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
@@ -167,7 +180,7 @@ public:
 
 	// Add layer
 	void Layer(const std::string &layerName, bool area);
-	void LayerAsCentroid(const std::string &layerName);
+	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
 	void Attribute(const std::string &key, const std::string &val);
@@ -180,7 +193,13 @@ public:
 	void ZOrder(const double z);
 	
 	// Relation scan support
-	kaguya::optional<int> NextRelation();
+
+	struct OptionalRelation {
+		bool done;
+		lua_Integer id;
+		std::string role;
+	};
+	OptionalRelation NextRelation();
 	void RestartRelations();
 	std::string FindInRelation(const std::string &key);
 	void Accept();
@@ -215,6 +234,8 @@ private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
+		currentRelation = nullptr;
+		stringTable = nullptr;
 		llVecPtr = nullptr;
 		outerWayVecPtr = nullptr;
 		innerWayVecPtr = nullptr;
@@ -223,6 +244,7 @@ private:
 		polygonInited = false;
 		multiPolygonInited = false;
 		relationAccepted = false;
+		relationList.clear();
 		relationSubscript = -1;
 		lastStoredGeometryId = 0;
 	}
@@ -247,7 +269,7 @@ private:
 	bool isWay, isRelation, isClosed;		///< Way, node, relation?
 
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
-	std::vector<WayID> relationList;		// in processWay, list of relations this way is in
+	std::vector<std::pair<WayID, uint16_t>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
 	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
@@ -272,6 +294,8 @@ private:
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
 	std::vector<std::string> outputKeys;
+	const PbfReader::Relation* currentRelation;
+	const std::vector<protozero::data_view>* stringTable;
 
 	std::vector<OutputObject> finalizeOutputs();
 

@@ -29,6 +29,7 @@
 // Note that the pointer mode is not safe to be stored. It exists just to allow
 // lookups in the AttributePair map before deciding to allocate a string.
 
+#include <cstdint>
 #include <vector>
 #include <string>
 

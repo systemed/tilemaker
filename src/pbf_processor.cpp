@@ -184,10 +184,22 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 		}
 		for (int n=0; n < pbfRelation.memids.size(); n++) {
 			uint64_t lastID = pbfRelation.memids[n];
-			if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
-			if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
-			osmStore.mark_way_used(static_cast<WayID>(lastID));
-			if (isAccepted) { osmStore.relation_contains_way(relid, lastID); }
+
+			if (pbfRelation.types[n] == PbfReader::Relation::MemberType::NODE) {
+				if (isAccepted) {
+					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
+					std::string role(roleView.data(), roleView.size());
+					osmStore.scannedRelations.relation_contains_node(relid, lastID, role);
+				}
+			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
+				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
+				osmStore.mark_way_used(static_cast<WayID>(lastID));
+				if (isAccepted) {
+					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
+					std::string role(roleView.data(), roleView.size());
+					osmStore.scannedRelations.relation_contains_way(relid, lastID, role);
+				}
+			}
 		}
 	}
 	return true;
@@ -251,7 +263,7 @@ bool PbfProcessor::ReadRelations(
 			try {
 				tags.reset();
 				readTags(pbfRelation, pb, tags);
-				output.setRelation(pbfRelation.id, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
+				output.setRelation(pb.stringTable, pbfRelation, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
 			} catch (std::out_of_range &err) {
 				// Relation is missing a member?
@@ -499,7 +511,7 @@ int PbfProcessor::ReadPbfFile(
 	}
 
 
-	std::vector<ReadPhase> all_phases = { ReadPhase::Nodes, ReadPhase::RelationScan, ReadPhase::Ways, ReadPhase::Relations };
+	std::vector<ReadPhase> all_phases = { ReadPhase::RelationScan, ReadPhase::Nodes, ReadPhase::Ways, ReadPhase::Relations };
 	for(auto phase: all_phases) {
 		uint effectiveShards = 1;
 

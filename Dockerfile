@@ -17,18 +17,21 @@ RUN apt-get update && \
       libboost-system-dev \
       libboost-iostreams-dev \
       rapidjson-dev \
-      cmake
+      cmake \
+      zlib1g-dev
 
 COPY CMakeLists.txt /
 COPY cmake /cmake
 COPY src /src
 COPY include /include
+COPY server /server
 
 WORKDIR /build
 
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ ..
 RUN cmake --build .
 RUN strip tilemaker
+RUN strip tilemaker-server
 
 FROM debian:bullseye-slim
 RUN apt-get update && \

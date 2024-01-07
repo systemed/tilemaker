@@ -61,7 +61,7 @@ endif()
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
 	add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
-	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI)
+	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI -D__restrict__=__restrict)
   	set(THREAD_LIB "")
 else()
 	find_package(SQLite3 REQUIRED)
@@ -72,9 +72,10 @@ file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
-	src/external/streamvbyte_decode.cc
-	src/external/streamvbyte_encode.cc
-	src/external/streamvbyte_zigzag.cc
+	src/external/streamvbyte_decode.c
+	src/external/streamvbyte_encode.c
+	src/external/streamvbyte_zigzag.c
+	src/geojson_processor.cpp
 	src/geom.cpp
 	src/helpers.cpp
 	src/mbtiles.cpp
@@ -89,11 +90,12 @@ file(GLOB tilemaker_src_files
 	src/pbf_reader.cpp
 	src/pmtiles.cpp
 	src/pooled_string.cpp
-	src/read_shp.cpp
+	src/relation_roles.cpp
 	src/sharded_node_store.cpp
 	src/sharded_way_store.cpp
 	src/shared_data.cpp
 	src/shp_mem_tiles.cpp
+	src/shp_processor.cpp
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
 	src/tag_map.cpp
@@ -122,4 +124,8 @@ endif()
 
 install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
 
-install(TARGETS tilemaker RUNTIME DESTINATION bin)
+add_executable(tilemaker-server server/server.cpp)
+target_include_directories(tilemaker-server PRIVATE include)
+target_link_libraries(tilemaker-server ${THREAD_LIB} ${CMAKE_DL_LIBS} SQLite::SQLite3 Boost::filesystem Boost::program_options)
+
+install(TARGETS tilemaker tilemaker-server RUNTIME DESTINATION bin)

@@ -5,6 +5,7 @@
 #include "geom.h"
 #include "coordinates.h"
 #include "mmap_allocator.h"
+#include "relation_roles.h"
 
 #include <utility>
 #include <vector>
@@ -81,17 +82,25 @@ class RelationScanStore {
 
 private:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-	std::vector<std::map<WayID, std::vector<WayID>>> relationsForWays;
+	std::vector<std::map<WayID, std::vector<std::pair<WayID, uint16_t>>>> relationsForWays;
+	std::vector<std::map<NodeID, std::vector<std::pair<WayID, uint16_t>>>> relationsForNodes;
 	std::vector<std::map<WayID, tag_map_t>> relationTags;
 	mutable std::vector<std::mutex> mutex;
+	RelationRoles relationRoles;
 
 public:
-	RelationScanStore(): relationsForWays(128), relationTags(128), mutex(128) {}
-	void relation_contains_way(WayID relid, WayID wayid) {
+	RelationScanStore(): relationsForWays(128), relationsForNodes(128), relationTags(128), mutex(128) {}
+	void relation_contains_way(WayID relid, WayID wayid, std::string role) {
+		uint16_t roleId = relationRoles.getOrAddRole(role);
 		const size_t shard = wayid % mutex.size();
-
 		std::lock_guard<std::mutex> lock(mutex[shard]);
-		relationsForWays[shard][wayid].emplace_back(relid);
+		relationsForWays[shard][wayid].emplace_back(std::make_pair(relid, roleId));
+	}
+	void relation_contains_node(WayID relid, NodeID nodeId, std::string role) {
+		uint16_t roleId = relationRoles.getOrAddRole(role);
+		const size_t shard = nodeId % mutex.size();
+		std::lock_guard<std::mutex> lock(mutex[shard]);
+		relationsForNodes[shard][nodeId].emplace_back(std::make_pair(relid, roleId));
 	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
 		const size_t shard = relid % mutex.size();
@@ -102,9 +111,18 @@ public:
 		const size_t shard = wayid % mutex.size();
 		return relationsForWays[shard].find(wayid) != relationsForWays[shard].end();
 	}
-	std::vector<WayID> relations_for_way(WayID wayid) {
+	bool node_in_any_relations(NodeID nodeId) {
+		const size_t shard = nodeId % mutex.size();
+		return relationsForNodes[shard].find(nodeId) != relationsForNodes[shard].end();
+	}
+	std::string getRole(uint16_t roleId) const { return relationRoles.getRole(roleId); }
+	const std::vector<std::pair<WayID, uint16_t>>& relations_for_way(WayID wayid) {
 		const size_t shard = wayid % mutex.size();
 		return relationsForWays[shard][wayid];
+	}
+	const std::vector<std::pair<WayID, uint16_t>>& relations_for_node(NodeID nodeId) {
+		const size_t shard = nodeId % mutex.size();
+		return relationsForNodes[shard][nodeId];
 	}
 	std::string get_relation_tag(WayID relid, const std::string &key) {
 		const size_t shard = relid % mutex.size();
@@ -178,6 +196,7 @@ class OSMStore
 public:
 	NodeStore& nodes;
 	WayStore& ways;
+	RelationScanStore scannedRelations;
 
 protected:	
 	bool use_compact_nodes = false;
@@ -185,7 +204,6 @@ protected:
 
 	RelationStore relations; // unused
 	UsedWays used_ways;
-	RelationScanStore scanned_relations;
 
 public:
 
@@ -213,11 +231,6 @@ public:
 	void ensureUsedWaysInited();
 
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-	void relation_contains_way(WayID relid, WayID wayid) { scanned_relations.relation_contains_way(relid,wayid); }
-	void store_relation_tags(WayID relid, const tag_map_t &tags) { scanned_relations.store_relation_tags(relid,tags); }
-	bool way_in_any_relations(WayID wayid) { return scanned_relations.way_in_any_relations(wayid); }
-	std::vector<WayID> relations_for_way(WayID wayid) { return scanned_relations.relations_for_way(wayid); }
-	std::string get_relation_tag(WayID relid, const std::string &key) { return scanned_relations.get_relation_tag(relid, key); }
 
 	void clear();
 	void reportSize() const;

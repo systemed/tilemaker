@@ -1,5 +1,7 @@
 #include "shp_mem_tiles.h"
 #include <iostream>
+#include <mutex>
+
 using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
@@ -55,7 +57,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 }
 
-void ShpMemTiles::StoreShapefileGeometry(
+void ShpMemTiles::StoreGeometry(
 	uint_least8_t layerNum,
 	const std::string& layerName,
 	enum OutputGeometryType geomType,
@@ -70,38 +72,27 @@ void ShpMemTiles::StoreShapefileGeometry(
 	geom::model::box<Point> box;
 	geom::envelope(geometry, box);
 
-	uint id = indexedGeometries.size();
-	if (isIndexed) {
-		indices.at(layerName).insert(std::make_pair(box, id));
-		if (hasName)
-			indexedGeometryNames[id] = name;
-	}
-
 	uint tilex = 0, tiley = 0;
+	std::shared_ptr<OutputObject> oo;
 	switch(geomType) {
 		case POINT_:
 		{
 			Point* p = boost::get<Point>(&geometry);
 			if (p != nullptr) {
-	
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				NodeID oid = storePoint(sp);
-				OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
-				if (isIndexed) indexedGeometries.push_back(oo);
-
+				oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
 				tilex =  lon2tilex(p->x(), baseZoom);
 				tiley = latp2tiley(p->y(), baseZoom);
-				addObjectToSmallIndex(TileCoordinates(tilex, tiley), oo, 0);
-			}
+				addObjectToSmallIndex(TileCoordinates(tilex, tiley), *oo, 0);
+			} else { return; }
 		} break;
 
 		case LINESTRING_:
 		{
 			NodeID oid = storeLinestring(boost::get<Linestring>(geometry));
-			OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
-			if (isIndexed) indexedGeometries.push_back(oo);
-
-			std::vector<OutputObject> oolist { oo };
+			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
+			std::vector<OutputObject> oolist { *oo };
 			addGeometryToIndex(boost::get<Linestring>(geometry), oolist, 0);
 
 		} break;
@@ -109,14 +100,30 @@ void ShpMemTiles::StoreShapefileGeometry(
 		case POLYGON_:
 		{
 			NodeID oid = storeMultiPolygon(boost::get<MultiPolygon>(geometry));
-			OutputObject oo(geomType, layerNum, oid, attrIdx, minzoom);
-			if (isIndexed) indexedGeometries.push_back(oo);
-
-			std::vector<OutputObject> oolist { oo };
+			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
+			std::vector<OutputObject> oolist { *oo };
 			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
+
+		} break;
+
+		case MULTILINESTRING_:
+		{
+			NodeID oid = storeMultiLinestring(boost::get<MultiLinestring>(geometry));
+			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
+			std::vector<OutputObject> oolist { *oo };
+			addGeometryToIndex(boost::get<MultiLinestring>(geometry), oolist, 0);
+
 		} break;
 
 		default:
-			break;
+			throw std::runtime_error("Unknown geometry type");
 	}
+
+	// Add to index
+	if (!isIndexed) return;
+	std::lock_guard<std::mutex> indexLock(indexMutex);
+	uint id = indexedGeometries.size();
+	indices.at(layerName).insert(std::make_pair(box, id));
+	if (hasName) { indexedGeometryNames[id] = name; }
+	indexedGeometries.push_back(*oo);
 }
