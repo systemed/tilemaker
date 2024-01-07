@@ -153,7 +153,7 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 			continue;
 		}
 
-		boost::asio::post(pool, [&, shape]() {
+		boost::asio::post(pool, [&, i, shape]() {
 			// process attributes
 			string name;
 			bool hasName = false;
