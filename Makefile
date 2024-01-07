@@ -33,10 +33,12 @@ ifneq ('$(wildcard /usr/local/include/${LUA_DIR}/lua.h)','')
   LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}
 else ifneq ('$(wildcard /usr/local/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
   LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
 else ifneq ('$(wildcard /usr/include/${LUA_DIR}/lua.h)','')
   LUA_CFLAGS := -I/usr/include/${LUA_DIR}
 else ifneq ('$(wildcard /usr/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
   LUA_CFLAGS := -I/usr/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
 else ifneq ('$(wildcard /usr/include/lua.h)','')
   LUA_CFLAGS := -I/usr/include
 else ifneq ('$(wildcard /opt/homebrew/include/${LUA_DIR}/lua.h)','')
@@ -44,6 +46,7 @@ else ifneq ('$(wildcard /opt/homebrew/include/${LUA_DIR}/lua.h)','')
   PLATFORM_PATH := /opt/homebrew
 else ifneq ('$(wildcard /opt/homebrew/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
   LUA_CFLAGS := -I/opt/homebrew/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
   PLATFORM_PATH := /opt/homebrew
 else
   $(error Couldn't find Lua libraries)
