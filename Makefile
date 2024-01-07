@@ -29,7 +29,6 @@ endif
 
 # Find the include path by looking in the most likely locations
 ifneq ('$(wildcard /usr/local/include/${LUA_DIR}/lua.h)','')
-  LUA_DEBUG := $(wildcard /usr/local/include/${LUA_DIR}/lua.h)
   LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}
 else ifneq ('$(wildcard /usr/local/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
   LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}${LUA_LANGV}
