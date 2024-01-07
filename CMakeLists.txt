@@ -90,6 +90,7 @@ file(GLOB tilemaker_src_files
 	src/pbf_reader.cpp
 	src/pmtiles.cpp
 	src/pooled_string.cpp
+	src/relation_roles.cpp
 	src/sharded_node_store.cpp
 	src/sharded_way_store.cpp
 	src/shared_data.cpp

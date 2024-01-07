@@ -5,7 +5,8 @@
 #include "helpers.h"
 #include "coordinates_geom.h"
 #include "osm_mem_tiles.h"
-
+#include "node_store.h"
+#include "polylabel.h"
 
 using namespace std;
 
@@ -442,16 +443,78 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 	}
 }
 
-void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
+// LayerAsCentroid(layerName, [centroid-algorithm, [role, [role, ...]]])
+//
+// Emit a point. This function can be called for nodes, ways or relations.
+//
+// When called for a 2D geometry, you can pass a preferred centroid algorithm
+// in `centroid-algorithm`. Currently `polylabel` and `centroid` are supported.
+//
+// When called for a relation, you can pass a list of roles. The point of a node
+// with that role will be used if available.
+void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::VariadicArgType varargs) {
 	if (layers.layerMap.count(layerName) == 0) {
 		throw out_of_range("ERROR: LayerAsCentroid(): a layer named as \"" + layerName + "\" doesn't exist.");
 	}	
 
+	CentroidAlgorithm algorithm = defaultCentroidAlgorithm();
+
+	for (auto needleRef : varargs) {
+		const std::string needle = needleRef.get<std::string>();
+		algorithm = parseCentroidAlgorithm(needle);
+		break;
+	}
+
+	// This will be non-zero if we ultimately used a node from a relation to
+	// label the point.
+	NodeID relationNode = 0;
+
 	uint layerMinZoom = layers.layers[layers.layerMap[layerName]].minzoom;
 	AttributeSet attributes;
 	Point geomp;
+	bool centroidFound = false;
 	try {
-		geomp = calculateCentroid();
+		// If we're a relation, see if the user would prefer we use one of its members
+		// to label the point.
+		if (isRelation) {
+			size_t i = 0;
+			for (auto needleRef : varargs) {
+				// Skip the first vararg, it's the algorithm.
+				if (i == 0) continue;
+				i++;
+				const std::string needle = needleRef.get<std::string>();
+
+				// We do a linear search of the relation's members. This is not very efficient
+				// for relations like Tongass National Park (ID 6535292, 29,000 members),
+				// but in general, it's probably fine.
+				//
+				// I note that relation members seem to be sorted nodes first, then ways,
+				// then relations. I'm not sure if we can rely on that, so I don't
+				// short-circuit on the first non-node.
+				for (int i = 0; i < currentRelation->memids.size(); i++) {
+					if (currentRelation->types[i] != PbfReader::Relation::MemberType::NODE)
+						continue;
+
+					const protozero::data_view role = stringTable->at(currentRelation->roles_sid[i]);
+					if (role.size() == needle.size() && 0 == memcmp(role.data(), needle.data(), role.size())) {
+						relationNode = currentRelation->memids[i];
+						const auto ll = osmStore.nodes.at(relationNode);
+						geomp = Point(ll.lon, ll.latp);
+						centroidFound = true;
+						break;
+					}
+				}
+
+				if (relationNode != 0)
+					break;
+			}
+		}
+
+		if (!centroidFound)
+			geomp = calculateCentroid(algorithm);
+
+		// TODO: I think geom::is_empty always returns false for Points?
+		// See https://github.com/boostorg/geometry/blob/fa3623528ea27ba2c3c1327e4b67408a2b567038/include/boost/geometry/algorithms/is_empty.hpp#L103
 		if(geom::is_empty(geomp)) {
 			cerr << "Geometry is empty in OsmLuaProcessing::LayerAsCentroid (" << (isRelation ? "relation " : isWay ? "way " : "node ") << originalOsmID << ")" << endl;
 			return;
@@ -469,11 +532,19 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	}
 
 	NodeID id = 0;
-	// We don't do lazy centroids for relations - calculating their centroid
-	// can be quite expensive, and there's not as many of them as there are
-	// ways.
-	if (materializeGeometries || isRelation) {
+	// We don't do lazy geometries for centroids in these cases:
+	//
+	// - --materialize-geometries is set
+	// - the geometry is a relation - calculating their centroid can be quite expensive,
+	//   and there's not as many of them as there are ways
+	// - when the algorithm chosen is polylabel
+	//     We can extend lazy geometries to this, it just needs some fiddling to
+	//     express it in the ID and measure if there's a runtime impact in computing
+	//     the polylabel twice.
+	if (materializeGeometries || (isRelation && relationNode == 0) || (isWay && algorithm != CentroidAlgorithm::Centroid)) {
 		id = osmMemTiles.storePoint(geomp);
+	} else if (relationNode != 0) {
+		id = USE_NODE_STORE | relationNode;
 	} else if (!isRelation && !isWay) {
 		// Sometimes people call LayerAsCentroid(...) on a node, because they're
 		// writing a generic handler that doesn't know if it's a node or a way,
@@ -487,25 +558,65 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName) {
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
 }
 
-Point OsmLuaProcessing::calculateCentroid() {
+Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 	Point centroid;
 	if (isRelation) {
-		Geometry tmp;
+		MultiPolygon tmp;
 		tmp = multiPolygonCached();
-		geom::centroid(tmp, centroid);
+
+		if (algorithm == CentroidAlgorithm::Polylabel) {
+			int index = 0;
+
+			// CONSIDER: pick precision intelligently
+			// Polylabel works on polygons, so for multipolygons we'll label the biggest outer.
+			double biggestSize = 0;
+			for (int i = 0; i < tmp.size(); i++) {
+				double size = geom::area(tmp[i]);
+				if (size > biggestSize) {
+					biggestSize = size;
+					index = i;
+				}
+			}
+
+			if (tmp.size() == 0)
+				throw geom::centroid_exception();
+			centroid = mapbox::polylabel(tmp[index]);
+		} else {
+			geom::centroid(tmp, centroid);
+		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
 		Polygon p;
 		geom::assign_points(p, linestringCached());
-		geom::centroid(p, centroid);
+
+		if (algorithm == CentroidAlgorithm::Polylabel) {
+			// CONSIDER: pick precision intelligently
+			centroid = mapbox::polylabel(p);
+		} else {
+			geom::centroid(p, centroid);
+		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else {
 		return Point(lon, latp);
 	}
 }
 
-std::vector<double> OsmLuaProcessing::Centroid() {
-	Point c = calculateCentroid();
+OsmLuaProcessing::CentroidAlgorithm OsmLuaProcessing::parseCentroidAlgorithm(const std::string& algorithm) const {
+	if (algorithm == "polylabel") return OsmLuaProcessing::CentroidAlgorithm::Polylabel;
+	if (algorithm == "centroid") return OsmLuaProcessing::CentroidAlgorithm::Centroid;
+
+	throw std::runtime_error("unknown centroid algorithm " + algorithm);
+}
+
+std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithmArgs) {
+	CentroidAlgorithm algorithm = defaultCentroidAlgorithm();
+
+	for (auto needleRef : algorithmArgs) {
+		const std::string needle = needleRef.get<std::string>();
+		algorithm = parseCentroidAlgorithm(needle);
+		break;
+	}
+	Point c = calculateCentroid(algorithm);
 	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
 }
 
@@ -550,10 +661,44 @@ void OsmLuaProcessing::ZOrder(const double z) {
 }
 
 // Read scanned relations
-kaguya::optional<int> OsmLuaProcessing::NextRelation() {
+// Kaguya doesn't support optional<tuple<int,string>>, so we write a custom serializer
+// to either return nil or a tuple.
+template<>  struct kaguya::lua_type_traits<OsmLuaProcessing::OptionalRelation> {
+	typedef OsmLuaProcessing::OptionalRelation get_type;
+	typedef const OsmLuaProcessing::OptionalRelation& push_type;
+
+	static bool strictCheckType(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static bool checkType(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static get_type get(lua_State* l, int index)
+	{
+		throw std::runtime_error("Lua code doesn't know how to send OptionalRelation");
+	}
+	static int push(lua_State* l, push_type s)
+	{
+		if (s.done)
+			return 0;
+
+		lua_pushinteger(l, s.id);
+		lua_pushlstring(l, s.role.data(), s.role.size());
+		return 2;
+	}
+};
+
+OsmLuaProcessing::OptionalRelation OsmLuaProcessing::NextRelation() {
 	relationSubscript++;
-	if (relationSubscript >= relationList.size()) return kaguya::nullopt_t();
-	return relationList[relationSubscript];
+	if (relationSubscript >= relationList.size()) return { true };
+
+	return {
+		false,
+		static_cast<lua_Integer>(relationList[relationSubscript].first),
+		osmStore.scannedRelations.getRole(relationList[relationSubscript].second)
+	};
 }
 
 void OsmLuaProcessing::RestartRelations() {
@@ -561,7 +706,7 @@ void OsmLuaProcessing::RestartRelations() {
 }
 
 std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
-	return osmStore.get_relation_tag(relationList[relationSubscript], key);
+	return osmStore.scannedRelations.get_relation_tag(relationList[relationSubscript].first, key);
 }
 
 // Record attribute name/type for vector_layers table
@@ -589,7 +734,7 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	for (const auto& i : tags) {
 		m[std::string(i.first.data(), i.first.size())] = std::string(i.second.data(), i.second.size());
 	}
-	osmStore.store_relation_tags(id, m);
+	osmStore.scannedRelations.store_relation_tags(id, m);
 	return true;
 }
 
@@ -602,6 +747,10 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 	lon = node.lon;
 	latp= node.latp;
 	currentTags = &tags;
+
+	if (supportsReadingRelations && osmStore.scannedRelations.node_in_any_relations(id)) {
+		relationList = osmStore.scannedRelations.relations_for_node(id);
+	}
 
 	//Start Lua processing for node
 	try {
@@ -632,10 +781,8 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
 
-	if (supportsReadingRelations && osmStore.way_in_any_relations(wayId)) {
-		relationList = osmStore.relations_for_way(wayId);
-	} else {
-		relationList.clear();
+	if (supportsReadingRelations && osmStore.scannedRelations.way_in_any_relations(wayId)) {
+		relationList = osmStore.scannedRelations.relations_for_way(wayId);
 	}
 
 	try {
@@ -671,11 +818,19 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 }
 
 // We are now processing a relation
-void OsmLuaProcessing::setRelation(int64_t relationId, WayVec const &outerWayVec, WayVec const &innerWayVec, const tag_map_t &tags, 
-                                   bool isNativeMP,      // only OSM type=multipolygon
-                                   bool isInnerOuter) {  // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
+void OsmLuaProcessing::setRelation(
+	const std::vector<protozero::data_view>& stringTable,
+	const PbfReader::Relation& relation,
+	const WayVec& outerWayVec,
+	const WayVec& innerWayVec,
+	const tag_map_t &tags,
+	bool isNativeMP, // only OSM type=multipolygon
+	bool isInnerOuter // any OSM relation with "inner" and "outer" roles (e.g. type=multipolygon|boundary)
+) {
 	reset();
-	originalOsmID = relationId;
+	this->stringTable = &stringTable;
+	currentRelation = &relation;
+	originalOsmID = relation.id;
 	isWay = true;
 	isRelation = true;
 	isClosed = isNativeMP || isInnerOuter;
