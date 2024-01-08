@@ -89,6 +89,8 @@ private:
 	RelationRoles relationRoles;
 
 public:
+	std::map<RelationID, std::vector<std::pair<WayID, uint16_t>>> relationsForRelations;
+
 	void relation_contains_way(WayID relid, WayID wayid, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
 		std::lock_guard<std::mutex> lock(mutex);
@@ -99,9 +101,18 @@ public:
 		std::lock_guard<std::mutex> lock(mutex);
 		relationsForNodes[nodeId].emplace_back(std::make_pair(relid, roleId));
 	}
+	void relation_contains_relation(WayID relid, RelationID relationId, std::string role) {
+		uint16_t roleId = relationRoles.getOrAddRole(role);
+		std::lock_guard<std::mutex> lock(mutex);
+		relationsForRelations[relationId].emplace_back(std::make_pair(relid, roleId));
+	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
 		std::lock_guard<std::mutex> lock(mutex);
 		relationTags[relid] = tags;
+	}
+	void set_relation_tag(WayID relid, const std::string &key, const std::string &value) {
+		std::lock_guard<std::mutex> lock(mutex);
+		relationTags[relid][key] = value;
 	}
 	bool way_in_any_relations(WayID wayid) {
 		return relationsForWays.find(wayid) != relationsForWays.end();
@@ -109,12 +120,42 @@ public:
 	bool node_in_any_relations(NodeID nodeId) {
 		return relationsForNodes.find(nodeId) != relationsForNodes.end();
 	}
+	bool relation_in_any_relations(RelationID relId) {
+		return relationsForRelations.find(relId) != relationsForRelations.end();
+	}
 	std::string getRole(uint16_t roleId) const { return relationRoles.getRole(roleId); }
 	const std::vector<std::pair<WayID, uint16_t>>& relations_for_way(WayID wayid) {
 		return relationsForWays[wayid];
 	}
 	const std::vector<std::pair<WayID, uint16_t>>& relations_for_node(NodeID nodeId) {
 		return relationsForNodes[nodeId];
+	}
+	const std::vector<std::pair<WayID, uint16_t>>& relations_for_relation(RelationID relId) {
+		return relationsForRelations[relId];
+	}
+	const tag_map_t& relation_tags(RelationID relId) {
+		return relationTags[relId];
+	}
+	// return all the parent relations (and their parents &c.) for a given relation
+	std::vector<std::pair<WayID, uint16_t>> relations_for_relation_with_parents(RelationID relId) {
+		std::vector<RelationID> relationsToDo;
+		std::set<RelationID> relationsDone;
+		std::vector<std::pair<WayID, uint16_t>> out;
+		relationsToDo.emplace_back(relId);
+		// check parents in turn, pushing onto the stack if necessary
+		while (!relationsToDo.empty()) {
+			RelationID rel = relationsToDo.back();
+			relationsToDo.pop_back();
+			// check it's not already been added
+			if (relationsDone.find(rel) != relationsDone.end()) continue;
+			relationsDone.insert(rel);
+			// add all its parents
+			for (auto rp : relationsForRelations[rel]) {
+				out.emplace_back(rp);
+				relationsToDo.emplace_back(rp.first);
+			}
+		}
+		return out;
 	}
 	std::string get_relation_tag(WayID relid, const std::string &key) {
 		auto it = relationTags.find(relid);

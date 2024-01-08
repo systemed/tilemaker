@@ -50,6 +50,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("Id", &OsmLuaProcessing::Id)
 		.addFunction("Holds", &OsmLuaProcessing::Holds)
 		.addFunction("Find", &OsmLuaProcessing::Find)
+		.addFunction("HasTags", &OsmLuaProcessing::HasTags)
 		.addFunction("FindIntersecting", &OsmLuaProcessing::FindIntersecting)
 		.addFunction("Intersects", &OsmLuaProcessing::Intersects)
 		.addFunction("FindCovering", &OsmLuaProcessing::FindCovering)
@@ -67,12 +68,14 @@ OsmLuaProcessing::OsmLuaProcessing(
 		.addFunction("MinZoom", &OsmLuaProcessing::MinZoom)
 		.addFunction("ZOrder", &OsmLuaProcessing::ZOrder)
 		.addFunction("Accept", &OsmLuaProcessing::Accept)
+		.addFunction("SetTag", &OsmLuaProcessing::SetTag)
 		.addFunction("NextRelation", &OsmLuaProcessing::NextRelation)
 		.addFunction("RestartRelations", &OsmLuaProcessing::RestartRelations)
 		.addFunction("FindInRelation", &OsmLuaProcessing::FindInRelation)
 	);
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
+	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
@@ -102,6 +105,10 @@ bool OsmLuaProcessing::canReadRelations() {
 	return supportsReadingRelations;
 }
 
+bool OsmLuaProcessing::canPostScanRelations() {
+	return supportsPostScanRelations;
+}
+
 bool OsmLuaProcessing::canWriteRelations() {
 	return supportsWritingRelations;
 }
@@ -124,14 +131,26 @@ string OsmLuaProcessing::Id() const {
 
 // Check if there's a value for a given key
 bool OsmLuaProcessing::Holds(const string& key) const {
+	if (isPostScanRelation) { return currentPostScanTags->find(key)!=currentPostScanTags->end(); }
 	return currentTags->find(key) != currentTags->end();
 }
 
 // Get an OSM tag for a given key (or return empty string if none)
 const string OsmLuaProcessing::Find(const string& key) const {
-	auto it = currentTags->find(key);
-	if(it == currentTags->end()) return EMPTY_STRING;
-	return std::string(it->second.data(), it->second.size());
+	if (isPostScanRelation) {
+		auto it = currentPostScanTags->find(key);
+		if (it == currentPostScanTags->end()) return EMPTY_STRING;
+		return it->second;
+	} else {
+		auto it = currentTags->find(key);
+		if(it == currentTags->end()) return EMPTY_STRING;
+		return std::string(it->second.data(), it->second.size());
+	}
+}
+
+// Check if an object has any tags
+bool OsmLuaProcessing::HasTags() const {
+	return isPostScanRelation ? !currentPostScanTags->empty() : !currentTags->empty();
 }
 
 // ----	Spatial queries called from Lua
@@ -624,6 +643,11 @@ std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithm
 void OsmLuaProcessing::Accept() {
 	relationAccepted = true;
 }
+// Set a tag in post-scan phase
+void OsmLuaProcessing::SetTag(const std::string &key, const std::string &value) {
+	if (!isPostScanRelation) throw std::runtime_error("SetTag can only be used in relation_postscan_function");
+	osmStore.scannedRelations.set_relation_tag(originalOsmID, key, value);
+}
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
@@ -719,7 +743,6 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	reset();
 	originalOsmID = id;
-	isWay = false;
 	isRelation = true;
 	currentTags = &tags;
 	try {
@@ -738,12 +761,24 @@ bool OsmLuaProcessing::scanRelation(WayID id, const tag_map_t &tags) {
 	return true;
 }
 
+// Post-scan relations - typically used for bouncing down values from nested relations
+void OsmLuaProcessing::postScanRelations() {
+	if (!supportsPostScanRelations) return;
+	for (const auto &relp : osmStore.scannedRelations.relationsForRelations) {
+		reset();
+		isPostScanRelation = true;
+		RelationID id = relp.first;
+		originalOsmID = id;
+		currentPostScanTags = &(osmStore.scannedRelations.relation_tags(id));
+		relationList = osmStore.scannedRelations.relations_for_relation_with_parents(id);
+		luaState["relation_postscan_function"](this);
+	}
+}
+
 void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const tag_map_t &tags) {
 
 	reset();
 	originalOsmID = id;
-	isWay = false;
-	isRelation = false;
 	lon = node.lon;
 	latp= node.latp;
 	currentTags = &tags;
@@ -775,7 +810,6 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const tag_ma
 	wayEmitted = false;
 	originalOsmID = wayId;
 	isWay = true;
-	isRelation = false;
 	llVecPtr = &llVec;
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
@@ -839,6 +873,10 @@ void OsmLuaProcessing::setRelation(
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
 	currentTags = &tags;
+
+	if (supportsReadingRelations && osmStore.scannedRelations.relation_in_any_relations(originalOsmID)) {
+		relationList = osmStore.scannedRelations.relations_for_relation(originalOsmID);
+	}
 
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
