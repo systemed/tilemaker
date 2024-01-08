@@ -35,6 +35,7 @@ public:
 		std::function<std::vector<IndexValue>(const RTree& rtree)> indexQuery, 
 		std::function<bool(const OutputObject& oo)> checkQuery
 	) const;
+	bool mayIntersect(const std::string& layerName, const Box& box) const;
 	std::vector<std::string> namesOfGeometries(const std::vector<uint>& ids) const;
 
 	template <typename GeometryT>
@@ -65,6 +66,7 @@ private:
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 	std::mutex indexMutex;
+	std::map<std::string, std::vector<bool>> bitIndices; // A bit it set if the z14 (or base zoom) tiles at x*width + y contains a shape. This lets us quickly reject negative Intersects queryes
 };
 
 #endif //_OSM_MEM_TILES
