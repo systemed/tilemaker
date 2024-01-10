@@ -16,6 +16,13 @@ void TagMap::reset() {
 	}
 }
 
+bool TagMap::empty() {
+	for (int i = 0; i < keys.size(); i++)
+		if (keys[i].size() > 0)
+			return false;
+
+	return true;
+}
 const std::size_t hashString(const std::string& str) {
 	// This is a pretty crappy hash function in terms of bit
 	// avalanching and distribution of output values.
@@ -60,16 +67,12 @@ uint32_t TagMap::ensureString(
 
 void TagMap::addTag(const protozero::data_view& key, const protozero::data_view& value) {
 	uint32_t valueLoc = ensureString(values, value);
-//	std::cout << "valueLoc = " << valueLoc << std::endl;
 	uint32_t keyLoc = ensureString(keys, key);
-//	std::cout << "keyLoc = " << keyLoc << std::endl;
 
 
 	const uint16_t shard = keyLoc >> 16;
 	const uint16_t pos = keyLoc;
-//	std::cout << "shard=" << shard << ", pos=" << pos << std::endl;
 	if (key2value[shard].size() <= pos) {
-//		std::cout << "growing shard" << std::endl;
 		key2value[shard].resize(pos + 1);
 	}
 
@@ -132,4 +135,39 @@ boost::container::flat_map<std::string, std::string> TagMap::exportToBoostMap() 
 	}
 
 	return rv;
+}
+
+TagMap::Iterator TagMap::begin() const {
+	size_t shard = 0;
+	while(keys.size() > shard && keys[shard].size() == 0)
+		shard++;
+
+	return Iterator{*this, shard, 0};
+}
+
+TagMap::Iterator TagMap::end() const {
+	return Iterator{*this, keys.size(), 0};
+}
+
+bool TagMap::Iterator::operator!=(const Iterator& other) const {
+	return other.shard != shard || other.offset != offset;
+}
+
+void TagMap::Iterator::operator++() {
+	++offset;
+	if (offset >= map.keys[shard].size()) {
+		offset = 0;
+		shard++;
+		// Advance to the next non-empty shard.
+		while(map.keys.size() > shard && map.keys[shard].size() == 0)
+			shard++;
+	}
+}
+
+Tag TagMap::Iterator::operator*() const {
+	const uint32_t valueLoc = map.key2value[shard][offset];
+	return Tag{
+		*map.keys[shard][offset],
+		*map.getValue(valueLoc)
+	};
 }

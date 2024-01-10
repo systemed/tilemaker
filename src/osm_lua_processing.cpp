@@ -5,15 +5,37 @@
 #include "helpers.h"
 #include "coordinates_geom.h"
 #include "osm_mem_tiles.h"
+#include "significant_tags.h"
 #include "tag_map.h"
 #include "node_store.h"
 #include "polylabel.h"
+#include <signal.h>
 
 using namespace std;
 
 const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
+
+void handleOsmLuaProcessingUserSignal(int signum) {
+	osmLuaProcessing->handleUserSignal(signum);
+}
+
+class Sigusr1Handler {
+public:
+	Sigusr1Handler() {
+#ifndef _WIN32
+		signal(SIGUSR1, handleOsmLuaProcessingUserSignal);
+#endif
+	}
+
+	void initialize() {
+		// No-op just to ensure the compiler doesn't optimize away
+		// the handler.
+	}
+};
+
+thread_local Sigusr1Handler sigusr1Handler;
 
 // A key in `currentTags`. If Lua code refers to an absent key,
 // found will be false.
@@ -158,6 +180,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	layers(layers),
 	materializeGeometries(materializeGeometries) {
 
+	sigusr1Handler.initialize();
+
 	// ----	Initialise Lua
 	g_luaState = &luaState;
 	luaState.setErrorHandler(lua_error_handler);
@@ -211,6 +235,10 @@ OsmLuaProcessing::OsmLuaProcessing(
 OsmLuaProcessing::~OsmLuaProcessing() {
 	// Call exit_function of Lua logic
 	luaState("if exit_function~=nil then exit_function() end");
+}
+
+void OsmLuaProcessing::handleUserSignal(int signum) {
+	std::cout << "processing OSM ID " << originalOsmID << std::endl;
 }
 
 // ----	Helpers provided for main routine
@@ -871,8 +899,7 @@ bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 	return true;
 }
 
-void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
-
+bool OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 	reset();
 	originalOsmID = id;
 	isWay = false;
@@ -899,7 +926,11 @@ void OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 		for (auto &output : finalizeOutputs()) {
 			osmMemTiles.addObjectToSmallIndex(index, output, originalOsmID);
 		}
-	} 
+
+		return true;
+	}
+
+	return false;
 }
 
 // We are now processing a way
@@ -995,9 +1026,24 @@ void OsmLuaProcessing::setRelation(
 	}		
 }
 
-vector<string> OsmLuaProcessing::GetSignificantNodeKeys() {
-	return luaState["node_keys"];
+SignificantTags OsmLuaProcessing::GetSignificantNodeKeys() {
+	if (!!luaState["node_keys"]) {
+		std::vector<string> keys = luaState["node_keys"];
+		return SignificantTags(keys);
+	}
+
+	return SignificantTags();
 }
+
+SignificantTags OsmLuaProcessing::GetSignificantWayKeys() {
+	if (!!luaState["way_keys"]) {
+		std::vector<string> keys = luaState["way_keys"];
+		return SignificantTags(keys);
+	}
+
+	return SignificantTags();
+}
+
 
 std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
 	std::vector<OutputObject> list;

@@ -19,6 +19,21 @@ extern bool verbose;
 class NodeStore;
 class WayStore;
 
+class UsedObjects {
+public:
+	enum class Status: bool { Disabled = false, Enabled = true };
+	UsedObjects(Status status);
+	bool test(NodeID id);
+	void set(NodeID id);
+	void enable();
+	void clear();
+
+private:
+	Status status;
+	std::vector<std::mutex> mutex;
+	std::vector<std::vector<bool>> ids;
+};
+
 // A comparator for data_view so it can be used in boost's flat_map
 struct DataViewLessThan {
 	bool operator()(const protozero::data_view& a, const protozero::data_view& b) const {
@@ -206,8 +221,18 @@ protected:
 	UsedWays used_ways;
 
 public:
+	UsedObjects usedNodes;
+	UsedObjects usedRelations;
 
-	OSMStore(NodeStore& nodes, WayStore& ways): nodes(nodes), ways(ways)
+	OSMStore(NodeStore& nodes, WayStore& ways):
+		nodes(nodes),
+		ways(ways),
+		// We only track usedNodes if way_keys is present; a node is used if it's
+		// a member of a way used by a used relation, or a way that meets the way_keys
+		// criteria.
+		usedNodes(UsedObjects::Status::Disabled),
+		// A relation is used only if it was previously accepted from relation_scan_function
+		usedRelations(UsedObjects::Status::Enabled)
 	{ 
 		reopen();
 	}

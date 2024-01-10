@@ -23,11 +23,17 @@
 //      This is true since the strings are owned by the protobuf block reader
 // 3. Max number of tag values will fit in a short
 //      OSM limit is 5,000 tags per object
+struct Tag {
+	protozero::data_view key;
+	protozero::data_view value;
+};
+
 class TagMap {
 public:
 	TagMap();
 	void reset();
 
+	bool empty();
 	void addTag(const protozero::data_view& key, const protozero::data_view& value);
 
 	// Return -1 if key not found, else return its keyLoc.
@@ -40,6 +46,19 @@ public:
 	const protozero::data_view* getValue(uint32_t valueLoc) const;
 
 	boost::container::flat_map<std::string, std::string> exportToBoostMap() const;
+
+	struct Iterator {
+		const TagMap& map;
+		size_t shard = 0;
+		size_t offset = 0;
+
+		bool operator!=(const Iterator& other) const;
+		void operator++();
+		Tag operator*() const;
+	};
+
+	Iterator begin() const;
+	Iterator end() const;
 
 private:
 	uint32_t ensureString(

@@ -42,6 +42,7 @@
 #include "helpers.h"
 #include "coordinates.h"
 #include "coordinates_geom.h"
+#include "significant_tags.h"
 
 #include "attribute_store.h"
 #include "output_object.h"
@@ -255,10 +256,9 @@ int main(const int argc, const char* argv[]) {
 	}
 	shpMemTiles.reportSize();
 
-	// ----	Read significant node tags
-
-	vector<string> nodeKeyVec = osmLuaProcessing.GetSignificantNodeKeys();
-	unordered_set<string> nodeKeys(nodeKeyVec.begin(), nodeKeyVec.end());
+	// ----	Read significant node/way tags
+	const SignificantTags significantNodeTags = osmLuaProcessing.GetSignificantNodeKeys();
+	const SignificantTags significantWayTags = osmLuaProcessing.GetSignificantWayKeys();
 
 	// ----	Read all PBFs
 	
@@ -274,7 +274,8 @@ int main(const int argc, const char* argv[]) {
 		int ret = pbfProcessor.ReadPbfFile(
 			nodeStore->shards(),
 			hasSortTypeThenID,
-			nodeKeys,
+			significantNodeTags,
+			significantWayTags,
 			options.threadNum,
 			[&]() {
 				thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
