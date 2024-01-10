@@ -154,7 +154,6 @@ public:
 	template<class GeometryT>
 	CorrectGeometryResult CorrectGeometry(GeometryT &geom)
 	{
-#if BOOST_VERSION >= 105800
 		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 		if (isRelation && !geom::is_valid(geom,failure)) {
 			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
@@ -174,7 +173,6 @@ public:
 			}
 			return CorrectGeometryResult::Corrected;
 		}
-#endif
 		return CorrectGeometryResult::Valid;
 	}
 

@@ -280,7 +280,6 @@ void writeMultiPolygon(
 	if (geom::is_empty(current))
 		return;
 
-#if BOOST_VERSION >= 105800
 	geom::validity_failure_type failure;
 	if (verbose && !geom::is_valid(current, failure)) { 
 		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
@@ -290,11 +289,6 @@ void writeMultiPolygon(
 		else
 			cout << "input multipolygon valid" << endl;
 	}
-#else	
-	if (verbose && !geom::is_valid(current)) { 
-		cout << "Output multipolygon is invalid " << endl; 
-	}
-#endif
 
 	vtzero::polygon_feature_builder fbuilder{vtLayer};
 
