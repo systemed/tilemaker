@@ -1,81 +1,70 @@
 # See what Lua versions are installed
-# order of preference: LuaJIT 2.1, LuaJIT 2.0, any generic Lua, Lua 5.1
+# order of preference: LuaJIT, any generic Lua, then versions from 5.4 down
 
 PLATFORM_PATH := /usr/local
 
-ifneq ("$(wildcard /usr/local/include/luajit-2.1/lua.h)","")
-  LUA_VER := LuaJIT 2.1
-  LUA_CFLAGS := -I/usr/local/include/luajit-2.1 -DLUAJIT
-  LUA_LIBS := -lluajit-5.1
-  LUAJIT := 1
+# First, find what the Lua executable is called
+# - when a new Lua is released, then add it before 5.4 here
+LUA_CMD := $(shell luajit -e 'print("luajit")' 2> /dev/null || lua -e 'print("lua")' 2> /dev/null || lua5.4 -e 'print("lua5.4")' 2> /dev/null || lua5.3 -e 'print("lua5.3")' 2> /dev/null || lua5.2 -e 'print("lua5.2")' 2> /dev/null || lua5.1 -e 'print("lua5.1")' 2> /dev/null)
+ifeq ($(LUA_CMD),"")
+  $(error Couldn't find Lua interpreter)
+endif
+$(info Using ${LUA_CMD})
 
-else ifneq ("$(wildcard /usr/include/luajit-2.1/lua.h)","")
-  LUA_VER := LuaJIT 2.1
-  LUA_CFLAGS := -I/usr/include/luajit-2.1 -DLUAJIT
-  LUA_LIBS := -lluajit-5.1
-  LUAJIT := 1
+# Find the language version
+LUA_LANGV := $(shell ${LUA_CMD} -e 'print(string.match(_VERSION, "%d+.%d+"))')
+$(info - Lua language version ${LUA_LANGV})
 
-else ifneq ("$(wildcard /usr/local/include/luajit-2.0/lua.h)","")
-  LUA_VER := LuaJIT 2.0
-  LUA_CFLAGS := -I/usr/local/include/luajit-2.0 -DLUAJIT
-  LUA_LIBS := -lluajit-5.1
-  LUAJIT := 1
-
-else ifneq ("$(wildcard /usr/include/luajit-2.0/lua.h)","")
-  LUA_VER := LuaJIT 2.0
-  LUA_CFLAGS := -I/usr/include/luajit-2.0 -DLUAJIT
-  LUA_LIBS := -lluajit-5.1
-  LUAJIT := 1
-
-else ifneq ("$(wildcard /usr/local/include/lua/lua.h)","")
-  LUA_VER := system Lua
-  LUA_CFLAGS := -I/usr/local/include/lua
-  LUA_LIBS := -llua
-
-else ifneq ("$(wildcard /usr/include/lua/lua.h)","")
-  LUA_VER := system Lua
-  LUA_CFLAGS := -I/usr/include/lua
-  LUA_LIBS := -llua
-
-else ifneq ("$(wildcard /usr/include/lua.h)","")
-  LUA_VER := system Lua
-  LUA_CFLAGS := -I/usr/include
-  LUA_LIBS := -llua
-
-else ifneq ("$(wildcard /usr/local/include/lua5.1/lua.h)","")
-  LUA_VER := Lua 5.1
-  LUA_CFLAGS := -I/usr/local/include/lua5.1
-  LUA_LIBS := -llua5.1
-
-else ifneq ("$(wildcard /usr/include/lua5.1/lua.h)","")
-  LUA_VER := Lua 5.1
-  LUA_CFLAGS := -I/usr/include/lua5.1
-  LUA_LIBS := -llua5.1
-
-else ifneq ("$(wildcard /usr/include/lua5.3/lua.h)","")
-  LUA_VER := Lua 5.3
-  LUA_CFLAGS := -I/usr/include/lua5.3
-  LUA_LIBS := -llua5.3
-
-else ifneq ("$(wildcard /opt/homebrew/include/lua5.1/lua.h)","")
-  LUA_VER := Lua 5.1
-  LUA_CFLAGS := -I/opt/homebrew/include/lua5.1
-  LUA_LIBS := -llua5.1
-  PLATFORM_PATH := /opt/homebrew
-
+# Find the directory where Lua might be
+ifeq ($(LUA_CMD),luajit)
+  # We need the LuaJIT version (2.0/2.1) to find this
+  LUA_JITV := $(shell luajit -e 'a,b,c=string.find(jit.version,"LuaJIT (%d.%d)");print(c)')
+  $(info - LuaJIT version ${LUA_JITV})
+  LUA_DIR := luajit-${LUA_JITV}
+  LUA_LIBS := -lluajit-${LUA_LANGV}
 else
-  $(error Couldn't find Lua)
+  LUA_DIR := $(LUA_CMD)
+  LUA_LIBS := -l${LUA_CMD}
 endif
 
-$(info Using ${LUA_VER} (include path is ${LUA_CFLAGS}, library path is ${LUA_LIBS}))
-ifneq ($(OS),Windows_NT)
-  ifeq ($(shell uname -s), Darwin)
-    ifeq ($(LUAJIT), 1)
+# Find the include path by looking in the most likely locations
+ifneq ('$(wildcard /usr/local/include/${LUA_DIR}/lua.h)','')
+  LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}
+else ifneq ('$(wildcard /usr/local/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
+  LUA_CFLAGS := -I/usr/local/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
+else ifneq ('$(wildcard /usr/include/${LUA_DIR}/lua.h)','')
+  LUA_CFLAGS := -I/usr/include/${LUA_DIR}
+else ifneq ('$(wildcard /usr/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
+  LUA_CFLAGS := -I/usr/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
+else ifneq ('$(wildcard /usr/include/lua.h)','')
+  LUA_CFLAGS := -I/usr/include
+else ifneq ('$(wildcard /opt/homebrew/include/${LUA_DIR}/lua.h)','')
+  LUA_CFLAGS := -I/opt/homebrew/include/${LUA_DIR}
+  PLATFORM_PATH := /opt/homebrew
+else ifneq ('$(wildcard /opt/homebrew/include/${LUA_DIR}${LUA_LANGV}/lua.h)','')
+  LUA_CFLAGS := -I/opt/homebrew/include/${LUA_DIR}${LUA_LANGV}
+  LUA_LIBS := -l${LUA_CMD}${LUA_LANGV}
+  PLATFORM_PATH := /opt/homebrew
+else
+  $(error Couldn't find Lua libraries)
+endif
+
+# Append LuaJIT-specific flags if needed
+ifeq ($(LUA_CMD),luajit)
+  LUA_CFLAGS := ${LUA_CFLAGS} -DLUAJIT
+  ifneq ($(OS),Windows_NT)
+    ifeq ($(shell uname -s), Darwin)
       LDFLAGS := -pagezero_size 10000 -image_base 100000000
       $(info - with MacOS LuaJIT linking)
     endif
   endif
 endif
+
+# Report success
+$(info - include path is ${LUA_CFLAGS})
+$(info - library path is ${LUA_LIBS})
 
 # Main includes
 
