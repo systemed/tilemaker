@@ -63,21 +63,6 @@ For very large areas, you could potentially use `osmium tags-filter` to split a 
 Renumber each one, then run tilemaker several times with `--merge` to add one theme at a time. 
 This would greatly reduce memory usage.
 
-## Pre-split data
-
-Tilemaker is able to read pre-split source data, where the original .osm.pbf has already been 
-split into tiled areas (but not converted any further). By reducing the amount of data tilemaker 
-has to process at any one time, this can greatly reduce memory requirements.
-
-To split an .osm.pbf, use [mapsplit](https://github.com/simonpoole/mapsplit). This will output 
-an .msf file. We would recommend that you split the data at a low zoom level, such as 6; 
-tilemaker will not be able to generate vector tiles at a lower zoom level than the one you 
-choose for your .msf file.
-
-You can then run tilemaker exactly as normal, with the `--input` parameter set to your .msf 
-file. Source tiles will be processed one by one. Note that shapefiles will be read unsplit as 
-normal.
-
 ## Output messages
 
 Running tilemaker with the `--verbose` argument will output any issues encountered during tile

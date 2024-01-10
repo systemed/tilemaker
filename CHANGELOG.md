@@ -23,6 +23,7 @@
 
 ### Changed
 - __BREAKING__: Lua calls use the global namespace, so `Layer` instead of `way:Layer` etc. (@cldellow)
+- __BREAKING__: Mapsplit (.msf) support removed (@systemed)
 - Widespread speed improvements (@cldellow, @systemed)
 - Reduced memory consumption (@cldellow)
 - protobuf dependency removed: protozero/vtzero used instead (@cldellow)

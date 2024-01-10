@@ -47,7 +47,6 @@ namespace OptionsParser {
 		bool showHelp = false;
 		bool verbose = false;
 		bool mergeSqlite = false;
-		bool mapsplit = false;
 		OutputMode outputMode = OutputMode::File;
 		bool logTileTimings = false;
 	};
