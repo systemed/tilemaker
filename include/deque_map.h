@@ -95,7 +95,11 @@ public:
 		return -1;
 	}
 
-	const T& at(uint32_t index) const {
+	inline const T& operator[](uint32_t index) const {
+		return objects[index];
+	}
+
+	inline const T& at(uint32_t index) const {
 		return objects.at(index);
 	}
 

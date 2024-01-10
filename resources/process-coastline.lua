@@ -10,10 +10,10 @@ function exit_function()
 end
 
 node_keys = {}
-function node_function(node)
+function node_function()
 end
 
-function way_function(way)
+function way_function()
 end
 
 -- Remap coastlines

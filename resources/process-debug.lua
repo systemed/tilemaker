@@ -45,36 +45,36 @@ aerodromeValues = Set { "international", "public", "regional", "military", "priv
 -- Process node tags
 
 node_keys = { "amenity", "shop", "sport", "tourism", "place", "office", "natural", "addr:housenumber", "aeroway" }
-function node_function(node)
+function node_function()
 	-- Write 'aerodrome_label'
-	local aeroway = node:Find("aeroway")
+	local aeroway = Find("aeroway")
 	if aeroway == "aerodrome" then
-		node:Layer("aerodrome_label", false)
-		SetNameAttributes(node)
-		node:Attribute("iata", node:Find("iata"))
-		SetEleAttributes(node)
-		node:Attribute("icao", node:Find("icao"))
+		Layer("aerodrome_label", false)
+		SetNameAttributes()
+		Attribute("iata", Find("iata"))
+		SetEleAttributes()
+		Attribute("icao", Find("icao"))
 
-		local aerodrome_value = node:Find("aerodrome")
+		local aerodrome_value = Find("aerodrome")
 		local class
 		if aerodromeValues[aerodrome_value] then class = aerodrome_value else class = "other" end
-		node:Attribute("class", class)
+		Attribute("class", class)
 	end
 	-- Write 'housenumber'
-	local housenumber = node:Find("addr:housenumber")
+	local housenumber = Find("addr:housenumber")
 	if housenumber~="" then
-		node:Layer("housenumber", false)
-		node:Attribute("housenumber", housenumber)
+		Layer("housenumber", false)
+		Attribute("housenumber", housenumber)
 	end
 
 	-- Write 'place'
 	-- note that OpenMapTiles has a rank for countries (1-3), states (1-6) and cities (1-10+);
 	--   we could potentially approximate it for cities based on the population tag
-	local place = node:Find("place")
+	local place = Find("place")
 	if place ~= "" then
 		local rank = nil
 		local mz = 13
-		local pop = tonumber(node:Find("population")) or 0
+		local pop = tonumber(Find("population")) or 0
 
 		if     place == "continent"     then mz=2
 		elseif place == "country"       then mz=3; rank=1
@@ -90,31 +90,31 @@ function node_function(node)
 		elseif place == "locality"      then mz=13
 		end
 
-		node:Layer("place", false)
-		node:Attribute("class", place)
-		node:MinZoom(mz)
-		if rank then node:AttributeNumeric("rank", rank) end
-		SetNameAttributes(node)
+		Layer("place", false)
+		Attribute("class", place)
+		MinZoom(mz)
+		if rank then AttributeNumeric("rank", rank) end
+		SetNameAttributes()
 		return
 	end
 
 	-- Write 'poi'
-	local rank, class, subclass = GetPOIRank(node)
+	local rank, class, subclass = GetPOIRank()
 	if rank then WritePOI(node,class,subclass,rank) end
 
 	-- Write 'mountain_peak' and 'water_name'
-	local natural = node:Find("natural")
+	local natural = Find("natural")
 	if natural == "peak" or natural == "volcano" then
-		node:Layer("mountain_peak", false)
-		SetEleAttributes(node)
-		node:AttributeNumeric("rank", 1)
-		node:Attribute("class", natural)
-		SetNameAttributes(node)
+		Layer("mountain_peak", false)
+		SetEleAttributes()
+		AttributeNumeric("rank", 1)
+		Attribute("class", natural)
+		SetNameAttributes()
 		return
 	end
 	if natural == "bay" then
-		node:Layer("water_name", false)
-		SetNameAttributes(node)
+		Layer("water_name", false)
+		SetNameAttributes()
 		return
 	end
 end
@@ -196,33 +196,33 @@ waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 
 
-function way_function(way)
-	local highway  = way:Find("highway")
-	local waterway = way:Find("waterway")
-	local water    = way:Find("water")
-	local building = way:Find("building")
-	local natural  = way:Find("natural")
-	local historic = way:Find("historic")
-	local landuse  = way:Find("landuse")
-	local leisure  = way:Find("leisure")
-	local amenity  = way:Find("amenity")
-	local aeroway  = way:Find("aeroway")
-	local railway  = way:Find("railway")
-	local sport    = way:Find("sport")
-	local shop     = way:Find("shop")
-	local tourism  = way:Find("tourism")
-	local man_made = way:Find("man_made")
-	local isClosed = way:IsClosed()
-	local housenumber = way:Find("addr:housenumber")
+function way_function()
+	local highway  = Find("highway")
+	local waterway = Find("waterway")
+	local water    = Find("water")
+	local building = Find("building")
+	local natural  = Find("natural")
+	local historic = Find("historic")
+	local landuse  = Find("landuse")
+	local leisure  = Find("leisure")
+	local amenity  = Find("amenity")
+	local aeroway  = Find("aeroway")
+	local railway  = Find("railway")
+	local sport    = Find("sport")
+	local shop     = Find("shop")
+	local tourism  = Find("tourism")
+	local man_made = Find("man_made")
+	local isClosed = IsClosed()
+	local housenumber = Find("addr:housenumber")
 	local write_name = false
-	local construction = way:Find("construction")
+	local construction = Find("construction")
 
 	-- Miscellaneous preprocessing
-	if way:Find("disused") == "yes" then return end
+	if Find("disused") == "yes" then return end
 	if highway == "proposed" then return end
 	if aerowayBuildings[aeroway] then building="yes"; aeroway="" end
 	if landuse == "field" then landuse = "farmland" end
-	if landuse == "meadow" and way:Find("meadow")=="agricultural" then landuse="farmland" end
+	if landuse == "meadow" and Find("meadow")=="agricultural" then landuse="farmland" end
 
 	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if highway~="" then
@@ -235,33 +235,33 @@ function way_function(way)
 		if trackValues[highway]     then h = "track"; layer="transportation_detail" end
 		if pathValues[highway]      then h = "path" ; layer="transportation_detail" end
 		if h=="service"             then              layer="transportation_detail" end
-		way:Layer(layer, false)
-		way:Attribute("class", h)
-		SetBrunnelAttributes(way)
+		Layer(layer, false)
+		Attribute("class", h)
+		SetBrunnelAttributes()
 
 		-- Construction
 		if highway == "construction" then
 			if constructionValues[construction] then
-				way:Attribute("class", construction .. "_construction")
+				Attribute("class", construction .. "_construction")
 			else
-				way:Attribute("class", "minor_construction")
+				Attribute("class", "minor_construction")
 			end
 		end
 
 		-- Service
-		local service = way:Find("service")
-		if highway == "service" and service ~="" then way:Attribute("service", service) end
+		local service = Find("service")
+		if highway == "service" and service ~="" then Attribute("service", service) end
 
 		-- Links (ramp)
 		if linkValues[highway] then
 			splitHighway = split(highway, "_")
 			highway = splitHighway[1]
-			way:AttributeNumeric("ramp",1)
+			AttributeNumeric("ramp",1)
 		end
 
-		local oneway = way:Find("oneway")
+		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
-			way:AttributeNumeric("oneway",1)
+			AttributeNumeric("oneway",1)
 		end
 		if oneway == "-1" then
 			-- **** TODO
@@ -269,115 +269,115 @@ function way_function(way)
 
 		-- Write names
 		if layer == "motorway" or layer == "trunk" then
-			way:Layer("transportation_name", false)
+			Layer("transportation_name", false)
 		elseif h == "minor" or h == "track" or h == "path" or h == "service" then
-			way:Layer("transportation_name_detail", false)
+			Layer("transportation_name_detail", false)
 		else
-			way:Layer("transportation_name_mid", false)
+			Layer("transportation_name_mid", false)
 		end
-		SetNameAttributes(way)
-		way:Attribute("class",h)
-		way:Attribute("network","road") -- **** needs fixing
-		if h~=highway then way:Attribute("subclass",highway) end
-		local ref = way:Find("ref")
+		SetNameAttributes()
+		Attribute("class",h)
+		Attribute("network","road") -- **** needs fixing
+		if h~=highway then Attribute("subclass",highway) end
+		local ref = Find("ref")
 		if ref~="" then
-			way:Attribute("ref",ref)
-			way:AttributeNumeric("ref_length",ref:len())
+			Attribute("ref",ref)
+			AttributeNumeric("ref_length",ref:len())
 		end
 	end
 
 	-- Railways ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if railway~="" then
-		way:Layer("transportation", false)
-		way:Attribute("class", railway)
+		Layer("transportation", false)
+		Attribute("class", railway)
 
-		way:Layer("transportation_name", false)
-		SetNameAttributes(way)
-		way:MinZoom(14)
-		way:Attribute("class", "rail")
+		Layer("transportation_name", false)
+		SetNameAttributes()
+		MinZoom(14)
+		Attribute("class", "rail")
 	end
 
 	-- 'Aeroway'
 	if aeroway~="" then
-		way:Layer("aeroway", isClosed)
-		way:Attribute("class",aeroway)
-		way:Attribute("ref",way:Find("ref"))
+		Layer("aeroway", isClosed)
+		Attribute("class",aeroway)
+		Attribute("ref",Find("ref"))
 		write_name = true
 	end
 
 	-- 'aerodrome_label'
 	if aeroway=="aerodrome" then
-	 	way:LayerAsCentroid("aerodrome_label")
-	 	SetNameAttributes(way)
-	 	way:Attribute("iata", way:Find("iata"))
-  		SetEleAttributes(way)
- 	 	way:Attribute("icao", way:Find("icao"))
+	 	LayerAsCentroid("aerodrome_label")
+	 	SetNameAttributes()
+	 	Attribute("iata", Find("iata"))
+  		SetEleAttributes()
+ 	 	Attribute("icao", Find("icao"))
 
- 	 	local aerodrome = way:Find(aeroway)
+ 	 	local aerodrome = Find(aeroway)
  	 	local class
  	 	if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
- 	 	way:Attribute("class", class)
+ 	 	Attribute("class", class)
 	end
 
 	-- Set 'waterway' and associated
 	if waterwayClasses[waterway] and not isClosed then
-		if waterway == "river" and way:Holds("name") then
-			way:Layer("waterway", false)
+		if waterway == "river" and Holds("name") then
+			Layer("waterway", false)
 		else
-			way:Layer("waterway_detail", false)
+			Layer("waterway_detail", false)
 		end
-		if way:Find("intermittent")=="yes" then way:AttributeNumeric("intermittent", 1) else way:AttributeNumeric("intermittent", 0) end
-		way:Attribute("class", waterway)
-		SetNameAttributes(way)
-		SetBrunnelAttributes(way)
-	elseif waterway == "boatyard"  then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
-	elseif waterway == "dam"       then way:Layer("building",isClosed)
-	elseif waterway == "fuel"      then way:Layer("landuse", isClosed); way:Attribute("class", "industrial")
+		if Find("intermittent")=="yes" then AttributeNumeric("intermittent", 1) else AttributeNumeric("intermittent", 0) end
+		Attribute("class", waterway)
+		SetNameAttributes()
+		SetBrunnelAttributes()
+	elseif waterway == "boatyard"  then Layer("landuse", isClosed); Attribute("class", "industrial")
+	elseif waterway == "dam"       then Layer("building",isClosed)
+	elseif waterway == "fuel"      then Layer("landuse", isClosed); Attribute("class", "industrial")
 	end
 	-- Set names on rivers
 	if waterwayClasses[waterway] and not isClosed then
-		if waterway == "river" and way:Holds("name") then
-			way:Layer("water_name", false)
+		if waterway == "river" and Holds("name") then
+			Layer("water_name", false)
 		else
-			way:Layer("water_name_detail", false)
-			way:MinZoom(14)
+			Layer("water_name_detail", false)
+			MinZoom(14)
 		end
-		way:Attribute("class", waterway)
-		SetNameAttributes(way)
+		Attribute("class", waterway)
+		SetNameAttributes()
 	end
 
 	-- Set 'building' and associated
 	if building~="" then
-		way:Layer("building", true)
-		SetMinZoomByArea(way)
+		Layer("building", true)
+		SetMinZoomByArea()
 	end
 
 	-- Set 'housenumber'
 	if housenumber~="" then
-		way:LayerAsCentroid("housenumber", false)
-		way:Attribute("housenumber", housenumber)
+		LayerAsCentroid("housenumber", false)
+		Attribute("housenumber", housenumber)
 	end
 
 	-- Set 'water'
 	if natural=="water" or natural=="bay" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
-		if way:Find("covered")=="yes" or not isClosed then return end
+		if Find("covered")=="yes" or not isClosed then return end
 		local class="lake"; if natural=="bay" then class="ocean" elseif waterway~="" then class="river" end
-		way:Layer("water",true)
---		SetMinZoomByArea(way)
-		way:Attribute("class",class)
+		Layer("water",true)
+--		SetMinZoomByArea()
+		Attribute("class",class)
 
-		if way:Find("intermittent")=="yes" then way:Attribute("intermittent",1) end
+		if Find("intermittent")=="yes" then Attribute("intermittent",1) end
 		-- we only want to show the names of actual lakes not every man-made basin that probably doesn't even have a name other than "basin"
 		-- examples for which we don't want to show a name:
 		--  https://www.openstreetmap.org/way/25958687
 		--  https://www.openstreetmap.org/way/27201902
 		--  https://www.openstreetmap.org/way/25309134
 		--  https://www.openstreetmap.org/way/24579306
-		if way:Holds("name") and natural=="water" and water ~= "basin" and water ~= "wastewater" then
-			way:LayerAsCentroid("water_name_detail")
-			SetNameAttributes(way)
---			SetMinZoomByArea(way)
-			way:Attribute("class", class)
+		if Holds("name") and natural=="water" and water ~= "basin" and water ~= "wastewater" then
+			LayerAsCentroid("water_name_detail")
+			SetNameAttributes()
+--			SetMinZoomByArea()
+			Attribute("class", class)
 		end
 
 		return -- in case we get any landuse processing
@@ -388,11 +388,11 @@ function way_function(way)
 	if l=="" then l=natural end
 	if l=="" then l=leisure end
 	if landcoverKeys[l] then
-		way:Layer("landcover", true)
-		SetMinZoomByArea(way)
-		way:Attribute("class", landcoverKeys[l])
-		if l=="wetland" then way:Attribute("subclass", way:Find("wetland"))
-		else way:Attribute("subclass", l) end
+		Layer("landcover", true)
+		SetMinZoomByArea()
+		Attribute("class", landcoverKeys[l])
+		if l=="wetland" then Attribute("subclass", Find("wetland"))
+		else Attribute("subclass", l) end
 		write_name = true
 
 	-- Set 'landuse'
@@ -400,26 +400,26 @@ function way_function(way)
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
 		if landuseKeys[l] then
-			way:Layer("landuse", true)
-			way:Attribute("class", l)
+			Layer("landuse", true)
+			Attribute("class", l)
 			write_name = true
 		end
 	end
 
 	-- Parks
-	if     boundary=="national_park" then way:Layer("park",true); way:Attribute("class",boundary); SetNameAttributes(way)
-	elseif leisure=="nature_reserve" then way:Layer("park",true); way:Attribute("class",leisure ); SetNameAttributes(way) end
+	if     boundary=="national_park" then Layer("park",true); Attribute("class",boundary); SetNameAttributes()
+	elseif leisure=="nature_reserve" then Layer("park",true); Attribute("class",leisure ); SetNameAttributes() end
 
 	-- POIs ('poi' and 'poi_detail')
-	local rank, class, subclass = GetPOIRank(way)
+	local rank, class, subclass = GetPOIRank()
 	if rank then WritePOI(way,class,subclass,rank); return end
 
 	-- Catch-all
-	if (building~="" or write_name) and way:Holds("name") then
-		way:LayerAsCentroid("poi_detail")
-		SetNameAttributes(way)
+	if (building~="" or write_name) and Holds("name") then
+		LayerAsCentroid("poi_detail")
+		SetNameAttributes()
 		if write_name then rank=6 else rank=25 end
-		way:AttributeNumeric("rank", rank)
+		AttributeNumeric("rank", rank)
 	end
 end
 
@@ -435,65 +435,67 @@ end
 function WritePOI(obj,class,subclass,rank)
 	local layer = "poi"
 	if rank>4 then layer="poi_detail" end
-	obj:LayerAsCentroid(layer)
+	LayerAsCentroid(layer)
 	SetNameAttributes(obj)
-	obj:AttributeNumeric("rank", rank)
-	obj:Attribute("class", class)
-	obj:Attribute("subclass", subclass)
+	AttributeNumeric("rank", rank)
+	Attribute("class", class)
+	Attribute("subclass", subclass)
 end
 
 -- Set name attributes on any object
 function SetNameAttributes(obj)
-	local name = obj:Find("name"), main_written = name, iname
+	local name = Find("name")
+	local main_written = name
+	local iname
 	-- if we have a preferred language, then write that (if available), and additionally write the base name tag
-	if preferred_language and obj:Holds("name:"..preferred_language) then 
-		iname = obj:Find("name:"..preferred_language)
+	if preferred_language and Holds("name:"..preferred_language) then 
+		iname = Find("name:"..preferred_language)
 print("Found "..preferred_language..": "..iname)
-		obj:Attribute(preferred_language_attribute, iname)
+		Attribute(preferred_language_attribute, iname)
 		if iname~=name and default_language_attribute then
-			obj:Attribute(default_language_attribute, name)
+			Attribute(default_language_attribute, name)
 		else main_written = iname end
 	else
-		obj:Attribute(preferred_language_attribute, name)
+		Attribute(preferred_language_attribute, name)
 	end
 	-- then set any additional languages
 	for i,lang in ipairs(additional_languages) do
-		iname = obj:Find("name:"..lang)
+		iname = Find("name:"..lang)
 		if iname=="" then iname=name end
-		if iname~=main_written then obj:Attribute("name:"..lang, iname) end
+		if iname~=main_written then Attribute("name:"..lang, iname) end
 	end
 end
 
 -- Set ele and ele_ft on any object
 function SetEleAttributes(obj)
-    local ele = obj:Find("ele")
+    local ele = Find("ele")
 	if ele ~= "" then
 		local meter = math.floor(tonumber(ele) or 0)
 		local feet = math.floor(meter * 3.2808399)
-		obj:AttributeNumeric("ele", meter)
-		obj:AttributeNumeric("ele_ft", feet)
+		AttributeNumeric("ele", meter)
+		AttributeNumeric("ele_ft", feet)
     end
 end
 
 function SetBrunnelAttributes(obj)
-	if     obj:Find("bridge") == "yes" then obj:Attribute("brunnel", "bridge")
-	elseif obj:Find("tunnel") == "yes" then obj:Attribute("brunnel", "tunnel")
-	elseif obj:Find("ford")   == "yes" then obj:Attribute("brunnel", "ford")
+	if     Find("bridge") == "yes" then Attribute("brunnel", "bridge")
+	elseif Find("tunnel") == "yes" then Attribute("brunnel", "tunnel")
+	elseif Find("ford")   == "yes" then Attribute("brunnel", "ford")
 	end
 end
 
 -- Set minimum zoom level by area
-function SetMinZoomByArea(way)
-	local area=way:Area()
-	if     area>ZRES5^2  then way:MinZoom(6)
-	elseif area>ZRES6^2  then way:MinZoom(7)
-	elseif area>ZRES7^2  then way:MinZoom(8)
-	elseif area>ZRES8^2  then way:MinZoom(9)
-	elseif area>ZRES9^2  then way:MinZoom(10)
-	elseif area>ZRES10^2 then way:MinZoom(11)
-	elseif area>ZRES11^2 then way:MinZoom(12)
-	elseif area>ZRES12^2 then way:MinZoom(13)
-	else                      way:MinZoom(14) end
+function SetMinZoomByArea()
+	local area=Area()
+	if     area>ZRES5^2  then MinZoom(6)
+	elseif area>ZRES6^2  then MinZoom(7)
+	elseif area>ZRES7^2  then MinZoom(8)
+	elseif area>ZRES8^2  then MinZoom(9)
+	elseif area>ZRES9^2  then MinZoom(10)
+	elseif area>ZRES10^2 then MinZoom(11)
+	elseif area>ZRES11^2 then MinZoom(12)
+	elseif area>ZRES12^2 then MinZoom(13)
+	else                      MinZoom(14) end
 end
 
 -- Calculate POIs (typically rank 1-4 go to 'poi' z12-14, rank 5+ to 'poi_detail' z14)
@@ -503,8 +505,8 @@ function GetPOIRank(obj)
 
 	-- Can we find the tag?
 	for k,list in pairs(poiTags) do
-		if list[obj:Find(k)] then
-			v = obj:Find(k)	-- k/v are the OSM tag pair
+		if list[Find(k)] then
+			v = Find(k)	-- k/v are the OSM tag pair
 			class = poiClasses[v] or v
 			rank  = poiClassRanks[class] or 25
 			return rank, class, v
@@ -512,7 +514,7 @@ function GetPOIRank(obj)
 	end
 
 	-- Catch-all for shops
-	local shop = obj:Find("shop")
+	local shop = Find("shop")
 	if shop~="" then return poiClassRanks['shop'], "shop", shop end
 
 	-- Nothing found

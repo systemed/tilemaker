@@ -14,33 +14,33 @@ end
 -- Assign nodes to a layer, and set attributes, based on OSM tags
 
 function node_function(node)
-	local amenity = node:Find("amenity")
-	local shop = node:Find("shop")
+	local amenity = Find("amenity")
+	local shop = Find("shop")
 	if amenity~="" or shop~="" then
-		node:Layer("poi", false)
-		if amenity~="" then node:Attribute("class",amenity)
-		else node:Attribute("class",shop) end
-		node:Attribute("name", node:Find("name"))
+		Layer("poi", false)
+		if amenity~="" then Attribute("class",amenity)
+		else Attribute("class",shop) end
+		Attribute("name", Find("name"))
 	end
 end
 
 -- Similarly for ways
 
-function way_function(way)
-	local highway = way:Find("highway")
-	local waterway = way:Find("waterway")
-	local building = way:Find("building")
+function way_function()
+	local highway = Find("highway")
+	local waterway = Find("waterway")
+	local building = Find("building")
 	if highway~="" then
-		way:Layer("transportation", false)
-		way:Attribute("class", highway)
---		way:Attribute("id",way:Id())
---		way:AttributeNumeric("area",37)
+		Layer("transportation", false)
+		Attribute("class", highway)
+--		Attribute("id",Id())
+--		AttributeNumeric("area",37)
 	end
 	if waterway~="" then
-		way:Layer("waterway", false)
-		way:Attribute("class", waterway)
+		Layer("waterway", false)
+		Attribute("class", waterway)
 	end
 	if building~="" then
-		way:Layer("building", true)
+		Layer("building", true)
 	end
 end

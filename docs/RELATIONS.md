@@ -22,26 +22,30 @@ This is a two-stage process: first, when reading relations, indicate that these 
 
 To define which relations should be accepted, add a `relation_scan_function`:
 
-    function relation_scan_function(relation)
-      if relation:Find("type")=="route" and relation:Find("route")=="bicycle" then
-        local network = relation:Find("network")
-        if network=="ncn" then relation:Accept() end
+```lua
+    function relation_scan_function()
+      if Find("type")=="route" and Find("route")=="bicycle" then
+        local network = Find("network")
+        if network=="ncn" then Accept() end
       end
     end
+```
 
-This function takes the relation as its sole argument. Examine the tags using `relation:Find(key)` as normal. (You can also use `relation:Holds(key)` and `relation:Id()`.) If you want to use this relation, call `relation:Accept()`.
+Examine the tags using `Find(key)` as normal. (You can also use `Holds(key)` and `Id()`.) If you want to use this relation, call `Accept()`.
 
 #### Stage 2: accessing relations from ways
 
-Now that you've accepted the relations, they will be available from `way_function`. They are accessed using an iterator (`way:NextRelation()`) which reads each relation for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `way:FindInRelation(key)`. For example:
+Now that you've accepted the relations, they will be available from `way_function`. They are accessed using an iterator (`NextRelation()`) which reads each relation for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `FindInRelation(key)`. For example:
 
+```lua
     while true do
-      local rel = way:NextRelation()
+      local rel = NextRelation()
       if not rel then break end
-      print ("Part of route "..way:FindInRelation("ref"))
+      print ("Part of route "..FindInRelation("ref"))
     end
+```
 
-(Should you need to re-read the relations, you can reset the iterator with `way:RestartRelations()`.)
+(Should you need to re-read the relations, you can reset the iterator with `RestartRelations()`.)
 
 
 ### Writing relation geometries
@@ -52,13 +56,15 @@ First, make sure that you have accepted the relations using `relation_scan_funct
 
 Then write a `relation_function`, which works in the same way as `way_function` would:
 
-    function relation_function(relation)
-      if relation:Find("type")=="route" and relation:Find("route")=="bicycle" then
-        relation:Layer("bike_routes", false)
-        relation:Attribute("class", relation:Find("network"))
-        relation:Attribute("ref", relation:Find("ref"))
+```lua
+    function relation_function()
+      if Find("type")=="route" and Find("route")=="bicycle" then
+        Layer("bike_routes", false)
+        Attribute("class", Find("network"))
+        Attribute("ref", Find("ref"))
       end
     end
+```
 
 
 ### Not supported

@@ -73,10 +73,21 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	}
 }
 
+thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
+
 void TileDataSource::finalize(size_t threadNum) {
+	uint64_t finalized = 0;
+	for (const auto& vec : pendingSmallIndexObjects) {
+		for (const auto& tuple : vec) {
+			finalized++;
+			addObjectToSmallIndexUnsafe(std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple));
+		}
+	}
+
+	std::cout << "indexed " << finalized << " contended objects" << std::endl;
+
 	finalizeObjects<OutputObjectXY>(name(), threadNum, baseZoom, objects.begin(), objects.end(), lowZoomObjects);
 	finalizeObjects<OutputObjectXYID>(name(), threadNum, baseZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
-
 }
 
 void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
@@ -90,8 +101,28 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	}
 
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+	auto& mutex = objectsMutex[z6index % objectsMutex.size()];
 
-	std::lock_guard<std::mutex> lock(objectsMutex[z6index % objectsMutex.size()]);
+	if (mutex.try_lock()) {
+		addObjectToSmallIndexUnsafe(index, oo, id);
+		mutex.unlock();
+	} else {
+		// add to tlsPendingSmallIndexObjects
+		if (tlsPendingSmallIndexObjects == nullptr) {
+			std::lock_guard<std::mutex> lock(objectsMutex[0]);
+			pendingSmallIndexObjects.push_back(std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>());
+			tlsPendingSmallIndexObjects = &pendingSmallIndexObjects.back();
+		}
+
+		tlsPendingSmallIndexObjects->push_back(std::make_tuple(index, oo, id));
+	}
+}
+
+void TileDataSource::addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
+	// Pick the z6 index
+	const size_t z6x = index.x / z6OffsetDivisor;
+	const size_t z6y = index.y / z6OffsetDivisor;
+	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 
 	if (id == 0 || !includeID)
 		objects[z6index].push_back({

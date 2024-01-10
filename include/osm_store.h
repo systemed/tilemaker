@@ -82,51 +82,55 @@ class RelationScanStore {
 
 private:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
-	std::map<WayID, std::vector<std::pair<WayID, uint16_t>>> relationsForWays;
-	std::map<NodeID, std::vector<std::pair<WayID, uint16_t>>> relationsForNodes;
-	std::map<WayID, tag_map_t> relationTags;
-	mutable std::mutex mutex;
+	std::vector<std::map<WayID, std::vector<std::pair<WayID, uint16_t>>>> relationsForWays;
+	std::vector<std::map<NodeID, std::vector<std::pair<WayID, uint16_t>>>> relationsForNodes;
+	std::vector<std::map<WayID, tag_map_t>> relationTags;
+	mutable std::vector<std::mutex> mutex;
 	RelationRoles relationRoles;
 
 public:
+	RelationScanStore(): relationsForWays(128), relationsForNodes(128), relationTags(128), mutex(128) {}
 	void relation_contains_way(WayID relid, WayID wayid, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
-		std::lock_guard<std::mutex> lock(mutex);
-		relationsForWays[wayid].emplace_back(std::make_pair(relid, roleId));
+		const size_t shard = wayid % mutex.size();
+		std::lock_guard<std::mutex> lock(mutex[shard]);
+		relationsForWays[shard][wayid].emplace_back(std::make_pair(relid, roleId));
 	}
 	void relation_contains_node(WayID relid, NodeID nodeId, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
-		std::lock_guard<std::mutex> lock(mutex);
-		relationsForNodes[nodeId].emplace_back(std::make_pair(relid, roleId));
+		const size_t shard = nodeId % mutex.size();
+		std::lock_guard<std::mutex> lock(mutex[shard]);
+		relationsForNodes[shard][nodeId].emplace_back(std::make_pair(relid, roleId));
 	}
 	void store_relation_tags(WayID relid, const tag_map_t &tags) {
-		std::lock_guard<std::mutex> lock(mutex);
-		relationTags[relid] = tags;
+		const size_t shard = relid % mutex.size();
+		std::lock_guard<std::mutex> lock(mutex[shard]);
+		relationTags[shard][relid] = tags;
 	}
 	bool way_in_any_relations(WayID wayid) {
-		return relationsForWays.find(wayid) != relationsForWays.end();
+		const size_t shard = wayid % mutex.size();
+		return relationsForWays[shard].find(wayid) != relationsForWays[shard].end();
 	}
 	bool node_in_any_relations(NodeID nodeId) {
-		return relationsForNodes.find(nodeId) != relationsForNodes.end();
+		const size_t shard = nodeId % mutex.size();
+		return relationsForNodes[shard].find(nodeId) != relationsForNodes[shard].end();
 	}
 	std::string getRole(uint16_t roleId) const { return relationRoles.getRole(roleId); }
 	const std::vector<std::pair<WayID, uint16_t>>& relations_for_way(WayID wayid) {
-		return relationsForWays[wayid];
+		const size_t shard = wayid % mutex.size();
+		return relationsForWays[shard][wayid];
 	}
 	const std::vector<std::pair<WayID, uint16_t>>& relations_for_node(NodeID nodeId) {
-		return relationsForNodes[nodeId];
+		const size_t shard = nodeId % mutex.size();
+		return relationsForNodes[shard][nodeId];
 	}
 	std::string get_relation_tag(WayID relid, const std::string &key) {
-		auto it = relationTags.find(relid);
-		if (it==relationTags.end()) return "";
+		const size_t shard = relid % mutex.size();
+		auto it = relationTags[shard].find(relid);
+		if (it==relationTags[shard].end()) return "";
 		auto jt = it->second.find(key);
 		if (jt==it->second.end()) return "";
 		return jt->second;
-	}
-	void clear() {
-		std::lock_guard<std::mutex> lock(mutex);
-		relationsForWays.clear();
-		relationTags.clear();
 	}
 };
 

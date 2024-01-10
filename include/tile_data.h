@@ -364,6 +364,8 @@ protected:
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
 
+	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>> pendingSmallIndexObjects;
+
 public:
 	TileDataSource(size_t threadNum, unsigned int baseZoom, bool includeID);
 
@@ -391,6 +393,8 @@ public:
 	);
 
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id, bool needsLock);
+	void addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 
 	void addObjectToLargeIndex(const Box& envelope, const OutputObject& oo, uint64_t id) {
 		std::lock_guard<std::mutex> lock(mutex);
