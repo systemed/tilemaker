@@ -1,8 +1,6 @@
 ## Relations
 
-Tilemaker has (as yet not complete) support for reading relations in the Lua process scripts. This means you can support objects like route relations when creating your vector tiles.
-
-Note that relation support is in its early stages and behaviour may change between point versions.
+Tilemaker supports reading relations in the Lua process scripts. This means you can include objects like route relations when creating your vector tiles.
 
 
 ### Multipolygon relations
@@ -33,9 +31,9 @@ To define which relations should be accepted, add a `relation_scan_function`:
 
 Examine the tags using `Find(key)` as normal. (You can also use `Holds(key)` and `Id()`.) If you want to use this relation, call `Accept()`.
 
-#### Stage 2: accessing relations from ways
+#### Stage 2: accessing relations from ways and nodes
 
-Now that you've accepted the relations, they will be available from `way_function`. They are accessed using an iterator (`NextRelation()`) which reads each relation for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `FindInRelation(key)`. For example:
+Now that you've accepted the relations, they will be available from `way_function` or `node_function`. They are accessed using an iterator (`NextRelation()`) which reads each relation for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `FindInRelation(key)`. For example:
 
 ```lua
     while true do
@@ -45,7 +43,9 @@ Now that you've accepted the relations, they will be available from `way_functio
     end
 ```
 
-(Should you need to re-read the relations, you can reset the iterator with `RestartRelations()`.)
+You can obtain the relation ID and role from `rel`, which is a list (a two-element Lua table). The first element (`rel[1]`) is the id, the second (`rel[2]`) the role. Remember Lua tables are 1-indexed!
+
+Should you need to re-read the relations, you can reset the iterator with `RestartRelations()`.
 
 
 ### Writing relation geometries
@@ -69,8 +69,4 @@ Then write a `relation_function`, which works in the same way as `way_function` 
 
 ### Not supported
 
-Tilemaker does not yet support:
-
-- relation roles
-- nested relations
-- nodes in relations
+Tilemaker does not yet support nested relations.

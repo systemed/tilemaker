@@ -91,7 +91,7 @@ The tilemaker code is licensed as FTWPL; you may do anything you like with this 
 
 Licenses of third-party libraries:
 
-- sqlite_modern_cpp (Amin Roosta) is licensed under MIT
+- [sqlite_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp) is licensed under MIT
 - [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence
 - [libpopcnt](https://github.com/kimwalisch/libpopcnt) is licensed under BSD 2-clause
 - [pmtiles](https://github.com/protomaps/PMTiles) is licensed under BSD 3-clause
@@ -100,3 +100,4 @@ Licenses of third-party libraries:
 - [protozero](https://github.com/mapbox/protozero) is licensed under BSD 2-clause
 - [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause
 - [minunit](https://github.com/siu/minunit) is licensed under MIT
+- [Simple-Web-Server](https://gitlab.com/eidheim/Simple-Web-Server) is licensed under MIT

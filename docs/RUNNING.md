@@ -33,8 +33,42 @@ to writing them out as vector tiles. This is fine for small regions, but can imp
 requirements for larger areas.
 
 To use on-disk storage instead, pass the `--store` argument with a path to the directory where 
-you want the temporary store to be created. This should be on an SSD or other fast disk. 
-Tilemaker will grow the store as required.
+you want the temporary store to be created - on an SSD or other fast disk. This allows you 
+to process bigger areas even on memory-constrained systems.
+
+## Performance and memory tuning
+
+By default, tilemaker aims to balance memory usage with speed, but with a slight tilt towards 
+minimising memory. You can get faster runtimes, at the expense of a little more memory, by 
+specifying `--fast`.
+
+This is all most people will need to know. But if you have plentiful RAM, you can experiment 
+with these options. In general, options that use more memory run faster - but if you can 
+optimise memory such that your dataset fits entirely in RAM, this will be a big speed-up.
+(`--fast` simply chooses a set of these options for you.)
+
+* `--compact`: Use a smaller, faster data structure for node lookups. __Note__: This requires 
+the .pbf to have nodes in sequential order, typically by using `osmium renumber`.
+* `--no-compress-nodes` and `--no-compress-ways`: Turn off node/way compression. Increases 
+RAM usage but runs faster.
+* `--materialize-geometries`: Generate geometries in advance when reading .pbf. Increases RAM 
+usage but runs faster.
+* `--lazy-geometries`: Don't generate geometries in advance. Reduces RAM usage but runs slower.
+* `--shard-stores`: Group temporary storage by area. Reduces RAM usage on large files (e.g.
+whole planet) but runs slower.
+
+You can also tell tilemaker to only look at .pbf objects with certain tags. If you're making a 
+thematic map, this allows tilemaker to skip data it won't need. Specify this in your Lua file 
+like one of these three examples:
+
+    -- Only include major roads
+    way_keys = {"highway=motorway", "highway=trunk", "highway=primary", "highway=secondary"}`
+
+    -- Only include railways
+    way_keys = {"railway"}
+
+    -- Include everything but not buildings
+    way_keys = {"~building"}
 
 ## Merging
 
@@ -58,10 +92,10 @@ Then rerun with another .pbf, using the `--merge` flag:
 The second run will proceed a little more slowly due to reading in existing tiles in areas which 
 overlap. Any OSM objects which appear in both files will be written twice.
 
-For very large areas, you could potentially use `osmium tags-filter` to split a .pbf into several 
-"thematic" extracts: for example, one containing buildings, another roads, and another landuse. 
-Renumber each one, then run tilemaker several times with `--merge` to add one theme at a time. 
-This would greatly reduce memory usage.
+If you're very pushed for memory, you could potentially use `osmium tags-filter` to split a 
+.pbf into several "thematic" extracts: for example, one containing buildings, another roads, 
+and another landuse. Renumber each one, then run tilemaker several times with `--merge` to add 
+one theme at a time.
 
 ## Output messages
 
