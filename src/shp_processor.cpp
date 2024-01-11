@@ -181,6 +181,15 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
 		}
 
+	} else if (shapeType==8) {
+		// Multipoint
+		for (uint i=0; i<shape->nVertices; i++) {
+			Point p( shape->padfX[i], lat2latp(shape->padfY[i]) );
+			if (geom::within(p, clippingBox)) {
+				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+			}
+		}
+
 	} else if (shapeType==3) {
 		// (Multi)-polylines
 		// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58, 
