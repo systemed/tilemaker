@@ -240,7 +240,7 @@ void AttributeSet::removePairWithKey(const AttributePairStore& pairStore, uint32
 	}
 }
 
-void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom) {
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, const protozero::data_view v, char minzoom) {
 	PooledString ps(&v);
 	AttributePair kv(keyStore.key2index(key), ps, minzoom);
 	bool isHot = AttributePair::isHot(key, v);

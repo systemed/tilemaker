@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <vector>
 #include <string>
+#include <protozero/data_view.hpp>
 
 namespace PooledStringNS {
   class PooledString {
@@ -40,9 +41,10 @@ namespace PooledStringNS {
       PooledString(const std::string& str);
 
 
-      // Create a std string - only valid so long as the string that is
-      // pointed to is valid.
-      PooledString(const std::string* str);
+      // Wrap a protozero::data_view - only valid so long as the
+      // data_view that is pointed to is valid; call ensureStringIsOwned
+      // if you need to persist the string.
+      PooledString(const protozero::data_view* str);
       size_t size() const;
       bool operator<(const PooledString& other) const;
       bool operator==(const PooledString& other) const;

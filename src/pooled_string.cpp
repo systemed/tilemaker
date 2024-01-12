@@ -9,7 +9,7 @@ namespace PooledStringNS {
 
 	const uint8_t ShortString = 0b00;
 	const uint8_t HeapString = 0b10;
-	const uint8_t StdString = 0b11;
+	const uint8_t DataViewString = 0b11;
 
 	// Each thread has its own string table, we only take a lock
 	// to push a new table onto the vector.
@@ -57,16 +57,16 @@ PooledString::PooledString(const std::string& str) {
 	}
 }
 
-PooledString::PooledString(const std::string* str) {
-	storage[0] = StdString << 6;
+PooledString::PooledString(const protozero::data_view* str) {
+	storage[0] = DataViewString << 6;
 
-	*(const std::string**)((void*)(storage + 8)) = str;
+	*(const protozero::data_view**)((void*)(storage + 8)) = str;
 }
 
 bool PooledStringNS::PooledString::operator==(const PooledString& other) const {
 	// NOTE: We have surprising equality semantics!
 	//
-	// If one of the strings is a StdString, it's value equality.
+	// If one of the strings is a DataViewString, it's value equality.
 	//
 	// Else, for short strings, you are equal if the strings are equal.
 	//
@@ -76,7 +76,7 @@ bool PooledStringNS::PooledString::operator==(const PooledString& other) const {
 	uint8_t kind = storage[0] >> 6;
 	uint8_t otherKind = other.storage[0] >> 6;
 
-	if (kind == StdString || otherKind == StdString) {
+	if (kind == DataViewString || otherKind == DataViewString) {
 		size_t mySize = size();
 		if (mySize != other.size())
 			return false;
@@ -97,8 +97,8 @@ const char* PooledStringNS::PooledString::data() const {
 	if (kind == ShortString)
 		return (char *)(storage + 1);
 
-	if (kind == StdString) {
-		const std::string* str = *(const std::string**)((void*)(storage + 8));
+	if (kind == DataViewString) {
+		const protozero::data_view* str = *(const protozero::data_view**)((void*)(storage + 8));
 		return str->data();
 	}
 
@@ -121,7 +121,7 @@ size_t PooledStringNS::PooledString::size() const {
 		// Otherwise it's stored in the lower 7 bits of the highest byte.
 		return storage[0] & 0b01111111;
 
-	const std::string* str = *(const std::string**)((void*)(storage + 8));
+	const protozero::data_view* str = *(const protozero::data_view**)((void*)(storage + 8));
 	return str->size();
 }
 
@@ -146,14 +146,14 @@ std::string PooledStringNS::PooledString::toString() const {
 		return rv;
 	}
 
-	const std::string* str = *(const std::string**)((void*)(storage + 8));
-	return *str;
+	const protozero::data_view* str = *(const protozero::data_view**)((void*)(storage + 8));
+	return std::string(str->data(), str->size());
 }
 
 void PooledStringNS::PooledString::ensureStringIsOwned() {
 	uint8_t kind = storage[0] >> 6;
 
-	if (kind != StdString)
+	if (kind != DataViewString)
 		return;
 
 	*this = PooledString(toString());

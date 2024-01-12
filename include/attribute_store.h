@@ -10,6 +10,7 @@
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
+#include <protozero/data_view.hpp>
 #include "pooled_string.h"
 #include "deque_map.h"
 
@@ -126,7 +127,7 @@ struct AttributePair {
 
 	void ensureStringIsOwned();
 
-	static bool isHot(const std::string& keyName, const std::string& value) {
+	static bool isHot(const std::string& keyName, const protozero::data_view value) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -139,7 +140,8 @@ struct AttributePair {
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: value) {
+		for (size_t i = 0; i < value.size(); i++) {
+			const auto c = value.data()[i];
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
@@ -404,7 +406,7 @@ struct AttributeStore {
 	void reportSize() const;
 	void finalize();
 
-	void addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, const protozero::data_view v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	

@@ -36,19 +36,6 @@ extern bool verbose;
 class AttributeStore;
 class AttributeSet;
 
-// A string, which might be in `currentTags` as a value. If Lua
-// code refers to an absent value, it'll fallback to passing
-// it as a std::string.
-//
-// The intent is that Attribute("name", Find("name")) is a common
-// pattern, and we ought to avoid marshalling a string back and
-// forth from C++ to Lua when possible.
-struct PossiblyKnownTagValue {
-	bool found;
-	uint32_t index;
-	std::string fallback;
-};
-
 /**
 	\brief OsmLuaProcessing - converts OSM objects into OutputObjects.
 	
@@ -183,12 +170,9 @@ public:
 	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
-	void Attribute(const std::string &key, const std::string &val);
-	void AttributeWithMinZoom(const std::string &key, const std::string &val, const char minzoom);
-	void AttributeNumeric(const std::string &key, const float val);
-	void AttributeNumericWithMinZoom(const std::string &key, const float val, const char minzoom);
-	void AttributeBoolean(const std::string &key, const bool val);
-	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
+	void Attribute(const std::string &key, const protozero::data_view val, const char minzoom);
+	void AttributeNumeric(const std::string &key, const float val, const char minzoom);
+	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
 	

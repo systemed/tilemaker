@@ -78,9 +78,9 @@ template<>  struct kaguya::lua_type_traits<KnownTagKey> {
 	}
 };
 
-template<>  struct kaguya::lua_type_traits<PossiblyKnownTagValue> {
-	typedef PossiblyKnownTagValue get_type;
-	typedef const PossiblyKnownTagValue& push_type;
+template<>  struct kaguya::lua_type_traits<protozero::data_view> {
+	typedef protozero::data_view get_type;
+	typedef const protozero::data_view& push_type;
 
 	static bool strictCheckType(lua_State* l, int index)
 	{
@@ -92,32 +92,14 @@ template<>  struct kaguya::lua_type_traits<PossiblyKnownTagValue> {
 	}
 	static get_type get(lua_State* l, int index)
 	{
-		PossiblyKnownTagValue rv = { false, 0 };
 		size_t size = 0;
 		const char* buffer = lua_tolstring(l, index, &size);
-
-		// For long strings where we might need to do a malloc, see if we
-		// can instead pass a pointer to a value from this object's tag
-		// map.
-		//
-		// 15 is the threshold where gcc no longer applies the small string
-		// optimization.
-		if (size > 15) {
-			int64_t tagLoc = osmLuaProcessing->currentTags->getValue(buffer, size);
-
-			if (tagLoc >= 0) {
-				rv.found = true;
-				rv.index = tagLoc;
-				return rv;
-			}
-		}
-
-		rv.fallback = std::string(buffer, size);
+		protozero::data_view rv = { buffer, size };
 		return rv;
 	}
 	static int push(lua_State* l, push_type s)
 	{
-		throw std::runtime_error("Lua code doesn't know how to use PossiblyKnownTagValue");
+		throw std::runtime_error("Lua code doesn't know how to use protozero::data_view");
 	}
 };
 
@@ -203,16 +185,16 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["Layer"] = &rawLayer;
 	luaState["LayerAsCentroid"] = &rawLayerAsCentroid;
 	luaState["Attribute"] = kaguya::overload(
-			[](const std::string &key, const std::string& val) { osmLuaProcessing->Attribute(key, val); },
-			[](const std::string &key, const std::string& val, const char minzoom) { osmLuaProcessing->AttributeWithMinZoom(key, val, minzoom); }
+			[](const std::string &key, const protozero::data_view val) { osmLuaProcessing->Attribute(key, val, 0); },
+			[](const std::string &key, const protozero::data_view val, const char minzoom) { osmLuaProcessing->Attribute(key, val, minzoom); }
 	);
 	luaState["AttributeNumeric"] = kaguya::overload(
-			[](const std::string &key, const float val) { osmLuaProcessing->AttributeNumeric(key, val); },
-			[](const std::string &key, const float val, const char minzoom) { osmLuaProcessing->AttributeNumericWithMinZoom(key, val, minzoom); }
+			[](const std::string &key, const float val) { osmLuaProcessing->AttributeNumeric(key, val, 0); },
+			[](const std::string &key, const float val, const char minzoom) { osmLuaProcessing->AttributeNumeric(key, val, minzoom); }
 	);
 	luaState["AttributeBoolean"] = kaguya::overload(
-			[](const std::string &key, const bool val) { osmLuaProcessing->AttributeBoolean(key, val); },
-			[](const std::string &key, const bool val, const char minzoom) { osmLuaProcessing->AttributeBooleanWithMinZoom(key, val, minzoom); }
+			[](const std::string &key, const bool val) { osmLuaProcessing->AttributeBoolean(key, val, 0); },
+			[](const std::string &key, const bool val, const char minzoom) { osmLuaProcessing->AttributeBoolean(key, val, minzoom); }
 	);
 
 	luaState["MinZoom"] = &rawMinZoom;
@@ -786,8 +768,7 @@ void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
 }
 
 // Set attributes in a vector tile's Attributes table
-void OsmLuaProcessing::Attribute(const string &key, const string &val) { AttributeWithMinZoom(key,val,0); }
-void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val, const char minzoom) {
+void OsmLuaProcessing::Attribute(const string &key, const protozero::data_view val, const char minzoom) {
 	if (val.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	removeAttributeIfNeeded(key);
@@ -795,16 +776,14 @@ void OsmLuaProcessing::AttributeWithMinZoom(const string &key, const string &val
 	setVectorLayerMetadata(outputs.back().first.layer, key, 0);
 }
 
-void OsmLuaProcessing::AttributeNumeric(const string &key, const float val) { AttributeNumericWithMinZoom(key,val,0); }
-void OsmLuaProcessing::AttributeNumericWithMinZoom(const string &key, const float val, const char minzoom) {
+void OsmLuaProcessing::AttributeNumeric(const string &key, const float val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	removeAttributeIfNeeded(key);
 	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 1);
 }
 
-void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val) { AttributeBooleanWithMinZoom(key,val,0); }
-void OsmLuaProcessing::AttributeBooleanWithMinZoom(const string &key, const bool val, const char minzoom) {
+void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	removeAttributeIfNeeded(key);
 	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
