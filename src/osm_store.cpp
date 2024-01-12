@@ -35,6 +35,10 @@ void UsedObjects::enable() {
 	status = Status::Enabled;
 }
 
+bool UsedObjects::enabled() const {
+	return status == Status::Enabled;
+}
+
 void UsedObjects::set(NodeID id) {
 	const size_t chunk = id / 65536;
 

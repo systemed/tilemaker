@@ -606,11 +606,11 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 		// If we're a relation, see if the user would prefer we use one of its members
 		// to label the point.
 		if (isRelation) {
-			size_t i = 0;
+			int i = -1;
 			for (auto needleRef : varargs) {
+				i++;
 				// Skip the first vararg, it's the algorithm.
 				if (i == 0) continue;
-				i++;
 				const std::string needle = needleRef.get<std::string>();
 
 				// We do a linear search of the relation's members. This is not very efficient

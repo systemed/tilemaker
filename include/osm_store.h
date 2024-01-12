@@ -26,6 +26,7 @@ public:
 	bool test(NodeID id);
 	void set(NodeID id);
 	void enable();
+	bool enabled() const;
 	void clear();
 
 private:
