@@ -16,7 +16,7 @@ void TagMap::reset() {
 	}
 }
 
-bool TagMap::empty() {
+bool TagMap::empty() const {
 	for (int i = 0; i < keys.size(); i++)
 		if (keys[i].size() > 0)
 			return false;

@@ -221,6 +221,12 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 					std::string role(roleView.data(), roleView.size());
 					osmStore.scannedRelations.relation_contains_node(relid, lastID, role);
 				}
+			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::RELATION) {
+				if (isAccepted) {
+					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
+					std::string role(roleView.data(), roleView.size());
+					osmStore.scannedRelations.relation_contains_relation(relid, lastID, role);
+				}
 			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
 				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
 				osmStore.mark_way_used(static_cast<WayID>(lastID));
@@ -674,6 +680,10 @@ int PbfProcessor::ReadPbfFile(
 #endif
 		}
 
+		if(phase == ReadPhase::RelationScan) {
+			auto output = generate_output();
+			output->postScanRelations();
+		}
 		if(phase == ReadPhase::Nodes) {
 			osmStore.nodes.finalize(threadNum);
 			osmStore.usedNodes.clear();

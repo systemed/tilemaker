@@ -33,7 +33,7 @@ public:
 	TagMap();
 	void reset();
 
-	bool empty();
+	bool empty() const;
 	void addTag(const protozero::data_view& key, const protozero::data_view& value);
 
 	// Return -1 if key not found, else return its keyLoc.
