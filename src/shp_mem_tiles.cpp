@@ -77,8 +77,8 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 	uint32_t y1 = lat2tiley(lat1, indexZoom);
 	uint32_t y2 = lat2tiley(lat2, indexZoom);
 
-	for (int x = std::min(x1, x2); x < std::max(x1, x2); x++) {
-		for (int y = std::min(y1, y2); y < std::max(y1, y2); y++) {
+	for (int x = std::min(x1, x2); x <= std::max(x1, x2); x++) {
+		for (int y = std::min(y1, y2); y <= std::max(y1, y2); y++) {
 			if (bitvec[x * (1 << indexZoom) + y])
 				return true;
 		}
