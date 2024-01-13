@@ -244,6 +244,7 @@ public:
 
 	struct luaProcessingException :std::exception {};
 	const TagMap* currentTags;
+	bool isPostScanRelation;				// processing a relation in postScanRelation
 
 private:
 	/// Internal: clear current cached state
@@ -290,7 +291,6 @@ private:
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
 	std::vector<std::pair<WayID, uint16_t>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
 	int relationSubscript = -1;				// in processWay, position in the relation list
-	bool isPostScanRelation;				// processing a relation in postScanRelation
 
 	int32_t lon,latp;						///< Node coordinates
 	LatpLonVec const *llVecPtr;

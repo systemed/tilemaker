@@ -16,7 +16,6 @@ using namespace std;
 const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
-thread_local bool inPostScanRelations = false;
 
 void handleOsmLuaProcessingUserSignal(int signum) {
 	osmLuaProcessing->handleUserSignal(signum);
@@ -68,7 +67,10 @@ template<>  struct kaguya::lua_type_traits<KnownTagKey> {
 		size_t size = 0;
 		const char* buffer = lua_tolstring(l, index, &size);
 
-		if (inPostScanRelations) {
+		if (osmLuaProcessing->isPostScanRelation) {
+			// In this phase, the Holds/Find functions directly query a
+			// traditional string->string map, so just ensure we expose
+			// the string.
 			rv.stringValue = std::string(buffer, size);
 			return rv;
 		}
@@ -134,20 +136,25 @@ template<>  struct kaguya::lua_type_traits<PossiblyKnownTagValue> {
 };
 
 std::string rawId() { return osmLuaProcessing->Id(); }
-bool rawHolds(const KnownTagKey& key) { return key.found; }
-bool rawHoldsPostScanRelations(const KnownTagKey& key) { return key.found; }
+bool rawHolds(const KnownTagKey& key) {
+	if (osmLuaProcessing->isPostScanRelation) {
+		return osmLuaProcessing->Holds(key.stringValue);
+	}
+
+	return key.found;
+}
 bool rawHasTags() { return osmLuaProcessing->HasTags(); }
 void rawSetTag(const std::string &key, const std::string &value) { return osmLuaProcessing->SetTag(key, value); }
 const std::string rawFind(const KnownTagKey& key) {
+	if (osmLuaProcessing->isPostScanRelation)
+		return osmLuaProcessing->Find(key.stringValue);
+
 	if (key.found) {
 		auto value = *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
 		return std::string(value.data(), value.size());
 	}
 
 	return EMPTY_STRING;
-}
-const std::string rawFindPostScanRelations(const KnownTagKey& key) {
-	return osmLuaProcessing->Find(key.stringValue);
 }
 std::vector<std::string> rawFindIntersecting(const std::string &layerName) { return osmLuaProcessing->FindIntersecting(layerName); }
 bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Intersects(layerName); }
@@ -950,11 +957,6 @@ bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 // Post-scan relations - typically used for bouncing down values from nested relations
 void OsmLuaProcessing::postScanRelations() {
 	if (!supportsPostScanRelations) return;
-
-	// Adjust the function pointers for tag-related functions
-	inPostScanRelations = true;
-	luaState["Holds"] = &rawHoldsPostScanRelations;
-	luaState["Find"] = &rawFindPostScanRelations;
 
 	for (const auto &relp : osmStore.scannedRelations.relationsForRelations) {
 		reset();
