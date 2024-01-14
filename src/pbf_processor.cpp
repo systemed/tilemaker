@@ -224,6 +224,12 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 					if (osmStore.usedNodes.enabled())
 						osmStore.usedNodes.set(lastID);
 				}
+			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::RELATION) {
+				if (isAccepted) {
+					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
+					std::string role(roleView.data(), roleView.size());
+					osmStore.scannedRelations.relation_contains_relation(relid, lastID, role);
+				}
 			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
 				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
 				osmStore.mark_way_used(static_cast<WayID>(lastID));
@@ -296,7 +302,20 @@ bool PbfProcessor::ReadRelations(
 
 			try {
 				tags.reset();
-				readTags(pbfRelation, pb, tags);
+				std::deque<protozero::data_view> dataviews;
+				if (osmStore.scannedRelations.has_relation_tags(pbfRelation.id)) {
+					const auto& scannedTags = osmStore.scannedRelations.relation_tags(pbfRelation.id);
+					for (const auto& entry : scannedTags) {
+						dataviews.push_back({entry.first.data(), entry.first.size()});
+						const auto& key = dataviews.back();
+						dataviews.push_back({entry.second.data(), entry.second.size()});
+						const auto& value = dataviews.back();
+						tags.addTag(key, value);
+					}
+				} else {
+					readTags(pbfRelation, pb, tags);
+				}
+
 				if (osmStore.usedRelations.test(pbfRelation.id) || wayKeys.filter(tags))
 					output.setRelation(pb.stringTable, pbfRelation, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
@@ -677,6 +696,10 @@ int PbfProcessor::ReadPbfFile(
 #endif
 		}
 
+		if(phase == ReadPhase::RelationScan) {
+			auto output = generate_output();
+			output->postScanRelations();
+		}
 		if(phase == ReadPhase::Nodes) {
 			osmStore.nodes.finalize(threadNum);
 			osmStore.usedNodes.clear();

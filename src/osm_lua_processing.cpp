@@ -42,6 +42,11 @@ thread_local Sigusr1Handler sigusr1Handler;
 struct KnownTagKey {
 	bool found;
 	uint32_t index;
+
+	// stringValue is populated only in PostScanRelations phase; we could consider
+	// having osm_store's relationTags use TagMap, in which case we'd be able to
+	// use the found/index fields
+	std::string stringValue;
 };
 
 template<>  struct kaguya::lua_type_traits<KnownTagKey> {
@@ -61,6 +66,15 @@ template<>  struct kaguya::lua_type_traits<KnownTagKey> {
 		KnownTagKey rv = { false, 0 };
 		size_t size = 0;
 		const char* buffer = lua_tolstring(l, index, &size);
+
+		if (osmLuaProcessing->isPostScanRelation) {
+			// In this phase, the Holds/Find functions directly query a
+			// traditional string->string map, so just ensure we expose
+			// the string.
+			rv.stringValue = std::string(buffer, size);
+			return rv;
+		}
+
 
 		int64_t tagLoc = osmLuaProcessing->currentTags->getKey(buffer, size);
 
@@ -104,8 +118,19 @@ template<>  struct kaguya::lua_type_traits<protozero::data_view> {
 };
 
 std::string rawId() { return osmLuaProcessing->Id(); }
-bool rawHolds(const KnownTagKey& key) { return key.found; }
+bool rawHolds(const KnownTagKey& key) {
+	if (osmLuaProcessing->isPostScanRelation) {
+		return osmLuaProcessing->Holds(key.stringValue);
+	}
+
+	return key.found;
+}
+bool rawHasTags() { return osmLuaProcessing->HasTags(); }
+void rawSetTag(const std::string &key, const std::string &value) { return osmLuaProcessing->SetTag(key, value); }
 const std::string rawFind(const KnownTagKey& key) {
+	if (osmLuaProcessing->isPostScanRelation)
+		return osmLuaProcessing->Find(key.stringValue);
+
 	if (key.found) {
 		auto value = *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
 		return std::string(value.data(), value.size());
@@ -173,6 +198,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["Id"] = &rawId;
 	luaState["Holds"] = &rawHolds;
 	luaState["Find"] = &rawFind;
+	luaState["HasTags"] = &rawHasTags;
+	luaState["SetTag"] = &rawSetTag;
 	luaState["FindIntersecting"] = &rawFindIntersecting;
 	luaState["Intersects"] = &rawIntersects;
 	luaState["FindCovering"] = &rawFindCovering;
@@ -205,6 +232,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["FindInRelation"] = &rawFindInRelation;
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
+	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
@@ -238,6 +266,10 @@ bool OsmLuaProcessing::canReadRelations() {
 	return supportsReadingRelations;
 }
 
+bool OsmLuaProcessing::canPostScanRelations() {
+	return supportsPostScanRelations;
+}
+
 bool OsmLuaProcessing::canWriteRelations() {
 	return supportsWritingRelations;
 }
@@ -256,6 +288,25 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, c
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
 	return to_string(originalOsmID);
+}
+
+// Check if there's a value for a given key
+bool OsmLuaProcessing::Holds(const string& key) const {
+	// NOTE: this is only called in the PostScanRelation phase -- other phases are handled in rawHolds
+	return currentPostScanTags->find(key)!=currentPostScanTags->end();
+}
+
+// Get an OSM tag for a given key (or return empty string if none)
+const string OsmLuaProcessing::Find(const string& key) const {
+	// NOTE: this is only called in the PostScanRelation phase -- other phases are handled in rawFind
+	auto it = currentPostScanTags->find(key);
+	if (it == currentPostScanTags->end()) return EMPTY_STRING;
+	return it->second;
+}
+
+// Check if an object has any tags
+bool OsmLuaProcessing::HasTags() const {
+	return isPostScanRelation ? !currentPostScanTags->empty() : !currentTags->empty();
 }
 
 // ----	Spatial queries called from Lua
@@ -753,6 +804,11 @@ std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithm
 void OsmLuaProcessing::Accept() {
 	relationAccepted = true;
 }
+// Set a tag in post-scan phase
+void OsmLuaProcessing::SetTag(const std::string &key, const std::string &value) {
+	if (!isPostScanRelation) throw std::runtime_error("SetTag can only be used in relation_postscan_function");
+	osmStore.scannedRelations.set_relation_tag(originalOsmID, key, value);
+}
 
 void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
 	// Does it exist?
@@ -861,7 +917,6 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 	reset();
 	originalOsmID = id;
-	isWay = false;
 	isRelation = true;
 	currentTags = &tags;
 	try {
@@ -878,11 +933,24 @@ bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
 	return true;
 }
 
+// Post-scan relations - typically used for bouncing down values from nested relations
+void OsmLuaProcessing::postScanRelations() {
+	if (!supportsPostScanRelations) return;
+
+	for (const auto &relp : osmStore.scannedRelations.relationsForRelations) {
+		reset();
+		isPostScanRelation = true;
+		RelationID id = relp.first;
+		originalOsmID = id;
+		currentPostScanTags = &(osmStore.scannedRelations.relation_tags(id));
+		relationList = osmStore.scannedRelations.relations_for_relation_with_parents(id);
+		luaState["relation_postscan_function"](this);
+	}
+}
+
 bool OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 	reset();
 	originalOsmID = id;
-	isWay = false;
-	isRelation = false;
 	lon = node.lon;
 	latp= node.latp;
 	currentTags = &tags;
@@ -918,7 +986,6 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	wayEmitted = false;
 	originalOsmID = wayId;
 	isWay = true;
-	isRelation = false;
 	llVecPtr = &llVec;
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
@@ -982,6 +1049,10 @@ void OsmLuaProcessing::setRelation(
 	outerWayVecPtr = &outerWayVec;
 	innerWayVecPtr = &innerWayVec;
 	currentTags = &tags;
+
+	if (supportsReadingRelations && osmStore.scannedRelations.relation_in_any_relations(originalOsmID)) {
+		relationList = osmStore.scannedRelations.relations_for_relation(originalOsmID);
+	}
 
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;

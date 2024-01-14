@@ -68,6 +68,7 @@ public:
 	
 	// Do we have Lua routines for non-MP relations?
 	bool canReadRelations();
+	bool canPostScanRelations();
 	bool canWriteRelations();
 
 	// Shapefile tag remapping
@@ -82,6 +83,9 @@ public:
 	// Scan non-MP relation
 	bool scanRelation(WayID id, const TagMap& tags);
 
+	// Post-scan non-MP relations
+	void postScanRelations();
+	
 	/// \brief We are now processing a significant node
 	bool setNode(NodeID id, LatpLon node, const TagMap& tags);
 
@@ -106,6 +110,15 @@ public:
 
 	// Get the ID of the current object
 	std::string Id() const;
+
+	// Check if there's a value for a given key
+	bool Holds(const std::string& key) const;
+
+	// Get an OSM tag for a given key (or return empty string if none)
+	const std::string Find(const std::string& key) const;
+
+	// Check if an object has any tags
+	bool HasTags() const;
 
 	// ----	Spatial queries called from Lua
 
@@ -187,6 +200,7 @@ public:
 	void RestartRelations();
 	std::string FindInRelation(const std::string &key);
 	void Accept();
+	void SetTag(const std::string &key, const std::string &value);
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {
@@ -214,6 +228,7 @@ public:
 
 	struct luaProcessingException :std::exception {};
 	const TagMap* currentTags;
+	bool isPostScanRelation;				// processing a relation in postScanRelation
 
 private:
 	/// Internal: clear current cached state
@@ -232,6 +247,9 @@ private:
 		relationList.clear();
 		relationSubscript = -1;
 		lastStoredGeometryId = 0;
+		isWay = false;
+		isRelation = false;
+		isPostScanRelation = false;
 	}
 
 	void removeAttributeIfNeeded(const std::string& key);
@@ -245,6 +263,7 @@ private:
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
 	bool supportsReadingRelations;
+	bool supportsPostScanRelations;
 	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
@@ -280,6 +299,7 @@ private:
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
 	std::vector<std::string> outputKeys;
 	const PbfReader::Relation* currentRelation;
+	const boost::container::flat_map<std::string, std::string>* currentPostScanTags; // for postScan only
 	const std::vector<protozero::data_view>* stringTable;
 
 	std::vector<OutputObject> finalizeOutputs();
