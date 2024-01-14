@@ -53,7 +53,6 @@ the .pbf to have nodes in sequential order, typically by using `osmium renumber`
 RAM usage but runs faster.
 * `--materialize-geometries`: Generate geometries in advance when reading .pbf. Increases RAM 
 usage but runs faster.
-* `--lazy-geometries`: Don't generate geometries in advance. Reduces RAM usage but runs slower.
 * `--shard-stores`: Group temporary storage by area. Reduces RAM usage on large files (e.g.
 whole planet) but runs slower.
 
