@@ -174,14 +174,23 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 	int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
 	int minzoom = layer.minzoom;
 
-	if (shapeType==1) {
+	if (shapeType==1 || shapeType==11 || shapeType==21) {
 		// Points
 		Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
 		if (geom::within(p, clippingBox)) {
 			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
 		}
 
-	} else if (shapeType==3) {
+	} else if (shapeType==8 || shapeType==18 || shapeType==28) {
+		// Multipoint
+		for (uint i=0; i<shape->nVertices; i++) {
+			Point p( shape->padfX[i], lat2latp(shape->padfY[i]) );
+			if (geom::within(p, clippingBox)) {
+				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+			}
+		}
+
+	} else if (shapeType==3 || shapeType==13 || shapeType==23) {
 		// (Multi)-polylines
 		// Due to https://svn.boost.org/trac/boost/ticket/11268, we can't clip a MultiLinestring with Boost 1.56-1.58, 
 		// so we need to create everything as polylines and clip individually :(
@@ -197,7 +206,7 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 			}
 		}
 
-	} else if (shapeType==5) {
+	} else if (shapeType==5 || shapeType==15 || shapeType==25) {
 		// (Multi)-polygons
 		MultiPolygon multi;
 		Polygon poly;
