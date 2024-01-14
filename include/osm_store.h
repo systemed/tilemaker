@@ -158,6 +158,11 @@ public:
 	const std::vector<std::pair<RelationID, uint16_t>>& relations_for_relation(RelationID relId) {
 		return relationsForRelations[relId];
 	}
+	bool has_relation_tags(RelationID relId) {
+		const size_t shard = relId % mutex.size();
+		return relationTags[shard].find(relId) != relationTags[shard].end();
+	}
+
 	const tag_map_t& relation_tags(RelationID relId) {
 		const size_t shard = relId % mutex.size();
 		return relationTags[shard][relId];

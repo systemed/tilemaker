@@ -299,7 +299,20 @@ bool PbfProcessor::ReadRelations(
 
 			try {
 				tags.reset();
-				readTags(pbfRelation, pb, tags);
+				std::deque<protozero::data_view> dataviews;
+				if (osmStore.scannedRelations.has_relation_tags(pbfRelation.id)) {
+					const auto& scannedTags = osmStore.scannedRelations.relation_tags(pbfRelation.id);
+					for (const auto& entry : scannedTags) {
+						dataviews.push_back({entry.first.data(), entry.first.size()});
+						const auto& key = dataviews.back();
+						dataviews.push_back({entry.second.data(), entry.second.size()});
+						const auto& value = dataviews.back();
+						tags.addTag(key, value);
+					}
+				} else {
+					readTags(pbfRelation, pb, tags);
+				}
+
 				if (osmStore.usedRelations.test(pbfRelation.id) || wayKeys.filter(tags))
 					output.setRelation(pb.stringTable, pbfRelation, outerWayVec, innerWayVec, tags, isMultiPolygon, isInnerOuter);
 
