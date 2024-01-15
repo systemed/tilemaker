@@ -23,13 +23,15 @@ MU_TEST(test_pooled_string) {
 	mu_check(big.toString() != big2.toString());
 
 	std::string shortString("short");
+	protozero::data_view shortStringView = { shortString.data(), shortString.size() };
 	std::string longString("this is a very long string");
+	protozero::data_view longStringView = { longString.data(), longString.size() };
 
-	PooledString stdShortString(&shortString);
+	PooledString stdShortString(&shortStringView);
 	mu_check(stdShortString.size() == 5);
 	mu_check(stdShortString.toString() == "short");
 
-	PooledString stdLongString(&longString);
+	PooledString stdLongString(&longStringView);
 	mu_check(stdLongString.size() == 26);
 	mu_check(stdLongString.toString() == "this is a very long string");
 

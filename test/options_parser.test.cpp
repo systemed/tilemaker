@@ -49,20 +49,19 @@ MU_TEST(test_options_parser) {
 		mu_check(opts.inputFiles[0] == "ontario.pbf");
 		mu_check(opts.outputFile == "foo.mbtiles");
 		mu_check(opts.outputMode == OutputMode::MBTiles);
-		mu_check(opts.osm.materializeGeometries);
+		mu_check(!opts.osm.materializeGeometries);
 		mu_check(!opts.osm.shardStores);
 	}
 
-	// --lazy-geometries overrides default
+	// --fast without store should have materialized geometries
 	{
-		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--lazy-geometries"};
+		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--fast"};
 		auto opts = parse(args);
 		mu_check(opts.inputFiles.size() == 1);
 		mu_check(opts.inputFiles[0] == "ontario.pbf");
 		mu_check(opts.outputFile == "foo.mbtiles");
 		mu_check(opts.outputMode == OutputMode::MBTiles);
-		mu_check(!opts.osm.materializeGeometries);
-		mu_check(opts.osm.lazyGeometries);
+		mu_check(opts.osm.materializeGeometries);
 		mu_check(!opts.osm.shardStores);
 	}
 

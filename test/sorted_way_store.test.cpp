@@ -15,7 +15,9 @@ class TestNodeStore : public NodeStore {
 	void insert(const std::vector<std::pair<NodeID, LatpLon>>& elements) override {}
 
 	bool contains(size_t shard, NodeID id) const override { return true; }
-	size_t shard() const override { return 0; }
+	NodeStore& shard(size_t shard) override { return *this; }
+	const NodeStore& shard(size_t shard) const override { return *this; }
+
 	size_t shards() const override { return 1; }
 };
 

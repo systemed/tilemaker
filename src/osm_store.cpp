@@ -17,6 +17,44 @@ static inline bool isClosed(const std::vector<LatpLon>& way) {
 	return way.begin() == way.end();
 }
 
+UsedObjects::UsedObjects(Status status): status(status), mutex(256), ids(256 * 1024) {
+}
+
+bool UsedObjects::test(NodeID id) {
+	if (status == Status::Disabled)
+		return true;
+
+	const size_t chunk = id / 65536;
+	if (ids[chunk].size() == 0)
+		return false;
+
+	return ids[chunk][id % 65536];
+}
+
+void UsedObjects::enable() {
+	status = Status::Enabled;
+}
+
+bool UsedObjects::enabled() const {
+	return status == Status::Enabled;
+}
+
+void UsedObjects::set(NodeID id) {
+	const size_t chunk = id / 65536;
+
+	std::lock_guard<std::mutex> lock(mutex[chunk % mutex.size()]);
+	if (ids[chunk].size() == 0)
+		ids[chunk].resize(65536);
+
+	ids[chunk][id % 65536] = true;
+}
+
+void UsedObjects::clear() {
+	// This data is not needed after PbfProcessor's ReadPhase::Nodes has completed,
+	// and it takes up to ~1.5GB of RAM.
+	ids.clear();
+}
+
 void OSMStore::open(std::string const &osm_store_filename)
 {
 	void_mmap_allocator::openMmapFile(osm_store_filename);

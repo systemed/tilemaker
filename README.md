@@ -12,14 +12,13 @@ See an example of a vector tile map produced by tilemaker at [tilemaker.org](htt
 
 tilemaker is written in C++14. The chief dependencies are:
 
-* Google Protocol Buffers
 * Boost (latest version advised, 1.66 minimum)
 * Lua (5.1 or later) or LuaJIT
 * sqlite3
 * shapelib
 * rapidjson
 
-sqlite_modern_cpp, and kaguya are bundled in the include/ directory.
+Other third-party code is bundled in the include/ directory.
 
 You can then simply install with:
 
@@ -32,19 +31,18 @@ For detailed installation instructions for your operating system, see [INSTALL.m
 
 tilemaker comes with configuration files compatible with the popular [OpenMapTiles](https://openmaptiles.org) schema, and a demonstration map server. You'll run tilemaker to make vector tiles from your `.osm.pbf` source data. To create the tiles, run this from the tilemaker directory:
 
-    tilemaker --input /path/to/your/input.osm.pbf \
-        --output /path/to/your/output.mbtiles
+    tilemaker /path/to/your/input.osm.pbf /path/to/your/output.mbtiles
 
 If you want to include sea tiles, then create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
+
+_(If you want to include optional small-scale landcover, create a `landcover` directory, and download the appropriate 10m files from 'Features' at https://www.naturalearthdata.com so that you have `landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys.shp`, `landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp`, `landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas.shp`.)_
 
 Then, to serve your tiles using the demonstration server:
 
     cd server
-    ruby server.rb /path/to/your/output.mbtiles
+	tilemaker-server /path/to/your/output.mbtiles
 
 You can now navigate to http://localhost:8080/ and see your map!
-
-(If you don't already have them, you'll need to install Ruby and the required gems to run the demonstration server. On Ubuntu, for example, `sudo apt install sqlite3 libsqlite3-dev ruby ruby-dev` and then `sudo gem install sqlite3 cgi glug rack rackup`.)
 
 ## Your own configuration
 
@@ -77,12 +75,11 @@ You might use tilemaker if:
 But don't use tilemaker if:
 
 * You want someone else to create and host the tiles for you
-* You want the entire planet
 * You want continuous updates with the latest OSM data
 
 ## Contributing
 
-Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or https://irc.osm.org, channel #osm-dev) and https://help.osm.org.
+Bug reports, suggestions and (especially!) pull requests are very welcome on the Github issue tracker. Please check the tracker to see if your issue is already known, and be nice. For questions, please use IRC (irc.oftc.net or https://irc.osm.org, channel #osm-dev) and https://community.osm.org.
 
 Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies or increasing the memory requirement.
 
@@ -90,14 +87,19 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 
 tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
 
-Copyright tilemaker contributors, 2015-2023.
+Copyright tilemaker contributors, 2015-2024.
 
 The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty.
 
 Licenses of third-party libraries:
 
-- sqlite_modern_cpp (Amin Roosta) is licensed under MIT
+- [sqlite_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp) is licensed under MIT
 - [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence
 - [libpopcnt](https://github.com/kimwalisch/libpopcnt) is licensed under BSD 2-clause
 - [pmtiles](https://github.com/protomaps/PMTiles) is licensed under BSD 3-clause
 - [streamvbyte](https://github.com/lemire/streamvbyte) is licensed under Apache 2
+- [polylabel](https://github.com/mapbox/polylabel) is licensed under ISC
+- [protozero](https://github.com/mapbox/protozero) is licensed under BSD 2-clause
+- [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause
+- [minunit](https://github.com/siu/minunit) is licensed under MIT
+- [Simple-Web-Server](https://gitlab.com/eidheim/Simple-Web-Server) is licensed under MIT

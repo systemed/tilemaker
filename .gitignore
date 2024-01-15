@@ -1,6 +1,7 @@
 # object files created during the build and the output binary itself
 *.o
 tilemaker
+tilemaker-server
 build/
 tilemaker.dSYM/
 

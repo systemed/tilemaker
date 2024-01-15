@@ -10,6 +10,7 @@
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
 #include <vector>
+#include <protozero/data_view.hpp>
 #include "pooled_string.h"
 #include "deque_map.h"
 
@@ -126,7 +127,7 @@ struct AttributePair {
 
 	void ensureStringIsOwned();
 
-	static bool isHot(const std::string& keyName, const std::string& value) {
+	static bool isHot(const std::string& keyName, const protozero::data_view value) {
 		// Is this pair a candidate for the hot pool?
 
 		// Hot pairs are pairs that we think are likely to be re-used, like
@@ -139,7 +140,8 @@ struct AttributePair {
 
 		// Only strings that are IDish are eligible: only lowercase letters.
 		bool ok = true;
-		for (const auto& c: value) {
+		for (size_t i = 0; i < value.size(); i++) {
+			const auto c = value.data()[i];
 			if (c != '-' && c != '_' && (c < 'a' || c > 'z'))
 				return false;
 		}
@@ -183,11 +185,14 @@ struct AttributePair {
 #define SHARD_BITS 14
 #define ATTRIBUTE_SHARDS (1 << SHARD_BITS)
 
+class AttributeStore;
 class AttributePairStore {
 public:
 	AttributePairStore():
 		finalized(false),
-		pairsMutex(ATTRIBUTE_SHARDS)
+		pairsMutex(ATTRIBUTE_SHARDS),
+		lookups(0),
+		lookupsUncached(0)
 	{
 		// The "hot" shard has a capacity of 64K, the others are unbounded.
 		pairs.push_back(DequeMap<AttributePair>(1 << 16));
@@ -202,9 +207,10 @@ public:
 	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(AttributePair& pair, bool isHot);
 
-	std::vector<DequeMap<AttributePair>> pairs;
 
 private:
+	friend class AttributeStore;
+	std::vector<DequeMap<AttributePair>> pairs;
 	bool finalized;
 	// We refer to all attribute pairs by index.
 	//
@@ -214,6 +220,8 @@ private:
 	// we suspect will be popular. It only ever has 64KB items,
 	// so that we can reference it with a short.
 	mutable std::vector<std::mutex> pairsMutex;
+	std::atomic<uint64_t> lookupsUncached;
+	std::atomic<uint64_t> lookups;
 };
 
 // AttributeSet is a set of AttributePairs
@@ -398,7 +406,7 @@ struct AttributeStore {
 	void reportSize() const;
 	void finalize();
 
-	void addAttribute(AttributeSet& attributeSet, std::string const &key, const std::string& v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, const protozero::data_view v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	
@@ -406,7 +414,8 @@ struct AttributeStore {
 		finalized(false),
 		sets(ATTRIBUTE_SHARDS),
 		setsMutex(ATTRIBUTE_SHARDS),
-		lookups(0) {
+		lookups(0),
+		lookupsUncached(0) {
 	}
 
 	AttributeKeyStore keyStore;
@@ -418,6 +427,7 @@ private:
 	mutable std::vector<std::mutex> setsMutex;
 
 	mutable std::mutex mutex;
+	std::atomic<uint64_t> lookupsUncached;
 	std::atomic<uint64_t> lookups;
 };
 

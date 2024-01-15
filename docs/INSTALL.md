@@ -4,12 +4,14 @@
 
 Install all dependencies with Homebrew:
 
-    brew install boost lua51 shapelib rapidjson
+    brew install boost lua shapelib rapidjson
 
 Then:
 
     make
     sudo make install
+
+(System Integrity Protection on macOS prevents the manpages being installed. This isn't important: ignore the two lines saying "Operation not permitted".)
 
 ### Ubuntu
 
@@ -22,7 +24,7 @@ Once you've installed those, then `cd` back to your Tilemaker directory and simp
     make
     sudo make install
 
-If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again.
+If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again. The above lines install Lua 5.1, but you can also choose any newer version.
 
 ### Fedora
 

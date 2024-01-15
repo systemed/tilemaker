@@ -18,6 +18,9 @@
 
 #include <boost/container/flat_map.hpp>
 
+class TagMap;
+class SignificantTags;
+
 // Lua
 extern "C" {
 	#include "lua.h"
@@ -58,12 +61,14 @@ public:
 	~OsmLuaProcessing();
 
 	// ----	Helpers provided for main routine
+	void handleUserSignal(int signum);
 
 	// Has this object been assigned to any layers?
 	bool empty();
 	
 	// Do we have Lua routines for non-MP relations?
 	bool canReadRelations();
+	bool canPostScanRelations();
 	bool canWriteRelations();
 
 	// Shapefile tag remapping
@@ -76,13 +81,16 @@ public:
 	using tag_map_t = boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>;
 
 	// Scan non-MP relation
-	bool scanRelation(WayID id, const tag_map_t &tags);
+	bool scanRelation(WayID id, const TagMap& tags);
 
+	// Post-scan non-MP relations
+	void postScanRelations();
+	
 	/// \brief We are now processing a significant node
-	void setNode(NodeID id, LatpLon node, const tag_map_t &tags);
+	bool setNode(NodeID id, LatpLon node, const TagMap& tags);
 
 	/// \brief We are now processing a way
-	bool setWay(WayID wayId, LatpLonVec const &llVec, const tag_map_t &tags);
+	bool setWay(WayID wayId, LatpLonVec const &llVec, const TagMap& tags);
 
 	/** \brief We are now processing a relation
 	 * (note that we store relations as ways with artificial IDs, and that
@@ -93,7 +101,7 @@ public:
 		const PbfReader::Relation& relation,
 		const WayVec& outerWayVec,
 		const WayVec& innerWayVec,
-		const tag_map_t& tags,
+		const TagMap& tags,
 		bool isNativeMP,
 		bool isInnerOuter
 	);
@@ -108,6 +116,9 @@ public:
 
 	// Get an OSM tag for a given key (or return empty string if none)
 	const std::string Find(const std::string& key) const;
+
+	// Check if an object has any tags
+	bool HasTags() const;
 
 	// ----	Spatial queries called from Lua
 
@@ -145,7 +156,6 @@ public:
 	template<class GeometryT>
 	CorrectGeometryResult CorrectGeometry(GeometryT &geom)
 	{
-#if BOOST_VERSION >= 105800
 		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 		if (isRelation && !geom::is_valid(geom,failure)) {
 			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
@@ -165,7 +175,6 @@ public:
 			}
 			return CorrectGeometryResult::Corrected;
 		}
-#endif
 		return CorrectGeometryResult::Valid;
 	}
 
@@ -174,12 +183,9 @@ public:
 	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
-	void Attribute(const std::string &key, const std::string &val);
-	void AttributeWithMinZoom(const std::string &key, const std::string &val, const char minzoom);
-	void AttributeNumeric(const std::string &key, const float val);
-	void AttributeNumericWithMinZoom(const std::string &key, const float val, const char minzoom);
-	void AttributeBoolean(const std::string &key, const bool val);
-	void AttributeBooleanWithMinZoom(const std::string &key, const bool val, const char minzoom);
+	void Attribute(const std::string &key, const protozero::data_view val, const char minzoom);
+	void AttributeNumeric(const std::string &key, const float val, const char minzoom);
+	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
 	
@@ -194,6 +200,7 @@ public:
 	void RestartRelations();
 	std::string FindInRelation(const std::string &key);
 	void Accept();
+	void SetTag(const std::string &key, const std::string &value);
 
 	// Write error if in verbose mode
 	void ProcessingError(const std::string &errStr) {
@@ -204,7 +211,8 @@ public:
 
 	void setVectorLayerMetadata(const uint_least8_t layer, const std::string &key, const uint type);
 
-	std::vector<std::string> GetSignificantNodeKeys();
+	SignificantTags GetSignificantNodeKeys();
+	SignificantTags GetSignificantWayKeys();
 
 	// ---- Cached geometries creation
 
@@ -219,6 +227,8 @@ public:
 	inline AttributeStore &getAttributeStore() { return attributeStore; }
 
 	struct luaProcessingException :std::exception {};
+	const TagMap* currentTags;
+	bool isPostScanRelation;				// processing a relation in postScanRelation
 
 private:
 	/// Internal: clear current cached state
@@ -237,7 +247,12 @@ private:
 		relationList.clear();
 		relationSubscript = -1;
 		lastStoredGeometryId = 0;
+		isWay = false;
+		isRelation = false;
+		isPostScanRelation = false;
 	}
+
+	void removeAttributeIfNeeded(const std::string& key);
 
 	const inline Point getPoint() {
 		return Point(lon/10000000.0,latp/10000000.0);
@@ -248,6 +263,7 @@ private:
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
 	bool supportsReadingRelations;
+	bool supportsPostScanRelations;
 	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
@@ -281,8 +297,9 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
-	const boost::container::flat_map<protozero::data_view, protozero::data_view, DataViewLessThan>* currentTags;
+	std::vector<std::string> outputKeys;
 	const PbfReader::Relation* currentRelation;
+	const boost::container::flat_map<std::string, std::string>* currentPostScanTags; // for postScan only
 	const std::vector<protozero::data_view>* stringTable;
 
 	std::vector<OutputObject> finalizeOutputs();

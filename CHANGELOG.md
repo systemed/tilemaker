@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.0.0] - 2024-01-15
+
+3.0 is a major release that significantly reduces tilemaker's memory footprint and improves running time. Note that it has __breaking changes__ in the way you write your Lua scripts (`way:Layer` becomes simply `Layer`, and so on).
+
+### Added
+- PMTiles output (@systemed)
+- C++ tilemaker-server for quick prototyping (@bdon)
+- GeoJSON supported as an alternative to shapefiles (@systemed)
+- Support nodes in relations and relation roles (@cldellow)
+- Nested relations support (@systemed/@cldellow)
+- `LayerAsCentroid` can use positions from relation child nodes (@cldellow)
+- Add polylabel algorithm to `LayerAsCentroid` (@cldellow)
+- Filter input .pbf by way keys (@cldellow)
+- GeoJSON writer for debugging (@systemed)
+- Warn about PBFs with large blocks (@cldellow)
+- Unit tests for various features (@cldellow)
+- `RestartRelations()` to reset relation iterator (@systemed)
+- Per-layer, zoom-dependent feature_limit (@systemed after an original by @keichan34)
+- Report OSM ID on Lua processing error (@systemed)
+- Docker OOM killer warning (@Firefishy)
+- Push Docker image to Github package (@JinIgarashi)
+- Support `type=boundary` relations as native multipolygons (@systemed)
+
+### Changed
+- __BREAKING__: Lua calls use the global namespace, so `Layer` instead of `way:Layer` etc. (@cldellow)
+- __BREAKING__: Mapsplit (.msf) support removed (@systemed)
+- Widespread speed improvements (@cldellow, @systemed)
+- Reduced memory consumption (@cldellow)
+- protobuf dependency removed: protozero/vtzero used instead (@cldellow)
+- Better Lua detection in Makefile (@systemed)
+- z-order is now a lossy float: compile-time flag not needed (@systemed)
+- --input and --output parameter names no longer required explicitly (@systemed)
+- Docker image improvements (@Booligoosh)
+
+### Fixed
+- Improved polygon correction (@systemed)
+- Add missing attributes to OMT layers (@Nakaner)
+- Use different OSM tags for OMT subclasses (@Nakaner)
+- Add access and mtb_scale attributes to OMT (@dschep)
+- Fix CMake build on Arch Linux (@holzgeist)
+
 
 ## [2.4.0] - 2023-03-28
 
