@@ -4,7 +4,7 @@
 
 Install all dependencies with Homebrew:
 
-    brew install boost lua51 shapelib rapidjson
+    brew install boost lua shapelib rapidjson
 
 Then:
 
