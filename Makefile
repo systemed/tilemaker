@@ -208,8 +208,8 @@ install:
 	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
 	install -m 0755 tilemaker $(DESTDIR)$(prefix)/bin/
 	install -m 0755 tilemaker-server $(DESTDIR)$(prefix)/bin/
-	install -m 0755 -d ${DESTDIR}${MANPREFIX}/man1/
-	install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/
+	@install -m 0755 -d ${DESTDIR}${MANPREFIX}/man1/ || true
+	@install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/ || true
 
 clean:
 	rm -f tilemaker tilemaker-server src/*.o src/external/*.o include/*.o include/*.pb.h server/*.o test/*.o
