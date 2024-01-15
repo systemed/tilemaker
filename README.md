@@ -85,7 +85,7 @@ Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please 
 
 ## Copyright
 
-tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors).
+tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors). We particularly celebrate the invaluable contributions of Wouter van Kleunen, who passed away in 2022.
 
 Copyright tilemaker contributors, 2015-2024.
 
