@@ -457,7 +457,7 @@ double OsmLuaProcessing::multiPolygonArea(const MultiPolygon &mp) const {
 
 // Returns length
 double OsmLuaProcessing::Length() {
-	if (isWay) {
+	if (isWay && !isRelation) {
 		geom::model::linestring<DegPoint> l;
 		geom::assign(l, linestringCached());
 		geom::for_each_point(l, reverse_project);
