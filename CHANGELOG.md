@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.0] - 2024-01-xx
+## [3.0.0] - 2024-01-15
 
 3.0 is a major release that significantly reduces tilemaker's memory footprint and improves running time. Note that it has __breaking changes__ in the way you write your Lua scripts (`way:Layer` becomes simply `Layer`, and so on).
 
