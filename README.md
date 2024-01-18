@@ -33,7 +33,11 @@ tilemaker comes with configuration files compatible with the popular [OpenMapTil
 
     tilemaker /path/to/your/input.osm.pbf /path/to/your/output.mbtiles
 
-If you want to include sea tiles, then create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
+tilemaker keeps everything in RAM by default. To process large areas without running out of memory, tell it to use temporary storage on SSD:
+
+    tilemaker /path/to/your/input.osm.pbf /path/to/your/output.mbtiles --store /path/to/your/ssd
+
+To include sea tiles, create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
 
 _(If you want to include optional small-scale landcover, create a `landcover` directory, and download the appropriate 10m files from 'Features' at https://www.naturalearthdata.com so that you have `landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys.shp`, `landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp`, `landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas.shp`.)_
 
@@ -60,7 +64,6 @@ Read about tilemaker's runtime options in [RUNNING.md](docs/RUNNING.md).
 You might also find these resources helpful:
 
 * Read our [introduction to vector tiles](docs/VECTOR_TILES.md).
-* See a workflow for "Generating self-hosted maps using tilemaker" at https://blog.kleunen.nl/blog/tilemaker-generate-map.
 * See https://github.com/mapbox/awesome-vector-tiles for a list of renderers which support vector tiles.
 
 ## Why tilemaker?
