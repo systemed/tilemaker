@@ -91,10 +91,32 @@ Then rerun with another .pbf, using the `--merge` flag:
 The second run will proceed a little more slowly due to reading in existing tiles in areas which 
 overlap. Any OSM objects which appear in both files will be written twice.
 
-If you're very pushed for memory, you could potentially use `osmium tags-filter` to split a 
-.pbf into several "thematic" extracts: for example, one containing buildings, another roads, 
-and another landuse. Renumber each one, then run tilemaker several times with `--merge` to add 
-one theme at a time.
+### Creating a map with varying detail
+
+A map with global coastline, but detailed mapping only for a specific region, is a common use case.
+You can use tilemaker's `--merge` switch to achieve this.
+
+First, create a global coastline .mbtiles. There's a special stripped down config for this:
+
+    tilemaker --output coastline.mbtiles \
+              --bbox -180,-85,180,85 \
+              --process resources/process-coastline.lua \
+              --config resources/config-coastline.json
+
+Save this .mbtiles somewhere; then make a copy, and call it output.mbtiles.
+
+Edit `resources/config-openmaptiles.json` to remove the `ocean`, `urban_areas`, `ice_shelf` and 
+`glacier` layers (because we've already generated these).
+
+Now simply merge the region you want into the coastline .mbtiles you generated:
+
+    tilemaker --input new-zealand.osm.pbf \
+              --output output.mbtiles \
+              --merge \
+              --process resources/process-openmaptiles.lua \
+              --config resources/config-openmaptiles.json
+
+Don't forget to add `--store /path/to/your/ssd` if you don't have lots of RAM.
 
 ## Output messages
 

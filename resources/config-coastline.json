@@ -1,7 +1,13 @@
 {
 	"layers": {
-		"water": { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_length": 1, "simplify_ratio": 2},
-		"ocean": { "minzoom": 0,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2, "filter_below": 12, "filter_area": 0.5, "write_to": "water", "index": true, "source_columns": true }
+		"water":       { "minzoom": 6,  "maxzoom": 14, "simplify_below": 12, "simplify_level": 0.0003, "simplify_ratio": 2 },
+		"ocean":       { "minzoom": 0,  "maxzoom": 14, "source": "coastline/water_polygons.shp", "filter_below": 12, "filter_area": 0.5, 
+		                 "simplify_below": 13, "simplify_level": 0.0001, "simplify_ratio": 2, "write_to": "water" },
+		"landuse":     { "minzoom":  4, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "simplify_ratio": 2 },
+		"urban_areas": { "minzoom":  4, "maxzoom":  8, "source": "landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp", "source_columns": ["featurecla"], "simplify_below": 7, "simplify_level": 0.0003, "simplify_ratio": 2, "write_to": "landuse" },
+		"landcover":   { "minzoom":  0, "maxzoom": 14, "simplify_below": 13, "simplify_level": 0.0003, "simplify_ratio": 2 },
+		"ice_shelf":   { "minzoom":  0, "maxzoom":  9, "source": "landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys.shp", "source_columns": ["featurecla"], "simplify_below": 13, "simplify_level": 0.0005, "write_to": "landcover" },
+		"glacier":     { "minzoom":  2, "maxzoom":  9, "source": "landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas.shp", "source_columns": ["featurecla"], "simplify_below": 13, "simplify_level": 0.0005, "write_to": "landcover" }
 	},
 	"settings": {
 		"minzoom": 0,

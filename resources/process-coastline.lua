@@ -1,8 +1,3 @@
--- Data processing based on openmaptiles.org schema
--- https://openmaptiles.org/schema/
--- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
--- Used under CC-BY 4.0
-
 -- Enter/exit Tilemaker
 function init_function()
 end
@@ -16,7 +11,17 @@ end
 function way_function()
 end
 
--- Remap coastlines
-function attribute_function(attr)
-	return { class="ocean" }
+-- Remap coastlines and landcover
+function attribute_function(attr,layer)
+	if attr["featurecla"]=="Glaciated areas" then
+		return { subclass="glacier" }
+	elseif attr["featurecla"]=="Antarctic Ice Shelf" then
+		return { subclass="ice_shelf" }
+	elseif attr["featurecla"]=="Urban area" then
+		return { class="residential" }
+	elseif layer=="ocean" then
+		return { class="ocean" }
+	else
+		return attr
+	end
 end
