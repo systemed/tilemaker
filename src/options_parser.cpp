@@ -87,10 +87,6 @@ OptionsParser::Options OptionsParser::parse(const int argc, const char* argv[]) 
 		throw OptionException{ "You must specify an output file or directory. Run with --help to find out more." };
 	}
 
-	if (vm.count("input") == 0) {
-		throw OptionException{ "No source .osm.pbf file supplied" };
-	}
-
 	if (ends_with(options.outputFile, ".mbtiles") || ends_with(options.outputFile, ".sqlite")) {
 		options.outputMode = OutputMode::MBTiles;
 	} else if (ends_with(options.outputFile, ".pmtiles")) {
