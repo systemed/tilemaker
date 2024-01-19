@@ -145,7 +145,7 @@ bool rawCoveredBy(const std::string& layerName) { return osmLuaProcessing->Cover
 bool rawIsClosed() { return osmLuaProcessing->IsClosed(); }
 double rawArea() { return osmLuaProcessing->Area(); }
 double rawLength() { return osmLuaProcessing->Length(); }
-std::vector<double> rawCentroid(kaguya::VariadicArgType algorithm) { return osmLuaProcessing->Centroid(algorithm); }
+kaguya::optional<std::vector<double>> rawCentroid(kaguya::VariadicArgType algorithm) { return osmLuaProcessing->Centroid(algorithm); }
 void rawLayer(const std::string& layerName, bool area) { return osmLuaProcessing->Layer(layerName, area); }
 void rawLayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources) { return osmLuaProcessing->LayerAsCentroid(layerName, nodeSources); }
 void rawMinZoom(const double z) { return osmLuaProcessing->MinZoom(z); }
@@ -788,7 +788,7 @@ OsmLuaProcessing::CentroidAlgorithm OsmLuaProcessing::parseCentroidAlgorithm(con
 	throw std::runtime_error("unknown centroid algorithm " + algorithm);
 }
 
-std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithmArgs) {
+kaguya::optional<std::vector<double>> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithmArgs) {
 	CentroidAlgorithm algorithm = defaultCentroidAlgorithm();
 
 	for (auto needleRef : algorithmArgs) {
@@ -796,8 +796,13 @@ std::vector<double> OsmLuaProcessing::Centroid(kaguya::VariadicArgType algorithm
 		algorithm = parseCentroidAlgorithm(needle);
 		break;
 	}
-	Point c = calculateCentroid(algorithm);
-	return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
+	try {
+		Point c = calculateCentroid(algorithm);
+		return std::vector<double> { latp2lat(c.y()/10000000.0), c.x()/10000000.0 };
+	} catch (geom::centroid_exception &err) {
+		if (verbose) cerr << "Problem geometry " << (isRelation ? "relation " : isWay ? "way " : "node " ) << originalOsmID << ": " << err.what() << endl;
+		return kaguya::optional<std::vector<double>>();
+	}
 }
 
 // Accept a relation in relation_scan phase
