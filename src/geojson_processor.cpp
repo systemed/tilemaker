@@ -16,6 +16,10 @@ extern bool verbose;
 
 namespace geom = boost::geometry;
 
+#ifdef _MSC_VER
+#define stat64 __stat64
+#endif
+
 long getFileSize(std::string filename) {
 	struct stat64 statBuf;
 	int rc = stat64(filename.c_str(), &statBuf);
