@@ -1,5 +1,6 @@
 #include "geojson_processor.h"
 
+#include "helpers.h"
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 
@@ -8,14 +9,29 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
+#include <sys/stat.h>
+#include <deque>
+
 extern bool verbose;
 
 namespace geom = boost::geometry;
 
+long getFileSize(std::string filename) {
+	struct stat64 statBuf;
+	int rc = stat64(filename.c_str(), &statBuf);
+	return rc == 0 ? statBuf.st_size : -1;
+}
+
 // Read GeoJSON, and create OutputObjects for all objects within the specified bounding box
 void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
+	if (ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonl"))
+		return readFeatureLines(layer, layerNum);
 
-	// Parse the JSON file into a RapidJSON document
+	readFeatureCollection(layer, layerNum);
+}
+
+void GeoJSONProcessor::readFeatureCollection(class LayerDef &layer, uint layerNum) {
+	// Read a JSON file containing a single GeoJSON FeatureCollection object.
 	rapidjson::Document doc;
 	FILE* fp = fopen(layer.source.c_str(), "r");
 	char readBuffer[65536];
@@ -33,6 +49,39 @@ void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
 	for (auto &feature : doc["features"].GetArray()) { 
 		boost::asio::post(pool, [&]() {
 			processFeature(std::move(feature.GetObject()), layer, layerNum);
+		});
+	}
+	pool.join();
+}
+
+void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
+	// Read a JSON file containing multiple GeoJSON items, newline-delimited.
+	std::deque<rapidjson::Document> docs;
+	FILE* fp = fopen(layer.source.c_str(), "r");
+	char readBuffer[65536];
+	rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+
+	long fileSize = getFileSize(layer.source.c_str());
+
+	if (fileSize == -1)
+		throw std::runtime_error("unable to get filesize of " + layer.source);
+
+	while (is.Tell() < fileSize) {
+		docs.push_back(rapidjson::Document());
+		rapidjson::Document& doc = docs.back();
+		doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
+		if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
+
+		// Skip whitespace.
+		while(is.Tell() < fileSize && isspace(is.Peek())) is.Take();
+	}
+	fclose(fp);
+
+	// Process each feature
+	boost::asio::thread_pool pool(threadNum);
+	for (auto &doc : docs) { 
+		boost::asio::post(pool, [&]() {
+			processFeature(std::move(doc.GetObject()), layer, layerNum);
 		});
 	}
 	pool.join();
