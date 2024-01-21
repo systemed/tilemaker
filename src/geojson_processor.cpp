@@ -9,22 +9,11 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
-#include <sys/stat.h>
 #include <deque>
 
 extern bool verbose;
 
 namespace geom = boost::geometry;
-
-#ifdef _MSC_VER
-#define stat64 __stat64
-#endif
-
-long getFileSize(std::string filename) {
-	struct stat64 statBuf;
-	int rc = stat64(filename.c_str(), &statBuf);
-	return rc == 0 ? statBuf.st_size : -1;
-}
 
 // Read GeoJSON, and create OutputObjects for all objects within the specified bounding box
 void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
@@ -60,32 +49,27 @@ void GeoJSONProcessor::readFeatureCollection(class LayerDef &layer, uint layerNu
 
 void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
 	// Read a JSON file containing multiple GeoJSON items, newline-delimited.
-	std::deque<rapidjson::Document> docs;
-	FILE* fp = fopen(layer.source.c_str(), "r");
-	char readBuffer[65536];
-	rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-
-	long fileSize = getFileSize(layer.source.c_str());
-
-	if (fileSize == -1)
-		throw std::runtime_error("unable to get filesize of " + layer.source);
-
-	while (is.Tell() < fileSize) {
-		docs.push_back(rapidjson::Document());
-		rapidjson::Document& doc = docs.back();
-		doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
-		if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
-
-		// Skip whitespace.
-		while(is.Tell() < fileSize && isspace(is.Peek())) is.Take();
-	}
-	fclose(fp);
+	std::vector<OffsetAndLength> chunks = getNewlineChunks(layer.source, threadNum * 4);
 
 	// Process each feature
 	boost::asio::thread_pool pool(threadNum);
-	for (auto &doc : docs) { 
+	for (auto &chunk : chunks) { 
 		boost::asio::post(pool, [&]() {
-			processFeature(std::move(doc.GetObject()), layer, layerNum);
+			FILE* fp = fopen(layer.source.c_str(), "r");
+			if (fseek(fp, chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
+			char readBuffer[65536];
+			rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+
+			while(is.Tell() < chunk.length) {
+				auto doc = rapidjson::Document();
+				doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
+				if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
+				processFeature(std::move(doc.GetObject()), layer, layerNum);
+
+				// Skip whitespace.
+				while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+			}
+			fclose(fp);
 		});
 	}
 	pool.join();

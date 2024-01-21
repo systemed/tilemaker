@@ -124,6 +124,7 @@ test: \
 	test_append_vector \
 	test_attribute_store \
 	test_deque_map \
+	test_helpers \
 	test_pbf_reader \
 	test_pooled_string \
 	test_relation_roles \
@@ -147,6 +148,11 @@ test_deque_map: \
 	test/deque_map.test.o
 	$(CXX) $(CXXFLAGS) -o test.deque_map $^ $(INC) $(LIB) $(LDFLAGS) && ./test.deque_map
 
+test_helpers: \
+	src/helpers.o \
+	test/helpers.test.o
+	$(CXX) $(CXXFLAGS) -o test.helpers $^ $(INC) $(LIB) $(LDFLAGS) && ./test.helpers
+
 test_options_parser: \
 	src/options_parser.o \
 	test/options_parser.test.o
@@ -157,7 +163,6 @@ test_pooled_string: \
 	src/pooled_string.o \
 	test/pooled_string.test.o
 	$(CXX) $(CXXFLAGS) -o test.pooled_string $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pooled_string
-
 
 test_relation_roles: \
 	src/relation_roles.o \
