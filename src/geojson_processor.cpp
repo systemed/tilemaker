@@ -9,8 +9,6 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
-#include <deque>
-
 extern bool verbose;
 
 namespace geom = boost::geometry;
