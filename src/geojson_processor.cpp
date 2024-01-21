@@ -28,7 +28,7 @@ long getFileSize(std::string filename) {
 
 // Read GeoJSON, and create OutputObjects for all objects within the specified bounding box
 void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
-	if (ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonl"))
+	if (ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ"))
 		return readFeatureLines(layer, layerNum);
 
 	readFeatureCollection(layer, layerNum);

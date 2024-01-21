@@ -244,7 +244,7 @@ int main(const int argc, const char* argv[]) {
 				if (!hasClippingBox) {
 					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 					exit(EXIT_FAILURE);
-				} else if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL")) {
+				} else if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ")) {
 					cout << "Reading GeoJSON " << layer.name << endl;
 					geoJSONProcessor.read(layers.layers[layerNum], layerNum);
 				} else {
