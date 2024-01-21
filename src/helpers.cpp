@@ -176,7 +176,7 @@ std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint6
 	std::vector<OffsetAndLength> rv;
 
 	const uint64_t size = getFileSize(filename);
-	const uint64_t chunkSize = std::max(size / chunks, 1ul);
+	const uint64_t chunkSize = std::max<uint64_t>(size / chunks, 1ul);
 	FILE* fp = fopen(filename.c_str(), "r");
 
 	// Our approach is naive: skip chunkSize bytes, scan for a newline, repeat.
