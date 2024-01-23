@@ -1,5 +1,6 @@
 #include "geojson_processor.h"
 
+#include "helpers.h"
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 
@@ -14,8 +15,14 @@ namespace geom = boost::geometry;
 
 // Read GeoJSON, and create OutputObjects for all objects within the specified bounding box
 void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
+	if (ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ"))
+		return readFeatureLines(layer, layerNum);
 
-	// Parse the JSON file into a RapidJSON document
+	readFeatureCollection(layer, layerNum);
+}
+
+void GeoJSONProcessor::readFeatureCollection(class LayerDef &layer, uint layerNum) {
+	// Read a JSON file containing a single GeoJSON FeatureCollection object.
 	rapidjson::Document doc;
 	FILE* fp = fopen(layer.source.c_str(), "r");
 	char readBuffer[65536];
@@ -33,6 +40,34 @@ void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
 	for (auto &feature : doc["features"].GetArray()) { 
 		boost::asio::post(pool, [&]() {
 			processFeature(std::move(feature.GetObject()), layer, layerNum);
+		});
+	}
+	pool.join();
+}
+
+void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
+	// Read a JSON file containing multiple GeoJSON items, newline-delimited.
+	std::vector<OffsetAndLength> chunks = getNewlineChunks(layer.source, threadNum * 4);
+
+	// Process each feature
+	boost::asio::thread_pool pool(threadNum);
+	for (auto &chunk : chunks) { 
+		boost::asio::post(pool, [&]() {
+			FILE* fp = fopen(layer.source.c_str(), "r");
+			if (fseek(fp, chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
+			char readBuffer[65536];
+			rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+
+			while(is.Tell() < chunk.length) {
+				auto doc = rapidjson::Document();
+				doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
+				if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
+				processFeature(std::move(doc.GetObject()), layer, layerNum);
+
+				// Skip whitespace.
+				while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+			}
+			fclose(fp);
 		});
 	}
 	pool.join();

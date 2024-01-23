@@ -31,6 +31,9 @@ private:
 	OsmLuaProcessing &osmLuaProcessing;
 	std::mutex attributeMutex;
 
+	void readFeatureCollection(class LayerDef &layer, uint layerNum);
+	void readFeatureLines(class LayerDef &layer, uint layerNum);
+
 	template <bool Flag, typename T>
 	void processFeature(rapidjson::GenericObject<Flag, T> feature, class LayerDef &layer, uint layerNum);
 

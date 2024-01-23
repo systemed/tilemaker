@@ -1,5 +1,6 @@
 #include <string>
 #include <stdexcept>
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -7,7 +8,12 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
 
+#include <sys/stat.h>
 #include "helpers.h"
+
+#ifdef _MSC_VER
+#define stat64 __stat64
+#endif
 
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 #define MOD_GZIP_ZLIB_CFACTOR 9
@@ -151,4 +157,62 @@ std::string boost_validity_error(unsigned failure) {
 		case 40: return "intersecting interiors";
 		default: return "something mysterious wrong with it, Boost validity_failure_type " + to_string(failure);
 	}
+}
+
+uint64_t getFileSize(std::string filename) {
+	struct stat64 statBuf;
+	int rc = stat64(filename.c_str(), &statBuf);
+
+	if (rc == 0) return statBuf.st_size;
+
+	throw std::runtime_error("unable to stat " + filename);
+}
+
+// Given a file, attempt to divide it into N chunks, with each chunk separated
+// by a newline.
+//
+// Useful for dividing a JSON lines file into blocks suitable for parallel processing.
+std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint64_t chunks) {
+	std::vector<OffsetAndLength> rv;
+
+	const uint64_t size = getFileSize(filename);
+	const uint64_t chunkSize = std::max<uint64_t>(size / chunks, 1ul);
+	FILE* fp = fopen(filename.c_str(), "r");
+
+	// Our approach is naive: skip chunkSize bytes, scan for a newline, repeat.
+	//
+	// Per UTF-8's ascii transparency property, a newline is guaranteed not to form
+	// part of any multi-byte character, so the byte '\n' reliably indicates a safe
+	// place to start a new chunk.
+	uint64_t offset = 0;
+	uint64_t length = 0;
+	char buffer[8192];
+	while (offset < size) {
+		// The last chunk will not be a full `chunkSize`.
+		length = std::min(chunkSize, size - offset);
+
+		if (fseek(fp, offset + length, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(offset) + " in " + filename);
+
+		bool foundNewline = false;
+
+		while(!foundNewline) {
+			size_t read = fread(buffer, 1, sizeof(buffer), fp);
+			if (read == 0) break;
+			for (int i = 0; i < read; i++) {
+				if (buffer[i] == '\n') {
+					length += i;
+					foundNewline = true;
+					break;
+				}
+			}
+
+			if (!foundNewline) length += read;
+    }
+
+		rv.push_back({offset, length});
+		offset += length;
+	}
+
+	fclose(fp);
+	return rv;
 }

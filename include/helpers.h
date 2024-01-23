@@ -28,6 +28,14 @@ inline std::vector<std::string> split_string(std::string &inputStr, char sep) {
 	return res;
 }
 
+struct OffsetAndLength {
+	uint64_t offset;
+	uint64_t length;
+};
+
+uint64_t getFileSize(std::string filename);
+std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint64_t chunks);
+
 void decompress_string(std::string& output, const char* input, uint32_t inputSize, bool asGzip = false);
 double bboxElementFromStr(const std::string& number);
 
