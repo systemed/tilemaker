@@ -189,7 +189,9 @@ int main(const int argc, const char* argv[]) {
 
 	shared_ptr<NodeStore> nodeStore;
 
-	if (options.osm.shardStores) {
+	// CompactNodeStore is a dense datatype; it doesn't make sense to allocate
+	// more than one of them.
+	if (options.osm.shardStores && !options.osm.compact) {
 		nodeStore = std::make_shared<ShardedNodeStore>(createNodeStore);
 	} else {
 		nodeStore = createNodeStore();
