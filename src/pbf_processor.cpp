@@ -21,7 +21,7 @@ std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 thread_local PbfReader::PbfReader reader;
 
 PbfProcessor::PbfProcessor(OSMStore &osmStore)
-	: osmStore(osmStore)
+	: osmStore(osmStore), compactWarningIssued(false)
 { }
 
 bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& nodeKeys)
@@ -31,8 +31,17 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 	TagMap tags;
 
 
+	bool isCompactStore = osmStore.isCompactStore();
+	NodeID lastNodeId = 0;
 	for (auto& node : pg.nodes()) {
 		NodeID nodeId = node.id;
+		if (isCompactStore && lastNodeId != 0 && nodeId != lastNodeId + 1 && !compactWarningIssued.exchange(true)) {
+			std::lock_guard<std::mutex> lock(ioMutex);
+			std::cout << "warning: --compact mode enabled, but PBF has gaps in IDs" << std::endl;
+			std::cout << "         to fix: osmium renumber your-file.osm.pbf -o renumbered.osm.pbf" << std::endl;
+		}
+		lastNodeId = nodeId;
+
 		LatpLon latplon = { int(lat2latp(double(node.lat)/10000000.0)*10000000.0), node.lon };
 
 		tags.reset();

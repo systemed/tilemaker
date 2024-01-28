@@ -2,6 +2,7 @@
 #ifndef _READ_PBF_H
 #define _READ_PBF_H
 
+#include <atomic>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -122,6 +123,7 @@ private:
 	
 	OSMStore &osmStore;
 	std::mutex ioMutex;
+	std::atomic<bool> compactWarningIssued;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

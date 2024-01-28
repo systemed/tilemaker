@@ -59,8 +59,8 @@ public:
 	void batchStart() override {}
 
 	// CompactNodeStore has no metadata to know whether or not it contains
-	// a node, so it's not suitable for used in sharded scenarios.
-	bool contains(size_t shard, NodeID id) const override { return true; }
+	// a node, so it's not suitable for use in sharded scenarios
+	bool contains(size_t shard, NodeID id) const override { throw std::runtime_error("CompactNodeStore does not support contains"); }
 	NodeStore& shard(size_t shard) override { return *this; }
 	const NodeStore& shard(size_t shard) const override { return *this; }
 	size_t shards() const override { return 1; }

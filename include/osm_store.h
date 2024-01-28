@@ -292,6 +292,7 @@ public:
 	void open(std::string const &osm_store_filename);
 
 	void use_compact_store(bool use) { use_compact_nodes = use; }
+	bool isCompactStore() { return use_compact_nodes; }
 	void enforce_integrity(bool ei) { require_integrity = ei; }
 	bool integrity_enforced() { return require_integrity; }
 
