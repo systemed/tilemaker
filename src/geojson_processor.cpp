@@ -58,13 +58,16 @@ void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
 			char readBuffer[65536];
 			rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
 
+			// Skip leading whitespace.
+			while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+
 			while(is.Tell() < chunk.length) {
 				auto doc = rapidjson::Document();
 				doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
 				if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
 				processFeature(std::move(doc.GetObject()), layer, layerNum);
 
-				// Skip whitespace.
+				// Skip trailing whitespace.
 				while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
 			}
 			fclose(fp);
