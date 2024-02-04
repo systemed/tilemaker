@@ -750,7 +750,7 @@ int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &max
 }
 
 bool PbfHasOptionalFeature(const std::string& inputFile, const std::string& feature) {
-	std::ifstream infile(inputFile, std::ifstream::in);
+	std::ifstream infile(inputFile, std::ifstream::in | std::ifstream::binary);
 	auto header = reader.readHeaderFromFile(infile);
 	infile.close();
 	return header.optionalFeatures.find(feature) != header.optionalFeatures.end();
