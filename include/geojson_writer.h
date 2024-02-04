@@ -54,19 +54,45 @@ struct GeoJSONWriter {
 		double deg2rad(double deg) { return (M_PI/180.0) * deg; }
 		double rad2deg(double rad) { return (180.0/M_PI) * rad; }
 		double latp2lat(double latp) { return rad2deg(atan(exp(deg2rad(latp)))*2.0)-90.0; }
-		Value ringToArray(Ring &r) {
+		Value serializePoint(const Point& point) {
+			Value pt(kArrayType);
+			pt.PushBack(point.x(), *alloc);
+			pt.PushBack(unproject ? latp2lat(point.y()) : point.y(), *alloc);
+			return pt;
+		}
+		Value ringToArray(const Ring &r) {
 			Value arr(kArrayType);
-			for (auto &point : r) {
-				Value pt(kArrayType);
-				pt.PushBack(point.x(), *alloc);
-				pt.PushBack(unproject ? latp2lat(point.y()) : point.y(), *alloc);
+			for (const auto &point : r) {
+				Value pt = serializePoint(point);
 				arr.PushBack(pt, *alloc);
 			}
 			return arr;
 		}
-		void operator()(Point &p) {} // todo
-		void operator()(Linestring &ls) {} // todo
-		void operator()(MultiLinestring &mls) {} // todo
+		void operator()(Point &p) {
+			Value coordinates(kArrayType);
+			obj->AddMember("coordinates", serializePoint(p), *alloc);
+			obj->AddMember("type", Value().SetString("Point"), *alloc);
+		}
+		void operator()(Linestring &ls) {
+			Value coordinates(kArrayType);
+			for (const auto &point : ls) {
+				coordinates.PushBack(serializePoint(point), *alloc);
+			}
+			obj->AddMember("coordinates", coordinates, *alloc);
+			obj->AddMember("type", Value().SetString("LineString"), *alloc);
+		}
+		void operator()(MultiLinestring &mls) {
+			Value coordinates(kArrayType);
+			for (const auto& ls : mls) {
+				Value lsCoordinates(kArrayType);
+				for (const auto& point : ls) {
+					lsCoordinates.PushBack(serializePoint(point), *alloc);
+				}
+				coordinates.PushBack(lsCoordinates, *alloc);
+			}
+			obj->AddMember("coordinates", coordinates, *alloc);
+			obj->AddMember("type", Value().SetString("MultiLineString"), *alloc);
+		}
 		void operator()(Ring &r) {
 			Value coordinates(kArrayType);
 			coordinates.PushBack(ringToArray(r), *alloc);
@@ -76,7 +102,7 @@ struct GeoJSONWriter {
 		void operator()(Polygon &p) {
 			Value coordinates(kArrayType);
 			coordinates.PushBack(ringToArray(p.outer()), *alloc);
-			for (auto &inner : p.inners()) {
+			for (const auto &inner : p.inners()) {
 				coordinates.PushBack(ringToArray(inner), *alloc);
 			}
 			obj->AddMember("coordinates", coordinates, *alloc);
@@ -84,10 +110,10 @@ struct GeoJSONWriter {
 		}
 		void operator()(MultiPolygon &mp) {
 			Value coordinates(kArrayType);
-			for (auto &polygon : mp) {
+			for (const auto &polygon : mp) {
 				Value polyCoords(kArrayType);
 				polyCoords.PushBack(ringToArray(polygon.outer()), *alloc);
-				for (auto &inner : polygon.inners()) {
+				for (const auto &inner : polygon.inners()) {
 					polyCoords.PushBack(ringToArray(inner), *alloc);
 				}
 				coordinates.PushBack(polyCoords, *alloc);
