@@ -73,6 +73,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Install vcpkg (Apple Silicon)
+      if: ${{ matrix.os == 'macos-14' }}
+      run: |
+        brew install vcpkg
+
     - name: Enable vcpkg cache
       uses: actions/cache@v2
       with:
