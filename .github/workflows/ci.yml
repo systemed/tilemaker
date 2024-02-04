@@ -62,22 +62,11 @@ jobs:
             executable: tilemaker
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
-          - os: macos-14
-            triplet: arm64-osx
-            executable: tilemaker
-            path: /usr/local/share/vcpkg/installed
-            toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
     name: ${{ matrix.os }} (CMake)
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v2
-
-    - name: Install vcpkg (Apple Silicon)
-      if: ${{ matrix.os == 'macos-14' }}
-      run: |
-        git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
-        brew install vcpkg
 
     - name: Enable vcpkg cache
       uses: actions/cache@v2
@@ -88,12 +77,10 @@ jobs:
 
     - name: Build dependencies
       run: |
-        if [[ $(uname -p) == 'arm' ]]; then export VCPKG_ROOT="$HOME/vcpkg"; fi
         vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
 
     - name: Build tilemaker
       run: |
-        if [[ $(uname -p) == 'arm' ]]; then export VCPKG_ROOT="$HOME/vcpkg"; fi
         mkdir build
         cd build
         cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
