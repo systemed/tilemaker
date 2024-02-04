@@ -93,8 +93,9 @@ jobs:
 
     - name: Build tilemaker
       run: |
-        mkdir build        
-        cd build        
+        if [[ $(uname -p) == 'arm' ]]; then export VCPKG_ROOT="$HOME/vcpkg"; fi
+        mkdir build
+        cd build
         cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_TOOLCHAIN_FILE=${{ matrix.toolchain }} -DCMAKE_CXX_COMPILER=g++ ..
         cmake --build . 
         strip tilemaker
