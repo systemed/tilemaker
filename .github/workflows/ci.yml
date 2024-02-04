@@ -125,7 +125,7 @@ jobs:
         sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev luajit libluajit-5.1-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
 
     - name: Install Mac OS X dependencies
-      if: ${{ matrix.os == 'macos-latest' }}
+      if: ${{ matrix.os == 'macos-latest' || matrix.os == 'macos-14' }}
       run: |
         c++ --version
         brew install boost lua shapelib rapidjson
