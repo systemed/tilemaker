@@ -15,6 +15,10 @@
 #define stat64 __stat64
 #endif
 
+#if defined(__APPLE__)
+#define stat64 stat
+#endif
+
 #define MOD_GZIP_ZLIB_WINDOWSIZE 15
 #define MOD_GZIP_ZLIB_CFACTOR 9
 #define MOD_GZIP_ZLIB_BSIZE 8096
