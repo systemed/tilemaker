@@ -116,9 +116,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-#   - name: Build dependencies
-#     run: |
-#       vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+   - name: Build dependencies
+     run: |
+      sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
 
     - name: Build tilemaker
       run: |
