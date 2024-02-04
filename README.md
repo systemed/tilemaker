@@ -106,4 +106,3 @@ Licenses of third-party libraries:
 - [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause
 - [minunit](https://github.com/siu/minunit) is licensed under MIT
 - [Simple-Web-Server](https://gitlab.com/eidheim/Simple-Web-Server) is licensed under MIT
-
