@@ -63,7 +63,7 @@ jobs:
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-    name: ${{ matrix.os }} CMake build
+    name: ${{ matrix.os }} (CMake)
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -106,11 +106,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-#         - os: macos-latest
-#           triplet: x64-osx
-#           executable: tilemaker
+          - os: macos-latest
 
-    name: ${{ matrix.os }} Makefile build
+    name: ${{ matrix.os }} (Makefile)
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -122,7 +120,7 @@ jobs:
 
     - name: Build tilemaker
       run: |
-        make
+        make -j4
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
