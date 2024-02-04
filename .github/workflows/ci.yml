@@ -63,7 +63,7 @@ jobs:
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-    name: ${{ matrix.os }} build
+    name: ${{ matrix.os }} CMake build
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -100,6 +100,35 @@ jobs:
         path: |
           ${{ github.workspace }}/resources
           ${{ github.workspace }}/build/${{ matrix.executable }}
+
+  unix-makefile-build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+#         - os: macos-latest
+#           triplet: x64-osx
+#           executable: tilemaker
+
+    name: ${{ matrix.os }} Makefile build
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+#   - name: Build dependencies
+#     run: |
+#       vcpkg install --triplet=${{ matrix.triplet }} lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+
+    - name: Build tilemaker
+      run: |
+        make
+
+    - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
+      run: |
+        curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
+        ./tilemaker ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose || true
+
 
   Github-Action:
     name: Generate mbtiles with Github Action
