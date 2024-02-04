@@ -122,6 +122,7 @@ jobs:
     - name: Install Mac OS X dependencies
       if: ${{ matrix.os == 'macos-latest' }}
       run: |
+        c++ --version
         brew install boost lua shapelib rapidjson
 
     - name: Build tilemaker
