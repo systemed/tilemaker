@@ -141,6 +141,7 @@ jobs:
     - name: Build tilemaker
       run: |
         make -j4
+        make test
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
