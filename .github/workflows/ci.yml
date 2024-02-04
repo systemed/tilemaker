@@ -118,7 +118,7 @@ jobs:
 
     - name: Build dependencies
       run: |
-        sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
+        sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev luajit liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
 
     - name: Build tilemaker
       run: |
