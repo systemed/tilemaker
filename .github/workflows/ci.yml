@@ -62,7 +62,11 @@ jobs:
             executable: tilemaker
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
-
+          - os: macos-14
+            triplet: arm-osx
+            executable: tilemaker
+            path: /usr/local/share/vcpkg/installed
+            toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
     name: ${{ matrix.os }} (CMake)
     runs-on: ${{ matrix.os }}
 
@@ -107,6 +111,7 @@ jobs:
         include:
           - os: ubuntu-22.04
           - os: macos-latest
+          - os: macos-14
 
     name: ${{ matrix.os }} (Makefile)
     runs-on: ${{ matrix.os }}
