@@ -63,7 +63,7 @@ jobs:
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
           - os: macos-14
-            triplet: arm-osx
+            triplet: arm64-osx
             executable: tilemaker
             path: /usr/local/share/vcpkg/installed
             toolchain: /usr/local/share/vcpkg/scripts/buildsystems/vcpkg.cmake
