@@ -42,13 +42,13 @@ private:
 	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
-enum class AttributePairType: uint { Bool = 0, Float = 1, String = 2 };
+enum class AttributePairType: uint8_t { Bool = 0, Float = 1, String = 2 };
 // AttributePair is a key/value pair (with minzoom)
 #pragma pack(push, 1)
 struct AttributePair {
 	short keyIndex : 9;
 	AttributePairType valueType : 2;
-	uint minzoom : 5; // Support zooms from 0..31. In practice, we expect z16 to be the biggest minzoom.
+	uint8_t minzoom : 5; // Support zooms from 0..31. In practice, we expect z16 to be the biggest minzoom.
 	union {
 		float floatValue_;
 		PooledString stringValue_;
