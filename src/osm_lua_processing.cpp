@@ -830,7 +830,6 @@ void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
 
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const protozero::data_view val, const char minzoom) {
-	if (val.size()==0) { return; }		// don't set empty strings
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	removeAttributeIfNeeded(key);
 	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
