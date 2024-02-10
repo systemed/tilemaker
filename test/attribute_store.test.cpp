@@ -11,10 +11,10 @@ MU_TEST(test_attribute_store) {
 
 	AttributeSet s1;
 	store.addAttribute(s1, "str1", std::string("someval"), 0);
-	store.addAttribute(s1, "str2", std::string("a very long string"), 0);
+	store.addAttribute(s1, "str2", std::string("a very long string"), 14);
 	store.addAttribute(s1, "bool1", false, 0);
 	store.addAttribute(s1, "bool2", true, 0);
-	store.addAttribute(s1, "float1", (float)42.0, 0);
+	store.addAttribute(s1, "float1", (float)42.0, 4);
 
 	const auto s1Index = store.add(s1);
 
@@ -35,6 +35,7 @@ MU_TEST(test_attribute_store) {
 	mu_check(str2 != s1Pairs.end());
 	mu_check((*str2)->hasStringValue());
 	mu_check((*str2)->stringValue() == "a very long string");
+	mu_check((*str2)->minzoom == 14);
 
 	const auto bool1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
 			return ap->keyIndex == store.keyStore.key2index("bool1");
@@ -56,6 +57,7 @@ MU_TEST(test_attribute_store) {
 	mu_check(float1 != s1Pairs.end());
 	mu_check((*float1)->hasFloatValue());
 	mu_check((*float1)->floatValue() == 42);
+	mu_check((*float1)->minzoom == 4);
 }
 
 MU_TEST(test_attribute_store_reuses) {
