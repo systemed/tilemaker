@@ -159,7 +159,7 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 			bool hasName = false;
 			if (indexField>-1) { 
 				std::lock_guard<std::mutex> lock(attributeMutex);
-				name=DBFReadStringAttribute(dbf, i, indexField); hasName = true
+				name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;
 			}
 			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, layer.minzoom);
 			// process geometry
