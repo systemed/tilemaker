@@ -423,9 +423,11 @@ void SortedNodeStore::publishGroup(const std::vector<element_t>& nodes) {
 			lastChunk = currentChunk;
 		}
 
-		tmpLatpLons[currentNodeIndex] = nodes[i].second.latp;
-		tmpLatpLons[currentNodeIndex + 256] = nodes[i].second.lon;
-		currentNodeIndex++;
+		if (i != nodes.size()) {
+			tmpLatpLons[currentNodeIndex] = nodes[i].second.latp;
+			tmpLatpLons[currentNodeIndex + 256] = nodes[i].second.lon;
+			currentNodeIndex++;
+		}
 	}
 
 	uint64_t chunks = currentChunkIndex;
