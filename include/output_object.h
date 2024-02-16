@@ -76,6 +76,9 @@ public:
 		vtzero::feature_builder& fbuilder,
 		char zoom
 	) const;
+		
+	bool compatible(const OutputObject &other);
+
 };
 #pragma pack(pop)
 

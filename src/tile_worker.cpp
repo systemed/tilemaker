@@ -73,68 +73,6 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
-// Merge two multilinestrings by simply appending
-// (the constituent parts will be matched up in subsequent call to ReorderMultiLinestring)
-void MergeIntersecting(MultiLinestring &input, MultiLinestring &to_merge) {
-	for (auto ls : to_merge) input.emplace_back(ls);
-}
-
-// Merge two multipolygons by doing intersection checks for each constituent polygon
-void MergeIntersecting(MultiPolygon &input, MultiPolygon &to_merge) {
-	if (boost::geometry::intersects(input, to_merge)) {
-		for (std::size_t i=0; i<input.size(); i++) {
-			if (boost::geometry::intersects(input[i], to_merge)) {
-				MultiPolygon union_result;
-				boost::geometry::union_(input[i], to_merge, union_result);
-				for (auto output : union_result) input.emplace_back(output);
-				input.erase(input.begin() + i);
-				return;
-			}
-		}
-	}
-	for (auto output : to_merge) input.emplace_back(output);
-}
-
-template <typename T>
-void CheckNextObjectAndMerge(
-	TileDataSource* source,
-	OutputObjectsConstIt& jt,
-	OutputObjectsConstIt ooSameLayerEnd, 
-	const TileBbox& bbox,
-	T& g
-) {
-	if (jt + 1 == ooSameLayerEnd)
-		return;
-
-	// If an object is a linestring/polygon that is followed by
-	// other linestrings/polygons with the same attributes,
-	// the following objects are merged into the first object, by taking union of geometries.
-	OutputObjectID oo = *jt;
-	OutputObjectID ooNext = *(jt + 1);
-
-	// TODO: do we need ooNext? Could we instead just update jt and dereference it?
-	//       put differently: we don't need to keep overwriting oo/ooNext
-	OutputGeometryType gt = oo.oo.geomType;
-	while (jt + 1 != ooSameLayerEnd &&
-			ooNext.oo.geomType == gt &&
-			ooNext.oo.z_order == oo.oo.z_order &&
-			ooNext.oo.attributes == oo.oo.attributes) {
-		jt++;
-		oo = *jt;
-		if(jt + 1 != ooSameLayerEnd) {
-			ooNext = *(jt + 1);
-		}
-
-		try {
-			T to_merge = boost::get<T>(source->buildWayGeometry(oo.oo.geomType, oo.oo.objectID, bbox));
-			MergeIntersecting(g, to_merge);
-		} catch (std::out_of_range &err) { cerr << "Geometry out of range " << gt << ": " << static_cast<int>(oo.oo.objectID) <<"," << err.what() << endl;
-		} catch (boost::bad_get &err) { cerr << "Type error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
-		} catch (geom::inconsistent_turns_exception &err) { cerr << "Inconsistent turns error while processing " << gt << ": " << static_cast<int>(oo.oo.objectID) << endl;
-		}
-	}
-}
-
 void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
 	g.erase(std::remove_if(
 		g.begin(),
@@ -362,13 +300,28 @@ void ProcessObjects(
 
 			//This may increment the jt iterator
 			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
-				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiLinestring>(g));
+				// Append successive linestrings, then reorder afterwards
+				while (jt<ooSameLayerEnd && oo.oo.compatible((jt+1)->oo)) {
+					jt++;
+					MultiLinestring to_merge = boost::get<MultiLinestring>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox));
+					for (auto &ls : to_merge) boost::get<MultiLinestring>(g).emplace_back(ls);
+				}
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
 				g = move(reordered);
 				oo = *jt;
+
 			} else if (oo.oo.geomType == POLYGON_ && combinePolygons) {
-				CheckNextObjectAndMerge(source, jt, ooSameLayerEnd, bbox, boost::get<MultiPolygon>(g));
+				// Append successive multipolygons, then union afterwards
+				std::vector<MultiPolygon> mps;
+				while (jt<ooSameLayerEnd && oo.oo.compatible((jt+1)->oo)) {
+					jt++;
+					mps.emplace_back( boost::get<MultiPolygon>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox)) );
+				}
+				if (!mps.empty()) { 
+					mps.emplace_back(boost::get<MultiPolygon>(g));
+					union_many(mps); g = mps.front();
+				}
 				oo = *jt;
 			}
 

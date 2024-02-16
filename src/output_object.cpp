@@ -55,6 +55,11 @@ void OutputObject::writeAttributes(
 	}
 }
 
+bool OutputObject::compatible(const OutputObject &other) {
+	return geomType == other.geomType &&
+	       z_order == other.z_order &&
+	       attributes == other.attributes;
+}
 
 // Comparision functions
 bool operator==(const OutputObject& x, const OutputObject& y) {
