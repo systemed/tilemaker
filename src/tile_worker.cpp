@@ -301,7 +301,7 @@ void ProcessObjects(
 			//This may increment the jt iterator
 			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
 				// Append successive linestrings, then reorder afterwards
-				while (jt<ooSameLayerEnd && oo.oo.compatible((jt+1)->oo)) {
+				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
 					MultiLinestring to_merge = boost::get<MultiLinestring>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox));
 					for (auto &ls : to_merge) boost::get<MultiLinestring>(g).emplace_back(ls);
@@ -314,7 +314,7 @@ void ProcessObjects(
 			} else if (oo.oo.geomType == POLYGON_ && combinePolygons) {
 				// Append successive multipolygons, then union afterwards
 				std::vector<MultiPolygon> mps;
-				while (jt<ooSameLayerEnd && oo.oo.compatible((jt+1)->oo)) {
+				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
 					mps.emplace_back( boost::get<MultiPolygon>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox)) );
 				}
