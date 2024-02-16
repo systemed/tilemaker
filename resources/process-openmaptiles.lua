@@ -301,7 +301,7 @@ function relation_scan_function()
 	end
 end
 
-function write_to_transportation_layer(minzoom, highway_class)
+function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service)
 	Layer("transportation", false)
 	MinZoom(minzoom)
 	SetZOrder()
@@ -467,7 +467,7 @@ function way_function()
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service)
 
 			-- Write names
 			if minzoom < 8 then
