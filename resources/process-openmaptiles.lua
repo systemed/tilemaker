@@ -156,15 +156,20 @@ function node_function()
 			elseif pop>20000000 then rank=2; mz=2
 			else                     rank=3; mz=3 end
 		elseif place == "state"         then mz=4
+		elseif place == "province"         then mz=5
 		elseif place == "city"          then mz=5
 		elseif place == "town" and pop>8000 then mz=7
 		elseif place == "town"          then mz=8
 		elseif place == "village" and pop>2000 then mz=9
 		elseif place == "village"       then mz=10
+		elseif place == "borough"       then mz=10
 		elseif place == "suburb"        then mz=11
+		elseif place == "quarter"       then mz=12
 		elseif place == "hamlet"        then mz=12
 		elseif place == "neighbourhood" then mz=13
+		elseif place == "isolated_dwelling" then mz=13
 		elseif place == "locality"      then mz=13
+		elseif place == "island"      then mz=12
 		end
 
 		Layer("place", false)
@@ -353,6 +358,7 @@ function way_function()
 	local tourism  = Find("tourism")
 	local man_made = Find("man_made")
 	local boundary = Find("boundary")
+	local place = Find("place")
 	local isClosed = IsClosed()
 	local housenumber = Find("addr:housenumber")
 	local write_name = false
@@ -365,6 +371,17 @@ function way_function()
 	if aerowayBuildings[aeroway] then building="yes"; aeroway="" end
 	if landuse == "field" then landuse = "farmland" end
 	if landuse == "meadow" and Find("meadow")=="agricultural" then landuse="farmland" end
+
+	if place == "island" then
+		LayerAsCentroid("place")
+		Attribute("class", place)
+		MinZoom(10)
+		local pop = tonumber(Find("population")) or 0
+		local capital = capitalLevel(Find("capital"))
+		local rank = calcRank(place, pop, nil)
+		if rank then AttributeNumeric("rank", rank) end
+		SetNameAttributes()
+	end
 
 	-- Boundaries within relations
 	-- note that we process administrative boundaries as properties on ways, rather than as single relation geometries,
