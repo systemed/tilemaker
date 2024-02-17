@@ -145,6 +145,30 @@ void make_valid(MultiPolygon &mp)
 }
 
 // ---------------
+// Union multipolygons
+// from https://github.com/boostorg/geometry/discussions/947
+void union_many(std::vector<MultiPolygon> &to_unify) {
+	if (to_unify.size()<2) return;
+	size_t step = 1;
+	size_t half_step;
+
+	// the outer loop doubles the distance between two polygons to be merged at every iteration
+	do {
+		half_step = step;
+		step *= 2;
+		size_t i = 0;
+
+		// the inner loop merges polygons at i and i+half_step storing the result at i
+		do {
+			MultiPolygon unified;
+			boost::geometry::union_(to_unify.at(i), to_unify.at(i + half_step), unified);
+			to_unify.at(i) = std::move(unified);
+			i += step;
+		} while (i + half_step < to_unify.size());
+	} while (step < to_unify.size());
+}
+
+// ---------------
 // Sutherland-Hodgeman clipper
 // ported from Volodymyr Agafonkin's https://github.com/mapbox/lineclip
 
