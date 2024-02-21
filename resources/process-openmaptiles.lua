@@ -542,10 +542,12 @@ function way_function()
 	if route=="ferry" then
 		write_to_transportation_layer(9, "ferry", nil, false, nil, false)
 
-		Layer("transportation_name", false)
-		SetNameAttributes()
-		MinZoom(12)
-		Attribute("class", "ferry")
+		if HasNames() then
+			Layer("transportation_name", false)
+			SetNameAttributes()
+			MinZoom(12)
+			Attribute("class", "ferry")
+		end
 	end
 
 	-- 'Aeroway'
