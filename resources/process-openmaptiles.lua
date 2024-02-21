@@ -428,7 +428,7 @@ function way_function()
 		end
 	end
 
-	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
+	-- Roads ('transportation' and 'transportation_name')
 	if highway~="" then
 		local access = Find("access")
 		local surface = Find("surface")
@@ -475,32 +475,33 @@ function way_function()
 			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false)
 
 			-- Write names
-			if minzoom < 8 then
-				minzoom = 8
-			end
-			if highway == "motorway" or highway == "trunk" then
+			if HasNames() or Holds("ref") then
+				if minzoom < 8 then
+					minzoom = 8
+				end
+				if highway == "motorway" or highway == "trunk" then
+					minzoom = math.max(8, minzoom)
+				elseif h == "minor" or h == "track" or h == "path" or h == "service" then
+					minzoom = 14
+				else
+					minzoom = math.max(12, minzoom)
+				end
 				Layer("transportation_name", false)
 				MinZoom(minzoom)
-			elseif h == "minor" or h == "track" or h == "path" or h == "service" then
-				Layer("transportation_name_detail", false)
-				MinZoom(minzoom)
-			else
-				Layer("transportation_name_mid", false)
-				MinZoom(minzoom)
-			end
-			SetNameAttributes()
-			Attribute("class",h)
-			Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
-			if h~=highway then Attribute("subclass",highway) end
-			local ref = Find("ref")
-			if ref~="" then
-				Attribute("ref",ref)
-				AttributeNumeric("ref_length",ref:len())
+				SetNameAttributes()
+				Attribute("class",h)
+				Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
+				if h~=highway then Attribute("subclass",highway) end
+				local ref = Find("ref")
+				if ref~="" then
+					Attribute("ref",ref)
+					AttributeNumeric("ref_length",ref:len())
+				end
 			end
 		end
 	end
 
-	-- Railways ('transportation' and 'transportation_name', plus 'transportation_name_detail')
+	-- Railways ('transportation' and 'transportation_name')
 	if railway~="" then
 		local class = railwayClasses[railway]
 		if class then
