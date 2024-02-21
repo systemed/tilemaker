@@ -540,11 +540,7 @@ function way_function()
 
 	-- 'Ferry'
 	if route=="ferry" then
-		Layer("transportation", false)
-		Attribute("class", "ferry")
-		SetZOrder()
-		MinZoom(9)
-		SetBrunnelAttributes()
+		write_to_transportation_layer(9, "ferry", nil, false, nil, false)
 
 		Layer("transportation_name", false)
 		SetNameAttributes()
