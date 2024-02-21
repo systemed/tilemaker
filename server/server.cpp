@@ -89,6 +89,7 @@ int main(int argc, char* argv[]) {
         std::string outStr(pbfBlob.begin(), pbfBlob.end());
         SimpleWeb::CaseInsensitiveMultimap header;
         header.emplace("Content-Encoding", "gzip");
+        header.emplace("Access-Control-Allow-Origin", "*");
         response->write(outStr,header);
     };
 
