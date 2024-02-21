@@ -520,10 +520,12 @@ function way_function()
 			end
 			write_to_transportation_layer(minzoom, class, railway, false, service, true)
 
-			Layer("transportation_name", false)
-			SetNameAttributes()
-			MinZoom(14)
-			Attribute("class", "rail")
+			if HasNames() then
+				Layer("transportation_name", false)
+				SetNameAttributes()
+				MinZoom(14)
+				Attribute("class", class)
+			end
 		end
 	end
 
@@ -718,6 +720,19 @@ function WritePOI(class,subclass,rank)
 	if level then
 		AttributeNumeric("level", level)
 	end
+end
+
+-- Check if there are name tags on the object
+function HasNames()
+	if Holds("name") then return true end
+	local iname
+	local main_written = name
+	if preferred_language and Holds("name:"..preferred_language) then return true end
+	-- then set any additional languages
+	for i,lang in ipairs(additional_languages) do
+		if Holds("name:"..lang) then return true end
+	end
+	return false
 end
 
 -- Set name attributes on any object
