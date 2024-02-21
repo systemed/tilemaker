@@ -225,6 +225,7 @@ linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondar
 constructionValues = Set { "primary", "secondary", "tertiary", "motorway", "service", "trunk", "track" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
+railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
@@ -301,7 +302,7 @@ function relation_scan_function()
 	end
 end
 
-function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service)
+function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail)
 	Layer("transportation", false)
 	MinZoom(minzoom)
 	SetZOrder()
@@ -310,7 +311,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if ramp then AttributeNumeric("ramp",1) end
 
 	-- Service
-	if highway == "service" and service ~="" then Attribute("service", service) end
+	if (is_rail or highway == "service") and service ~="" then Attribute("service", service) end
 
 	local oneway = Find("oneway")
 	if oneway == "yes" or oneway == "1" then
@@ -319,22 +320,26 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if oneway == "-1" then
 		-- **** TODO
 	end
-	local surface = Find("surface")
-	local surfaceMinzoom = 12
-	if pavedValues[surface] then
-		Attribute("surface", "paved", surfaceMinzoom)
-	elseif unpavedValues[surface] then
-		Attribute("surface", "unpaved", surfaceMinzoom)
+	if not is_rail then
+		local surface = Find("surface")
+		local surfaceMinzoom = 12
+		if pavedValues[surface] then
+			Attribute("surface", "paved", surfaceMinzoom)
+		elseif unpavedValues[surface] then
+			Attribute("surface", "unpaved", surfaceMinzoom)
+		end
 	end
 	local accessMinzoom = 9
-	if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
-	if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
-	if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
-	if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
-	AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
+	if not is_rail then
+		if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
+		if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
+		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
+		if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
+		AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
+		AttributeBoolean("expressway", Find("expressway"), 7)
+		Attribute("mtb_scale", Find("mtb:scale"), 10)
+	end
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
-	AttributeBoolean("expressway", Find("expressway"), 7)
-	Attribute("mtb_scale", Find("mtb:scale"), 10)
 end
 
 -- Process way tags
@@ -467,7 +472,7 @@ function way_function()
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h, subclass, ramp, service)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false)
 
 			-- Write names
 			if minzoom < 8 then
@@ -497,21 +502,29 @@ function way_function()
 
 	-- Railways ('transportation' and 'transportation_name', plus 'transportation_name_detail')
 	if railway~="" then
-		Layer("transportation", false)
-		Attribute("class", railway)
-		SetZOrder()
-		SetBrunnelAttributes()
-		if service~="" then
-			Attribute("service", service)
-			MinZoom(12)
-		else
-			MinZoom(9)
-		end
+		local class = railwayClasses[railway]
+		if class then
+			local minzoom = 14
+			Layer("transportation", false)
+			local usage = Find("usage")
+			if railway == "rail" and service == "" then
+				if usage == "main" then
+					minzoom = 8
+				else
+					minzoom = 10
+				end
+			elseif railway == "narrow_gauge" and service == "" then
+				minzoom = 10
+			elseif railway == "light_rail" and service == "" then
+				minzoom = 11
+			end
+			write_to_transportation_layer(minzoom, class, railway, false, service, true)
 
-		Layer("transportation_name", false)
-		SetNameAttributes()
-		MinZoom(14)
-		Attribute("class", "rail")
+			Layer("transportation_name", false)
+			SetNameAttributes()
+			MinZoom(14)
+			Attribute("class", "rail")
+		end
 	end
 
 	-- Pier
