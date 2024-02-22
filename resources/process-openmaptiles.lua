@@ -216,13 +216,15 @@ end
 -- Process way tags
 
 majorRoadValues = Set { "motorway", "trunk", "primary" }
-mainRoadValues  = Set { "secondary", "motorway_link", "trunk_link", "primary_link", "secondary_link" }
-midRoadValues   = Set { "tertiary", "tertiary_link" }
-minorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
-trackValues     = Set { "track" }
+z9RoadValues  = Set { "secondary", "motorway_link", "trunk_link" }
+z10RoadValues  = Set { "primary_link", "secondary_link" }
+z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
+-- On zoom 12, various road classes are merged into "minor"
+z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
+z12OtherRoadValues = Set { "raceway" }
+z13RoadValues     = Set { "track", "service" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-constructionValues = Set { "primary", "secondary", "tertiary", "motorway", "service", "trunk", "track" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
@@ -434,40 +436,41 @@ function way_function()
 		local surface = Find("surface")
 
 		local h = highway
+		local subclass = nil
+		local under_construction = false
+		if highway == "construction" and construction ~= "" then
+			h = construction
+			under_construction = true
+		end
 		local minzoom = 99
-		local layer = "transportation"
-		if majorRoadValues[highway] then              minzoom = 4 end
-		if highway == "trunk"       then              minzoom = 5
-		elseif highway == "primary" then              minzoom = 7 end
-		if mainRoadValues[highway]  then              minzoom = 9 end
-		if midRoadValues[highway]   then              minzoom = 11 end
-		if minorRoadValues[highway] then h = "minor"; minzoom = 12 end
-		if trackValues[highway]     then h = "track"; minzoom = 14 end
-		if pathValues[highway]      then h = "path" ; minzoom = 14 end
-		if h=="service"             then              minzoom = 12 end
+		if majorRoadValues[h]        then minzoom = 4
+		elseif h == "trunk"          then minzoom = 5
+		elseif highway == "primary"  then minzoom = 7
+		elseif z9RoadValues[h]       then minzoom = 9
+		elseif z11RoadValues[h]      then minzoom = 11
+		elseif z12MinorRoadValues[h] then
+			minzoom = 12
+			subclass = h
+			h = "minor"
+		elseif z12OtherRoadValues[h] then minzoom = 12
+		elseif z13RoadValues[h]      then minzoom = 13
+		elseif pathValues[h]         then
+			minzoom = 14
+			subclass = h
+			h = "path"
+		end
 
 		-- Links (ramp)
 		local ramp=false
-		if linkValues[highway] then
+		if linkValues[h] then
 			splitHighway = split(highway, "_")
 			highway = splitHighway[1]; h = highway
 			ramp = true
-			minzoom = 11
 		end
 
 		-- Construction
-		if highway == "construction" then
-			if constructionValues[construction] then
-				h = construction .. "_construction"
-				if construction ~= "service" and construction ~= "track" then
-					minzoom = 11
-				else
-					minzoom = 12
-				end
-			else
-				h = "minor_construction"
-				minzoom = 14
-			end
+		if under_construction then
+			h = h .. "_construction"
 		end
 
 		-- Write to layer
@@ -476,22 +479,25 @@ function way_function()
 
 			-- Write names
 			if HasNames() or Holds("ref") then
-				if minzoom < 8 then
+				if h == "motorway" then
+					minzoom = 7
+				elseif h == "trunk" then
 					minzoom = 8
-				end
-				if highway == "motorway" or highway == "trunk" then
-					minzoom = math.max(8, minzoom)
-				elseif h == "minor" or h == "track" or h == "path" or h == "service" then
-					minzoom = 14
+				elseif h == "primary" then
+					minzoom = 10
+				elseif h == "secondary" then
+					minzoom = 11
+				elseif h == "minor" or h == "track" or h == "tertiary" then
+					minzoom = 13
 				else
-					minzoom = math.max(12, minzoom)
+					minzoom = 14
 				end
 				Layer("transportation_name", false)
 				MinZoom(minzoom)
 				SetNameAttributes()
 				Attribute("class",h)
 				Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
-				if h~=highway then Attribute("subclass",highway) end
+				if subclass then Attribute("subclass", highway) end
 				local ref = Find("ref")
 				if ref~="" then
 					Attribute("ref",ref)
