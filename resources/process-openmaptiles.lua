@@ -336,7 +336,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
 		if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
 		AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
-		AttributeBoolean("expressway", Find("expressway"), 7)
+		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
 		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
 	end
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
