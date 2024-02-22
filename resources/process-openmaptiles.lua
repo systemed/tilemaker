@@ -304,7 +304,7 @@ function relation_scan_function()
 	end
 end
 
-function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail)
+function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road)
 	Layer("transportation", false)
 	MinZoom(minzoom)
 	SetZOrder()
@@ -313,16 +313,17 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if ramp then AttributeNumeric("ramp",1) end
 
 	-- Service
-	if (is_rail or highway == "service") and service ~="" then Attribute("service", service) end
+	if (is_rail or highway_class == "service") and service ~="" then Attribute("service", service) end
 
-	local oneway = Find("oneway")
-	if oneway == "yes" or oneway == "1" then
-		AttributeNumeric("oneway",1)
-	end
-	if oneway == "-1" then
-		-- **** TODO
-	end
-	if not is_rail then
+	local accessMinzoom = 9
+	if is_road then
+		local oneway = Find("oneway")
+		if oneway == "yes" or oneway == "1" then
+			AttributeNumeric("oneway",1)
+		end
+		if oneway == "-1" then
+			-- **** TODO
+		end
 		local surface = Find("surface")
 		local surfaceMinzoom = 12
 		if pavedValues[surface] then
@@ -330,9 +331,6 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		elseif unpavedValues[surface] then
 			Attribute("surface", "unpaved", surfaceMinzoom)
 		end
-	end
-	local accessMinzoom = 9
-	if not is_rail then
 		if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
 		if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
 		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
@@ -365,6 +363,7 @@ function way_function()
 	local tourism  = Find("tourism")
 	local man_made = Find("man_made")
 	local boundary = Find("boundary")
+	local aerialway  = Find("aerialway")
 	local place = Find("place")
 	local isClosed = IsClosed()
 	local housenumber = Find("addr:housenumber")
@@ -430,6 +429,18 @@ function way_function()
 		end
 	end
 
+	-- Aerialways ('transportation' and 'transportation_name')
+	if aerialway ~= "" then
+		write_to_transportation_layer(12, "aerialway", aerialway, false, nil, false, false)
+		if HasNames() then
+			Layer("transportation_name", false)
+			MinZoom(12)
+			SetNameAttributes()
+			Attribute("class", "aerialway")
+			Attribute("subclass", aerialway)
+		end
+	end
+
 	-- Roads ('transportation' and 'transportation_name')
 	if highway~="" then
 		local access = Find("access")
@@ -475,7 +486,7 @@ function way_function()
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, true)
 
 			-- Write names
 			if HasNames() or Holds("ref") then
@@ -525,7 +536,7 @@ function way_function()
 			elseif railway == "light_rail" and service == "" then
 				minzoom = 11
 			end
-			write_to_transportation_layer(minzoom, class, railway, false, service, true)
+			write_to_transportation_layer(minzoom, class, railway, false, service, true, false)
 
 			if HasNames() then
 				Layer("transportation_name", false)
@@ -546,7 +557,7 @@ function way_function()
 
 	-- 'Ferry'
 	if route=="ferry" then
-		write_to_transportation_layer(9, "ferry", nil, false, nil, false)
+		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false)
 
 		if HasNames() then
 			Layer("transportation_name", false)
