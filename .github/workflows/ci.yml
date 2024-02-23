@@ -2,7 +2,7 @@ name: "Continuous Integration"
 
 on:
   push:
-    branches: [ master ]
+    branches: [ stable-containers ]
   pull_request:
 
 env:
