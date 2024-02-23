@@ -308,17 +308,23 @@ end
 
 function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road)
 	Layer("transportation", IsClosed())
-	MinZoom(minzoom)
 	SetZOrder()
 	Attribute("class", highway_class)
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
+	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
+	-- We do not write any other attributes for areas.
+	if IsClosed() then
+		SetMinZoomByAreaWithLimit(minzoom)
+		return
+	end
+	MinZoom(minzoom)
 	SetBrunnelAttributes()
 	if ramp then AttributeNumeric("ramp",1) end
 
 	-- Service
-	if (is_rail or highway_class == "service") and service ~="" then Attribute("service", service) end
+	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
 
 	local accessMinzoom = 9
 	if is_road then
@@ -344,7 +350,6 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
 		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
 	end
-	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
 end
 
 -- Process way tags
@@ -502,12 +507,17 @@ function way_function()
 			minzoom = INVALID_ZOOM
 		end
 
+		-- Drop all areas except infrastructure for pedestrians handled above
+		if isClosed and h ~= "path" then
+			minzoom = INVALID_ZOOM
+		end
+
 		-- Write to layer
 		if minzoom <= 14 then
 			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road)
 
 			-- Write names
-			if HasNames() or Holds("ref") then
+			if not isClosed and (HasNames() or Holds("ref")) then
 				if h == "motorway" then
 					minzoom = 7
 				elseif h == "trunk" then
@@ -567,10 +577,7 @@ function way_function()
 
 	-- Pier
 	if man_made=="pier" then
-		Layer("transportation", isClosed)
-		SetZOrder()
-		Attribute("class", "pier")
-		SetMinZoomByArea()
+		write_to_transportation_layer(13, "pier", nil, false, nil, false, false)
 	end
 
 	-- 'Ferry'
@@ -811,15 +818,20 @@ end
 
 -- Set minimum zoom level by area
 function SetMinZoomByArea()
+	SetMinZoomByAreaWithLimit(0)
+end
+
+-- Set minimum zoom level by area but not below given minzoom
+function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     area>ZRES5^2  then MinZoom(6)
-	elseif area>ZRES6^2  then MinZoom(7)
-	elseif area>ZRES7^2  then MinZoom(8)
-	elseif area>ZRES8^2  then MinZoom(9)
-	elseif area>ZRES9^2  then MinZoom(10)
-	elseif area>ZRES10^2 then MinZoom(11)
-	elseif area>ZRES11^2 then MinZoom(12)
-	elseif area>ZRES12^2 then MinZoom(13)
+	if     minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
+	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
+	elseif minzoom <= 8 and area>ZRES7^2  then MinZoom(8)
+	elseif minzoom <= 9 and area>ZRES8^2  then MinZoom(9)
+	elseif minzoom <= 10 and area>ZRES9^2  then MinZoom(10)
+	elseif minzoom <= 11 and area>ZRES10^2 then MinZoom(11)
+	elseif minzoom <= 12 and area>ZRES11^2 then MinZoom(12)
+	elseif minzoom <= 13 and area>ZRES12^2 then MinZoom(13)
 	else                      MinZoom(14) end
 end
 
