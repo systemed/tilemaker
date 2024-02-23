@@ -225,6 +225,7 @@ z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
 z13RoadValues     = Set { "track", "service" }
+manMadRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
@@ -314,13 +315,13 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		Attribute("subclass", subclass)
 	end
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
+	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
 	if IsClosed() then
 		SetMinZoomByAreaWithLimit(minzoom)
 		return
 	end
 	MinZoom(minzoom)
-	SetBrunnelAttributes()
 	if ramp then AttributeNumeric("ramp",1) end
 
 	-- Service
@@ -576,8 +577,8 @@ function way_function()
 	end
 
 	-- Pier
-	if man_made=="pier" then
-		write_to_transportation_layer(13, "pier", nil, false, nil, false, false)
+	if manMadRoadValues[man_made] then
+		write_to_transportation_layer(13, man_made, nil, false, nil, false, false)
 	end
 
 	-- 'Ferry'
@@ -810,7 +811,7 @@ function SetEleAttributes()
 end
 
 function SetBrunnelAttributes()
-	if     Find("bridge") == "yes" then Attribute("brunnel", "bridge")
+	if Find("bridge") == "yes" or Find("man_made") == "bridge" then Attribute("brunnel", "bridge")
 	elseif Find("tunnel") == "yes" then Attribute("brunnel", "tunnel")
 	elseif Find("ford")   == "yes" then Attribute("brunnel", "ford")
 	end
