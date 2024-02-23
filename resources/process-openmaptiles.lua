@@ -42,6 +42,8 @@ ZRES13 = 19.1
 
 -- The height of one floor, in meters
 BUILDING_FLOOR_HEIGHT = 3.66
+-- Used to express that a feature should not end up the vector tiles
+INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
@@ -223,7 +225,7 @@ z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
 z13RoadValues     = Set { "track", "service" }
-pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian" }
+pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
@@ -305,7 +307,7 @@ function relation_scan_function()
 end
 
 function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road)
-	Layer("transportation", false)
+	Layer("transportation", IsClosed())
 	MinZoom(minzoom)
 	SetZOrder()
 	Attribute("class", highway_class)
@@ -364,6 +366,7 @@ function way_function()
 	local man_made = Find("man_made")
 	local boundary = Find("boundary")
 	local aerialway  = Find("aerialway")
+	local public_transport  = Find("public_transport")
 	local place = Find("place")
 	local isClosed = IsClosed()
 	local housenumber = Find("addr:housenumber")
@@ -442,18 +445,23 @@ function way_function()
 	end
 
 	-- Roads ('transportation' and 'transportation_name')
-	if highway~="" then
+	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
 		local surface = Find("surface")
 
 		local h = highway
+		local is_road = true
+		if h == "" then
+			h = public_transport
+			is_road = false
+		end
 		local subclass = nil
 		local under_construction = false
 		if highway == "construction" and construction ~= "" then
 			h = construction
 			under_construction = true
 		end
-		local minzoom = 99
+		local minzoom = INVALID_ZOOM
 		if majorRoadValues[h]        then minzoom = 4
 		elseif h == "trunk"          then minzoom = 5
 		elseif highway == "primary"  then minzoom = 7
@@ -484,9 +492,16 @@ function way_function()
 			h = h .. "_construction"
 		end
 
+		-- Drop underground platforms
+		local layer = Find("layer")
+		local layerNumeric = tonumber(layer)
+		if not is_road and layerNumeric ~= nil and layerNumeric < 0 then
+			minzoom = INVALID_ZOOM
+		end
+
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, true)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road)
 
 			-- Write names
 			if HasNames() or Holds("ref") then
