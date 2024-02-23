@@ -311,6 +311,9 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	MinZoom(minzoom)
 	SetZOrder()
 	Attribute("class", highway_class)
+	if subclass and subclass ~= "" then
+		Attribute("subclass", subclass)
+	end
 	SetBrunnelAttributes()
 	if ramp then AttributeNumeric("ramp",1) end
 
