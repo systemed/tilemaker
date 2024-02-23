@@ -2,7 +2,7 @@ name: "Continuous Integration"
 
 on:
   push:
-    branches: [ stable-containers ]
+    branches: [ master ]
   pull_request:
 
 env:
@@ -183,7 +183,7 @@ jobs:
 
       - name: Build Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
-        if: ${{ github.ref != 'refs/heads/stable-containers'}}
+        if: ${{ github.ref != 'refs/heads/master'}}
         with:
           context: .
           push: false
@@ -191,7 +191,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
       - name: Build and push Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
-        if: ${{ github.ref == 'refs/heads/stable-containers'}}
+        if: ${{ github.ref == 'refs/heads/master'}}
         with:
           context: .
           push: true
