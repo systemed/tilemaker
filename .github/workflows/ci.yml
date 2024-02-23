@@ -174,12 +174,12 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@5
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=raw,value={{date 'YYYY-MM-DDTHH-mm'}}
-          type=raw,value=latest
+          tags: |
+            type=raw,value={{date 'YYYY-MM-DDTHH-mm'}}
+            type=raw,value=latest
 
       - name: Build Docker image
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
