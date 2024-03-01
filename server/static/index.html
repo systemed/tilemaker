@@ -32,7 +32,8 @@ fetch("/metadata")
 		    style: styleURL, // stylesheet location
 		    center: [(Number(bounds[0])+Number(bounds[2]))/2,
 			         (Number(bounds[1])+Number(bounds[3]))/2], // starting position [lng, lat]
-		    zoom: 13 // starting zoom
+		    zoom: 13, // starting zoom
+		    pitch: 60 // pitch in degrees
 		});
 		map.addControl(new mapboxgl.NavigationControl());
 		map.addControl(new mapboxgl.AttributionControl({ compact: false, customAttribution:
