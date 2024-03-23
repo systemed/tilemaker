@@ -363,6 +363,7 @@ int main(const int argc, const char* argv[]) {
 		clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 		std::cout << "collecting tiles" << std::flush;
+		// TODO 682
 		populateTilesAtZoom(sources, zoomResults);
 #ifdef CLOCK_MONOTONIC
 		clock_gettime(CLOCK_MONOTONIC, &end);

@@ -9,7 +9,7 @@ extern bool verbose;
 class ShpMemTiles : public TileDataSource
 {
 public:
-	ShpMemTiles(size_t threadNum, uint baseZoom);
+	ShpMemTiles(size_t threadNum, uint indexZoom);
 
 	std::string name() const override { return "shp"; }
 
