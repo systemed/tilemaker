@@ -225,8 +225,10 @@ int main(const int argc, const char* argv[]) {
 	AttributeStore attributeStore;
 
 	class LayerDefinition layers(config.layers);
-	class OsmMemTiles osmMemTiles(options.threadNum, config.baseZoom, config.includeID, *nodeStore, *wayStore);
-	class ShpMemTiles shpMemTiles(options.threadNum, config.baseZoom);
+
+	const unsigned int indexZoom = std::min(config.baseZoom, 14u);
+	class OsmMemTiles osmMemTiles(options.threadNum, indexZoom, config.includeID, *nodeStore, *wayStore);
+	class ShpMemTiles shpMemTiles(options.threadNum, indexZoom);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
