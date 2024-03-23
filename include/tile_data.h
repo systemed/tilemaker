@@ -23,6 +23,15 @@ class TileBbox;
 #define CLUSTER_ZOOM_WIDTH (1 << CLUSTER_ZOOM)
 #define CLUSTER_ZOOM_AREA (CLUSTER_ZOOM_WIDTH * CLUSTER_ZOOM_WIDTH)
 
+// When basezoom <= 14, we track which base zoom tile contains the output object
+// by reconstituting the base zoom tile offset relative to the z6 tile.
+// When basezoom is >= 15, we truncate to z14 when indexing. This means we'll
+// get false positives when looking up in the index (since, e.g., a single z14 tile
+// covers 4 z15 tiles).
+// This is OK: when writing the z15 tile, there's a clipping step that will filter
+// out the false positives.
+typedef uint8_t Z6Offset;
+
 struct OutputObjectXY {
 	OutputObject oo;
 	Z6Offset x;

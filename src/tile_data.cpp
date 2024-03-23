@@ -58,6 +58,12 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int baseZoom, bool inc
 	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, baseZoom)),
 	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, baseZoom))
 {
+	// TileDataSource can only index up to zoom 14. The caller is responsible for
+	// ensuring it does not use a higher zoom.
+	if (baseZoom > 14)
+		throw std::out_of_range("TileDataSource: baseZoom cannot be higher than 14, but was " + std::to_string(baseZoom));
+
+
 	shardBits = 0;
 	numShards = 1;
 	while(numShards < threadNum) {
@@ -449,7 +455,7 @@ void TileDataSource::addGeometryToIndex(
 		insertIntermediateTiles(geom, baseZoom, tileSet);
 
 		bool polygonExists = false;
-		TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
+		TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 			TileCoordinates index = *it;
 			minTileX = std::min(index.x, minTileX);
@@ -526,7 +532,7 @@ void TileDataSource::addGeometryToIndex(
 		}
 	}
 	
-	TileCoordinate minTileX = TILE_COORDINATE_MAX, maxTileX = 0, minTileY = TILE_COORDINATE_MAX, maxTileY = 0;
+	TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
 	for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
 		TileCoordinates index = *it;
 		minTileX = std::min(index.x, minTileX);
