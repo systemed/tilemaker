@@ -334,7 +334,7 @@ int main(const int argc, const char* argv[]) {
 	// The clipping bbox check is expensive - as an optimization, compute the set of
 	// z6 tiles that are wholly covered by the clipping box. Membership in this
 	// set is quick to test.
-	TileCoordinatesSet coveredZ6Tiles(6);
+	PreciseTileCoordinatesSet coveredZ6Tiles(6);
 	if (hasClippingBox) {
 		for (int x = 0; x < 1 << 6; x++) {
 			for (int y = 0; y < 1 << 6; y++) {
@@ -354,9 +354,12 @@ int main(const int argc, const char* argv[]) {
 	}
 
 	std::deque<std::pair<unsigned int, TileCoordinates>> tileCoordinates;
-	std::vector<TileCoordinatesSet> zoomResults;
-	for (uint zoom = 0; zoom <= sharedData.config.endZoom; zoom++) {
-		zoomResults.push_back(TileCoordinatesSet(zoom));
+	std::vector<std::shared_ptr<TileCoordinatesSet>> zoomResults;
+	zoomResults.reserve(sharedData.config.endZoom + 1);
+
+	// Add PreciseTileCoordinatesSet, but only up to z14.
+	for (uint zoom = 0; zoom <= std::min(14u, sharedData.config.endZoom); zoom++) {
+		zoomResults.emplace_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
 	}
 
 	{
@@ -365,13 +368,17 @@ int main(const int argc, const char* argv[]) {
 		clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 		std::cout << "collecting tiles" << std::flush;
-		// TODO 682
 		populateTilesAtZoom(sources, zoomResults);
 #ifdef CLOCK_MONOTONIC
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
 		std::cout << ": " << (uint32_t)(tileNs / 1e6) << "ms";
 #endif
+	}
+
+	// Add LossyTileCoordinatesSet, if needed
+	for (uint zoom = 15u; zoom <= sharedData.config.endZoom; zoom++) {
+		zoomResults.emplace_back(std::make_shared<LossyTileCoordinatesSet>(zoom, *zoomResults[14]));
 	}
 
 	std::cout << ", filtering tiles:" << std::flush;
@@ -386,7 +393,7 @@ int main(const int argc, const char* argv[]) {
 		int numTiles = 0;
 		for (int x = 0; x < 1 << zoom; x++) {
 			for (int y = 0; y < 1 << zoom; y++) {
-				if (!zoomResult.test(x, y))
+				if (!zoomResult->test(x, y))
 					continue;
 			
 				if (hasClippingBox) {
@@ -504,9 +511,12 @@ int main(const int argc, const char* argv[]) {
 #endif
 
 				std::vector<std::vector<OutputObjectID>> data;
+				size_t n = 0;
 				for (auto source : sources) {
 					data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+					n += data[data.size() - 1].size();
 				}
+				std::cout << "for tile z" << std::to_string(zoom) << "/" << std::to_string(coords.x) << "/" << std::to_string(coords.y) << ": " << std::to_string(n) << " objects" << std::endl;
 				outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
 #ifdef CLOCK_MONOTONIC

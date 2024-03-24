@@ -8,34 +8,6 @@
 using namespace std;
 extern bool verbose;
 
-TileCoordinatesSet::TileCoordinatesSet(uint zoom):
-	zoom(zoom),
-	tiles((1 << zoom) * (1 << zoom)) {}
-
-bool TileCoordinatesSet::test(TileCoordinate x, TileCoordinate y) const {
-	uint64_t loc = x * (1 << zoom) + y;
-	if (loc >= tiles.size())
-		return false;
-
-	return tiles[loc];
-}
-
-size_t TileCoordinatesSet::size() const {
-	size_t rv = 0;
-	for (int i = 0; i < tiles.size(); i++)
-		if (tiles[i])
-			rv++;
-
-	return rv;
-}
-
-void TileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
-	uint64_t loc = x * (1 << zoom) + y;
-	if (loc >= tiles.size())
-		return;
-	tiles[loc] = true;
-}
-
 thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
 thread_local LeasedStore<TileDataSource::multi_linestring_store_t> multilinestringStore;
@@ -146,14 +118,15 @@ void TileDataSource::addObjectToSmallIndexUnsafe(const TileCoordinates& index, c
 		});
 }
 
-void TileDataSource::collectTilesWithObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms) {
+void TileDataSource::collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms) {
 	// Scan through all shards. Convert to base zoom, then convert to the requested zoom.
 	collectTilesWithObjectsAtZoomTemplate<OutputObjectXY>(indexZoom, objects.begin(), objects.size(), zooms);
 	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), objectsWithIds.size(), zooms);
 }
 
-void addCoveredTilesToOutput(const uint indexZoom, std::vector<TileCoordinatesSet>& zooms, const Box& box) {
+void addCoveredTilesToOutput(const uint indexZoom, std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms, const Box& box) {
 	size_t maxZoom = zooms.size() - 1;
+// 	std::cout << "addCoveredTilesToOutput maxZoom=" << maxZoom << ", indexZoom - maxZoom = " << (indexZoom - maxZoom) << std::endl;
 	int scale = pow(2, indexZoom - maxZoom);
 	TileCoordinate minx = box.min_corner().x() / scale;
 	TileCoordinate maxx = box.max_corner().x() / scale;
@@ -164,7 +137,7 @@ void addCoveredTilesToOutput(const uint indexZoom, std::vector<TileCoordinatesSe
 			size_t zx = x, zy = y;
 
 			for (int zoom = maxZoom; zoom >= 0; zoom--) {
-				zooms[zoom].set(zx, zy);
+				zooms[zoom]->set(zx, zy);
 				zx /= 2;
 				zy /= 2;
 			}
@@ -173,7 +146,7 @@ void addCoveredTilesToOutput(const uint indexZoom, std::vector<TileCoordinatesSe
 }
 
 // Find the tiles used by the "large objects" from the rtree index
-void TileDataSource::collectTilesWithLargeObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms) {
+void TileDataSource::collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms) {
 	for(auto const &result: boxRtree)
 		addCoveredTilesToOutput(indexZoom, zooms, result.first);
 
@@ -197,7 +170,6 @@ void TileDataSource::collectObjectsForTile(
 	size_t iEnd = objects.size();
 
 	if (zoom >= CLUSTER_ZOOM) {
-		// Compute the x, y at the base zoom level
 		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
 		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
 
@@ -219,6 +191,7 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
+	// TODO 682 - we must need to do... something here. But what?
 	int scale = pow(2, indexZoom - zoom);
 	TileCoordinates srcIndex1( dstIndex.x   *scale  ,  dstIndex.y   *scale  );
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
@@ -406,8 +379,11 @@ void TileDataSource::reportSize() const {
 
 void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	std::vector<TileCoordinatesSet>& zooms
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
 ) {
+	if (zooms.size() > 15)
+		throw std::out_of_range("populateTilesAtZoom: expected at most z14 zooms (15), but found " + std::to_string(zooms.size()) + " vectors");
+
 	// TODO 682
 	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->collectTilesWithObjectsAtZoom(zooms);

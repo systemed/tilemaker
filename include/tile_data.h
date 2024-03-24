@@ -11,6 +11,7 @@
 #include "append_vector.h"
 #include "clip_cache.h"
 #include "mmap_allocator.h"
+#include "tile_coordinates_set.h"
 
 #define TILE_DATA_ID_SIZE 34
 
@@ -42,18 +43,6 @@ struct OutputObjectXY {
 	OutputObject oo;
 	Z6Offset x;
 	Z6Offset y;
-};
-
-class TileCoordinatesSet {
-public:
-	TileCoordinatesSet(uint zoom);
-	bool test(TileCoordinate x, TileCoordinate y) const;
-	void set(TileCoordinate x, TileCoordinate y);
-	size_t size() const;
-
-private:
-	uint zoom;
-	std::vector<bool> tiles;
 };
 
 struct OutputObjectXYID {
@@ -154,7 +143,7 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& indexZoom,
 	const typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
 	const size_t size,
-	std::vector<TileCoordinatesSet>& zooms
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
 ) {
 	size_t maxZoom = zooms.size() - 1;
 	uint16_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
@@ -178,7 +167,7 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 				lastY = y;
 
 				for (int zoom = maxZoom; zoom >= 0; zoom--) {
-					zooms[zoom].set(x, y);
+					zooms[zoom]->set(x, y);
 					x /= 2;
 					y /= 2;
 				}
@@ -237,11 +226,19 @@ template<typename OO> void collectObjectsForTileTemplate(
 	size_t iStart,
 	size_t iEnd,
 	unsigned int zoom,
-	const TileCoordinates& dstIndex,
+	TileCoordinates dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
 	if (zoom < CLUSTER_ZOOM)
 		throw std::runtime_error("collectObjectsForTileTemplate should not be called for low zooms");
+
+	// When base zoom is z15 or higher, we need to scale down to z14.
+	unsigned int clampedZoom = zoom;
+	while(clampedZoom > indexZoom) {
+		clampedZoom--;
+		dstIndex.x /= 2;
+		dstIndex.y /= 2;
+	}
 
 	uint16_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
 
@@ -249,11 +246,11 @@ template<typename OO> void collectObjectsForTileTemplate(
 		// If z >= 6, we can compute the exact bounds within the objects array.
 		// Translate to the base zoom, then do a binary search to find
 		// the starting point.
-		TileCoordinate z6x = dstIndex.x / (1 << (zoom - CLUSTER_ZOOM));
-		TileCoordinate z6y = dstIndex.y / (1 << (zoom - CLUSTER_ZOOM));
+		TileCoordinate z6x = dstIndex.x / (1 << (clampedZoom - CLUSTER_ZOOM));
+		TileCoordinate z6y = dstIndex.y / (1 << (clampedZoom - CLUSTER_ZOOM));
 
-		TileCoordinate baseX = dstIndex.x * (1 << (indexZoom - zoom));
-		TileCoordinate baseY = dstIndex.y * (1 << (indexZoom - zoom));
+		TileCoordinate baseX = dstIndex.x * (1 << (indexZoom - clampedZoom));
+		TileCoordinate baseY = dstIndex.y * (1 << (indexZoom - clampedZoom));
 
 		Z6Offset needleX = baseX - z6x * z6OffsetDivisor;
 		Z6Offset needleY = baseY - z6y * z6OffsetDivisor;
@@ -299,8 +296,8 @@ template<typename OO> void collectObjectsForTileTemplate(
 			TileCoordinate baseY = z6y * z6OffsetDivisor + iter->y;
 
 			// Translate the x, y at the requested zoom level
-			TileCoordinate x = baseX / (1 << (indexZoom - zoom));
-			TileCoordinate y = baseY / (1 << (indexZoom - zoom));
+			TileCoordinate x = baseX / (1 << (indexZoom - clampedZoom));
+			TileCoordinate y = baseY / (1 << (indexZoom - clampedZoom));
 
 			if (dstIndex.x == x && dstIndex.y == y) {
 				if (iter->oo.minZoom <= zoom) {
@@ -384,9 +381,9 @@ protected:
 public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
 
-	void collectTilesWithObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
+	void collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
-	void collectTilesWithLargeObjectsAtZoom(std::vector<TileCoordinatesSet>& zooms);
+	void collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
 	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
 	void finalize(size_t threadNum);
@@ -501,7 +498,7 @@ public:
 
 void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	std::vector<TileCoordinatesSet>& zooms
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
 );
 
 #endif //_TILE_DATA_H
