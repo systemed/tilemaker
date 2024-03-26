@@ -11,10 +11,6 @@ class TileBbox;
 template <class T>
 class ClipCache {
 public:
-	// Consider: `baseZoom` is a poor name; it's actually the zoom at which we'll
-	// stop caching clips (and prefer clips from lower zooms). The caller of this
-	// code caps it to z14, even if the map's real basezoom is lower.
-	// Maybe this should be renamed `maxZoomForCaching`?
 	ClipCache(size_t threadNum, unsigned int baseZoom):
 		baseZoom(baseZoom),
 		clipCache(threadNum * 16),
