@@ -6,8 +6,8 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
-ShpMemTiles::ShpMemTiles(size_t threadNum, uint baseZoom)
-	: TileDataSource(threadNum, baseZoom, false)
+ShpMemTiles::ShpMemTiles(size_t threadNum, uint indexZoom)
+	: TileDataSource(threadNum, indexZoom, false)
 { }
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
@@ -57,7 +57,6 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 
 	bitIndices[layerName] = std::vector<bool>();
-	const uint8_t indexZoom = std::min(baseZoom, 14u);
 	bitIndices[layerName].resize((1 << indexZoom) * (1 << indexZoom));
 }
 
@@ -65,7 +64,6 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 	// Check if any tiles in the bitmap might intersect this shape.
 	// If none, downstream code can skip querying the r-tree.
 	auto& bitvec = bitIndices.at(layerName);
-	const uint8_t indexZoom = std::min(baseZoom, 14u);
 
 	double lon1 = box.min_corner().x();
 	double lat1 = box.min_corner().y();
@@ -112,8 +110,8 @@ void ShpMemTiles::StoreGeometry(
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				NodeID oid = storePoint(sp);
 				oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
-				tilex =  lon2tilex(p->x(), baseZoom);
-				tiley = latp2tiley(p->y(), baseZoom);
+				tilex =  lon2tilex(p->x(), indexZoom);
+				tiley = latp2tiley(p->y(), indexZoom);
 				addObjectToSmallIndex(TileCoordinates(tilex, tiley), *oo, 0);
 			} else { return; }
 		} break;
@@ -157,10 +155,9 @@ void ShpMemTiles::StoreGeometry(
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
 
-	// Store a bitmap of which tiles at the basezoom might intersect
+	// Store a bitmap of which tiles at the indexZoom might intersect
 	// this shape.
 	auto& bitvec = bitIndices.at(layerName);
-	const uint8_t indexZoom = std::min(baseZoom, 14u);
 	double lon1 = box.min_corner().x();
 	double lat1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();

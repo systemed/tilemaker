@@ -31,7 +31,7 @@ class OsmMemTiles : public TileDataSource {
 public:
 	OsmMemTiles(
 		size_t threadNum,
-		uint baseZoom,
+		uint indexZoom,
 		bool includeID,
 		const NodeStore& nodeStore,
 		const WayStore& wayStore

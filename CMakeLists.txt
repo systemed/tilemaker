@@ -100,6 +100,7 @@ file(GLOB tilemaker_src_files
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
 	src/tag_map.cpp
+	src/tile_coordinates_set.cpp
 	src/tile_data.cpp
 	src/tilemaker.cpp
 	src/tile_worker.cpp
