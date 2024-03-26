@@ -1,6 +1,7 @@
 #ifndef TILE_COORDINATES_SET_H
 #define TILE_COORDINATES_SET_H
 
+#include <cstddef>
 #include "coordinates.h"
 
 // Interface representing a bitmap of tiles of interest at a given zoom.

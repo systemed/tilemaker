@@ -50,6 +50,6 @@ size_t LossyTileCoordinatesSet::zoom() const {
 }
 
 void LossyTileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
-	throw std::logic_error("LossyTileCoordinatesSet::set() is not implemented; LossyTileCoordinatesSet is read-only");
+	throw std::runtime_error("LossyTileCoordinatesSet::set() is not implemented; LossyTileCoordinatesSet is read-only");
 }
 
