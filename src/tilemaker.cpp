@@ -511,10 +511,8 @@ int main(const int argc, const char* argv[]) {
 #endif
 
 				std::vector<std::vector<OutputObjectID>> data;
-				size_t n = 0;
 				for (auto source : sources) {
 					data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
-					n += data[data.size() - 1].size();
 				}
 				outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 

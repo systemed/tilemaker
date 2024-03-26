@@ -27,7 +27,6 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	linestringStores(threadNum),
 	multilinestringStores(threadNum),
 	multipolygonStores(threadNum),
-	// TODO 682: Confirm this is OK
 	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, indexZoom)),
 	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, indexZoom))
 {
@@ -389,7 +388,6 @@ void populateTilesAtZoom(
 	if (zooms.size() > 15)
 		throw std::out_of_range("populateTilesAtZoom: expected at most z14 zooms (15), but found " + std::to_string(zooms.size()) + " vectors");
 
-	// TODO 682
 	for(size_t i=0; i<sources.size(); i++) {
 		sources[i]->collectTilesWithObjectsAtZoom(zooms);
 		sources[i]->collectTilesWithLargeObjectsAtZoom(zooms);
