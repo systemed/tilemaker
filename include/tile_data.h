@@ -31,7 +31,7 @@ class TileBbox;
 // we bucket the world into 4,096 z6 tiles, which each contain some number of 
 // z14 objects. This lets us use only 8 bits to store an X/Y coordinate.
 //
-// Because index zoom is higher than base zoom in the case where base zoom is
+// Because index zoom is lower than base zoom in the case where base zoom is
 // z15+, we'll get false positives when looking up objects in the index,
 // since, e.g., a single z14 tile covers 4 z15 tiles.
 //
