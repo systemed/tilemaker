@@ -17,14 +17,14 @@ public:
 // generally expected to be z14.
 class PreciseTileCoordinatesSet : public TileCoordinatesSet {
 public:
-	PreciseTileCoordinatesSet(uint zoom);
+	PreciseTileCoordinatesSet(unsigned int zoom);
 	bool test(TileCoordinate x, TileCoordinate y) const override;
 	size_t size() const override;
 	size_t zoom() const override;
 	void set(TileCoordinate x, TileCoordinate y) override;
 
 private:
-	uint zoom_;
+	unsigned int zoom_;
 	std::vector<bool> tiles;
 };
 
@@ -32,16 +32,16 @@ private:
 // z15 or higher, extrapolates a result based on a set for a lower zoom.
 class LossyTileCoordinatesSet : public TileCoordinatesSet {
 public:
-	LossyTileCoordinatesSet(uint zoom, const TileCoordinatesSet& precise);
+	LossyTileCoordinatesSet(unsigned int zoom, const TileCoordinatesSet& precise);
 	bool test(TileCoordinate x, TileCoordinate y) const override;
 	size_t size() const override;
 	size_t zoom() const override;
 	void set(TileCoordinate x, TileCoordinate y) override;
 
 private:
-	uint zoom_;
+	unsigned int zoom_;
 	const TileCoordinatesSet& tiles;
-	uint scale;
+	unsigned int scale;
 };
 
 #endif

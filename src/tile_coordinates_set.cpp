@@ -1,7 +1,7 @@
 #include "tile_coordinates_set.h"
 #include <string>
 
-PreciseTileCoordinatesSet::PreciseTileCoordinatesSet(uint zoom):
+PreciseTileCoordinatesSet::PreciseTileCoordinatesSet(unsigned int zoom):
 	zoom_(zoom),
 	tiles((1 << zoom) * (1 << zoom)) {}
 
@@ -33,7 +33,7 @@ void PreciseTileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
 	tiles[loc] = true;
 }
 
-LossyTileCoordinatesSet::LossyTileCoordinatesSet(uint zoom, const TileCoordinatesSet& underlying) : zoom_(zoom), tiles(underlying), scale(1 << (zoom - underlying.zoom())) {
+LossyTileCoordinatesSet::LossyTileCoordinatesSet(unsigned int zoom, const TileCoordinatesSet& underlying) : zoom_(zoom), tiles(underlying), scale(1 << (zoom - underlying.zoom())) {
 	if (zoom <= underlying.zoom())
 		throw std::out_of_range("LossyTileCoordinatesSet: zoom (" + std::to_string(zoom_) + ") must be greater than underlying set's zoom (" + std::to_string(underlying.zoom()) + ")");
 }
