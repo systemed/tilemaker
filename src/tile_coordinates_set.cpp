@@ -1,5 +1,6 @@
 #include "tile_coordinates_set.h"
 #include <string>
+#include <stdexcept>
 
 PreciseTileCoordinatesSet::PreciseTileCoordinatesSet(unsigned int zoom):
 	zoom_(zoom),
@@ -51,6 +52,6 @@ size_t LossyTileCoordinatesSet::zoom() const {
 }
 
 void LossyTileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
-	throw std::runtime_error("LossyTileCoordinatesSet::set() is not implemented; LossyTileCoordinatesSet is read-only");
+	throw std::logic_error("LossyTileCoordinatesSet::set() is not implemented; LossyTileCoordinatesSet is read-only");
 }
 
