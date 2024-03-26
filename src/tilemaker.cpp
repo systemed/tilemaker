@@ -516,7 +516,6 @@ int main(const int argc, const char* argv[]) {
 					data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					n += data[data.size() - 1].size();
 				}
-				std::cout << "for tile z" << std::to_string(zoom) << "/" << std::to_string(coords.x) << "/" << std::to_string(coords.y) << ": " << std::to_string(n) << " objects" << std::endl;
 				outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
 #ifdef CLOCK_MONOTONIC

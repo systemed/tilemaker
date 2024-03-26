@@ -191,8 +191,13 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates dstIndex,
 	std::vector<OutputObjectID>& output
 ) {
-	// TODO 682 - we must need to do... something here. But what?
-	int scale = pow(2, indexZoom - zoom);
+	unsigned int clampedZoom = zoom;
+	while (clampedZoom > indexZoom) {
+		clampedZoom--;
+		dstIndex.x /= 2;
+		dstIndex.y /= 2;
+	}
+	int scale = pow(2, indexZoom - clampedZoom);
 	TileCoordinates srcIndex1( dstIndex.x   *scale  ,  dstIndex.y   *scale  );
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
