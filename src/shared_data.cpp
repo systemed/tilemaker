@@ -259,12 +259,6 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		cout << "tilemaker may have excessive memory, time, and space requirements at higher zooms. You can find more information in the docs/ folder." << endl;
 		cout << "**** WARNING ****" << endl;
 	}
-#ifndef FAT_TILE_INDEX
-	if (endZoom>16) {
-		cerr << "Compile tilemaker with -DFAT_TILE_INDEX to enable tile output at zoom level 17 or greater" << endl;
-		exit (EXIT_FAILURE);
-	}
-#endif
 
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
 	combineBelow   = jsonConfig["settings"].HasMember("combine_below") ? jsonConfig["settings"]["combine_below"].GetUint() : 0;
