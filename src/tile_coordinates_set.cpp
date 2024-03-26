@@ -1,4 +1,5 @@
 #include "tile_coordinates_set.h"
+#include <string>
 
 PreciseTileCoordinatesSet::PreciseTileCoordinatesSet(uint zoom):
 	zoom_(zoom),
