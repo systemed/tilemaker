@@ -31,8 +31,12 @@ MU_TEST(test_options_parser) {
 	// No args is invalid.
 	ASSERT_THROWS("You must specify an output file");
 
-	// Output without input is invalid
-	ASSERT_THROWS("No source .osm.pbf", "--output", "foo.mbtiles");
+	// Output without input is valid
+	{
+		std::vector<std::string> args = {"--output", "foo.mbtiles"};
+		auto opts = parse(args);
+		mu_check(opts.inputFiles.size() == 0);
+	}
 
 	// You can ask for --help.
 	{
@@ -41,7 +45,7 @@ MU_TEST(test_options_parser) {
 		mu_check(opts.showHelp);
 	}
 
-	// Minimal valid is output and input
+	// Common happy path is output and input
 	{
 		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf"};
 		auto opts = parse(args);
@@ -88,6 +92,19 @@ MU_TEST(test_options_parser) {
 		mu_check(opts.outputMode == OutputMode::PMTiles);
 		mu_check(opts.osm.storeFile == "/tmp/store");
 		mu_check(!opts.osm.materializeGeometries);
+		mu_check(!opts.osm.shardStores);
+	}
+
+	// Two input files implies --materialize
+	{
+		std::vector<std::string> args = {"--output", "foo.mbtiles", "--input", "ontario.pbf", "--input", "alberta.pbf"};
+		auto opts = parse(args);
+		mu_check(opts.inputFiles.size() == 2);
+		mu_check(opts.inputFiles[0] == "ontario.pbf");
+		mu_check(opts.inputFiles[1] == "alberta.pbf");
+		mu_check(opts.outputFile == "foo.mbtiles");
+		mu_check(opts.outputMode == OutputMode::MBTiles);
+		mu_check(opts.osm.materializeGeometries);
 		mu_check(!opts.osm.shardStores);
 	}
 
