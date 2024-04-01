@@ -7,12 +7,12 @@ thread_local GeometryCache<Linestring> linestringCache;
 
 OsmMemTiles::OsmMemTiles(
 	size_t threadNum,
-	uint baseZoom,
+	uint indexZoom,
 	bool includeID,
 	const NodeStore& nodeStore,
 	const WayStore& wayStore
 )
-	: TileDataSource(threadNum, baseZoom, includeID),
+	: TileDataSource(threadNum, indexZoom, includeID),
 	nodeStore(nodeStore),
 	wayStore(wayStore)
 {
