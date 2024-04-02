@@ -42,6 +42,8 @@ ZRES13 = 19.1
 
 -- The height of one floor, in meters
 BUILDING_FLOOR_HEIGHT = 3.66
+-- Used to express that a feature should not end up the vector tiles
+INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
@@ -156,15 +158,20 @@ function node_function()
 			elseif pop>20000000 then rank=2; mz=2
 			else                     rank=3; mz=3 end
 		elseif place == "state"         then mz=4
+		elseif place == "province"         then mz=5
 		elseif place == "city"          then mz=5
 		elseif place == "town" and pop>8000 then mz=7
 		elseif place == "town"          then mz=8
 		elseif place == "village" and pop>2000 then mz=9
 		elseif place == "village"       then mz=10
+		elseif place == "borough"       then mz=10
 		elseif place == "suburb"        then mz=11
+		elseif place == "quarter"       then mz=12
 		elseif place == "hamlet"        then mz=12
 		elseif place == "neighbourhood" then mz=13
+		elseif place == "isolated_dwelling" then mz=13
 		elseif place == "locality"      then mz=13
+		elseif place == "island"      then mz=12
 		end
 
 		Layer("place", false)
@@ -211,15 +218,19 @@ end
 -- Process way tags
 
 majorRoadValues = Set { "motorway", "trunk", "primary" }
-mainRoadValues  = Set { "secondary", "motorway_link", "trunk_link", "primary_link", "secondary_link" }
-midRoadValues   = Set { "tertiary", "tertiary_link" }
-minorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
-trackValues     = Set { "track" }
-pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian" }
+z9RoadValues  = Set { "secondary", "motorway_link", "trunk_link" }
+z10RoadValues  = Set { "primary_link", "secondary_link" }
+z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
+-- On zoom 12, various road classes are merged into "minor"
+z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
+z12OtherRoadValues = Set { "raceway" }
+z13RoadValues     = Set { "track", "service" }
+manMadRoadValues = Set { "pier", "bridge" }
+pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-constructionValues = Set { "primary", "secondary", "tertiary", "motorway", "service", "trunk", "track" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
 unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
+railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
@@ -227,10 +238,11 @@ landuseKeys     = Set { "school", "university", "kindergarten", "college", "libr
                         "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
-                    beach="sand", sand="sand",
+                    beach="sand", sand="sand", dune="sand",
                     farmland="farmland", farm="farmland", orchard="farmland", vineyard="farmland", plant_nursery="farmland",
                     glacier="ice", ice_shelf="ice",
-                    grassland="grass", grass="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", garden="grass", golf_course="grass" }
+                    bare_rock="rock", scree="rock",
+                    fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
 
 -- POI key/value pairs: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/mapping.yaml
 poiTags         = { aerialway = Set { "station" },
@@ -295,40 +307,50 @@ function relation_scan_function()
 	end
 end
 
-function write_to_transportation_layer(minzoom, highway_class)
-	Layer("transportation", false)
-	MinZoom(minzoom)
+function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road)
+	Layer("transportation", IsClosed())
 	SetZOrder()
 	Attribute("class", highway_class)
+	if subclass and subclass ~= "" then
+		Attribute("subclass", subclass)
+	end
+	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
 	SetBrunnelAttributes()
+	-- We do not write any other attributes for areas.
+	if IsClosed() then
+		SetMinZoomByAreaWithLimit(minzoom)
+		return
+	end
+	MinZoom(minzoom)
 	if ramp then AttributeNumeric("ramp",1) end
 
 	-- Service
-	if highway == "service" and service ~="" then Attribute("service", service) end
+	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
 
-	local oneway = Find("oneway")
-	if oneway == "yes" or oneway == "1" then
-		AttributeNumeric("oneway",1)
-	end
-	if oneway == "-1" then
-		-- **** TODO
-	end
-	local surface = Find("surface")
-	local surfaceMinzoom = 12
-	if pavedValues[surface] then
-		Attribute("surface", "paved", surfaceMinzoom)
-	elseif unpavedValues[surface] then
-		Attribute("surface", "unpaved", surfaceMinzoom)
-	end
 	local accessMinzoom = 9
-	if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
-	if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
-	if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
-	if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
-	AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
-	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
-	AttributeBoolean("expressway", Find("expressway"), 7)
-	Attribute("mtb_scale", Find("mtb:scale"), 10)
+	if is_road then
+		local oneway = Find("oneway")
+		if oneway == "yes" or oneway == "1" then
+			AttributeNumeric("oneway",1)
+		end
+		if oneway == "-1" then
+			-- **** TODO
+		end
+		local surface = Find("surface")
+		local surfaceMinzoom = 12
+		if pavedValues[surface] then
+			Attribute("surface", "paved", surfaceMinzoom)
+		elseif unpavedValues[surface] then
+			Attribute("surface", "unpaved", surfaceMinzoom)
+		end
+		if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
+		if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
+		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
+		if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
+		AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
+		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
+		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
+	end
 end
 
 -- Process way tags
@@ -352,6 +374,9 @@ function way_function()
 	local tourism  = Find("tourism")
 	local man_made = Find("man_made")
 	local boundary = Find("boundary")
+	local aerialway  = Find("aerialway")
+	local public_transport  = Find("public_transport")
+	local place = Find("place")
 	local isClosed = IsClosed()
 	local housenumber = Find("addr:housenumber")
 	local write_name = false
@@ -364,6 +389,17 @@ function way_function()
 	if aerowayBuildings[aeroway] then building="yes"; aeroway="" end
 	if landuse == "field" then landuse = "farmland" end
 	if landuse == "meadow" and Find("meadow")=="agricultural" then landuse="farmland" end
+
+	if place == "island" then
+		LayerAsCentroid("place")
+		Attribute("class", place)
+		MinZoom(10)
+		local pop = tonumber(Find("population")) or 0
+		local capital = capitalLevel(Find("capital"))
+		local rank = calcRank(place, pop, nil)
+		if rank then AttributeNumeric("rank", rank) end
+		SetNameAttributes()
+	end
 
 	-- Boundaries within relations
 	-- note that we process administrative boundaries as properties on ways, rather than as single relation geometries,
@@ -405,117 +441,156 @@ function way_function()
 		end
 	end
 
-	-- Roads ('transportation' and 'transportation_name', plus 'transportation_name_detail')
-	if highway~="" then
+	-- Aerialways ('transportation' and 'transportation_name')
+	if aerialway ~= "" then
+		write_to_transportation_layer(12, "aerialway", aerialway, false, nil, false, false)
+		if HasNames() then
+			Layer("transportation_name", false)
+			MinZoom(12)
+			SetNameAttributes()
+			Attribute("class", "aerialway")
+			Attribute("subclass", aerialway)
+		end
+	end
+
+	-- Roads ('transportation' and 'transportation_name')
+	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
 		local surface = Find("surface")
 
 		local h = highway
-		local minzoom = 99
-		local layer = "transportation"
-		if majorRoadValues[highway] then              minzoom = 4 end
-		if highway == "trunk"       then              minzoom = 5
-		elseif highway == "primary" then              minzoom = 7 end
-		if mainRoadValues[highway]  then              minzoom = 9 end
-		if midRoadValues[highway]   then              minzoom = 11 end
-		if minorRoadValues[highway] then h = "minor"; minzoom = 12 end
-		if trackValues[highway]     then h = "track"; minzoom = 14 end
-		if pathValues[highway]      then h = "path" ; minzoom = 14 end
-		if h=="service"             then              minzoom = 12 end
+		local is_road = true
+		if h == "" then
+			h = public_transport
+			is_road = false
+		end
+		local subclass = nil
+		local under_construction = false
+		if highway == "construction" and construction ~= "" then
+			h = construction
+			under_construction = true
+		end
+		local minzoom = INVALID_ZOOM
+		if majorRoadValues[h]        then minzoom = 4
+		elseif h == "trunk"          then minzoom = 5
+		elseif highway == "primary"  then minzoom = 7
+		elseif z9RoadValues[h]       then minzoom = 9
+		elseif z11RoadValues[h]      then minzoom = 11
+		elseif z12MinorRoadValues[h] then
+			minzoom = 12
+			subclass = h
+			h = "minor"
+		elseif z12OtherRoadValues[h] then minzoom = 12
+		elseif z13RoadValues[h]      then minzoom = 13
+		elseif pathValues[h]         then
+			minzoom = 14
+			subclass = h
+			h = "path"
+		end
 
 		-- Links (ramp)
 		local ramp=false
-		if linkValues[highway] then
+		if linkValues[h] then
 			splitHighway = split(highway, "_")
 			highway = splitHighway[1]; h = highway
 			ramp = true
-			minzoom = 11
 		end
 
 		-- Construction
-		if highway == "construction" then
-			if constructionValues[construction] then
-				h = construction .. "_construction"
-				if construction ~= "service" and construction ~= "track" then
-					minzoom = 11
-				else
-					minzoom = 12
-				end
-			else
-				h = "minor_construction"
-				minzoom = 14
-			end
+		if under_construction then
+			h = h .. "_construction"
+		end
+
+		-- Drop underground platforms
+		local layer = Find("layer")
+		local layerNumeric = tonumber(layer)
+		if not is_road and layerNumeric ~= nil and layerNumeric < 0 then
+			minzoom = INVALID_ZOOM
+		end
+
+		-- Drop all areas except infrastructure for pedestrians handled above
+		if isClosed and h ~= "path" then
+			minzoom = INVALID_ZOOM
 		end
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road)
 
 			-- Write names
-			if minzoom < 8 then
-				minzoom = 8
-			end
-			if highway == "motorway" or highway == "trunk" then
+			if not isClosed and (HasNames() or Holds("ref")) then
+				if h == "motorway" then
+					minzoom = 7
+				elseif h == "trunk" then
+					minzoom = 8
+				elseif h == "primary" then
+					minzoom = 10
+				elseif h == "secondary" then
+					minzoom = 11
+				elseif h == "minor" or h == "track" or h == "tertiary" then
+					minzoom = 13
+				else
+					minzoom = 14
+				end
 				Layer("transportation_name", false)
 				MinZoom(minzoom)
-			elseif h == "minor" or h == "track" or h == "path" or h == "service" then
-				Layer("transportation_name_detail", false)
-				MinZoom(minzoom)
-			else
-				Layer("transportation_name_mid", false)
-				MinZoom(minzoom)
-			end
-			SetNameAttributes()
-			Attribute("class",h)
-			Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
-			if h~=highway then Attribute("subclass",highway) end
-			local ref = Find("ref")
-			if ref~="" then
-				Attribute("ref",ref)
-				AttributeNumeric("ref_length",ref:len())
+				SetNameAttributes()
+				Attribute("class",h)
+				Attribute("network","road") -- **** could also be us-interstate, us-highway, us-state
+				if subclass then Attribute("subclass", highway) end
+				local ref = Find("ref")
+				if ref~="" then
+					Attribute("ref",ref)
+					AttributeNumeric("ref_length",ref:len())
+				end
 			end
 		end
 	end
 
-	-- Railways ('transportation' and 'transportation_name', plus 'transportation_name_detail')
+	-- Railways ('transportation' and 'transportation_name')
 	if railway~="" then
-		Layer("transportation", false)
-		Attribute("class", railway)
-		SetZOrder()
-		SetBrunnelAttributes()
-		if service~="" then
-			Attribute("service", service)
-			MinZoom(12)
-		else
-			MinZoom(9)
-		end
+		local class = railwayClasses[railway]
+		if class then
+			local minzoom = 14
+			Layer("transportation", false)
+			local usage = Find("usage")
+			if railway == "rail" and service == "" then
+				if usage == "main" then
+					minzoom = 8
+				else
+					minzoom = 10
+				end
+			elseif railway == "narrow_gauge" and service == "" then
+				minzoom = 10
+			elseif railway == "light_rail" and service == "" then
+				minzoom = 11
+			end
+			write_to_transportation_layer(minzoom, class, railway, false, service, true, false)
 
-		Layer("transportation_name", false)
-		SetNameAttributes()
-		MinZoom(14)
-		Attribute("class", "rail")
+			if HasNames() then
+				Layer("transportation_name", false)
+				SetNameAttributes()
+				MinZoom(14)
+				Attribute("class", class)
+			end
+		end
 	end
 
 	-- Pier
-	if man_made=="pier" then
-		Layer("transportation", isClosed)
-		SetZOrder()
-		Attribute("class", "pier")
-		SetMinZoomByArea()
+	if manMadRoadValues[man_made] then
+		write_to_transportation_layer(13, man_made, nil, false, nil, false, false)
 	end
 
 	-- 'Ferry'
 	if route=="ferry" then
-		Layer("transportation", false)
-		Attribute("class", "ferry")
-		SetZOrder()
-		MinZoom(9)
-		SetBrunnelAttributes()
+		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false)
 
-		Layer("transportation_name", false)
-		SetNameAttributes()
-		MinZoom(12)
-		Attribute("class", "ferry")
+		if HasNames() then
+			Layer("transportation_name", false)
+			SetNameAttributes()
+			MinZoom(12)
+			Attribute("class", "ferry")
+		end
 	end
 
 	-- 'Aeroway'
@@ -689,6 +764,19 @@ function WritePOI(class,subclass,rank)
 	end
 end
 
+-- Check if there are name tags on the object
+function HasNames()
+	if Holds("name") then return true end
+	local iname
+	local main_written = name
+	if preferred_language and Holds("name:"..preferred_language) then return true end
+	-- then set any additional languages
+	for i,lang in ipairs(additional_languages) do
+		if Holds("name:"..lang) then return true end
+	end
+	return false
+end
+
 -- Set name attributes on any object
 function SetNameAttributes()
 	local name = Find("name"), iname
@@ -723,7 +811,7 @@ function SetEleAttributes()
 end
 
 function SetBrunnelAttributes()
-	if     Find("bridge") == "yes" then Attribute("brunnel", "bridge")
+	if Find("bridge") == "yes" or Find("man_made") == "bridge" then Attribute("brunnel", "bridge")
 	elseif Find("tunnel") == "yes" then Attribute("brunnel", "tunnel")
 	elseif Find("ford")   == "yes" then Attribute("brunnel", "ford")
 	end
@@ -731,15 +819,20 @@ end
 
 -- Set minimum zoom level by area
 function SetMinZoomByArea()
+	SetMinZoomByAreaWithLimit(0)
+end
+
+-- Set minimum zoom level by area but not below given minzoom
+function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     area>ZRES5^2  then MinZoom(6)
-	elseif area>ZRES6^2  then MinZoom(7)
-	elseif area>ZRES7^2  then MinZoom(8)
-	elseif area>ZRES8^2  then MinZoom(9)
-	elseif area>ZRES9^2  then MinZoom(10)
-	elseif area>ZRES10^2 then MinZoom(11)
-	elseif area>ZRES11^2 then MinZoom(12)
-	elseif area>ZRES12^2 then MinZoom(13)
+	if     minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
+	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
+	elseif minzoom <= 8 and area>ZRES7^2  then MinZoom(8)
+	elseif minzoom <= 9 and area>ZRES8^2  then MinZoom(9)
+	elseif minzoom <= 10 and area>ZRES9^2  then MinZoom(10)
+	elseif minzoom <= 11 and area>ZRES10^2 then MinZoom(11)
+	elseif minzoom <= 12 and area>ZRES11^2 then MinZoom(12)
+	elseif minzoom <= 13 and area>ZRES12^2 then MinZoom(13)
 	else                      MinZoom(14) end
 end
 
