@@ -105,5 +105,10 @@ OptionsParser::Options OptionsParser::parse(const int argc, const char* argv[]) 
 		throw OptionException{"Couldn't open .lua script: " + options.luaFile };
 	}
 
+	// The lazy geometry code has assumptions that break when more than one
+	// input file is used.
+	if (options.inputFiles.size() > 1)
+		options.osm.materializeGeometries = true;
+
 	return options;
 }

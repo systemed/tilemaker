@@ -122,7 +122,10 @@ int main(const int argc, const char* argv[]) {
 
 	bool hasClippingBox = false;
 	Box clippingBox;
-	double minLon=0.0, maxLon=0.0, minLat=0.0, maxLat=0.0;
+	double minLon=std::numeric_limits<double>::max(),
+				 maxLon=std::numeric_limits<double>::min(),
+				 minLat=std::numeric_limits<double>::max(),
+				 maxLat=std::numeric_limits<double>::min();
 	if (!bboxElements.empty()) {
 		hasClippingBox = true;
 		minLon = bboxElementFromStr(bboxElements.at(0));
@@ -131,8 +134,20 @@ int main(const int argc, const char* argv[]) {
 		maxLat = bboxElementFromStr(bboxElements.at(3));
 
 	} else if (options.inputFiles.size()>0) {
-		int ret = ReadPbfBoundingBox(options.inputFiles[0], minLon, maxLon, minLat, maxLat, hasClippingBox);
-		if(ret != 0) return ret;
+		for (const auto inputFile : options.inputFiles) {
+			bool localHasClippingBox;
+			double localMinLon, localMaxLon, localMinLat, localMaxLat;
+			int ret = ReadPbfBoundingBox(inputFile, localMinLon, localMaxLon, localMinLat, localMaxLat, localHasClippingBox);
+			if(ret != 0) return ret;
+			hasClippingBox = hasClippingBox || localHasClippingBox;
+
+			if (localHasClippingBox) {
+				minLon = std::min(minLon, localMinLon);
+				maxLon = std::max(maxLon, localMaxLon);
+				minLat = std::min(minLat, localMinLat);
+				maxLat = std::max(maxLat, localMaxLat);
+			}
+		}
 	}
 
 	if (hasClippingBox) {
@@ -179,7 +194,7 @@ int main(const int argc, const char* argv[]) {
 			return rv;
 		}
 
-		if (allPbfsHaveSortTypeThenID) {
+		if (options.inputFiles.size() == 1 && allPbfsHaveSortTypeThenID) {
 			std::shared_ptr<NodeStore> rv = make_shared<SortedNodeStore>(!options.osm.uncompressedNodes);
 			return rv;
 		}
@@ -198,7 +213,7 @@ int main(const int argc, const char* argv[]) {
 	}
 
 	auto createWayStore = [anyPbfHasLocationsOnWays, allPbfsHaveSortTypeThenID, options, &nodeStore]() {
-		if (!anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
+		if (options.inputFiles.size() == 1 && !anyPbfHasLocationsOnWays && allPbfsHaveSortTypeThenID) {
 			std::shared_ptr<WayStore> rv = make_shared<SortedWayStore>(!options.osm.uncompressedWays, *nodeStore.get());
 			return rv;
 		}
@@ -282,12 +297,18 @@ int main(const int argc, const char* argv[]) {
 			significantWayTags,
 			options.threadNum,
 			[&]() {
-				thread_local std::shared_ptr<ifstream> pbfStream(new ifstream(inputFile, ios::in | ios::binary));
-				return pbfStream;
+				thread_local std::pair<std::string, std::shared_ptr<ifstream>> pbfStream;
+				if (pbfStream.first != inputFile) {
+					pbfStream = std::make_pair(inputFile, std::make_shared<ifstream>(inputFile, ios::in | ios::binary));
+				}
+				return pbfStream.second;
 			},
 			[&]() {
-				thread_local std::shared_ptr<OsmLuaProcessing> osmLuaProcessing(new OsmLuaProcessing(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries));
-				return osmLuaProcessing;
+				thread_local std::pair<std::string, std::shared_ptr<OsmLuaProcessing>> osmLuaProcessing;
+				if (osmLuaProcessing.first != inputFile) {
+					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries));
+				}
+				return osmLuaProcessing.second;
 			},
 			*nodeStore,
 			*wayStore

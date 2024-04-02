@@ -126,6 +126,7 @@ test: \
 	test_attribute_store \
 	test_deque_map \
 	test_helpers \
+	test_options_parser \
 	test_pbf_reader \
 	test_pooled_string \
 	test_relation_roles \
