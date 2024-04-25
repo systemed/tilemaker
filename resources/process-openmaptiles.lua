@@ -225,7 +225,7 @@ z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
 z13RoadValues     = Set { "track", "service" }
-manMadRoadValues = Set { "pier", "bridge" }
+manMadeRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
 pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
@@ -307,8 +307,8 @@ function relation_scan_function()
 	end
 end
 
-function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road)
-	Layer("transportation", IsClosed())
+function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, service, is_rail, is_road, is_area)
+	Layer("transportation", is_area)
 	SetZOrder()
 	Attribute("class", highway_class)
 	if subclass and subclass ~= "" then
@@ -317,7 +317,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
-	if IsClosed() then
+	if is_area then
 		SetMinZoomByAreaWithLimit(minzoom)
 		return
 	end
@@ -377,10 +377,11 @@ function way_function()
 	local aerialway  = Find("aerialway")
 	local public_transport  = Find("public_transport")
 	local place = Find("place")
-	local isClosed = IsClosed()
+	local is_closed = IsClosed()
 	local housenumber = Find("addr:housenumber")
 	local write_name = false
 	local construction = Find("construction")
+	local is_highway_area = highway~="" and Find("area")=="yes" and is_closed
 
 	-- Miscellaneous preprocessing
 	if Find("disused") == "yes" then return end
@@ -443,7 +444,7 @@ function way_function()
 
 	-- Aerialways ('transportation' and 'transportation_name')
 	if aerialway ~= "" then
-		write_to_transportation_layer(12, "aerialway", aerialway, false, nil, false, false)
+		write_to_transportation_layer(12, "aerialway", aerialway, false, nil, false, false, is_closed)
 		if HasNames() then
 			Layer("transportation_name", false)
 			MinZoom(12)
@@ -475,6 +476,7 @@ function way_function()
 		elseif h == "trunk"          then minzoom = 5
 		elseif highway == "primary"  then minzoom = 7
 		elseif z9RoadValues[h]       then minzoom = 9
+		elseif z10RoadValues[h]      then minzoom = 10
 		elseif z11RoadValues[h]      then minzoom = 11
 		elseif z12MinorRoadValues[h] then
 			minzoom = 12
@@ -509,16 +511,16 @@ function way_function()
 		end
 
 		-- Drop all areas except infrastructure for pedestrians handled above
-		if isClosed and h ~= "path" then
+		if is_highway_area and h ~= "path" then
 			minzoom = INVALID_ZOOM
 		end
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road, is_highway_area)
 
 			-- Write names
-			if not isClosed and (HasNames() or Holds("ref")) then
+			if not is_closed and (HasNames() or Holds("ref")) then
 				if h == "motorway" then
 					minzoom = 7
 				elseif h == "trunk" then
@@ -565,7 +567,7 @@ function way_function()
 			elseif railway == "light_rail" and service == "" then
 				minzoom = 11
 			end
-			write_to_transportation_layer(minzoom, class, railway, false, service, true, false)
+			write_to_transportation_layer(minzoom, class, railway, false, service, true, false, is_closed)
 
 			if HasNames() then
 				Layer("transportation_name", false)
@@ -577,13 +579,13 @@ function way_function()
 	end
 
 	-- Pier
-	if manMadRoadValues[man_made] then
-		write_to_transportation_layer(13, man_made, nil, false, nil, false, false)
+	if manMadeRoadValues[man_made] then
+		write_to_transportation_layer(13, man_made, nil, false, nil, false, false, is_closed)
 	end
 
 	-- 'Ferry'
 	if route=="ferry" then
-		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false)
+		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, is_closed)
 
 		if HasNames() then
 			Layer("transportation_name", false)
@@ -595,7 +597,7 @@ function way_function()
 
 	-- 'Aeroway'
 	if aeroway~="" then
-		Layer("aeroway", isClosed)
+		Layer("aeroway", is_closed)
 		Attribute("class",aeroway)
 		Attribute("ref",Find("ref"))
 		write_name = true
@@ -616,7 +618,7 @@ function way_function()
 	end
 
 	-- Set 'waterway' and associated
-	if waterwayClasses[waterway] and not isClosed then
+	if waterwayClasses[waterway] and not is_closed then
 		if waterway == "river" and Holds("name") then
 			Layer("waterway", false)
 		else
@@ -626,12 +628,12 @@ function way_function()
 		Attribute("class", waterway)
 		SetNameAttributes()
 		SetBrunnelAttributes()
-	elseif waterway == "boatyard"  then Layer("landuse", isClosed); Attribute("class", "industrial"); MinZoom(12)
-	elseif waterway == "dam"       then Layer("building",isClosed)
-	elseif waterway == "fuel"      then Layer("landuse", isClosed); Attribute("class", "industrial"); MinZoom(14)
+	elseif waterway == "boatyard"  then Layer("landuse", is_closed); Attribute("class", "industrial"); MinZoom(12)
+	elseif waterway == "dam"       then Layer("building",is_closed)
+	elseif waterway == "fuel"      then Layer("landuse", is_closed); Attribute("class", "industrial"); MinZoom(14)
 	end
 	-- Set names on rivers
-	if waterwayClasses[waterway] and not isClosed then
+	if waterwayClasses[waterway] and not is_closed then
 		if waterway == "river" and Holds("name") then
 			Layer("water_name", false)
 		else
@@ -657,7 +659,7 @@ function way_function()
 
 	-- Set 'water'
 	if natural=="water" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
-		if Find("covered")=="yes" or not isClosed then return end
+		if Find("covered")=="yes" or not is_closed then return end
 		local class="lake"; if waterway~="" then class="river" end
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
