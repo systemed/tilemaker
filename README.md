@@ -8,6 +8,19 @@ See an example of a vector tile map produced by tilemaker at [tilemaker.org](htt
 
 ![Continuous Integration](https://github.com/systemed/tilemaker/workflows/Continuous%20Integration/badge.svg)
 
+## Getting Started
+
+We provide a ready-to-use docker image that gets you started without having to compile tilemaker from source:
+
+1. Go to http://download.geofabrik.de/europe.html and download the `monaco-latest.osm.pbf` snapshot of OpenStreetMap
+
+2. Run tilemaker on the OpenStreetMap snapshot to generate [Protomaps](https://protomaps.com) vector tiles:
+
+    docker run -it --rm -v (pwd):/data ghcr.io/systemed/tilemaker:master /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
+
+3. Check out what's in the vector tiles e.g. by using the debug viewer [here](https://protomaps.github.io/PMTiles/)
+
+
 ## Installing
 
 tilemaker is written in C++14. The chief dependencies are:

@@ -6,4 +6,4 @@ echo "DOCKER WARNING: The --store option can be used to partly reduce memory usa
 echo "--------------------------------------------------------------------------------" >&2
 
 # Proceed to run the command passed to the script
-exec /tilemaker "$@"
+exec /usr/src/app/tilemaker "$@"
