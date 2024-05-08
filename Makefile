@@ -56,8 +56,10 @@ ifeq ($(LUA_CMD),luajit)
   LUA_CFLAGS := ${LUA_CFLAGS} -DLUAJIT
   ifneq ($(OS),Windows_NT)
     ifeq ($(shell uname -s), Darwin)
-      LDFLAGS := -pagezero_size 10000 -image_base 100000000
-      $(info - with MacOS LuaJIT linking)
+      ifeq ($(LUA_JITV),2.0)
+        LDFLAGS := -pagezero_size 10000 -image_base 100000000
+        $(info - with MacOS LuaJIT linking)
+      endif
     endif
   endif
 endif
