@@ -34,7 +34,7 @@ struct LayerDef {
 	bool allSourceColumns;
 	bool indexed;
 	std::string indexName;
-	std::map<std::string, uint> attributeMap;
+	std::map<std::string, uint> attributeMap; // string 0, number 1, bool 2
 	bool writeTo;
 	
 	const bool useColumn(std::string &col) {

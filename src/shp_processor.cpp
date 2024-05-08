@@ -35,6 +35,7 @@ void ShpProcessor::fillPointArrayFromShapefile(vector<Point> *points, SHPObject 
 }
 
 // Read requested attributes from a shapefile, and encode into an OutputObject
+// columnTypeMap: 0 string, 1 int, 2 double, 3 boolean
 AttributeIndex ShpProcessor::readShapefileAttributes(
 		DBFHandle &dbf,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
@@ -53,6 +54,7 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 			switch (columnTypeMap[pos]) {
 				case 1:  in_table[key] = DBFReadIntegerAttribute(dbf, recordNum, pos); break;
 				case 2:  in_table[key] =  DBFReadDoubleAttribute(dbf, recordNum, pos); break;
+				case 3:  in_table[key] = strcmp(DBFReadStringAttribute(dbf, recordNum, pos), "T")==0; break;
 				default: in_table[key] =  DBFReadStringAttribute(dbf, recordNum, pos); break;
 			}
 		}
@@ -92,7 +94,10 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 				case 2:  attributeStore.addAttribute(attributes, key, static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				default: attributeStore.addAttribute(attributes, key, DBFReadStringAttribute(dbf, recordNum, pos), 0);
+				case 3:  attributeStore.addAttribute(attributes, key, strcmp(DBFReadStringAttribute(dbf, recordNum, pos), "T")==0, 0);
+				         layer.attributeMap[key] = 2;
+				         break;
+				default: attributeStore.addAttribute(attributes, key, static_cast<const std::string&>(DBFReadStringAttribute(dbf, recordNum, pos)), 0);
 				         layer.attributeMap[key] = 0;
 				         break;
 			}

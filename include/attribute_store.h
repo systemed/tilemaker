@@ -42,7 +42,7 @@ private:
 	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
-enum class AttributePairType: uint8_t { Bool = 0, Float = 1, String = 2 };
+enum class AttributePairType: uint8_t { String = 0, Float = 1, Bool = 2 };
 // AttributePair is a key/value pair (with minzoom)
 #pragma pack(push, 1)
 struct AttributePair {
