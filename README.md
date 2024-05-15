@@ -50,16 +50,23 @@ tilemaker keeps everything in RAM by default. To process large areas without run
 
     tilemaker /path/to/your/input.osm.pbf /path/to/your/output.mbtiles --store /path/to/your/ssd
 
-To include sea tiles, create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
-
-_(If you want to include optional small-scale landcover, create a `landcover` directory, and download the appropriate 10m files from 'Features' at https://www.naturalearthdata.com so that you have `landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys.shp`, `landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp`, `landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas.shp`.)_
-
 Then, to serve your tiles using the demonstration server:
 
     cd server
 	tilemaker-server /path/to/your/output.mbtiles
 
 You can now navigate to http://localhost:8080/ and see your map!
+
+## Coastline and Landcover
+
+To include sea tiles and small-scale landcover, run
+
+    ./get-coastline.sh
+    ./get-landcover.sh
+
+This will download coastline and landcover data; you will need around 2GB disk space.
+
+Have a look at the coastline and landcover example in the [`resources/`](./resources) directory.
 
 ## Your own configuration
 
