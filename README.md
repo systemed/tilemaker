@@ -12,14 +12,31 @@ See an example of a vector tile map produced by tilemaker at [tilemaker.org](htt
 
 We provide a ready-to-use docker image that gets you started without having to compile tilemaker from source:
 
-1. Go to http://download.geofabrik.de/europe.html and download the `monaco-latest.osm.pbf` snapshot of OpenStreetMap
-
-2. Run tilemaker on the OpenStreetMap snapshot to generate [Protomaps](https://protomaps.com) vector tiles:
-
-    docker run -it --rm -v (pwd):/data ghcr.io/systemed/tilemaker:master /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
-
+1. Go to [Geofabrik](http://download.geofabrik.de/europe.html) and download the `monaco-latest.osm.pbf` snapshot of OpenStreetMap
+2. Run tilemaker on the OpenStreetMap snapshot to generate [Protomaps](https://protomaps.com) vector tiles (see below)
 3. Check out what's in the vector tiles e.g. by using the debug viewer [here](https://protomaps.github.io/PMTiles/)
 
+To run tilemaker with its default configuration
+
+```bash
+docker run -it --rm --pull always -v $(pwd):/data \
+  ghcr.io/systemed/tilemaker:master \
+  /data/monaco-latest.osm.pbf \
+  --output /data/monaco-latest.pmtiles
+```
+
+To run tilemaker with a custom configuration using coastlines and landcover you have two options
+1. In the config.json use absolute paths such as `/data/coastline/water_polygons.shp` or
+2. Set the docker workdir `-w /data` with relative paths `coastline/water_polygons.shp` (see below)
+
+```bash
+docker run -it --rm --pull always -v $(pwd):/data -w /data \
+  ghcr.io/systemed/tilemaker:master \
+  /data/monaco-latest.osm.pbf \
+  --output /data/monaco-latest.pmtiles \
+  --config /data/config-coastline.json \
+  --process /data/process-coastline.lua
+```
 
 ## Installing
 
