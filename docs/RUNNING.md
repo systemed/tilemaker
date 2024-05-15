@@ -152,7 +152,7 @@ Here is an example:
     # Required, same to --output. Could be a directory or a .mbtiles files
     output: /path/to/output
     # Optional, same to --config
-    # If not being set, default to resources/config-openmaptiles.config
+    # If not being set, default to resources/config-openmaptiles.json
     config: /path/to/config
     # Optional, same to --process
     # If not being set, default to resources/process-openmaptiles.lua
