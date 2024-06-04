@@ -13,11 +13,11 @@ Then:
 
 (System Integrity Protection on macOS prevents the manpages being installed. This isn't important: ignore the two lines saying "Operation not permitted".)
 
-### Ubuntu
+### Ubuntu and Debian
 
 Start with:
 
-    sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
+    sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev lua5.1 liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
