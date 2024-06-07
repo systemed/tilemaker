@@ -453,6 +453,7 @@ public:
 
 	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
 
+	unsigned int getIndexZoom() const { return indexZoom; }
 	inline size_t getId(NodeID id) const {
 		return id & (~(~0ull << (TILE_DATA_ID_SIZE - shardBits)));
 	}
