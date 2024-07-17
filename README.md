@@ -16,7 +16,7 @@ We provide a ready-to-use docker image that gets you started without having to c
 
 2. Run tilemaker on the OpenStreetMap snapshot to generate [Protomaps](https://protomaps.com) vector tiles:
 
-    docker run -it --rm -v (pwd):/data ghcr.io/systemed/tilemaker:master /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
+    docker run -it --rm -v $(pwd):/data ghcr.io/systemed/tilemaker:master /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
 
 3. Check out what's in the vector tiles e.g. by using the debug viewer [here](https://protomaps.github.io/PMTiles/)
 
