@@ -34,6 +34,11 @@ void MBTiles::openForWriting(string &filename) {
 		cout << "Couldn't write SQLite application_id (not fatal): " << e.what() << endl;
 	}
 	try {
+		db << "PRAGMA encoding = 'UTF-8';";
+	} catch(runtime_error &e) {
+		cout << "Couldn't set SQLite default encoding (not fatal): " << e.what() << endl;
+	}
+	try {
 		db << "PRAGMA journal_mode=OFF;";
 	} catch(runtime_error &e) {
 		cout << "Couldn't turn journaling off (not fatal): " << e.what() << endl;
