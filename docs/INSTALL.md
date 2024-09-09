@@ -60,6 +60,11 @@ Build from project root directory with:
 
     docker build . -t tilemaker
 
+It can also be build with a `BUILD_DEBUG` build argument, which will build the executables for Debug, and not strip out symbols. `gdb` will also
+installed to facilate debugging:
+
+    docker build . --build-arg BUILD_DEBUG=1 -t tilemaker
+
 The docker container can be run like this:
 
     docker run -it --rm -v $(pwd):/data tilemaker /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
