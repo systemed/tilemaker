@@ -123,6 +123,9 @@ Don't forget to add `--store /path/to/your/ssd` if you don't have lots of RAM.
 Running tilemaker with the `--verbose` argument will output any issues encountered during tile
 creation.
 
+Running tilemaker with the `--quiet` argument will suppress anything written to stdout during
+tile creation. stderr is unaffected.
+
 You may see geometry errors reported by Boost::Geometry. This typically reflects an error 
 in the OSM source data (for example, a multipolygon with several inner rings but no outer ring).
 Often, if the geometry could not be written to the layer, the error will subsequently show in 
