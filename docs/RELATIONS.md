@@ -33,17 +33,21 @@ Examine the tags using `Find(key)` as normal. (You can also use `Holds(key)` and
 
 ### Stage 2: accessing relations from ways and nodes
 
-Now that you've accepted the relations, they will be available from `way_function` or `node_function`. They are accessed using an iterator (`NextRelation()`) which reads each relation for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `FindInRelation(key)`. For example:
+Now that you've accepted the relations, they will be available from `way_function` or `node_function`. They are accessed using an iterator (`NextRelation()`) which reads each relation ID for that way in turn, returning nil when there are no more relations available. Once you have accessed a relation with the iterator, you can read its tags with `FindInRelation(key)`. For example:
 
 ```lua
 while true do
-  local rel = NextRelation()
-  if not rel then break end
+  local relation_id = NextRelation()
+  if not relation_id then break end
   print ("Part of route "..FindInRelation("ref"))
 end
 ```
 
-You can obtain the relation ID and role from `rel`, which is a list (a two-element Lua table). The first element (`rel[1]`) is the id, the second (`rel[2]`) the role. Remember Lua tables are 1-indexed!
+You can also obtain the relation role by accessing the second return value of `NextRelation()`:
+
+```lua
+  local relation_id, role = NextRelation()
+```
 
 Should you need to re-read the relations, you can reset the iterator with `RestartRelations()`.
 
