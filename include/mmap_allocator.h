@@ -10,9 +10,6 @@ public:
 	typedef std::size_t size_type;
 
 	static void *allocate(size_type n, const void *hint = 0);
-	static void deallocate(void *p, size_type n);
-	static void destroy(void *p);
-	static void shutdown();
 	static void reportStoreSize(std::ostringstream &str);
 	static void openMmapFile(const std::string& mmapFilename);
 };
@@ -47,15 +44,15 @@ public:
 
 	void deallocate(pointer p, size_type n)
 	{
-		void_mmap_allocator::deallocate(p, n);
+		// This is a no-op. Most usage of tilemaker should never deallocate
+		// an mmap_allocator resource. On program termination, everything gets
+		// freed.
 	}
 
 	void construct(pointer p, const_reference val)
 	{
 		new((void *)p) T(val);        
 	}
-
-	void destroy(pointer p) { void_mmap_allocator::destroy(p); }
 };
 
 template<typename T1, typename T2>

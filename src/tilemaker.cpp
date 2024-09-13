@@ -596,6 +596,5 @@ int main(const int argc, const char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
-	void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 }
 
