@@ -2,9 +2,10 @@
 #include <stdexcept>
 #include <mutex>
 #include <cstring>
+#include <deque>
 
 namespace PooledStringNS {
-	std::vector<char*> tables;
+	std::deque<char*> tables;
 	std::mutex mutex;
 
 	const uint8_t ShortString = 0b00;

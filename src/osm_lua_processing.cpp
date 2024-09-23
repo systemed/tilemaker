@@ -17,6 +17,8 @@ const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
+std::mutex vectorLayerMetadataMutex;
+
 void handleOsmLuaProcessingUserSignal(int signum) {
 	osmLuaProcessing->handleUserSignal(signum);
 }
@@ -913,6 +915,7 @@ std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
 
 // Record attribute name/type for vector_layers table
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
+	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
 	layers.layers[layer].attributeMap[key] = type;
 }
 
