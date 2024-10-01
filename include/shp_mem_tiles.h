@@ -76,7 +76,7 @@ private:
 	// The map is from layer name to a sparse vector of tiles that might have shapes.
 	//
 	// The outer vector has an entry for each z6 tile. The inner vector is a bitset,
-	// indexed at spatialIndexZoom, where a bit is set if the z14 (or base zoom) tiles at
+	// indexed at spatialIndexZoom, where a bit is set if the z15 tiles at
 	// 2 * (x*width + y) might contain at least one shape.
 	// This is approximated by using the bounding boxes of the shapes. For large, irregular shapes, or
 	// shapes with holes, the bounding box may result in many false positives. The first time the index
