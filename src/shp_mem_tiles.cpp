@@ -58,14 +58,14 @@ vector<string> ShpMemTiles::namesOfGeometries(const vector<uint>& ids) const {
 void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 
-	bitIndices[layerName] = std::vector<bool>();
-	bitIndices[layerName].resize(2u * (1u << spatialIndexZoom) * (1u << spatialIndexZoom));
+	bitIndices[layerName] = std::vector<std::vector<bool>>();
+	bitIndices[layerName].resize((1u << CLUSTER_ZOOM) * (1u << CLUSTER_ZOOM));
 }
 
 bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) const {
 	// Check if any tiles in the bitmap might intersect this shape.
 	// If none, downstream code can skip querying the r-tree.
-	auto& bitvec = bitIndices.at(layerName);
+	auto& sparseLayerVector = bitIndices.at(layerName);
 
 	double lon1 = box.min_corner().x();
 	double latp1 = box.min_corner().y();
@@ -79,9 +79,15 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 
 	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
 		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
+			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 
-			uint64_t index = 2u * (x * (1u << spatialIndexZoom) + y);
-			if (bitvec[index]) {
+			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM + z6y];
+
+			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
+
+			if (!bitvec.empty() && bitvec[index]) {
 				if (bitvec[index + 1])
 					return true;
 				else {
@@ -192,7 +198,7 @@ void ShpMemTiles::StoreGeometry(
 
 	// Store a bitmap of which tiles at the spatialIndexZoom that might intersect
 	// this shape.
-	auto& bitvec = bitIndices.at(layerName);
+	auto& sparseLayerVector = bitIndices.at(layerName);
 	double lon1 = box.min_corner().x();
 	double latp1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();
@@ -206,7 +212,17 @@ void ShpMemTiles::StoreGeometry(
 	uint32_t hits = 0;
 	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
 		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
-			uint64_t index = 2u * (x * (1u << spatialIndexZoom) + y);
+			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+
+			uint32_t sparseIndex = z6x * CLUSTER_ZOOM + z6y;
+			auto& bitvec = sparseLayerVector[sparseIndex];
+
+			if (bitvec.empty())
+				bitvec.resize(2u * (1u << (spatialIndexZoom - CLUSTER_ZOOM)) * (1u << (spatialIndexZoom - CLUSTER_ZOOM)));
+
+			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
 			if (!bitvec[index]) {
 				hits++;
 			}
