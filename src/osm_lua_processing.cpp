@@ -355,9 +355,8 @@ double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
 template <typename GeometryT>
 std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, bool once, GeometryT &geom) const {
 	Box box; geom::envelope(geom, box);
-	if (!shpMemTiles.mayIntersect(layerName, box)) {
+	if (!shpMemTiles.mayIntersect(layerName, box))
 		return std::vector<uint>();
-	}
 
 	std::vector<uint> ids = shpMemTiles.QueryMatchingGeometries(layerName, once, box,
 		[&](const RTree &rtree) { // indexQuery
