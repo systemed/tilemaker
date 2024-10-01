@@ -1,4 +1,5 @@
 #include "shp_mem_tiles.h"
+#include "coordinates_geom.h"
 #include <iostream>
 #include <mutex>
 
@@ -57,7 +58,7 @@ void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 
 	bitIndices[layerName] = std::vector<bool>();
-	bitIndices[layerName].resize((1 << indexZoom) * (1 << indexZoom));
+	bitIndices[layerName].resize(2 * (1 << indexZoom) * (1 << indexZoom));
 }
 
 bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) const {
@@ -66,19 +67,52 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 	auto& bitvec = bitIndices.at(layerName);
 
 	double lon1 = box.min_corner().x();
-	double lat1 = box.min_corner().y();
+	double latp1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();
-	double lat2 = box.max_corner().y();
+	double latp2 = box.max_corner().y();
 
 	uint32_t x1 = lon2tilex(lon1, indexZoom);
 	uint32_t x2 = lon2tilex(lon2, indexZoom);
-	uint32_t y1 = lat2tiley(lat1, indexZoom);
-	uint32_t y2 = lat2tiley(lat2, indexZoom);
+	uint32_t y1 = latp2tiley(latp1, indexZoom);
+	uint32_t y2 = latp2tiley(latp2, indexZoom);
 
 	for (int x = std::min(x1, x2); x <= std::min((1u << indexZoom) - 1u, std::max(x1, x2)); x++) {
 		for (int y = std::min(y1, y2); y <= std::min((1u << indexZoom) - 1u, std::max(y1, y2)); y++) {
-			if (bitvec[x * (1 << indexZoom) + y])
-				return true;
+
+			uint32_t index = 2 * (x * (1 << indexZoom) + y);
+			if (bitvec[index]) {
+				if (bitvec[index + 1])
+					return true;
+				else {
+					// When we loaded the shapefiles, we did a rough index based on a bounding
+					// box. For large, irregularly shaped polygons like national forests, this
+					// can give false positives.
+					//
+					// We lazily do a more exacting check here, intersecting the index zoom tile.
+					// Afterwards, we eitehr set bitvec[index + 1] or clear bitvec[index].
+					TileBbox bbox(TileCoordinates(x, y), indexZoom, false, false);
+					std::vector<uint> intersections = QueryMatchingGeometries(
+						layerName,
+						true,
+						bbox.clippingBox,
+						[&](const RTree &rtree) { // indexQuery
+							vector<IndexValue> results;
+							rtree.query(geom::index::intersects(bbox.clippingBox), back_inserter(results));
+							return results;
+						},
+						[&](OutputObject const &oo) { // checkQuery
+							return geom::intersects(bbox.clippingBox, retrieveMultiPolygon(oo.objectID));
+						}
+					);
+
+					if (intersections.empty()) {
+						bitvec[index] = false;
+					} else {
+						bitvec[index + 1] = true;
+						return true;
+					}
+				}
+			}
 		}
 	}
 
@@ -159,18 +193,23 @@ void ShpMemTiles::StoreGeometry(
 	// this shape.
 	auto& bitvec = bitIndices.at(layerName);
 	double lon1 = box.min_corner().x();
-	double lat1 = box.min_corner().y();
+	double latp1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();
-	double lat2 = box.max_corner().y();
+	double latp2 = box.max_corner().y();
 
 	uint32_t x1 = lon2tilex(lon1, indexZoom);
 	uint32_t x2 = lon2tilex(lon2, indexZoom);
-	uint32_t y1 = lat2tiley(lat1, indexZoom);
-	uint32_t y2 = lat2tiley(lat2, indexZoom);
+	uint32_t y1 = latp2tiley(latp1, indexZoom);
+	uint32_t y2 = latp2tiley(latp2, indexZoom);
 
+	uint32_t hits = 0;
 	for (int x = std::min(x1, x2); x <= std::min((1u << indexZoom) - 1u, std::max(x1, x2)); x++) {
 		for (int y = std::min(y1, y2); y <= std::min((1u << indexZoom) - 1u, std::max(y1, y2)); y++) {
-			bitvec[x * (1 << indexZoom) + y] = true;
+			uint32_t index = 2 * (x * (1 << indexZoom) + y);
+			if (!bitvec[index]) {
+				hits++;
+			}
+			bitvec[index] = true;
 		}
 	}
 }
