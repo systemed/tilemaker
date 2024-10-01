@@ -19,9 +19,6 @@ thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
 std::mutex vectorLayerMetadataMutex;
 
-std::atomic<uint64_t> bitmapLookups;
-std::atomic<uint64_t> bitmapHits;
-
 void handleOsmLuaProcessingUserSignal(int signum) {
 	osmLuaProcessing->handleUserSignal(signum);
 }
@@ -358,13 +355,7 @@ double OsmLuaProcessing::AreaIntersecting(const string &layerName) {
 template <typename GeometryT>
 std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, bool once, GeometryT &geom) const {
 	Box box; geom::envelope(geom, box);
-	bitmapLookups++;
-
-	if (bitmapLookups.load() % 10000 == 0) {
-		std::cout << "lookup: " << std::to_string(bitmapHits) << " saved calls of " << std::to_string(bitmapLookups) << " lookups" << std::endl;
-	}
 	if (!shpMemTiles.mayIntersect(layerName, box)) {
-		bitmapHits++;
 		return std::vector<uint>();
 	}
 

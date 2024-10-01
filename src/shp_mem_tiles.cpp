@@ -209,7 +209,6 @@ void ShpMemTiles::StoreGeometry(
 	uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
 	uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
 
-	uint32_t hits = 0;
 	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
 		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
 			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
@@ -223,9 +222,6 @@ void ShpMemTiles::StoreGeometry(
 
 			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
 			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
-			if (!bitvec[index]) {
-				hits++;
-			}
 			bitvec[index] = true;
 		}
 	}
