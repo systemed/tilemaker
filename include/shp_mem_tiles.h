@@ -66,6 +66,13 @@ private:
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 	std::mutex indexMutex;
+
+
+	// This differs from indexZoom. indexZoom is clamped to z14, as there is a noticeable
+	// step function increase in memory use to go to higher zooms. For the
+	// bitset index, the increase in memory is not as significant.
+	unsigned int spatialIndexZoom;
+
 	// A bit is set if the z14 (or base zoom) tiles at 2 * (x*width + y) might contain at least one shape.
 	// This is approximated by using the bounding boxes of the shapes. For large, irregular shapes, or
 	// shapes with holes, the bounding box may result in many false positives. The first time the index
