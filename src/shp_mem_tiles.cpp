@@ -1,4 +1,5 @@
 #include "shp_mem_tiles.h"
+#include "coordinates_geom.h"
 #include <iostream>
 #include <mutex>
 
@@ -7,7 +8,8 @@ namespace geom = boost::geometry;
 extern bool verbose;
 
 ShpMemTiles::ShpMemTiles(size_t threadNum, uint indexZoom)
-	: TileDataSource(threadNum, indexZoom, false)
+	: TileDataSource(threadNum, indexZoom, false),
+	spatialIndexZoom(15)
 { }
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
@@ -56,29 +58,68 @@ vector<string> ShpMemTiles::namesOfGeometries(const vector<uint>& ids) const {
 void ShpMemTiles::CreateNamedLayerIndex(const std::string& layerName) {
 	indices[layerName]=RTree();
 
-	bitIndices[layerName] = std::vector<bool>();
-	bitIndices[layerName].resize((1 << indexZoom) * (1 << indexZoom));
+	bitIndices[layerName] = std::vector<std::vector<bool>>();
+	bitIndices[layerName].resize((1u << CLUSTER_ZOOM) * (1u << CLUSTER_ZOOM));
 }
 
 bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) const {
 	// Check if any tiles in the bitmap might intersect this shape.
 	// If none, downstream code can skip querying the r-tree.
-	auto& bitvec = bitIndices.at(layerName);
+	auto& sparseLayerVector = bitIndices.at(layerName);
 
 	double lon1 = box.min_corner().x();
-	double lat1 = box.min_corner().y();
+	double latp1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();
-	double lat2 = box.max_corner().y();
+	double latp2 = box.max_corner().y();
 
-	uint32_t x1 = lon2tilex(lon1, indexZoom);
-	uint32_t x2 = lon2tilex(lon2, indexZoom);
-	uint32_t y1 = lat2tiley(lat1, indexZoom);
-	uint32_t y2 = lat2tiley(lat2, indexZoom);
+	uint32_t x1 = lon2tilex(lon1, spatialIndexZoom);
+	uint32_t x2 = lon2tilex(lon2, spatialIndexZoom);
+	uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
+	uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
 
-	for (int x = std::min(x1, x2); x <= std::min((1u << indexZoom) - 1u, std::max(x1, x2)); x++) {
-		for (int y = std::min(y1, y2); y <= std::min((1u << indexZoom) - 1u, std::max(y1, y2)); y++) {
-			if (bitvec[x * (1 << indexZoom) + y])
-				return true;
+	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
+		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
+			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+
+			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM + z6y];
+
+			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
+
+			if (!bitvec.empty() && bitvec[index]) {
+				if (bitvec[index + 1])
+					return true;
+				else {
+					// When we loaded the shapefiles, we did a rough index based on a bounding
+					// box. For large, irregularly shaped polygons like national forests, this
+					// can give false positives.
+					//
+					// We lazily do a more exacting check here, intersecting the index zoom tile.
+					// Afterwards, we eitehr set bitvec[index + 1] or clear bitvec[index].
+					TileBbox bbox(TileCoordinates(x, y), spatialIndexZoom, false, false);
+					std::vector<uint> intersections = QueryMatchingGeometries(
+						layerName,
+						true,
+						bbox.clippingBox,
+						[&](const RTree &rtree) { // indexQuery
+							vector<IndexValue> results;
+							rtree.query(geom::index::intersects(bbox.clippingBox), back_inserter(results));
+							return results;
+						},
+						[&](OutputObject const &oo) { // checkQuery
+							return geom::intersects(bbox.clippingBox, retrieveMultiPolygon(oo.objectID));
+						}
+					);
+
+					if (intersections.empty()) {
+						bitvec[index] = false;
+					} else {
+						bitvec[index + 1] = true;
+						return true;
+					}
+				}
+			}
 		}
 	}
 
@@ -155,22 +196,33 @@ void ShpMemTiles::StoreGeometry(
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
 
-	// Store a bitmap of which tiles at the indexZoom might intersect
+	// Store a bitmap of which tiles at the spatialIndexZoom that might intersect
 	// this shape.
-	auto& bitvec = bitIndices.at(layerName);
+	auto& sparseLayerVector = bitIndices.at(layerName);
 	double lon1 = box.min_corner().x();
-	double lat1 = box.min_corner().y();
+	double latp1 = box.min_corner().y();
 	double lon2 = box.max_corner().x();
-	double lat2 = box.max_corner().y();
+	double latp2 = box.max_corner().y();
 
-	uint32_t x1 = lon2tilex(lon1, indexZoom);
-	uint32_t x2 = lon2tilex(lon2, indexZoom);
-	uint32_t y1 = lat2tiley(lat1, indexZoom);
-	uint32_t y2 = lat2tiley(lat2, indexZoom);
+	uint32_t x1 = lon2tilex(lon1, spatialIndexZoom);
+	uint32_t x2 = lon2tilex(lon2, spatialIndexZoom);
+	uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
+	uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
 
-	for (int x = std::min(x1, x2); x <= std::min((1u << indexZoom) - 1u, std::max(x1, x2)); x++) {
-		for (int y = std::min(y1, y2); y <= std::min((1u << indexZoom) - 1u, std::max(y1, y2)); y++) {
-			bitvec[x * (1 << indexZoom) + y] = true;
+	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
+		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
+			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+
+			uint32_t sparseIndex = z6x * CLUSTER_ZOOM + z6y;
+			auto& bitvec = sparseLayerVector[sparseIndex];
+
+			if (bitvec.empty())
+				bitvec.resize(2u * (1u << (spatialIndexZoom - CLUSTER_ZOOM)) * (1u << (spatialIndexZoom - CLUSTER_ZOOM)));
+
+			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
+			bitvec[index] = true;
 		}
 	}
 }

@@ -66,7 +66,23 @@ private:
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
 	std::mutex indexMutex;
-	std::map<std::string, std::vector<bool>> bitIndices; // A bit it set if the z14 (or base zoom) tiles at x*width + y contains a shape. This lets us quickly reject negative Intersects queryes
+
+
+	// This differs from indexZoom. indexZoom is clamped to z14, as there is a noticeable
+	// step function increase in memory use to go to higher zooms. For the
+	// bitset index, the increase in memory is not as significant.
+	unsigned int spatialIndexZoom;
+
+	// The map is from layer name to a sparse vector of tiles that might have shapes.
+	//
+	// The outer vector has an entry for each z6 tile. The inner vector is a bitset,
+	// indexed at spatialIndexZoom, where a bit is set if the z15 tiles at
+	// 2 * (x*width + y) might contain at least one shape.
+	// This is approximated by using the bounding boxes of the shapes. For large, irregular shapes, or
+	// shapes with holes, the bounding box may result in many false positives. The first time the index
+	// is consulted for a given tile, we'll do a more expensive intersects query to refine the index.
+	// This lets us quickly reject negative Intersects queryes
+	mutable std::map<std::string, std::vector<std::vector<bool>>> bitIndices;
 };
 
 #endif //_OSM_MEM_TILES
