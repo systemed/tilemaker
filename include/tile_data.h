@@ -69,7 +69,7 @@ template<typename OO> void finalizeObjects(
 	int i = -1;
 	for (auto it = begin; it != end; it++) {
 		i++;
-		if (it->size() > 0 || i % 10 == 0 || i == 4095) {
+		if (it->size() > 0 || i % 50 == 0 || i == 4095) {
 			std::cout << "\r" << name << ": finalizing z6 tile " << (i + 1) << "/" << CLUSTER_ZOOM_AREA;
 
 #ifdef CLOCK_MONOTONIC
