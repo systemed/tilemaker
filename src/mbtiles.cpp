@@ -2,16 +2,9 @@
 #include "helpers.h"
 #include <iostream>
 #include <cmath>
-#include <boost/iostreams/filtering_streambuf.hpp>
-#include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/stream.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
-#include <boost/iostreams/device/array.hpp>
 
 using namespace sqlite;
 using namespace std;
-namespace bio = boost::iostreams;
 
 MBTiles::MBTiles():
   pendingStatements1(std::make_shared<std::vector<PendingStatement>>()),
@@ -143,19 +136,14 @@ bool MBTiles::readTileAndUncompress(string &data, int zoom, int x, int y, bool i
 	std::vector<char> compressed;
 	db << "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?" << zoom << x << tmsY >> compressed;
 	m.unlock();
+
+	if (!isCompressed) {
+		data = std::string(compressed.data(), compressed.size());
+		return true;
+	}
+
 	try {
-		bio::stream<bio::array_source> in(compressed.data(), compressed.size());
-		bio::filtering_streambuf<bio::input> out;
-
-		if (isCompressed) {
-			if (asGzip) { out.push(bio::gzip_decompressor()); }
-			else { out.push(bio::zlib_decompressor()); }
-		}
-		out.push(in);
-
-		std::stringstream decompressed;
-		bio::copy(out, decompressed);
-		data = decompressed.str();
+		decompress_string(data, compressed.data(), compressed.size(), asGzip);
 		return true;
 	} catch(std::runtime_error &e) {
 		return false;

@@ -48,12 +48,33 @@ MU_TEST(test_get_chunks) {
 	}
 }
 
-MU_TEST_SUITE(test_suite_get_chunks) {
+MU_TEST(test_compression_gzip) {
+	std::string input = "a random string to be compressed";
+
+	std::string gzipped = compress_string(input, 6, true);
+	std::string unzipped;
+	decompress_string(unzipped, gzipped.data(), gzipped.size(), true);
+	mu_check(unzipped == input);
+}
+
+MU_TEST(test_compression_zlib) {
+	std::string input = "a random string to be compressed";
+
+	std::string gzipped = compress_string(input, 6, false);
+	std::string unzipped;
+	decompress_string(unzipped, gzipped.data(), gzipped.size(), false);
+	mu_check(unzipped == input);
+}
+
+
+MU_TEST_SUITE(test_suite_helpers) {
 	MU_RUN_TEST(test_get_chunks);
+	MU_RUN_TEST(test_compression_gzip);
+	MU_RUN_TEST(test_compression_zlib);
 }
 
 int main() {
-	MU_RUN_SUITE(test_suite_get_chunks);
+	MU_RUN_SUITE(test_suite_helpers);
 	MU_REPORT();
 	return MU_EXIT_CODE;
 }
