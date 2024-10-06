@@ -32,11 +32,20 @@ public:
 	libdeflate_compressor* compressor;
 
 	Compressor(int level): level(level), compressor(NULL) {
+		setLevel(level);
+	}
+
+	void setLevel(int level) {
+		libdeflate_free_compressor(compressor);
+		this->level = level;
 		compressor = libdeflate_alloc_compressor(level);
 
 		if (!compressor)
 			throw std::runtime_error("libdeflate_alloc_compressor failed (level=" + std::to_string(level) + ")");
 	}
+
+	Compressor & operator=(const Compressor&) = delete;
+	Compressor(const Compressor&) = delete;
 
 	~Compressor() {
 		libdeflate_free_compressor(compressor);
@@ -53,6 +62,9 @@ public:
 		if (!decompressor)
 			throw std::runtime_error("libdeflate_alloc_decompressor failed");
 	}
+
+	Decompressor & operator=(const Decompressor&) = delete;
+	Decompressor(const Decompressor&) = delete;
 
 	~Decompressor() {
 		libdeflate_free_decompressor(decompressor);
@@ -88,7 +100,6 @@ std::vector<std::string> parseBox(const std::string& bbox) {
 }
 
 // Compress a STL string using zlib with given compression level, and return the binary data
-// TODO: consider returning a std::vector<char> ?
 std::string compress_string(const std::string& str,
                             int compressionlevel,
                             bool asGzip) {
@@ -96,7 +107,7 @@ std::string compress_string(const std::string& str,
 		compressionlevel = 6;
 
 	if (compressionlevel != compressor.level)
-		compressor = Compressor(compressionlevel);
+		compressor.setLevel(compressionlevel);
 
 	std::string rv;
 	if (asGzip) {

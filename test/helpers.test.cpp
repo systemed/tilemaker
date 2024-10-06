@@ -51,16 +51,31 @@ MU_TEST(test_get_chunks) {
 MU_TEST(test_compression_gzip) {
 	std::string input = "a random string to be compressed";
 
-	std::string gzipped = compress_string(input, 6, true);
+	for (int level = 1; level < 9; level++) {
+		std::string gzipped = compress_string(input, level, true);
+		std::string unzipped;
+		decompress_string(unzipped, gzipped.data(), gzipped.size(), true);
+		mu_check(unzipped == input);
+	}
+
+	std::string gzipped = compress_string(input, -1, true);
 	std::string unzipped;
 	decompress_string(unzipped, gzipped.data(), gzipped.size(), true);
 	mu_check(unzipped == input);
+
 }
 
 MU_TEST(test_compression_zlib) {
 	std::string input = "a random string to be compressed";
 
-	std::string gzipped = compress_string(input, 6, false);
+	for (int level = 1; level < 9; level++) {
+		std::string gzipped = compress_string(input, level, false);
+		std::string unzipped;
+		decompress_string(unzipped, gzipped.data(), gzipped.size(), false);
+		mu_check(unzipped == input);
+	}
+
+	std::string gzipped = compress_string(input, -1, false);
 	std::string unzipped;
 	decompress_string(unzipped, gzipped.data(), gzipped.size(), false);
 	mu_check(unzipped == input);
