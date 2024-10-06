@@ -17,7 +17,7 @@ Then:
 
 Start with:
 
-    sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev zlib1g-dev
+    sudo apt install build-essential libboost-dev libboost-filesystem-dev libboost-program-options-dev libboost-system-dev liblua5.1-0-dev libshp-dev libsqlite3-dev rapidjson-dev
 
 Once you've installed those, then `cd` back to your Tilemaker directory and simply:
 
@@ -30,7 +30,7 @@ If it fails, check that the LIB and INC lines in the Makefile correspond with yo
 
 Start with:
 
-    dnf install lua-devel luajit-devel sqlite-devel shapelib-devel rapidjson-devel boost-devel zlib-devel
+    dnf install lua-devel luajit-devel sqlite-devel shapelib-devel rapidjson-devel boost-devel
 
 then build either with lua:
 
