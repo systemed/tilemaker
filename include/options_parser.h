@@ -42,6 +42,7 @@ namespace OptionsParser {
 
 		OsmOptions osm;
 		bool showHelp = false;
+		bool quiet = false;
 		bool verbose = false;
 		bool mergeSqlite = false;
 		OutputMode outputMode = OutputMode::File;
