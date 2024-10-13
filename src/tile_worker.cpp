@@ -266,6 +266,7 @@ void ProcessObjects(
 	double simplifyLevel,
 	double filterArea,
 	bool combinePolygons,
+	bool combinePoints,
 	unsigned zoom,
 	const TileBbox &bbox,
 	vtzero::layer_builder& vtLayer
@@ -285,7 +286,7 @@ void ProcessObjects(
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
 			multipoint.push_back(xy);
 
-			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
+			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo) && combinePoints) {
 				jt++;
 				LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 				pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
@@ -300,7 +301,7 @@ void ProcessObjects(
 			if (verbose && multipoint.size() > 1)
 				std::cout << "Merging " << multipoint.size() << " points into a multipoint" << std::endl;
 
-			for (const auto point : multipoint)
+			for (const auto &point : multipoint)
 				fbuilder.set_point(point.first, point.second);
 
 			oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
@@ -435,7 +436,7 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
+				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

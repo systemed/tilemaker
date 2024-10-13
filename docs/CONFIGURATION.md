@@ -82,6 +82,7 @@ You can add optional parameters to layers:
 * `feature_limit` - restrict the number of features written to each tile
 * `feature_limit_below` - restrict only below this zoom level
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
+* `combine_points` - merge points with the same attributes (defaults to `true`: specify `false` to disable)
 * `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
 
 `write_to` enables you to combine different layer specs within one outputted layer. For example:
