@@ -64,8 +64,6 @@ SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNode
 
 void SortedNodeStore::reopen()
 {
-	for (const auto entry: allocatedMemory)
-		void_mmap_allocator::deallocate(entry.first, entry.second);
 	allocatedMemory.clear();
 
 	totalNodes = 0;
@@ -86,9 +84,6 @@ void SortedNodeStore::reopen()
 }
 
 SortedNodeStore::~SortedNodeStore() {
-	for (const auto entry: allocatedMemory)
-		void_mmap_allocator::deallocate(entry.first, entry.second);
-
 	s(this) = ThreadStorage();
 }
 

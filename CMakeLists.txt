@@ -31,7 +31,7 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
 ENDIF ()
 
-find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options iostreams)
+find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
 
 find_package(libshp REQUIRED)
 
@@ -46,8 +46,6 @@ else()
 	add_definitions(-DLUAJIT)
 	include_directories(${LUAJIT_INCLUDE_DIR})
 endif()
-
-find_package(ZLIB REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -75,6 +73,17 @@ file(GLOB tilemaker_src_files
 	src/external/streamvbyte_decode.c
 	src/external/streamvbyte_encode.c
 	src/external/streamvbyte_zigzag.c
+	src/external/libdeflate/lib/adler32.c
+	src/external/libdeflate/lib/arm/cpu_features.c
+	src/external/libdeflate/lib/crc32.c
+	src/external/libdeflate/lib/deflate_compress.c
+	src/external/libdeflate/lib/deflate_decompress.c
+	src/external/libdeflate/lib/gzip_compress.c
+	src/external/libdeflate/lib/gzip_decompress.c
+	src/external/libdeflate/lib/utils.c
+	src/external/libdeflate/lib/x86/cpu_features.c
+	src/external/libdeflate/lib/zlib_compress.c
+	src/external/libdeflate/lib/zlib_decompress.c
 	src/geojson_processor.cpp
 	src/geom.cpp
 	src/helpers.cpp
@@ -114,9 +123,8 @@ target_link_libraries(tilemaker
 		${LUA_LIBRARIES}
 		shapelib::shp
 		SQLite::SQLite3
-		ZLIB::ZLIB
 		Rapidjson::rapidjson
-		Boost::system Boost::filesystem Boost::program_options Boost::iostreams)
+		Boost::system Boost::filesystem Boost::program_options)
 
 include(CheckCxxAtomic)
 if(NOT HAVE_CXX11_ATOMIC)

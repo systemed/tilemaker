@@ -17,6 +17,8 @@ const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
+std::mutex vectorLayerMetadataMutex;
+
 void handleOsmLuaProcessingUserSignal(int signum) {
 	osmLuaProcessing->handleUserSignal(signum);
 }
@@ -117,7 +119,43 @@ template<>  struct kaguya::lua_type_traits<protozero::data_view> {
 	}
 };
 
+// Gets a table of all the keys of the OSM tags
+kaguya::LuaTable getAllKeys(kaguya::State& luaState, const boost::container::flat_map<std::string, std::string>* tags) {
+	kaguya::LuaTable tagsTable = luaState.newTable();
+	int index = 1; // Lua is 1-based
+	for (const auto& kv: *tags) {
+		tagsTable[index++] = kv.first;
+	}
+	return tagsTable;
+}
+
+// Gets a table of all the OSM tags
+kaguya::LuaTable getAllTags(kaguya::State& luaState, const boost::container::flat_map<std::string, std::string>* tags) {
+	kaguya::LuaTable tagsTable = luaState.newTable();
+	for (const auto& kv: *tags) {
+		tagsTable[kv.first] = kv.second;
+	}
+	return tagsTable;
+}
+
 std::string rawId() { return osmLuaProcessing->Id(); }
+kaguya::LuaTable rawAllKeys() {
+	if (osmLuaProcessing->isPostScanRelation) {
+		return osmLuaProcessing->AllKeys(*g_luaState);
+	}
+
+	auto tags = osmLuaProcessing->currentTags->exportToBoostMap();
+
+	return getAllKeys(*g_luaState, &tags);
+}kaguya::LuaTable rawAllTags() {
+	if (osmLuaProcessing->isPostScanRelation) {
+		return osmLuaProcessing->AllTags(*g_luaState);
+	}
+
+	auto tags = osmLuaProcessing->currentTags->exportToBoostMap();
+
+	return getAllTags(*g_luaState, &tags);
+}
 bool rawHolds(const KnownTagKey& key) {
 	if (osmLuaProcessing->isPostScanRelation) {
 		return osmLuaProcessing->Holds(key.stringValue);
@@ -196,6 +234,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 
 	osmLuaProcessing = this;
 	luaState["Id"] = &rawId;
+	luaState["AllKeys"] = &rawAllKeys;
+	luaState["AllTags"] = &rawAllTags;
 	luaState["Holds"] = &rawHolds;
 	luaState["Find"] = &rawFind;
 	luaState["HasTags"] = &rawHasTags;
@@ -233,6 +273,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
 	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
+	supportsWritingNodes        = !!luaState["node_function"];
+	supportsWritingWays         = !!luaState["way_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
@@ -270,6 +312,14 @@ bool OsmLuaProcessing::canPostScanRelations() {
 	return supportsPostScanRelations;
 }
 
+bool OsmLuaProcessing::canWriteNodes() {
+	return supportsWritingNodes;
+}
+
+bool OsmLuaProcessing::canWriteWays() {
+	return supportsWritingWays;
+}
+
 bool OsmLuaProcessing::canWriteRelations() {
 	return supportsWritingRelations;
 }
@@ -288,6 +338,18 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, c
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
 	return to_string(originalOsmID);
+}
+
+// Gets a table of all the keys of the OSM tags
+kaguya::LuaTable OsmLuaProcessing::AllKeys(kaguya::State& luaState) {
+	// NOTE: this is only called in the PostScanRelation phase -- other phases are handled in rawAllKeys
+	return getAllKeys(luaState, currentPostScanTags);
+}
+
+// Gets a table of all the OSM tags
+kaguya::LuaTable OsmLuaProcessing::AllTags(kaguya::State& luaState) {
+	// NOTE: this is only called in the PostScanRelation phase -- other phases are handled in rawAllTags
+	return getAllTags(luaState, currentPostScanTags);
 }
 
 // Check if there's a value for a given key
@@ -913,6 +975,7 @@ std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
 
 // Record attribute name/type for vector_layers table
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
+	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
 	layers.layers[layer].attributeMap[key] = type;
 }
 
@@ -972,7 +1035,7 @@ bool OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 	}
 
 	if (!this->empty()) {
-		TileCoordinates index = latpLon2index(node, this->config.baseZoom);
+		TileCoordinates index = latpLon2index(node, osmMemTiles.getIndexZoom());
 
 		for (auto &output : finalizeOutputs()) {
 			osmMemTiles.addObjectToSmallIndex(index, output, originalOsmID);
@@ -1061,7 +1124,10 @@ void OsmLuaProcessing::setRelation(
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
 	try {
-		luaState[isNativeMP ? "way_function" : "relation_function"]();
+		if (isNativeMP && supportsWritingWays)
+			luaState["way_function"]();
+		else if (!isNativeMP && supportsWritingRelations)
+			luaState["relation_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on relation " << originalOsmID << std::endl;
 		exit(1);
