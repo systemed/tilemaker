@@ -25,6 +25,7 @@ po::options_description getParser(OptionsParser::Options& options) {
 		("merge"  ,po::bool_switch(&options.mergeSqlite),                                "merge with existing .mbtiles (overwrites otherwise)")
 		("config", po::value< string >(&options.jsonFile)->default_value("config.json"), "config JSON file")
 		("process",po::value< string >(&options.luaFile)->default_value("process.lua"),  "tag-processing Lua file")
+		("quiet",  po::bool_switch(&options.quiet),                                      "quiet, suppress standard output")
 		("verbose",po::bool_switch(&options.verbose),                                   "verbose error output")
 		("skip-integrity",po::bool_switch(&options.osm.skipIntegrity),                       "don't enforce way/node integrity")
 		("log-tile-timings", po::bool_switch(&options.logTileTimings), "log how long each tile takes");

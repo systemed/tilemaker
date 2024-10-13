@@ -95,6 +95,11 @@ int main(const int argc, const char* argv[]) {
 
 	if (options.showHelp) { OptionsParser::showHelp(); return 0; }
 
+	if (options.quiet) {
+		// Suppress anything written to std out
+		std::cout.setstate(std::ios_base::failbit);
+	}
+
 	verbose = options.verbose;
 
 	vector<string> bboxElements = parseBox(options.bbox);
