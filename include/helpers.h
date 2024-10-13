@@ -7,6 +7,12 @@
 
 #define Z_DEFAULT_COMPRESSION -1
 
+#ifdef _MSVC_LANG
+#define ISATTY true
+#else
+#define ISATTY isatty(1)
+#endif
+
 // General helper routines
 
 inline void endian_swap(unsigned int& x) {

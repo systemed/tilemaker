@@ -69,6 +69,8 @@ public:
 	// Do we have Lua routines for non-MP relations?
 	bool canReadRelations();
 	bool canPostScanRelations();
+	bool canWriteNodes();
+	bool canWriteWays();
 	bool canWriteRelations();
 
 	// Shapefile tag remapping
@@ -264,6 +266,8 @@ private:
 	bool supportsRemappingShapefiles;
 	bool supportsReadingRelations;
 	bool supportsPostScanRelations;
+	bool supportsWritingNodes;
+	bool supportsWritingWays;
 	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;
