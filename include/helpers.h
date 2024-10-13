@@ -2,9 +2,10 @@
 #ifndef _HELPERS_H
 #define _HELPERS_H
 
-#include <zlib.h>
 #include <sstream>
 #include <vector>
+
+#define Z_DEFAULT_COMPRESSION -1
 
 #ifdef _MSVC_LANG
 #define ISATTY true
