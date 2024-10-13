@@ -113,6 +113,12 @@ public:
 	// Get the ID of the current object
 	std::string Id() const;
 
+	// Gets a table of all the keys of the OSM tags
+	kaguya::LuaTable AllKeys(kaguya::State& luaState);
+
+	// Gets a table of all the OSM tags
+	kaguya::LuaTable AllTags(kaguya::State& luaState);
+
 	// Check if there's a value for a given key
 	bool Holds(const std::string& key) const;
 
