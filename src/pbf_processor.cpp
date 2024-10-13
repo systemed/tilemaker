@@ -17,6 +17,11 @@ const std::string OptionSortTypeThenID = "Sort.Type_then_ID";
 const std::string OptionLocationsOnWays = "LocationsOnWays";
 std::atomic<uint64_t> blocksProcessed(0), blocksToProcess(0);
 
+// Access is guarded by ioMutex.
+// This counter decreases the chattiness of tilemaker's progress updates,
+// especially when run in a non-interactive context.
+uint64_t phaseProgress = 0;
+
 // Thread-local so that we can re-use buffers during parsing.
 thread_local PbfReader::PbfReader reader;
 
@@ -370,16 +375,27 @@ bool PbfProcessor::ReadBlock(
 		auto output_progress = [&]()
 		{
 			if (ioMutex.try_lock()) {
-				std::ostringstream str;
-				str << "\r";
-				void_mmap_allocator::reportStoreSize(str);
-				if (effectiveShards > 1)
-					str << std::to_string(shard + 1) << "/" << std::to_string(effectiveShards) << " ";
+				// If we're interactive, show an update for each block.
+				// If we're not interactive, show an update for each 1% of blocks.
+				uint64_t blockProgress = blocksProcessed.load();
+				uint64_t minimumIncrement = blocksToProcess.load() / 100;
+				if (minimumIncrement < 1 || ISATTY)
+					minimumIncrement = 1;
 
-				// TODO: revive showing the # of ways/relations?
-				str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ";
-				std::cout << str.str();
-				std::cout.flush();
+				if (phaseProgress == 0 || phaseProgress + minimumIncrement <= blockProgress) {
+					phaseProgress = blockProgress;
+
+					std::ostringstream str;
+					str << "\r";
+					void_mmap_allocator::reportStoreSize(str);
+					if (effectiveShards > 1)
+						str << std::to_string(shard + 1) << "/" << std::to_string(effectiveShards) << " ";
+
+					// TODO: revive showing the # of ways/relations?
+					str << "Block " << blocksProcessed.load() << "/" << blocksToProcess.load() << " ";
+					std::cout << str.str();
+					std::cout.flush();
+				}
 				ioMutex.unlock();
 			}
 		};
@@ -397,8 +413,13 @@ bool PbfProcessor::ReadBlock(
 			bool done = ScanWays(output, pg, pb, wayKeys);
 			if(done) { 
 				if (ioMutex.try_lock()) {
-					std::cout << "\r(Scanning for nodes used in ways: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
-					std::cout.flush();
+					size_t scanProgress = 100*blocksProcessed.load()/blocksToProcess.load();
+
+					if (scanProgress != phaseProgress) {
+						phaseProgress = scanProgress;
+						std::cout << "\r(Scanning for nodes used in ways: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
+						std::cout.flush();
+					}
 					ioMutex.unlock();
 				}
 				continue;
@@ -410,8 +431,13 @@ bool PbfProcessor::ReadBlock(
 			bool done = ScanRelations(output, pg, pb, wayKeys);
 			if(done) { 
 				if (ioMutex.try_lock()) {
-					std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
-					std::cout.flush();
+					size_t scanProgress = 100*blocksProcessed.load()/blocksToProcess.load();
+					
+					if (scanProgress != phaseProgress) {
+						phaseProgress = scanProgress;
+						std::cout << "\r(Scanning for ways used in relations: " << (100*blocksProcessed.load()/blocksToProcess.load()) << "%)           ";
+						std::cout.flush();
+					}
 					ioMutex.unlock();
 				}
 				continue;
@@ -591,6 +617,7 @@ int PbfProcessor::ReadPbfFile(
 	all_phases.push_back(ReadPhase::Relations);
 
 	for(auto phase: all_phases) {
+		phaseProgress = 0;
 		uint effectiveShards = 1;
 
 		// On memory-constrained machines, we might read ways/relations
