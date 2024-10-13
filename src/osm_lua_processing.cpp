@@ -235,6 +235,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
 	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
+	supportsWritingNodes        = !!luaState["node_function"];
+	supportsWritingWays         = !!luaState["way_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
 
 	// ---- Call init_function of Lua logic
@@ -270,6 +272,14 @@ bool OsmLuaProcessing::canReadRelations() {
 
 bool OsmLuaProcessing::canPostScanRelations() {
 	return supportsPostScanRelations;
+}
+
+bool OsmLuaProcessing::canWriteNodes() {
+	return supportsWritingNodes;
+}
+
+bool OsmLuaProcessing::canWriteWays() {
+	return supportsWritingWays;
 }
 
 bool OsmLuaProcessing::canWriteRelations() {
@@ -1064,7 +1074,10 @@ void OsmLuaProcessing::setRelation(
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
 	try {
-		luaState[isNativeMP ? "way_function" : "relation_function"]();
+		if (isNativeMP && supportsWritingWays)
+			luaState["way_function"]();
+		else if (!isNativeMP && supportsWritingRelations)
+			luaState["relation_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on relation " << originalOsmID << std::endl;
 		exit(1);

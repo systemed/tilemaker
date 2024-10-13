@@ -56,7 +56,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 		}
 
 		bool emitted = false;
-		if (!tags.empty() && nodeKeys.filter(tags)) {
+		if (output.canWriteNodes() && !tags.empty() && nodeKeys.filter(tags)) {
 			emitted = output.setNode(static_cast<NodeID>(nodeId), latplon, tags);
 		}
 
@@ -142,7 +142,7 @@ bool PbfProcessor::ReadWays(
 		if (llVec.empty()) continue;
 
 		try {
-			bool emitted = output.setWay(static_cast<WayID>(pbfWay.id), llVec, tags);
+			bool emitted = output.canWriteWays() && output.setWay(static_cast<WayID>(pbfWay.id), llVec, tags);
 
 			// If we need it for later, store the way's coordinates in the global way store
 			if (emitted || osmStore.way_is_used(wayId)) {
