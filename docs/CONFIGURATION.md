@@ -77,6 +77,7 @@ You can add optional parameters to layers:
 * `simplify_level` - how much to simplify features (in degrees of longitude) on the zoom level `simplify_below-1`
 * `simplify_length` - how much to simplify features (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
 * `simplify_ratio` - (optional: the default value is 2.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
+* `simplify_algorithm` - which simplification algorithm to use (defaults to Douglas-Peucker; you can also specify `"visvalingam"`, which can be better for landuse and similar polygons)
 * `filter_below` - filter areas by minimum size below this zoom level
 * `filter_area` - minimum size (in square degrees of longitude) for the zoom level `filter_below-1`
 * `feature_limit` - restrict the number of features written to each tile

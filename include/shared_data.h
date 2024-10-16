@@ -23,6 +23,7 @@ struct LayerDef {
 	double simplifyLevel;
 	double simplifyLength;
 	double simplifyRatio;
+	uint simplifyAlgo;
 	uint filterBelow;
 	double filterArea;
 	uint combinePolygonsBelow;
@@ -41,6 +42,9 @@ struct LayerDef {
 	const bool useColumn(std::string &col) {
 		return allSourceColumns || (std::find(sourceColumns.begin(), sourceColumns.end(), col) != sourceColumns.end());
 	}
+	
+	static const uint DOUGLAS_PEUCKER = 0;
+	static const uint VISVALINGAM = 1;
 };
 
 ///\brief Defines layers used in map rendering
@@ -53,7 +57,7 @@ public:
 
 	// Define a layer (as read from the .json file)
 	uint addLayer(std::string name, uint minzoom, uint maxzoom,
-			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+			uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, uint simplifyAlgo,
 			uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
 			uint featureLimit, uint featureLimitBelow, bool combinePoints,
 			const std::string &source,
