@@ -135,7 +135,7 @@ void SharedData::writePMTilesBounds() {
 
 // Define a layer (as read from the .json file)
 uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
-		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, 
+		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, uint simplifyAlgo,
 		uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
 		uint featureLimit, uint featureLimitBelow, bool combinePoints,
 		const std::string &source,
@@ -146,7 +146,7 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		const std::string &writeTo)  {
 
 	bool isWriteTo = !writeTo.empty();
-	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, simplifyAlgo,
 		filterBelow, filterArea, combinePolygonsBelow, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>(), isWriteTo };
@@ -319,6 +319,8 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		int  featureLimitBelow= it->value.HasMember("feature_limit_below") ? it->value["feature_limit_below"].GetInt() : (maxZoom+1);
 		bool combinePoints    = it->value.HasMember("combine_points" ) ? it->value["combine_points" ].GetBool()   : true;
 		bool sortZOrderAscending = it->value.HasMember("z_order_ascending") ? it->value["z_order_ascending"].GetBool() : (featureLimit==0);
+		string algo           = it->value.HasMember("simplify_algorithm") ? it->value["simplify_algorithm"].GetString() : "";
+		uint simplifyAlgo = algo=="visvalingam" ? LayerDef::VISVALINGAM : LayerDef::DOUGLAS_PEUCKER;
 		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
 		vector<string> sourceColumns;
 		bool allSourceColumns = false;
@@ -337,7 +339,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		string indexName = it->value.HasMember("index_column") ? it->value["index_column"].GetString() : "";
 
 		layers.addLayer(layerName, minZoom, maxZoom,
-				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, 
+				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, simplifyAlgo,
 				filterBelow, filterArea, combinePolyBelow, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints,
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
