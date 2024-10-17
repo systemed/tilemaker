@@ -199,7 +199,8 @@ bool supportsRemappingShapefiles = false;
 
 int lua_error_handler(int errCode, const char *errMessage)
 {
-	std::cerr << "lua runtime error: " << std::endl;
+	std::cerr << "lua runtime error " << std::to_string(errCode) << ":" << std::endl;
+	std::cerr << errMessage << std::endl;
 	kaguya::util::traceBack(g_luaState->state(), errMessage); // full traceback on 5.2+
 	kaguya::util::stackDump(g_luaState->state());
 	throw OsmLuaProcessing::luaProcessingException();
