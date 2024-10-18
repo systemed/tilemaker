@@ -69,6 +69,8 @@ public:
 	// Do we have Lua routines for non-MP relations?
 	bool canReadRelations();
 	bool canPostScanRelations();
+	bool canWriteNodes();
+	bool canWriteWays();
 	bool canWriteRelations();
 
 	// Shapefile tag remapping
@@ -110,6 +112,12 @@ public:
 
 	// Get the ID of the current object
 	std::string Id() const;
+
+	// Gets a table of all the keys of the OSM tags
+	kaguya::LuaTable AllKeys(kaguya::State& luaState);
+
+	// Gets a table of all the OSM tags
+	kaguya::LuaTable AllTags(kaguya::State& luaState);
 
 	// Check if there's a value for a given key
 	bool Holds(const std::string& key) const;
@@ -264,6 +272,8 @@ private:
 	bool supportsRemappingShapefiles;
 	bool supportsReadingRelations;
 	bool supportsPostScanRelations;
+	bool supportsWritingNodes;
+	bool supportsWritingWays;
 	bool supportsWritingRelations;
 	const class ShpMemTiles &shpMemTiles;
 	class OsmMemTiles &osmMemTiles;

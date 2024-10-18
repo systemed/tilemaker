@@ -82,6 +82,7 @@ You can add optional parameters to layers:
 * `feature_limit` - restrict the number of features written to each tile
 * `feature_limit_below` - restrict only below this zoom level
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
+* `combine_points` - merge points with the same attributes (defaults to `true`: specify `false` to disable)
 * `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
 
 `write_to` enables you to combine different layer specs within one outputted layer. For example:
@@ -142,6 +143,8 @@ To do that, you use these methods:
 
 * `Find(key)`: get the value for a tag, or the empty string if not present. For example, `Find("railway")` might return "rail" for a railway, "siding" for a siding, or "" if it isn't a railway at all.
 * `Holds(key)`: returns true if that key exists, false otherwise.
+* `AllKeys()`: returns a table (array) containing all the OSM tag keys.
+* `AllTags()`: returns a table containing all the OSM tags.
 * `Layer(layer_name, is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
 * `LayerAsCentroid(layer_name, algorithm, role, role...)`: write a single centroid point for this way to the named layer (useful for labels and POIs). Only the first argument is required. `algorithm` can be "polylabel" (default) or "centroid". The third arguments onwards specify relation roles: if you're processing a multipolygon-type relation (e.g. a boundary) and it has a "label" node member, then by adding "label" as an argument here, this will be used in preference to the calculated point.
 * `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.

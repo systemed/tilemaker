@@ -266,6 +266,7 @@ void ProcessObjects(
 	double simplifyLevel,
 	double filterArea,
 	bool combinePolygons,
+	bool combinePoints,
 	unsigned zoom,
 	const TileBbox &bbox,
 	vtzero::layer_builder& vtLayer
@@ -276,14 +277,37 @@ void ProcessObjects(
 		if (zoom < oo.oo.minZoom) { continue; }
 
 		if (oo.oo.geomType == POINT_) {
+			// The very first point; below we check if there are more compatible points
+			// so that we can write a multipoint instead of many point features
+
+			std::vector<std::pair<int, int>> multipoint;
+
+			LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
+			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
+			multipoint.push_back(xy);
+
+			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo) && combinePoints) {
+				jt++;
+				LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
+				pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
+				multipoint.push_back(xy);
+			}
+
 			vtzero::point_feature_builder fbuilder{vtLayer};
 			if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
 
-			LatpLon pos = source->buildNodeGeometry(oo.oo.objectID, bbox);
-			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-			fbuilder.add_point(xy.first, xy.second);
+			fbuilder.add_points(multipoint.size());
+
+			if (verbose && multipoint.size() > 1)
+				std::cout << "Merging " << multipoint.size() << " points into a multipoint" << std::endl;
+
+			for (const auto &point : multipoint)
+				fbuilder.set_point(point.first, point.second);
+
 			oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
 			fbuilder.commit();
+
+			oo = *jt;
 		} else {
 			Geometry g;
 			try {
@@ -412,7 +436,7 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
+				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

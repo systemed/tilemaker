@@ -14,6 +14,11 @@ We provide a ready-to-use docker image that gets you started without having to c
 
 1. Go to [Geofabrik](http://download.geofabrik.de/europe.html) and download the `monaco-latest.osm.pbf` snapshot of OpenStreetMap
 2. Run tilemaker on the OpenStreetMap snapshot to generate [Protomaps](https://protomaps.com) vector tiles (see below)
+
+```
+    docker run -it --rm -v $(pwd):/data ghcr.io/systemed/tilemaker:master /data/monaco-latest.osm.pbf --output /data/monaco-latest.pmtiles
+```
+
 3. Check out what's in the vector tiles e.g. by using the debug viewer [here](https://protomaps.github.io/PMTiles/)
 
 To run tilemaker with its default configuration
@@ -67,16 +72,23 @@ tilemaker keeps everything in RAM by default. To process large areas without run
 
     tilemaker /path/to/your/input.osm.pbf /path/to/your/output.mbtiles --store /path/to/your/ssd
 
-To include sea tiles, create a directory called `coastline` in the same place you're running tilemaker from, and then save the files from https://osmdata.openstreetmap.de/download/water-polygons-split-4326.zip in it, such that tilemaker can find a file at `coastline/water_polygons.shp`.
-
-_(If you want to include optional small-scale landcover, create a `landcover` directory, and download the appropriate 10m files from 'Features' at https://www.naturalearthdata.com so that you have `landcover/ne_10m_antarctic_ice_shelves_polys/ne_10m_antarctic_ice_shelves_polys.shp`, `landcover/ne_10m_urban_areas/ne_10m_urban_areas.shp`, `landcover/ne_10m_glaciated_areas/ne_10m_glaciated_areas.shp`.)_
-
 Then, to serve your tiles using the demonstration server:
 
     cd server
 	tilemaker-server /path/to/your/output.mbtiles
 
 You can now navigate to http://localhost:8080/ and see your map!
+
+## Coastline and Landcover
+
+To include sea tiles and small-scale landcover, run
+
+    ./get-coastline.sh
+    ./get-landcover.sh
+
+This will download coastline and landcover data; you will need around 2GB disk space.
+
+Have a look at the coastline and landcover example in the [`resources/`](./resources) directory.
 
 ## Your own configuration
 
@@ -126,13 +138,14 @@ The tilemaker code is licensed as FTWPL; you may do anything you like with this 
 
 Licenses of third-party libraries:
 
-- [sqlite_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp) is licensed under MIT
 - [kaguya](https://github.com/satoren/kaguya) is licensed under the Boost Software Licence
+- [libdeflate](https://github.com/ebiggers/libdeflate/) is licensed under MIT
 - [libpopcnt](https://github.com/kimwalisch/libpopcnt) is licensed under BSD 2-clause
+- [minunit](https://github.com/siu/minunit) is licensed under MIT
 - [pmtiles](https://github.com/protomaps/PMTiles) is licensed under BSD 3-clause
-- [streamvbyte](https://github.com/lemire/streamvbyte) is licensed under Apache 2
 - [polylabel](https://github.com/mapbox/polylabel) is licensed under ISC
 - [protozero](https://github.com/mapbox/protozero) is licensed under BSD 2-clause
-- [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause
-- [minunit](https://github.com/siu/minunit) is licensed under MIT
 - [Simple-Web-Server](https://gitlab.com/eidheim/Simple-Web-Server) is licensed under MIT
+- [sqlite_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp) is licensed under MIT
+- [streamvbyte](https://github.com/lemire/streamvbyte) is licensed under Apache 2
+- [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause

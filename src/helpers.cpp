@@ -9,6 +9,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include <sys/stat.h>
+#include "external/libdeflate/libdeflate.h"
 #include "helpers.h"
 
 #ifdef _MSC_VER
@@ -24,6 +25,55 @@
 #define MOD_GZIP_ZLIB_BSIZE 8096
 
 using namespace std;
+
+class Compressor {
+public:
+	int level;
+	libdeflate_compressor* compressor;
+
+	Compressor(int level): level(level), compressor(NULL) {
+		setLevel(level);
+	}
+
+	void setLevel(int level) {
+		libdeflate_free_compressor(compressor);
+		this->level = level;
+		compressor = libdeflate_alloc_compressor(level);
+
+		if (!compressor)
+			throw std::runtime_error("libdeflate_alloc_compressor failed (level=" + std::to_string(level) + ")");
+	}
+
+	Compressor & operator=(const Compressor&) = delete;
+	Compressor(const Compressor&) = delete;
+
+	~Compressor() {
+		libdeflate_free_compressor(compressor);
+	}
+};
+
+class Decompressor {
+public:
+	libdeflate_decompressor* decompressor;
+
+	Decompressor(): decompressor(NULL) {
+		decompressor = libdeflate_alloc_decompressor();
+
+		if (!decompressor)
+			throw std::runtime_error("libdeflate_alloc_decompressor failed");
+	}
+
+	Decompressor & operator=(const Decompressor&) = delete;
+	Decompressor(const Decompressor&) = delete;
+
+	~Decompressor() {
+		libdeflate_free_decompressor(decompressor);
+	}
+};
+
+
+thread_local Compressor compressor(6);
+thread_local Decompressor decompressor;
 
 // Bounding box string parsing
 
@@ -49,101 +99,82 @@ std::vector<std::string> parseBox(const std::string& bbox) {
 	return bboxParts;
 }
 
-// zlib routines from http://panthema.net/2007/0328-ZLibString.html
-
 // Compress a STL string using zlib with given compression level, and return the binary data
 std::string compress_string(const std::string& str,
                             int compressionlevel,
                             bool asGzip) {
-    z_stream zs;                        // z_stream is zlib's control structure
-    memset(&zs, 0, sizeof(zs));
+	if (compressionlevel == Z_DEFAULT_COMPRESSION)
+		compressionlevel = 6;
 
+	if (compressionlevel != compressor.level)
+		compressor.setLevel(compressionlevel);
+
+	std::string rv;
 	if (asGzip) {
-		if (deflateInit2(&zs, compressionlevel, Z_DEFLATED,
-		                MOD_GZIP_ZLIB_WINDOWSIZE + 16, MOD_GZIP_ZLIB_CFACTOR, Z_DEFAULT_STRATEGY) != Z_OK)
-	        throw(std::runtime_error("deflateInit2 failed while compressing."));
+		size_t maxSize = libdeflate_gzip_compress_bound(compressor.compressor, str.size());
+		rv.resize(maxSize);
+
+		size_t compressedSize = libdeflate_gzip_compress(compressor.compressor, str.data(), str.size(), &rv[0], maxSize);
+		if (compressedSize == 0)
+			throw std::runtime_error("libdeflate_gzip_compress failed");
+		rv.resize(compressedSize);
 	} else {
-	    if (deflateInit(&zs, compressionlevel) != Z_OK)
-	        throw(std::runtime_error("deflateInit failed while compressing."));
+		size_t maxSize = libdeflate_zlib_compress_bound(compressor.compressor, str.size());
+		rv.resize(maxSize);
+
+		size_t compressedSize = libdeflate_zlib_compress(compressor.compressor, str.data(), str.size(), &rv[0], maxSize);
+		if (compressedSize == 0)
+			throw std::runtime_error("libdeflate_zlib_compress failed");
+		rv.resize(compressedSize);
 	}
 
-    zs.next_in = (Bytef*)str.data();
-    zs.avail_in = str.size();           // set the z_stream's input
-
-    int ret;
-    char outbuffer[32768];
-    std::string outstring;
-
-    // retrieve the compressed bytes blockwise
-    do {
-        zs.next_out = reinterpret_cast<Bytef*>(outbuffer);
-        zs.avail_out = sizeof(outbuffer);
-
-        ret = deflate(&zs, Z_FINISH);
-
-        if (outstring.size() < zs.total_out) {
-            // append the block to the output string
-            outstring.append(outbuffer,
-                             zs.total_out - outstring.size());
-        }
-    } while (ret == Z_OK);
-
-    deflateEnd(&zs);
-
-    if (ret != Z_STREAM_END) {          // an error occurred that was not EOF
-        std::ostringstream oss;
-        oss << "Exception during zlib compression: (" << ret << ") " << zs.msg;
-        throw(std::runtime_error(oss.str()));
-    }
-
-    return outstring;
+	return rv;
 }
 
 // Decompress an STL string using zlib and return the original data.
 // The output buffer is passed in; callers are meant to re-use the buffer such
 // that eventually no allocations are needed when decompressing.
 void decompress_string(std::string& output, const char* input, uint32_t inputSize, bool asGzip) {
-    z_stream zs;                        // z_stream is zlib's control structure
-    memset(&zs, 0, sizeof(zs));
+	size_t uncompressedSize;
 
-	if (asGzip) {
-		if (inflateInit2(&zs, 16+MAX_WBITS) != Z_OK)
-			throw(std::runtime_error("inflateInit2 failed while decompressing."));
-	} else {
-		if (inflateInit(&zs) != Z_OK)
-			throw(std::runtime_error("inflateInit failed while decompressing."));
+	if (output.size() < inputSize)
+		output.resize(inputSize);
+
+	while (true) {
+		libdeflate_result rv = LIBDEFLATE_BAD_DATA;
+
+		if (asGzip) {
+			rv = libdeflate_gzip_decompress(
+				decompressor.decompressor,
+				input,
+				inputSize,
+				&output[0],
+				output.size(),
+				&uncompressedSize
+			);
+		} else {
+			rv = libdeflate_zlib_decompress(
+				decompressor.decompressor,
+				input,
+				inputSize,
+				&output[0],
+				output.size(),
+				&uncompressedSize
+			);
+		}
+
+		if (rv == LIBDEFLATE_SUCCESS) {
+			output.resize(uncompressedSize);
+			return;
+		}
+
+		if (rv == LIBDEFLATE_INSUFFICIENT_SPACE) {
+			output.resize((output.size() + 128) * 2);
+		} else
+			throw std::runtime_error("libdeflate_gzip_decompress failed");
 	}
-
-    zs.next_in = (Bytef*)input;
-    zs.avail_in = inputSize;
-
-    int ret;
-
-    int actualOutputSize = 0;
-
-    // get the decompressed bytes blockwise using repeated calls to inflate
-    do {
-        if (output.size() < actualOutputSize + 32768)
-            output.resize(actualOutputSize + 32768);
-
-        zs.next_out = reinterpret_cast<Bytef*>(&output[actualOutputSize]);
-        zs.avail_out = output.size() - actualOutputSize;
-
-        ret = inflate(&zs, 0);
-
-        actualOutputSize = zs.total_out;
-    } while (ret == Z_OK);
-
-    output.resize(actualOutputSize);
-    inflateEnd(&zs);
-
-    if (ret != Z_STREAM_END) {          // an error occurred that was not EOF
-        std::ostringstream oss;
-        oss << "Exception during zlib decompression: (" << ret << ") "
-            << zs.msg;
-        throw(std::runtime_error(oss.str()));
-    }
 }
+
 
 // Parse a Boost error
 std::string boost_validity_error(unsigned failure) {

@@ -95,6 +95,11 @@ int main(const int argc, const char* argv[]) {
 
 	if (options.showHelp) { OptionsParser::showHelp(); return 0; }
 
+	if (options.quiet) {
+		// Suppress anything written to std out
+		std::cout.setstate(std::ios_base::failbit);
+	}
+
 	verbose = options.verbose;
 
 	vector<string> bboxElements = parseBox(options.bbox);
@@ -345,7 +350,7 @@ int main(const int argc, const char* argv[]) {
 	std::mutex io_mutex;
 
 	// Loop through tiles
-	std::atomic<uint64_t> tilesWritten(0);
+	std::atomic<uint64_t> tilesWritten(0), lastTilesWritten(0);
 
 	for (auto source : sources) {
 		source->finalize(options.threadNum);
@@ -518,7 +523,7 @@ int main(const int argc, const char* argv[]) {
 			batchSize++;
 		}
 
-		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten]() {
+		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten]() {
 			std::vector<std::string> tileTimings;
 			std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 			for(std::size_t i = startIndex; i < endIndex; ++i) {
@@ -557,16 +562,21 @@ int main(const int argc, const char* argv[]) {
 			tilesWritten += (endIndex - startIndex); 
 
 			if (io_mutex.try_lock()) {
-				// Show progress grouped by z6 (or lower)
-				size_t z = tileCoordinates[startIndex].first;
-				size_t x = tileCoordinates[startIndex].second.x;
-				size_t y = tileCoordinates[startIndex].second.y;
-				if (z > CLUSTER_ZOOM) {
-					x = x / (1 << (z - CLUSTER_ZOOM));
-					y = y / (1 << (z - CLUSTER_ZOOM));
-					z = CLUSTER_ZOOM;
+				uint64_t written = tilesWritten.load();
+
+				if (written >= lastTilesWritten + tileCoordinates.size() / 100 || ISATTY) {
+					lastTilesWritten = written;
+					// Show progress grouped by z6 (or lower)
+					size_t z = tileCoordinates[startIndex].first;
+					size_t x = tileCoordinates[startIndex].second.x;
+					size_t y = tileCoordinates[startIndex].second.y;
+					if (z > CLUSTER_ZOOM) {
+						x = x / (1 << (z - CLUSTER_ZOOM));
+						y = y / (1 << (z - CLUSTER_ZOOM));
+						z = CLUSTER_ZOOM;
+					}
+					cout << "z" << z << "/" << x << "/" << y << ", writing tile " << written << " of " << tileCoordinates.size() << "               \r" << std::flush;
 				}
-				cout << "z" << z << "/" << x << "/" << y << ", writing tile " << tilesWritten.load() << " of " << tileCoordinates.size() << "               \r" << std::flush;
 				io_mutex.unlock();
 			}
 		});
@@ -596,6 +606,5 @@ int main(const int argc, const char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
-	void_mmap_allocator::shutdown(); // this clears the mmap'ed nodes/ways/relations (quickly!)
 }
 
