@@ -46,7 +46,7 @@ enum class AttributePairType: uint8_t { String = 0, Float = 1, Bool = 2 };
 // AttributePair is a key/value pair (with minzoom)
 #pragma pack(push, 1)
 struct AttributePair {
-	short keyIndex : 9;
+	unsigned short keyIndex : 9;
 	AttributePairType valueType : 2;
 	uint8_t minzoom : 5; // Support zooms from 0..31. In practice, we expect z16 to be the biggest minzoom.
 	union {

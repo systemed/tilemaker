@@ -76,7 +76,7 @@ MANPREFIX := /usr/share/man
 TM_VERSION ?= $(shell git describe --tags --abbrev=0)
 CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
-LIB := -L$(PLATFORM_PATH)/lib -lz $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lboost_iostreams -lshp -pthread
+LIB := -L$(PLATFORM_PATH)/lib $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem -lboost_system -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
 
 # Targets
@@ -91,6 +91,17 @@ tilemaker: \
 	src/external/streamvbyte_decode.o \
 	src/external/streamvbyte_encode.o \
 	src/external/streamvbyte_zigzag.o \
+	src/external/libdeflate/lib/adler32.o \
+	src/external/libdeflate/lib/arm/cpu_features.o \
+	src/external/libdeflate/lib/crc32.o \
+	src/external/libdeflate/lib/deflate_compress.o \
+	src/external/libdeflate/lib/deflate_decompress.o \
+	src/external/libdeflate/lib/gzip_compress.o \
+	src/external/libdeflate/lib/gzip_decompress.o \
+	src/external/libdeflate/lib/utils.o \
+	src/external/libdeflate/lib/x86/cpu_features.o \
+	src/external/libdeflate/lib/zlib_compress.o \
+	src/external/libdeflate/lib/zlib_decompress.o \
 	src/geojson_processor.o \
 	src/geom.o \
 	src/helpers.o \
@@ -155,6 +166,17 @@ test_deque_map: \
 
 test_helpers: \
 	src/helpers.o \
+	src/external/libdeflate/lib/adler32.o \
+	src/external/libdeflate/lib/arm/cpu_features.o \
+	src/external/libdeflate/lib/crc32.o \
+	src/external/libdeflate/lib/deflate_compress.o \
+	src/external/libdeflate/lib/deflate_decompress.o \
+	src/external/libdeflate/lib/gzip_compress.o \
+	src/external/libdeflate/lib/gzip_decompress.o \
+	src/external/libdeflate/lib/utils.o \
+	src/external/libdeflate/lib/x86/cpu_features.o \
+	src/external/libdeflate/lib/zlib_compress.o \
+	src/external/libdeflate/lib/zlib_decompress.o \
 	test/helpers.test.o
 	$(CXX) $(CXXFLAGS) -o test.helpers $^ $(INC) $(LIB) $(LDFLAGS) && ./test.helpers
 
@@ -206,6 +228,17 @@ test_tile_coordinates_set: \
 test_pbf_reader: \
 	src/helpers.o \
 	src/pbf_reader.o \
+	src/external/libdeflate/lib/adler32.o \
+	src/external/libdeflate/lib/arm/cpu_features.o \
+	src/external/libdeflate/lib/crc32.o \
+	src/external/libdeflate/lib/deflate_compress.o \
+	src/external/libdeflate/lib/deflate_decompress.o \
+	src/external/libdeflate/lib/gzip_compress.o \
+	src/external/libdeflate/lib/gzip_decompress.o \
+	src/external/libdeflate/lib/utils.o \
+	src/external/libdeflate/lib/x86/cpu_features.o \
+	src/external/libdeflate/lib/zlib_compress.o \
+	src/external/libdeflate/lib/zlib_decompress.o \
 	test/pbf_reader.test.o
 	$(CXX) $(CXXFLAGS) -o test.pbf_reader $^ $(INC) $(LIB) $(LDFLAGS) && ./test.pbf_reader
 
@@ -227,6 +260,6 @@ install:
 	@install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/ || true
 
 clean:
-	rm -f tilemaker tilemaker-server src/*.o src/external/*.o include/*.o include/*.pb.h server/*.o test/*.o
+	rm -f tilemaker tilemaker-server src/*.o src/external/*.o src/external/libdeflate/lib/*.o src/external/libdeflate/lib/*/*.o include/*.o include/*.pb.h server/*.o test/*.o
 
 .PHONY: install

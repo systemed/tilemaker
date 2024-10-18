@@ -11,11 +11,11 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     libboost-program-options-dev \
     libboost-filesystem-dev \
     libboost-system-dev \
-    libboost-iostreams-dev \
+    luarocks \
     rapidjson-dev \
-    cmake \
-    zlib1g-dev && \
-    rm -rf /var/lib/apt/lists/*
+    cmake && \
+    rm -rf /var/lib/apt/lists/* && \
+    luarocks install luaflock
 
 WORKDIR /usr/src/app
 
@@ -48,9 +48,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     liblua5.1-0 \
     shapelib \
     libsqlite3-0 \
+    lua-sql-sqlite3 \
     libboost-filesystem1.74.0 \
-    libboost-program-options1.74.0 \
-    libboost-iostreams1.74.0 && \
+    libboost-program-options1.74.0 && \
     if [ -n "$BUILD_DEBUG" ]; then \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb; \
     fi; \
@@ -59,6 +59,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 WORKDIR /usr/src/app
 COPY --from=src /usr/src/app/build/tilemaker .
 COPY --from=src /usr/src/app/build/tilemaker-server .
+COPY --from=src /usr/local/lib/lua/5.1/flock.so /usr/local/lib/lua/5.1/flock.so
 COPY resources ./resources
 COPY process.lua ./
 COPY config.json ./

@@ -64,15 +64,10 @@ SortedWayStore::SortedWayStore(bool compressWays, const NodeStore& nodeStore): c
 }
 
 SortedWayStore::~SortedWayStore() {
-	for (const auto entry: allocatedMemory)
-		void_mmap_allocator::deallocate(entry.first, entry.second);
-
 	s(this) = ThreadStorage();
 }
 
 void SortedWayStore::reopen() {
-	for (const auto entry: allocatedMemory)
-		void_mmap_allocator::deallocate(entry.first, entry.second);
 	allocatedMemory.clear();
 
 	totalWays = 0;

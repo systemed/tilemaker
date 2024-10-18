@@ -7,11 +7,11 @@ inputs:
   config:
     description: 'A JSON file listing each layer, and the zoom levels at which to apply it'
     required: false
-    default: '/resources/config-openmaptiles.json'
+    default: 'config.json'
   process:
     description: "A Lua program that looks at each node/way's tags, and places it into layers accordingly"
     required: false
-    default: '/resources/process-openmaptiles.lua'
+    default: 'process.lua'
   output:
     description: 'Could be directory of tiles, or a .mbtiles files'
     required: true
