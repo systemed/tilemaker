@@ -1,6 +1,8 @@
 FROM debian:bookworm-slim AS src
 LABEL Description="Tilemaker" Version="1.4.0"
 
+ARG BUILD_DEBUG=
+
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential \
     liblua5.1-0-dev \
@@ -25,14 +27,23 @@ COPY server ./server
 
 RUN mkdir build && \
     cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    if [ -z "$BUILD_DEBUG" ]; then \
+        cmake -DCMAKE_BUILD_TYPE=Release ..; \
+    else \
+        cmake -DCMAKE_BUILD_TYPE=Debug ..; \
+    fi; \
     cmake --build . --parallel $(nproc) && \
-    strip tilemaker && \
-    strip tilemaker-server
+    if [ -z "$BUILD_DEBUG" ]; then \
+        strip tilemaker && \
+        strip tilemaker-server; \
+    fi
 
 ENV PATH="/usr/src/app/build:$PATH"
 
 FROM debian:bookworm-slim
+
+ARG BUILD_DEBUG=
+
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     liblua5.1-0 \
     shapelib \
@@ -40,6 +51,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     lua-sql-sqlite3 \
     libboost-filesystem1.74.0 \
     libboost-program-options1.74.0 && \
+    if [ -n "$BUILD_DEBUG" ]; then \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb; \
+    fi; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
