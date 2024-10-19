@@ -113,6 +113,7 @@ file(GLOB tilemaker_src_files
 	src/tile_data.cpp
 	src/tilemaker.cpp
 	src/tile_worker.cpp
+	src/visvalingam.cpp
 	src/way_stores.cpp
   )
 add_executable(tilemaker ${tilemaker_src_files})

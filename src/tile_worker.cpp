@@ -5,6 +5,7 @@
 #include <vtzero/builder.hpp>
 #include <signal.h>
 #include "helpers.h"
+#include "visvalingam.h"
 using namespace std;
 extern bool verbose;
 
@@ -100,6 +101,7 @@ void writeMultiLinestring(
 	const OutputObjectID& oo,
 	unsigned zoom,
 	double simplifyLevel,
+	unsigned simplifyAlgo,
 	const MultiLinestring& mls
 ) {
 	vtzero::linestring_feature_builder fbuilder{vtLayer};
@@ -114,7 +116,11 @@ void writeMultiLinestring(
 
 	if (simplifyLevel>0) {
 		for(auto const &ls: mls) {
-			tmp.push_back(simplify(ls, simplifyLevel));
+			if (simplifyAlgo==LayerDef::VISVALINGAM) {
+				tmp.push_back(simplifyVis(ls, simplifyLevel));
+			} else {
+				tmp.push_back(simplify(ls, simplifyLevel));
+			}
 		}
 		toWrite = &tmp;
 	} else {
@@ -208,11 +214,16 @@ void writeMultiPolygon(
 	const OutputObjectID& oo,
 	unsigned zoom,
 	double simplifyLevel,
+	unsigned simplifyAlgo,
 	const MultiPolygon& mp
 ) {
 	MultiPolygon current = bbox.scaleGeometry(mp);
 	if (simplifyLevel>0) {
-		current = simplify(current, simplifyLevel/bbox.xscale);
+		if (simplifyAlgo == LayerDef::VISVALINGAM) {
+			current = simplifyVis(current, simplifyLevel/bbox.xscale);
+		} else {
+			current = simplify(current, simplifyLevel/bbox.xscale);
+		}
 		geom::remove_spikes(current);
 	}
 	if (geom::is_empty(current))
@@ -264,6 +275,7 @@ void ProcessObjects(
 	OutputObjectsConstIt ooSameLayerEnd, 
 	class SharedData& sharedData,
 	double simplifyLevel,
+	unsigned simplifyAlgo,
 	double filterArea,
 	bool combinePolygons,
 	bool combinePoints,
@@ -350,9 +362,9 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
-				writeMultiLinestring(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, boost::get<MultiLinestring>(g));
+				writeMultiLinestring(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g));
 			else if (oo.oo.geomType == POLYGON_)
-				writeMultiPolygon(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, boost::get<MultiPolygon>(g));
+				writeMultiPolygon(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g));
 		}
 	}
 }
@@ -436,7 +448,8 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
+				simplifyLevel, ld.simplifyAlgo,
+				filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

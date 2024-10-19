@@ -148,4 +148,5 @@ Licenses of third-party libraries:
 - [Simple-Web-Server](https://gitlab.com/eidheim/Simple-Web-Server) is licensed under MIT
 - [sqlite_modern_cpp](https://github.com/SqliteModernCpp/sqlite_modern_cpp) is licensed under MIT
 - [streamvbyte](https://github.com/lemire/streamvbyte) is licensed under Apache 2
+- [visvalingam.cpp](https://github.com/felt/tippecanoe/blob/main/visvalingam.cpp) is licensed under MIT
 - [vtzero](https://github.com/mapbox/vtzero) is licensed under BSD 2-clause
