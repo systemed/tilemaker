@@ -554,7 +554,6 @@ function way_function()
 		local class = railwayClasses[railway]
 		if class then
 			local minzoom = 14
-			Layer("transportation", false)
 			local usage = Find("usage")
 			if railway == "rail" and service == "" then
 				if usage == "main" then
