@@ -166,9 +166,10 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 				std::lock_guard<std::mutex> lock(attributeMutex);
 				name=DBFReadStringAttribute(dbf, i, indexField); hasName = true;
 			}
-			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, layer.minzoom);
+			uint minzoom = layer.minzoom;
+			AttributeIndex attrIdx = readShapefileAttributes(dbf, i, columnMap, columnTypeMap, layer, minzoom);
 			// process geometry
-			processShapeGeometry(shape, attrIdx, layer, layerNum, hasName, name);
+			processShapeGeometry(shape, attrIdx, layer, layerNum, hasName, name, minzoom);
 			SHPDestroyObject(shape);
 		});
 	}
@@ -178,9 +179,8 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 }
 
 void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx,
-                                        const LayerDef &layer, uint layerNum, bool hasName, const string &name) {
+                                        const LayerDef &layer, uint layerNum, bool hasName, const string &name, const uint minzoom) {
 	int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
-	int minzoom = layer.minzoom;
 
 	if (shapeType==1 || shapeType==11 || shapeType==21) {
 		// Points
