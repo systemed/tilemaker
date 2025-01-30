@@ -28,6 +28,7 @@ void PMTiles::close(std::string &metadata) {
 	// add all tiles to directories, writing leaf directories as we go
 	std::vector<pmtiles::entryv3> rootEntries;
 	std::vector<pmtiles::entryv3> entries;
+	leafStart = outputStream.tellp();
 	if (isSparse) {
 		for (auto it : sparseIndex) {
 			appendTileEntry(it.first, it.second, rootEntries, entries);
@@ -120,7 +121,6 @@ void PMTiles::flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vect
 	// write the leaf directory to disk
 	std::lock_guard<std::mutex> lock(fileMutex);
 	uint64_t location = outputStream.tellp();
-	if (leafStart==0) leafStart=location;
 	uint64_t length = compressed.size();
 	outputStream << compressed;
 
