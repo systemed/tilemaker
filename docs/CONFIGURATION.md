@@ -156,6 +156,11 @@ To do that, you use these methods:
 * `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires Boost 1.67+.
 * `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
 
+These functions extend the base Tilemaker:
+
+* `FirstLastNode()`: returns a table with coordinates of the first and the last way node (lat1, lon1, lat2, lon2).
+* `WayBearing()`: returns a bearing between the first and the last node of a way. The range is <0-360] where zero means north.
+
 The simplest possible function, to include roads/paths and nothing else, might look like this:
 
 ```lua

@@ -147,7 +147,8 @@ kaguya::LuaTable rawAllKeys() {
 	auto tags = osmLuaProcessing->currentTags->exportToBoostMap();
 
 	return getAllKeys(*g_luaState, &tags);
-}kaguya::LuaTable rawAllTags() {
+}
+kaguya::LuaTable rawAllTags() {
 	if (osmLuaProcessing->isPostScanRelation) {
 		return osmLuaProcessing->AllTags(*g_luaState);
 	}
@@ -193,6 +194,17 @@ void rawRestartRelations() { return osmLuaProcessing->RestartRelations(); }
 std::string rawFindInRelation(const std::string& key) { return osmLuaProcessing->FindInRelation(key); }
 void rawAccept() { return osmLuaProcessing->Accept(); }
 double rawAreaIntersecting(const std::string& layerName) { return osmLuaProcessing->AreaIntersecting(layerName); }
+
+// ---- These functions extend the base Tilemaker
+
+kaguya::LuaTable rawFirstLastNode() {
+	return osmLuaProcessing->FirstLastNode(*g_luaState);
+}
+
+double rawWayBearing() {
+	return osmLuaProcessing->WayBearing();
+}
+// ----
 
 
 bool supportsRemappingShapefiles = false;
@@ -277,6 +289,11 @@ OsmLuaProcessing::OsmLuaProcessing(
 	supportsWritingNodes        = !!luaState["node_function"];
 	supportsWritingWays         = !!luaState["way_function"];
 	supportsWritingRelations    = !!luaState["relation_function"];
+
+	// ---- These functions extend the base Tilemaker
+	luaState["FirstLastNode"] = &rawFirstLastNode;
+	luaState["WayBearing"] = &rawWayBearing;
+	// ----
 
 	// ---- Call init_function of Lua logic
 
@@ -1176,3 +1193,76 @@ std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
 	return list;
 }
 
+// ---- These functions extend the base Tilemaker
+
+// Returns a table with the first two nodes' coordinates (lon1, lat1, lon2, lat2)
+kaguya::LuaTable OsmLuaProcessing::FirstLastNode(kaguya::State& luaState) {
+	kaguya::LuaTable coordsTable = luaState.newTable();
+	coordsTable[1] = 0.0;
+	coordsTable[2] = 0.0;
+	coordsTable[3] = 0.0;
+	coordsTable[4] = 0.0;
+	geom::model::linestring<DegPoint> ls;
+
+	if (isWay && !isRelation) {
+		geom::assign(ls, linestringCached());
+		if (ls.size() >= 1) {
+			DegPoint p1 = ls[0];
+			DegPoint p2 = ls[ls.size() - 1];
+			coordsTable[1] = geom::get<0>(p1); // lon1
+			coordsTable[2] = latp2lat(geom::get<1>(p1)); // lat1
+			coordsTable[3] = geom::get<0>(p2); // lon2
+			coordsTable[4] = latp2lat(geom::get<1>(p2)); // lat2
+		}
+	} else if (isRelation) {
+		MultiLinestring mls = multiLinestringCached();
+		if (!mls.empty() && !mls[0].empty() && mls[0].size() >= 1) {
+			geom::assign(ls, mls[0]);
+			DegPoint p1 = ls[0];
+			DegPoint p2 = ls[ls.size() - 1];
+			coordsTable[1] = geom::get<0>(p1); // lon1
+			coordsTable[2] = latp2lat(geom::get<1>(p1)); // lat1
+			coordsTable[3] = geom::get<0>(p2); // lon2
+			coordsTable[4] = latp2lat(geom::get<1>(p2)); // lat2
+		}
+	}
+
+	return coordsTable;
+}
+
+// Returns a bearing between the first and the last point of a way.
+double OsmLuaProcessing::WayBearing() {
+	kaguya::LuaTable coords = rawFirstLastNode();
+	double lon1 = coords[1];
+	double lat1 = coords[2];
+	double lon2 = coords[3];
+	double lat2 = coords[4];
+
+	// Convert degrees to radians
+	double lat1_rad = deg2rad(lat1);
+	double lon1_rad = deg2rad(lon1);
+	double lat2_rad = deg2rad(lat2);
+	double lon2_rad = deg2rad(lon2);
+
+	// Calculate longitude difference
+	double d_lon = lon2_rad - lon1_rad;
+
+	// Calculate eastward (y) and northward (x) components
+	double y = std::sin(d_lon) * std::cos(lat2_rad);
+	double x = std::cos(lat1_rad) * std::sin(lat2_rad) - std::sin(lat1_rad) * std::cos(lat2_rad) * std::cos(d_lon);
+
+	// Calculate bearing in radians
+	double bearing_rad = std::atan2(y, x);
+
+	// Convert to degrees
+	double bearing_deg = rad2deg(bearing_rad);
+
+	// Adjust to 0-360 degree range
+	if (bearing_deg < 0) {
+			bearing_deg += 360.0;
+	}
+
+	return bearing_deg;
+}
+
+// ----

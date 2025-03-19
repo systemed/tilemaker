@@ -119,6 +119,12 @@ public:
 	// Gets a table of all the OSM tags
 	kaguya::LuaTable AllTags(kaguya::State& luaState);
 
+	// Returns a table with the first two nodes' coordinates (lon1, lat1, lon2, lat2)
+	kaguya::LuaTable FirstLastNode(kaguya::State& luaState);
+
+	// Returns a bearing between the first and the last point of a way
+	double WayBearing();
+
 	// Check if there's a value for a given key
 	bool Holds(const std::string& key) const;
 
