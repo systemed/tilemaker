@@ -143,6 +143,7 @@ public:
 		
 	// Returns whether it is closed polygon
 	bool IsClosed() const;
+	bool IsMultiPolygon() const;
 
 	// Returns area
 	double Area();
