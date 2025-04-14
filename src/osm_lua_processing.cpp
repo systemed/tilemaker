@@ -181,6 +181,7 @@ bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Inte
 std::vector<std::string> rawFindCovering(const std::string& layerName) { return osmLuaProcessing->FindCovering(layerName); }
 bool rawCoveredBy(const std::string& layerName) { return osmLuaProcessing->CoveredBy(layerName); }
 bool rawIsClosed() { return osmLuaProcessing->IsClosed(); }
+bool rawIsMultiPolygon() { return osmLuaProcessing->IsMultiPolygon(); }
 double rawArea() { return osmLuaProcessing->Area(); }
 double rawLength() { return osmLuaProcessing->Length(); }
 kaguya::optional<std::vector<double>> rawCentroid(kaguya::VariadicArgType algorithm) { return osmLuaProcessing->Centroid(algorithm); }
@@ -246,6 +247,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["FindCovering"] = &rawFindCovering;
 	luaState["CoveredBy"] = &rawCoveredBy;
 	luaState["IsClosed"] = &rawIsClosed;
+	luaState["IsMultiPolygon"] = &rawIsMultiPolygon;
 	luaState["Area"] = &rawArea;
 	luaState["AreaIntersecting"] = &rawAreaIntersecting;
 	luaState["Length"] = &rawLength;
@@ -473,6 +475,11 @@ std::vector<uint> OsmLuaProcessing::coveredQuery(const string &layerName, bool o
 bool OsmLuaProcessing::IsClosed() const {
 	if (!isWay) return false; // nonsense: it isn't a way
 	return isClosed;
+}
+
+// Return whether it's a multipolygon
+bool OsmLuaProcessing::IsMultiPolygon() const {
+	return isWay && isRelation;
 }
 
 void reverse_project(DegPoint& p) {
