@@ -358,7 +358,7 @@ void ProcessObjects(
 
 			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
 				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
-				if (geom::is_empty(g)) return;
+				if (geom::is_empty(g)) continue;
 			}
 
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
