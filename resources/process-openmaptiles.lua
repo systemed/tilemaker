@@ -147,8 +147,17 @@ function node_function()
 	--   we could potentially approximate it for cities based on the population tag
 	local place = Find("place")
 	if place ~= "" then
+		local population = Find("population")
+		while population == "" do
+			local rel, role = NextRelation()
+			if not rel then break end
+			if role == 'label' then
+				population = FindInRelation("population")
+			end
+		end
+
 		local mz = 13
-		local pop = tonumber(Find("population")) or 0
+		local pop = tonumber(population) or 0
 		local capital = capitalLevel(Find("capital"))
 		local rank = calcRank(place, pop, capital)
 
