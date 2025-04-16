@@ -6,6 +6,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <mutex>
 #include "geom.h"
 #include "osm_store.h"
 #include "shared_data.h"
@@ -56,7 +57,8 @@ public:
 		const class ShpMemTiles &shpMemTiles, 
 		class OsmMemTiles &osmMemTiles,
 		AttributeStore &attributeStore,
-		bool materializeGeometries
+		bool materializeGeometries,
+		bool isFirst
 	);
 	~OsmLuaProcessing();
 
@@ -238,6 +240,9 @@ public:
 	struct luaProcessingException :std::exception {};
 	const TagMap* currentTags;
 	bool isPostScanRelation;				// processing a relation in postScanRelation
+
+	static std::unordered_map<std::string, std::string> dataStore;
+	static std::mutex dataStoreMutex;
 
 private:
 	/// Internal: clear current cached state

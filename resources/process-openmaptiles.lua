@@ -17,7 +17,7 @@ additional_languages = { }
 --------
 
 -- Enter/exit Tilemaker
-function init_function()
+function init_function(name,is_first)
 end
 function exit_function()
 end
