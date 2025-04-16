@@ -329,11 +329,6 @@ void ProcessObjects(
 				continue;
 			}
 
-			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
-				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
-				if (geom::is_empty(g)) continue;
-			}
-
 			//This may increment the jt iterator
 			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
 				// Append successive linestrings, then reorder afterwards
@@ -359,6 +354,11 @@ void ProcessObjects(
 					union_many(mps); g = mps.front();
 				}
 				oo = *jt;
+			}
+
+			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
+				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				if (geom::is_empty(g)) continue;
 			}
 
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
