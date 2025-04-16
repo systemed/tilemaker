@@ -19,3 +19,9 @@ include/vector_tile.pb.h
 coastline
 landcover
 /test.*
+
+# MacOS
+.DS_Store
+
+# VS Code
+.vscode
