@@ -592,7 +592,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.mbtiles.closeForWriting();
 	} else if (options.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.writePMTilesBounds();
-		std::string metadata = sharedData.pmTilesMetadata();
+		std::string metadata = sharedData.pmTilesMetadata(jsonConfig);
 		sharedData.pmtiles.close(metadata);
 	} else {
 		sharedData.writeFileMetadata(jsonConfig);

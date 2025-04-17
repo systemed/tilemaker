@@ -104,13 +104,16 @@ void SharedData::writeFileMetadata(rapidjson::Document const &jsonConfig) {
 }
 
 // Create JSON string with .pmtiles-format metadata
-std::string SharedData::pmTilesMetadata() {
+std::string SharedData::pmTilesMetadata(rapidjson::Document const &jsonConfig) {
 	rapidjson::Document document;
 	document.SetObject();
 	document.AddMember("name",          rapidjson::Value().SetString(config.projectName.c_str(), document.GetAllocator()), document.GetAllocator());
 	document.AddMember("description",   rapidjson::Value().SetString(config.projectDesc.c_str(), document.GetAllocator()), document.GetAllocator());
 	document.AddMember("vector_layers", layers.serialiseToJSONValue(document.GetAllocator()), document.GetAllocator());
-	// we don't currently write "attribution" or "type" fields, see .pmtiles spec
+	if (jsonConfig["settings"].HasMember("metadata") && jsonConfig["settings"]["metadata"].HasMember("attribution")) {
+		document.AddMember("attribution", rapidjson::Value().SetString(jsonConfig["settings"]["metadata"]["attribution"].GetString(), document.GetAllocator()), document.GetAllocator());
+	}
+	// we don't currently write "type" field, see .pmtiles spec
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	document.Accept(writer);

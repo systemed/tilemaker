@@ -111,7 +111,7 @@ public:
 	void writeMBTilesProjectData();
 	void writeMBTilesMetadata(rapidjson::Document const &jsonConfig);
 	void writeFileMetadata(rapidjson::Document const &jsonConfig);	
-	std::string pmTilesMetadata();
+	std::string pmTilesMetadata(rapidjson::Document const &jsonConfig);
 	void writePMTilesBounds();
 };
 
