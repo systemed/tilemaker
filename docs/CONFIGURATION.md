@@ -124,7 +124,7 @@ Your Lua file can supply these functions for tilemaker to call:
 2. (optional) `way_keys`, a list of those OSM tags which indicate that a way should be processed
 3. `node_function()`, a function to process an OSM node and add it to layers
 4. `way_function()`, a function to process an OSM way and add it to layers
-5. (optional) `init_function(name)`, a function to initialize Lua logic
+5. (optional) `init_function(name, is_first)`, a function to initialize Lua logic
 6. (optional) `exit_function`, a function to finalize Lua logic (useful to show statistics)
 7. (optional) `relation_scan_function`, a function to determine whether your Lua file wishes to process the given relation 
 8. (optional) `relation_function`, a function to process an OSM relation and add it to layers
@@ -184,7 +184,7 @@ If your Lua file causes an error due to mistaken syntax, you can test it at the 
 
 `way_keys` is similar, but for ways. For ways, you may also wish to express the filter in terms of the tag value, or as an inversion. For example, to exclude buildings: `way_keys = {"~building"}`. To build a map only of major roads: `way_keys = {"highway=motorway", "highway=trunk", "highway=primary", "highway=secondary"}`
 
-`init_function(name)` and `exit_function` are called at the start and end of processing (once per thread). You can use this to output statistics or even to read a small amount of external data.
+`init_function(name, is_first)` and `exit_function` are called at the start and end of processing (once per thread). You can use this to output statistics or even to read a small amount of external data. `is_first` will be true only the first time `init_function` is called.
 
 Other functions are described below and in RELATIONS.md.
 
@@ -243,3 +243,11 @@ To enable these functions, set `index` to true in your shapefile layer definitio
 `CoveredBy` and `FindCovering` work similarly but check if the object is covered by a shapefile layer object.
 
 `AreaIntersecting` returns the area of the current way's intersection with the shapefile layer. You can use this to find whether a water body is already represented in a shapefile ocean layer.
+
+### Lua key/value store
+
+tilemaker has a simple key/value store accessible from Lua which you can use to bring in external data. The same store is used across all processing threads.
+
+Read your data from file, using [Lua's I/O functions](https://www.lua.org/pil/21.1.html), in `init_function` (checking that `is_first` is set for the first run only). Set a key/value pair with `SetData(key,value)` - for example `SetData("name","Bill")`. Both key and value should be strings.
+
+You can then retrieve the value within `way_function` or similar with `GetData(key)`. If no value was found, the empty string is returned.

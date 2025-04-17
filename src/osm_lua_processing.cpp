@@ -18,6 +18,8 @@ thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
 std::mutex vectorLayerMetadataMutex;
+std::unordered_map<std::string, std::string> OsmLuaProcessing::dataStore;
+std::mutex OsmLuaProcessing::dataStoreMutex;
 
 void handleOsmLuaProcessingUserSignal(int signum) {
 	osmLuaProcessing->handleUserSignal(signum);
@@ -195,6 +197,14 @@ std::string rawFindInRelation(const std::string& key) { return osmLuaProcessing-
 void rawAccept() { return osmLuaProcessing->Accept(); }
 double rawAreaIntersecting(const std::string& layerName) { return osmLuaProcessing->AreaIntersecting(layerName); }
 
+void rawSetData(const std::string &key, const std::string &value) { 
+	std::lock_guard<std::mutex> lock(osmLuaProcessing->dataStoreMutex);
+	osmLuaProcessing->dataStore[key] = value;
+}
+std::string rawGetData(const std::string &key) {
+	auto r = osmLuaProcessing->dataStore.find(key);
+	return r==osmLuaProcessing->dataStore.end() ? "" : r->second;
+}
 
 bool supportsRemappingShapefiles = false;
 
@@ -217,7 +227,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles,
 	AttributeStore &attributeStore,
-	bool materializeGeometries):
+	bool materializeGeometries,
+	bool isFirst) :
 	osmStore(osmStore),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
@@ -273,6 +284,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["NextRelation"] = &rawNextRelation;
 	luaState["RestartRelations"] = &rawRestartRelations;
 	luaState["FindInRelation"] = &rawFindInRelation;
+	luaState["SetData"] = &rawSetData;
+	luaState["GetData"] = &rawGetData;
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
 	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
@@ -283,7 +296,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 	// ---- Call init_function of Lua logic
 
 	if (!!luaState["init_function"]) {
-		luaState["init_function"](this->config.projectName);
+		luaState["init_function"](this->config.projectName, isFirst);
 	}
 }
 
@@ -1182,4 +1195,3 @@ std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
 	}
 	return list;
 }
-

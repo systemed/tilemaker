@@ -253,7 +253,7 @@ int main(const int argc, const char* argv[]) {
 	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, options.luaFile, 
-		shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries);
+		shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries, true);
 
 	// ---- Load external sources (shp/geojson)
 
@@ -311,7 +311,7 @@ int main(const int argc, const char* argv[]) {
 			[&]() {
 				thread_local std::pair<std::string, std::shared_ptr<OsmLuaProcessing>> osmLuaProcessing;
 				if (osmLuaProcessing.first != inputFile) {
-					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries));
+					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries, false));
 				}
 				return osmLuaProcessing.second;
 			},
@@ -323,6 +323,7 @@ int main(const int argc, const char* argv[]) {
 	attributeStore.finalize();
 	osmMemTiles.reportSize();
 	attributeStore.reportSize();
+	osmLuaProcessing.dataStore.clear(); // no longer needed
 
 	// ----	Initialise SharedData
 
