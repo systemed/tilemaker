@@ -228,8 +228,6 @@ z13RoadValues     = Set { "track", "service" }
 manMadeRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
-unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
@@ -314,6 +312,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
+	local accessMinzoom = 9
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
@@ -327,7 +326,6 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	-- Service
 	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
 
-	local accessMinzoom = 9
 	if is_road then
 		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
