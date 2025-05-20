@@ -200,7 +200,7 @@ function node_function()
 
 	-- Write 'mountain_peak' and 'water_name'
 	local natural = Find("natural")
-	if natural == "peak" or natural == "volcano" then
+	if natural == "peak" or natural == "volcano" or natural == "saddle" then
 		Layer("mountain_peak", false)
 		SetEleAttributes()
 		AttributeNumeric("rank", 1)
@@ -233,31 +233,34 @@ unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", 
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
-landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
-                        "railway", "cemetery", "military", "residential", "commercial", "industrial",
-                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital","grave_yard",
+                        "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial",
+                        "garages", "retail", "stadium", "pitch", "playground", "track", "theme_park", "bus_station", "zoo",
+                        "suburb", "quarter", "neighbourhood", "dam" }
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
                     farmland="farmland", farm="farmland", orchard="farmland", vineyard="farmland", plant_nursery="farmland",
                     glacier="ice", ice_shelf="ice",
                     bare_rock="rock", scree="rock",
-                    fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
+                    flowerbed="grass", fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
 
 -- POI key/value pairs: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/mapping.yaml
 poiTags         = { aerialway = Set { "station" },
-					amenity = Set { "arts_centre", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "cinema", "clinic", "college", "community_centre", "courthouse", "dentist", "doctors", "embassy", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace", "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "swimming_pool", "taxi", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket" },
-					barrier = Set { "bollard", "border_control", "cycle_barrier", "gate", "lift_gate", "sally_port", "stile", "toll_booth" },
+					amenity = Set { "arts_centre", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "car_club", "car_rental", "car_sharing", "car_wash", "casino", "charging_station", "cinema", "clinic", "college", "conference_centre", "convention_center", "community_centre", "community_center", "courthouse", "crematorium", "drinking_water", "dentist", "doctors", "embassy", "emergency_phone", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace","nightclub" , "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "supermarket", "swimming_pool", "taxi", "telephone",  "car_wash", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket","zoo" },
+					barrier = Set { "bollard", "border_control", "cycle_barrier", "gate", "lift_gate", "sally_port", "stile", "toll_booth" ,"block","kissing_gate" ,"swing_gate","bus_trap" },
 					building = Set { "dormitory" },
 					highway = Set { "bus_stop" },
-					historic = Set { "monument", "castle", "ruins" },
-					landuse = Set { "basin", "brownfield", "cemetery", "reservoir", "winter_sports" },
-					leisure = Set { "dog_park", "escape_game", "garden", "golf_course", "ice_rink", "hackerspace", "marina", "miniature_golf", "park", "pitch", "playground", "sports_centre", "stadium", "swimming_area", "swimming_pool", "water_park" },
+					natural = Set {"bay", "beach", "cape", "cave_entrance", "cliff", "glacier", "peak", "rock", "spring", "stream", "volcano", "waterfall", "wetland"},
+					historic = Set { "monument", "castle", "ruins","memorial","archaeological_site" },
+					landuse = Set { "basin", "brownfield", "cemetery", "military", "reservoir", "winter_sports", "village_green"},
+					leisure = Set { "bowling_alley", "dog_park", "escape_game", "garden", "golf_course", "ice_rink", "hackerspace", "marina", "miniature_golf", "park", "pitch", "playground", "sports_centre", "stadium", "swimming_area", "swimming_pool", "water_park" },
+					office = Set { "accountant", "advertising_agency", "architect", "association", "bail_bond_agent", "charity", "company", "construction_company", "consulting", "cooperative", "courier", "coworking", "diplomatic", "educational_institution", "employment_agency", "energy_supplier", "engineer", "estate_agent", "financial", "financial_advisor", "forestry", "foundation", "geodesist", "government", "graphic_design", "guide", "harbour_master", "health_insurance", "insurance", "interior_design", "it", "lawyer", "logistics", "marketing", "moving_company", "newspaper", "ngo", "notary", "physician", "political_party", "private_investigator", "property_management", "publisher", "quango", "religion", "research", "security", "surveyor", "tax_advisor", "taxi", "telecommunication", "therapist", "translator", "travel_agent", "tutoring", "union", "university", "water_utility", "web_design", "wedding_planner" },
 					railway = Set { "halt", "station", "subway_entrance", "train_station_entrance", "tram_stop" },
-					shop = Set { "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
-					sport = Set { "american_football", "archery", "athletics", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
-					tourism = Set { "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
-					waterway = Set { "dock" } }
+					shop = Set { "boat","car_rental","car_wrecker","fashion", "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "car_parts", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "locksmith", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "paint", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
+					sport = Set { "american_football", "archery", "athletics","tyres", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
+					tourism = Set {"wilderness_hut","wine_cellar", "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
+					waterway = Set { "dock","waterfall" } }
 
 -- POI "class" values: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/poi.yaml
 poiClasses      = { townhall="town_hall", public_building="town_hall", courthouse="town_hall", community_centre="town_hall",
@@ -296,7 +299,7 @@ poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, colleg
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
-waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
+waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock", "pond", "basin", "wastewater"}
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 
 -- Scan relations for use in ways
@@ -639,6 +642,7 @@ function way_function()
 			Layer("water_name_detail", false)
 			MinZoom(14)
 		end
+		if Find("intermittent")=="yes" then AttributeNumeric("intermittent", 1) else AttributeNumeric("intermittent", 0) end
 		Attribute("class", waterway)
 		SetNameAttributes()
 	end
@@ -657,26 +661,32 @@ function way_function()
 	end
 
 	-- Set 'water'
-	if natural=="water" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
-		if Find("covered")=="yes" or not is_closed then return end
-		local class="lake"; if waterway~="" then class="river" end
-		if class=="lake" and Find("wikidata")=="Q192770" then return end
+	water_natural = Set {"water", "bay" , "spring" }
+	water_landuse = Set {"basin", "reservoir", "salt_pond" }
+	
+	if water_natural[natural] or leisure=="swimming_pool" or waterway == "dock" or water_landuse[landuse] or waterClasses[water] then
+		-- if Find("covered")=="yes" or not is_closed then return end
+		local class="lake"; 
+		if waterway~="" then class="river" end
+		if water~="" then class=water end
+		-- if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
 		SetMinZoomByArea(way)
 		Attribute("class",class)
 
-		if Find("intermittent")=="yes" then Attribute("intermittent",1) end
+		if Find("intermittent")=="yes" then Attribute("intermittent",1) else Attribute("intermittent",0) end
 		-- we only want to show the names of actual lakes not every man-made basin that probably doesn't even have a name other than "basin"
 		-- examples for which we don't want to show a name:
 		--  https://www.openstreetmap.org/way/25958687
 		--  https://www.openstreetmap.org/way/27201902
 		--  https://www.openstreetmap.org/way/25309134
 		--  https://www.openstreetmap.org/way/24579306
-		if Holds("name") and natural=="water" and water ~= "basin" and water ~= "wastewater" then
+		if Holds("name") then
 			LayerAsCentroid("water_name_detail")
 			SetNameAttributes()
 			SetMinZoomByArea()
 			Attribute("class", class)
+			if Find("intermittent")=="yes" then Attribute("intermittent",1) end
 		end
 
 		return -- in case we get any landuse processing
@@ -698,6 +708,8 @@ function way_function()
 	else
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
+		if l=="" then l=place end
+		if l=="" then l=waterway end
 		if landuseKeys[l] then
 			Layer("landuse", true)
 			Attribute("class", l)
@@ -745,6 +757,8 @@ end
 -- ==========================================================
 -- Common functions
 
+restaurant_classes = Set { "restaurant", "fast_food" }
+
 -- Write a way centroid to POI layer
 function WritePOI(class,subclass,rank)
 	local layer = "poi"
@@ -754,6 +768,9 @@ function WritePOI(class,subclass,rank)
 	AttributeNumeric("rank", rank)
 	Attribute("class", class)
 	Attribute("subclass", subclass)
+	if restaurant_classes[class] then
+		Attribute("cuisine", Find("cuisine"))
+	end
 	-- layer defaults to 0
 	AttributeNumeric("layer", tonumber(Find("layer")) or 0)
 	-- indoor defaults to false
@@ -782,6 +799,10 @@ end
 function SetNameAttributes()
 	local name = Find("name"), iname
 	local main_written = name
+	if name then 
+		Attribute("name", name)
+		Attribute("name:latin", name)
+	end
 	-- if we have a preferred language, then write that (if available), and additionally write the base name tag
 	if preferred_language and Holds("name:"..preferred_language) then
 		iname = Find("name:"..preferred_language)
@@ -789,8 +810,8 @@ function SetNameAttributes()
 		if iname~=name and default_language_attribute then
 			Attribute(default_language_attribute, name)
 		else main_written = iname end
-	else
-		Attribute(preferred_language_attribute, name)
+	-- else
+	-- 	Attribute("name", name)
 	end
 	-- then set any additional languages
 	for i,lang in ipairs(additional_languages) do
@@ -846,7 +867,7 @@ function GetPOIRank()
 	for k,list in pairs(poiTags) do
 		if list[Find(k)] then
 			v = Find(k)	-- k/v are the OSM tag pair
-			class = poiClasses[v] or k
+			class = poiClasses[v] or v
 			rank  = poiClassRanks[class] or 25
 			subclassKey = poiSubClasses[v]
 			if subclassKey then
