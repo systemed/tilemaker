@@ -30,8 +30,10 @@ function Set(list)
 end
 
 -- Meters per pixel if tile is 256x256
-ZRES2  = 39135.68
-ZRES3  = 19567.88
+ZRES0 = 156542.97
+ZRES1  = 78271.48
+ZRES2  = 39135.74
+ZRES3  = 19567.87
 ZRES4  = 9783.94
 ZRES5  = 4891.97
 ZRES6  = 2445.98
