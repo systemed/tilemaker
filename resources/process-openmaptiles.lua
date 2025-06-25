@@ -30,6 +30,7 @@ function Set(list)
 end
 
 -- Meters per pixel if tile is 256x256
+ZRES2  = 39135.68
 ZRES3  = 19567.88
 ZRES4  = 9783.94
 ZRES5  = 4891.97
@@ -222,9 +223,9 @@ end
 z4RoadValues = Set { "motorway" }
 z5RoadValues = Set { "trunk" }
 z7RoadValues = Set { "primary" }
-z9RoadValues  = Set { "secondary", "motorway_link", "trunk_link" }
-z10RoadValues  = Set { "primary_link", "secondary_link" }
-z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
+z9RoadValues = Set { "secondary", "motorway_link", "trunk_link" }
+z10RoadValues = Set { "primary_link", "secondary_link" }
+z11RoadValues = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 -- On zoom 12, various road classes are merged into "minor"
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
@@ -836,7 +837,8 @@ end
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
+	if     minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
+	elseif minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
 	elseif minzoom <= 5 and area>ZRES4^2  then MinZoom(5)
 	elseif minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
 	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
