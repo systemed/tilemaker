@@ -839,7 +839,9 @@ end
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
+	if     minzoom <= 1 and area>ZRES0^2  then MinZoom(1)
+	elseif minzoom <= 2 and area>ZRES1^2  then MinZoom(2)
+	elseif minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
 	elseif minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
 	elseif minzoom <= 5 and area>ZRES4^2  then MinZoom(5)
 	elseif minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
