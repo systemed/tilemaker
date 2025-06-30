@@ -240,10 +240,10 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (int)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (double)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
 				attributeStore.addAttribute(attributes, key, (bool)val, 0);
@@ -267,7 +267,7 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 				attributeStore.addAttribute(attributes, key, it->value.GetBool(), 0);
 				layer.attributeMap[key] = 2;
 			} else if (it->value.IsNumber()) { 
-				attributeStore.addAttribute(attributes, key, it->value.GetFloat(), 0);
+				attributeStore.addAttribute(attributes, key, it->value.GetDouble(), 0);
 				layer.attributeMap[key] = 1;
 			} else {
 				// something different, so coerce to string

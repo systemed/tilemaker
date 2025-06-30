@@ -59,8 +59,7 @@ const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
 void AttributePair::ensureStringIsOwned() {
 	// Before we store an AttributePair in our long-term storage, we need
 	// to make sure it's not pointing to a non-long-lived std::string.
-	if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float)
-		return;
+	if (valueType != AttributePairType::String) return;
 
 	stringValue_.ensureStringIsOwned();
 }
@@ -251,9 +250,14 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	bool isHot = true; // All bools are eligible to be hot pairs
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
-void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom) {
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, double v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
 	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
+}
+void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, int v, char minzoom) {
+	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	bool isHot = v >= 0 && v <= 25;
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
 

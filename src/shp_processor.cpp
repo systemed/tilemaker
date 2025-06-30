@@ -70,10 +70,10 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (int)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (double)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
 				attributeStore.addAttribute(attributes, key, (bool)val, 0);
@@ -88,10 +88,10 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 			int pos = it.first;
 			string key = it.second;
 			switch (columnTypeMap[pos]) {
-				case 1:  attributeStore.addAttribute(attributes, key, (float)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
+				case 1:  attributeStore.addAttribute(attributes, key, (int)DBFReadIntegerAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
-				case 2:  attributeStore.addAttribute(attributes, key, static_cast<float>(DBFReadDoubleAttribute(dbf, recordNum, pos)), 0);
+				case 2:  attributeStore.addAttribute(attributes, key, (double)DBFReadDoubleAttribute(dbf, recordNum, pos), 0);
 				         layer.attributeMap[key] = 1;
 				         break;
 				case 3:  attributeStore.addAttribute(attributes, key, strcmp(DBFReadStringAttribute(dbf, recordNum, pos), "T")==0, 0);
