@@ -93,7 +93,7 @@ function node_function()
 		Layer("place", false)
 		Attribute("class", place)
 		MinZoom(mz)
-		if rank then AttributeNumeric("rank", rank) end
+		if rank then AttributeInteger("rank", rank) end
 		SetNameAttributes()
 		return
 	end
@@ -107,7 +107,7 @@ function node_function()
 	if natural == "peak" or natural == "volcano" then
 		Layer("mountain_peak", false)
 		SetEleAttributes()
-		AttributeNumeric("rank", 1)
+		AttributeInteger("rank", 1)
 		Attribute("class", natural)
 		SetNameAttributes()
 		return
@@ -256,12 +256,12 @@ function way_function()
 		if linkValues[highway] then
 			splitHighway = split(highway, "_")
 			highway = splitHighway[1]
-			AttributeNumeric("ramp",1)
+			AttributeInteger("ramp",1)
 		end
 
 		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
-			AttributeNumeric("oneway",1)
+			AttributeInteger("oneway",1)
 		end
 		if oneway == "-1" then
 			-- **** TODO
@@ -282,7 +282,7 @@ function way_function()
 		local ref = Find("ref")
 		if ref~="" then
 			Attribute("ref",ref)
-			AttributeNumeric("ref_length",ref:len())
+			AttributeInteger("ref_length",ref:len())
 		end
 	end
 
@@ -326,7 +326,7 @@ function way_function()
 		else
 			Layer("waterway_detail", false)
 		end
-		if Find("intermittent")=="yes" then AttributeNumeric("intermittent", 1) else AttributeNumeric("intermittent", 0) end
+		if Find("intermittent")=="yes" then AttributeInteger("intermittent", 1) else AttributeInteger("intermittent", 0) end
 		Attribute("class", waterway)
 		SetNameAttributes()
 		SetBrunnelAttributes()
@@ -419,7 +419,7 @@ function way_function()
 		LayerAsCentroid("poi_detail")
 		SetNameAttributes()
 		if write_name then rank=6 else rank=25 end
-		AttributeNumeric("rank", rank)
+		AttributeInteger("rank", rank)
 	end
 end
 
@@ -437,7 +437,7 @@ function WritePOI(obj,class,subclass,rank)
 	if rank>4 then layer="poi_detail" end
 	LayerAsCentroid(layer)
 	SetNameAttributes(obj)
-	AttributeNumeric("rank", rank)
+	AttributeInteger("rank", rank)
 	Attribute("class", class)
 	Attribute("subclass", subclass)
 end

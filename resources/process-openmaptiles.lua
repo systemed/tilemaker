@@ -177,8 +177,8 @@ function node_function()
 		Layer("place", false)
 		Attribute("class", place)
 		MinZoom(mz)
-		if rank then AttributeNumeric("rank", rank) end
-		if capital then AttributeNumeric("capital", capital) end
+		if rank then AttributeInteger("rank", rank) end
+		if capital then AttributeInteger("capital", capital) end
 		if place=="country" then
 			local iso_a2 = Find("ISO3166-1:alpha2")
 			while iso_a2 == "" do
@@ -203,7 +203,7 @@ function node_function()
 	if natural == "peak" or natural == "volcano" then
 		Layer("mountain_peak", false)
 		SetEleAttributes()
-		AttributeNumeric("rank", 1)
+		AttributeInteger("rank", 1)
 		Attribute("class", natural)
 		SetNameAttributes()
 		return
@@ -314,7 +314,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
-	AttributeNumeric("layer", tonumber(Find("layer")) or 0, accessMinzoom)
+	AttributeInteger("layer", tonumber(Find("layer")) or 0, accessMinzoom)
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
 	if is_area then
@@ -322,7 +322,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		return
 	end
 	MinZoom(minzoom)
-	if ramp then AttributeNumeric("ramp",1) end
+	if ramp then AttributeInteger("ramp",1) end
 
 	-- Service
 	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
@@ -331,7 +331,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if is_road then
 		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
-			AttributeNumeric("oneway",1)
+			AttributeInteger("oneway",1)
 		end
 		if oneway == "-1" then
 			-- **** TODO
@@ -398,7 +398,7 @@ function way_function()
 		local pop = tonumber(Find("population")) or 0
 		local capital = capitalLevel(Find("capital"))
 		local rank = calcRank(place, pop, nil)
-		if rank then AttributeNumeric("rank", rank) end
+		if rank then AttributeInteger("rank", rank) end
 		SetNameAttributes()
 	end
 
@@ -431,14 +431,14 @@ function way_function()
 		end
 
 		Layer("boundary",false)
-		AttributeNumeric("admin_level", admin_level)
+		AttributeInteger("admin_level", admin_level)
 		MinZoom(mz)
 		-- disputed status (0 or 1). some styles need to have the 0 to show it.
 		local disputed = Find("disputed")
 		if disputed=="yes" then
-			AttributeNumeric("disputed", 1)
+			AttributeInteger("disputed", 1)
 		else
-			AttributeNumeric("disputed", 0)
+			AttributeInteger("disputed", 0)
 		end
 	end
 
@@ -543,7 +543,7 @@ function way_function()
 				local ref = Find("ref")
 				if ref~="" then
 					Attribute("ref",ref)
-					AttributeNumeric("ref_length",ref:len())
+					AttributeInteger("ref_length",ref:len())
 				end
 			end
 		end
@@ -623,7 +623,7 @@ function way_function()
 		else
 			Layer("waterway_detail", false)
 		end
-		if Find("intermittent")=="yes" then AttributeNumeric("intermittent", 1) else AttributeNumeric("intermittent", 0) end
+		if Find("intermittent")=="yes" then AttributeInteger("intermittent", 1) else AttributeInteger("intermittent", 0) end
 		Attribute("class", waterway)
 		SetNameAttributes()
 		SetBrunnelAttributes()
@@ -723,7 +723,7 @@ function way_function()
 		LayerAsCentroid("poi_detail")
 		SetNameAttributes()
 		if write_name then rank=6 else rank=25 end
-		AttributeNumeric("rank", rank)
+		AttributeInteger("rank", rank)
 	end
 end
 
@@ -751,17 +751,17 @@ function WritePOI(class,subclass,rank)
 	if rank>4 then layer="poi_detail" end
 	LayerAsCentroid(layer)
 	SetNameAttributes()
-	AttributeNumeric("rank", rank)
+	AttributeInteger("rank", rank)
 	Attribute("class", class)
 	Attribute("subclass", subclass)
 	-- layer defaults to 0
-	AttributeNumeric("layer", tonumber(Find("layer")) or 0)
+	AttributeInteger("layer", tonumber(Find("layer")) or 0)
 	-- indoor defaults to false
 	AttributeBoolean("indoor", (Find("indoor") == "yes"))
 	-- level has no default
 	local level = tonumber(Find("level"))
 	if level then
-		AttributeNumeric("level", level)
+		AttributeInteger("level", level)
 	end
 end
 

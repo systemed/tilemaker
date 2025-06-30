@@ -14,14 +14,15 @@ MU_TEST(test_attribute_store) {
 	store.addAttribute(s1, "str2", std::string("a very long string"), 14);
 	store.addAttribute(s1, "bool1", false, 0);
 	store.addAttribute(s1, "bool2", true, 0);
-	store.addAttribute(s1, "float1", (float)42.0, 4);
+	store.addAttribute(s1, "double1", (double)42.0, 4);
+	store.addAttribute(s1, "int1", 43, 8);
 
 	const auto s1Index = store.add(s1);
 
 	mu_check(store.size() == 1);
 
 	const auto s1Pairs = store.getUnsafe(s1Index);
-	mu_check(s1Pairs.size() == 5);
+	mu_check(s1Pairs.size() == 6);
 	const auto str1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
 			return ap->keyIndex == store.keyStore.key2index("str1");
 	});
@@ -51,13 +52,21 @@ MU_TEST(test_attribute_store) {
 	mu_check((*bool2)->hasBoolValue());
 	mu_check((*bool2)->boolValue() == true);
 
-	const auto float1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
-			return ap->keyIndex == store.keyStore.key2index("float1");
+	const auto double1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
+			return ap->keyIndex == store.keyStore.key2index("double1");
 	});
-	mu_check(float1 != s1Pairs.end());
-	mu_check((*float1)->hasFloatValue());
-	mu_check((*float1)->floatValue() == 42);
-	mu_check((*float1)->minzoom == 4);
+	mu_check(double1 != s1Pairs.end());
+	mu_check((*double1)->hasFloatValue());
+	mu_check((*double1)->floatValue() == 42);
+	mu_check((*double1)->minzoom == 4);
+
+	const auto int1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
+			return ap->keyIndex == store.keyStore.key2index("int1");
+	});
+	mu_check(int1 != s1Pairs.end());
+	mu_check((*int1)->hasIntValue());
+	mu_check((*int1)->intValue() == 43);
+	mu_check((*int1)->minzoom == 8);
 }
 
 MU_TEST(test_attribute_store_reuses) {
