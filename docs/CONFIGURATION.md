@@ -32,7 +32,7 @@ It also includes these global settings:
 * `maxzoom` - the maximum zoom level at which any tiles will be generated
 * `basezoom` - the zoom level for which tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles. This option is not compatible with the merging options defined by the `combine_xxx` settings (see the dedicated paragraph below)
-* `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
+* `compress` - for mbtiles output, whether to compress vector tiles (Any of "gzip","deflate" or "none"(default)). For pmtiles output, compression is hardcoded to gzip
 * `combine_below` - whether to merge adjacent linestrings of the same type: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13)
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `high_resolution` (optional) - whether to use extra coordinate precision at the maximum zoom level (makes tiles a bit bigger)
