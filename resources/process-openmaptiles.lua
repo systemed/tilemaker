@@ -802,14 +802,14 @@ function SetNameAttributes()
 		if iname~=name and default_language_attribute then
 			Attribute(default_language_attribute, name)
 		else main_written = iname end
-	else
+	elseif name ~= "" then
 		Attribute(preferred_language_attribute, name)
 	end
 	-- then set any additional languages
 	for i,lang in ipairs(additional_languages) do
 		iname = Find("name:"..lang)
 		if iname=="" then iname=name end
-		if iname~=main_written then Attribute("name:"..lang, iname) end
+		if iname~=main_written and iname ~= "" then Attribute("name:"..lang, iname) end
 	end
 end
 
