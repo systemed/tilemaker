@@ -233,9 +233,14 @@ unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", 
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
-landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
-                        "railway", "cemetery", "military", "residential", "commercial", "industrial",
-                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+-- landuse "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
+landuseKeys     = Set { "railway", "cemetery", "military", , "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
+                        "bus_station", "school", "university", "kindergarten", "college", "library", "hospital", "grave_yard", -- from amenity tag
+                        "stadium", "pitch", "playground", "track", --from leisure tag
+                        "theme_park", "zoo", --from tourism tag
+                        "suburb", "quarter", "neighbourhood", --from place tag
+                        "dam" --from waterway tag
+                        }
 -- landcover "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
 -- (wetland subclasses are not listed here but are managed below, in "Set 'landcover'" part)
 landcoverKeys   = { wood="wood", forest="wood",
@@ -705,10 +710,12 @@ function way_function()
 		else Attribute("subclass", l) end
 		write_name = true
 
-	-- Set 'landuse'
+	-- Set 'landuse' (from landuse, amenity, leisure, tourism, place, waterway)
 	else
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
+		if l=="" then l=place end
+		if l=="" then l=waterway end
 		if landuseKeys[l] then
 			Layer("landuse", true)
 			Attribute("class", l)
