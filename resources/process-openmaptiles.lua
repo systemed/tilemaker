@@ -299,7 +299,7 @@ poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, colleg
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, office=22, bar=23 }
-waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
+waterClasses    = Set { "river", "stream", "canal", "ditch", "drain", "pond", "basin", "wastewater" }
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 
 -- Scan relations for use in ways
@@ -660,9 +660,15 @@ function way_function()
 	end
 
 	-- Set 'water'
-	if natural=="water" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
+	-- water mapping : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
+	if natural=="water" or natural=="bay" or natural=="spring" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or landuse=="salt_pond" or waterway="dock" or waterClasses[water] then
 		if Find("covered")=="yes" or not is_closed then return end
-		local class="lake"; if waterway~="" then class="river" end
+		local class="lake";
+		if     waterway=="dock" then class="dock"
+		elseif leisure=="swimming_pool" then class="swimming_pool"
+		elseif landuse=="salt_pond" or water=="pond" or water=="basin" or water=="wastemater" then class="pond"
+		elseif waterClasses[water] then class="river" end --when water==river, stream, canal, ditch, drain
+
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
 		SetMinZoomByArea(way)
