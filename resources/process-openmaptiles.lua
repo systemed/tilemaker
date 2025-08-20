@@ -1,4 +1,4 @@
--- Data processing based on openmaptiles.org schema
+-- Data processing based on openmaptiles.org schema v3.15 (July 2024)
 -- https://openmaptiles.org/schema/
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
@@ -246,15 +246,16 @@ landcoverKeys   = { wood="wood", forest="wood",
 
 -- POI key/value pairs: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/mapping.yaml
 poiTags         = { aerialway = Set { "station" },
-					amenity = Set { "arts_centre", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "cinema", "clinic", "college", "community_centre", "courthouse", "dentist", "doctors", "embassy", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace", "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "swimming_pool", "taxi", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket" },
+					amenity = Set { "arts_centre", "atm", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "charging_station", "cinema", "clinic", "college", "community_centre", "courthouse", "dentist", "doctors", "drinking_water", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace", "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "parcel_locker", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "swimming_pool", "taxi", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket" },
 					barrier = Set { "bollard", "border_control", "cycle_barrier", "gate", "lift_gate", "sally_port", "stile", "toll_booth" },
 					building = Set { "dormitory" },
 					highway = Set { "bus_stop" },
 					historic = Set { "monument", "castle", "ruins" },
 					landuse = Set { "basin", "brownfield", "cemetery", "reservoir", "winter_sports" },
 					leisure = Set { "dog_park", "escape_game", "garden", "golf_course", "ice_rink", "hackerspace", "marina", "miniature_golf", "park", "pitch", "playground", "sports_centre", "stadium", "swimming_area", "swimming_pool", "water_park" },
+					office = Set { "accountant", "advertising_agency", "architect", "association", "bail_bond_agent", "charity", "company", "construction_company", "consulting", "cooperative", "courier", "coworking", "diplomatic", "educational_institution", "employment_agency", "energy_supplier", "engineer", "estate_agent", "financial", "financial_advisor", "forestry", "foundation", "geodesist", "government", "graphic_design", "guide", "harbour_master", "health_insurance", "insurance", "interior_design", "it", "lawyer", "logistics", "marketing", "moving_company", "newspaper", "ngo", "notary", "physician", "political_party", "private_investigator", "property_management", "publisher", "quango", "religion", "research", "security", "surveyor", "tax_advisor", "taxi", "telecommunication", "therapist", "translator", "travel_agent", "tutoring", "union", "university", "water_utility", "web_design", "wedding_planner" },
 					railway = Set { "halt", "station", "subway_entrance", "train_station_entrance", "tram_stop" },
-					shop = Set { "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
+					shop = Set { "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "car_parts", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "locksmith", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "paint", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
 					sport = Set { "american_football", "archery", "athletics", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
 					tourism = Set { "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
 					waterway = Set { "dock" } }
@@ -272,14 +273,14 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					books="library", library="library",
 					university="college", college="college",
 					hotel="lodging", motel="lodging", bed_and_breakfast="lodging", guest_house="lodging", hostel="lodging", chalet="lodging", alpine_hut="lodging", dormitory="lodging",
-					chocolate="ice_cream", confectionery="ice_cream",
-					post_box="post",  post_office="post",
+					ice_cream="ice_cream",
+					post_box="post",  post_office="post", parcel_locker="post"
 					cafe="cafe",
 					school="school",  kindergarten="school",
 					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",
 					bar="bar", nightclub="bar",
 					marina="harbor", dock="harbor",
-					car="car", car_repair="car", taxi="car",
+					car="car", car_repair="car", car_parts="car", taxi="car",
 					hospital="hospital", nursing_home="hospital",  clinic="hospital",
 					grave_yard="cemetery", cemetery="cemetery",
 					attraction="attraction", viewpoint="attraction",
@@ -289,13 +290,15 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					art="art_gallery", artwork="art_gallery", gallery="art_gallery", arts_centre="art_gallery",
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
-					castle="castle", ruins="castle" }
+					castle="castle", ruins="castle",
+					atm="atm",
+					fuel="fuel", charging_station="fuel"}
 -- POI classes where class is the matching value and subclass is the value of a separate key
 poiSubClasses = { information="information", place_of_worship="religion", pitch="sport" }
 poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6,
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
-					fast_food=20, clothing_store=21, bar=22 }
+					fast_food=20, clothing_store=21, office=22, bar=23 }
 waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
 
@@ -860,6 +863,10 @@ function GetPOIRank()
 	-- Catch-all for shops
 	local shop = Find("shop")
 	if shop~="" then return poiClassRanks['shop'], "shop", shop end
+
+	-- Catch-all for offices
+	local office = Find("office")
+	if office~="" then return poiClassRanks['office'], "office", office end
 
 	-- Nothing found
 	return nil,nil,nil
