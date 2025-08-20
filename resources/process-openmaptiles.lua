@@ -236,13 +236,15 @@ aerowayBuildings= Set { "terminal", "gate", "tower" }
 landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
                         "railway", "cemetery", "military", "residential", "commercial", "industrial",
                         "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+-- landcover "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
+-- (wetland subclasses are not listed here but are managed below, in "Set 'landcover'" part)
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
                     farmland="farmland", farm="farmland", orchard="farmland", vineyard="farmland", plant_nursery="farmland",
                     glacier="ice", ice_shelf="ice",
                     bare_rock="rock", scree="rock",
-                    fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
+                    fell="grass", flowerbed="grass", grassland="grass", heath="grass", scrub="grass", shrubbery="grass", tundra="grass", grass="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", garden="grass", golf_course="grass" }
 
 -- POI key/value pairs: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/mapping.yaml
 poiTags         = { aerialway = Set { "station" },
@@ -691,7 +693,7 @@ function way_function()
 		return -- in case we get any landuse processing
 	end
 
-	-- Set 'landcover' (from landuse, natural, leisure)
+	-- Set 'landcover' (from landuse, natural, leisure, wetland)
 	local l = landuse
 	if l=="" then l=natural end
 	if l=="" then l=leisure end
