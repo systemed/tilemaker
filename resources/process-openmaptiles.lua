@@ -234,7 +234,7 @@ railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicula
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
 -- landuse "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
-landuseKeys     = Set { "railway", "cemetery", "military", , "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
+landuseKeys     = Set { "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
                         "bus_station", "school", "university", "kindergarten", "college", "library", "hospital", "grave_yard", -- from amenity tag
                         "stadium", "pitch", "playground", "track", --from leisure tag
                         "theme_park", "zoo", --from tourism tag
@@ -281,7 +281,7 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					university="college", college="college",
 					hotel="lodging", motel="lodging", bed_and_breakfast="lodging", guest_house="lodging", hostel="lodging", chalet="lodging", alpine_hut="lodging", dormitory="lodging",
 					ice_cream="ice_cream",
-					post_box="post",  post_office="post", parcel_locker="post"
+					post_box="post",  post_office="post", parcel_locker="post",
 					cafe="cafe",
 					school="school",  kindergarten="school",
 					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",
@@ -668,7 +668,7 @@ function way_function()
 
 	-- Set 'water'
 	-- water mapping : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
-	if natural=="water" or natural=="bay" or natural=="spring" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or landuse=="salt_pond" or waterway="dock" or waterClasses[water] then
+	if natural=="water" or natural=="bay" or natural=="spring" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or landuse=="salt_pond" or waterway=="dock" or waterClasses[water] then
 		if Find("covered")=="yes" or not is_closed then return end
 		local class="lake";
 		if     waterway=="dock" then class="dock"
