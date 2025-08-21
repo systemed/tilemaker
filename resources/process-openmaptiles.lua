@@ -593,7 +593,7 @@ function way_function()
 	end
 
 	-- 'Ferry'
-	if route=="ferry" then
+	if route=="ferry" or highway=="shipway" then
 		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, is_closed)
 
 		if HasNames() then
