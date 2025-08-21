@@ -729,8 +729,19 @@ function way_function()
 
 	-- Parks
 	-- **** name?
-	if     boundary=="national_park" then Layer("park",true); Attribute("class",boundary); SetNameAttributes()
-	elseif leisure=="nature_reserve" then Layer("park",true); Attribute("class",leisure ); SetNameAttributes() end
+	if boundary=="national_park" or boundary=="protected_area" or leisure=="nature_reserve" then
+		Layer("park",true)
+		if leisure=="nature_reserve" then Attribute("class", leisure)
+		elseif boundary=="national_park" then Attribute("class", boundary)
+		elseif boundary=="protected_area" then
+			local protection_title = Find("protection_title")
+			if protection_title~="" then
+				class = protection_title:gsub(" ", "_"):lower()
+				Attribute("class", class)
+			end
+		end
+		SetNameAttributes()
+	end
 
 	-- POIs ('poi' and 'poi_detail')
 	local rank, class, subclass = GetPOIRank()
