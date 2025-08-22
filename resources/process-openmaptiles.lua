@@ -673,7 +673,7 @@ function way_function()
 		local class="lake";
 		if     waterway=="dock" then class="dock"
 		elseif leisure=="swimming_pool" then class="swimming_pool"
-		elseif landuse=="salt_pond" or water=="pond" or water=="basin" or water=="wastemater" then class="pond"
+		elseif landuse=="salt_pond" or water=="pond" or water=="basin" or water=="wastewater" then class="pond"
 		elseif waterClasses[water] then class="river" end --when water==river, stream, canal, ditch, drain
 
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
