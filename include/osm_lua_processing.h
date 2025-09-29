@@ -195,8 +195,9 @@ public:
 	
 	// Set attributes in a vector tile's Attributes table
 	void Attribute(const std::string &key, const protozero::data_view val, const char minzoom);
-	void AttributeNumeric(const std::string &key, const float val, const char minzoom);
+	void AttributeNumeric(const std::string &key, const double val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
+	void AttributeInteger(const std::string &key, const int val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
 	

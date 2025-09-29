@@ -42,7 +42,7 @@ private:
 	std::map<const std::string*, uint16_t, string_ptr_less_than> keys2index;
 };
 
-enum class AttributePairType: uint8_t { String = 0, Float = 1, Bool = 2 };
+enum class AttributePairType: uint8_t { String = 0, Float = 1, Bool = 2, Int = 3 };
 // AttributePair is a key/value pair (with minzoom)
 #pragma pack(push, 1)
 struct AttributePair {
@@ -50,32 +50,36 @@ struct AttributePair {
 	AttributePairType valueType : 2;
 	uint8_t minzoom : 5; // Support zooms from 0..31. In practice, we expect z16 to be the biggest minzoom.
 	union {
-		float floatValue_;
+		double doubleValue_;
 		PooledString stringValue_;
 	};
 
 	AttributePair(uint32_t keyIndex, bool value, char minzoom)
-		: keyIndex(keyIndex), valueType(AttributePairType::Bool), minzoom(minzoom), floatValue_(value ? 1 : 0)
+		: keyIndex(keyIndex), valueType(AttributePairType::Bool), minzoom(minzoom), doubleValue_(value ? 1 : 0)
 	{
 	}
 	AttributePair(uint32_t keyIndex, const PooledString& value, char minzoom)
 		: keyIndex(keyIndex), valueType(AttributePairType::String), stringValue_(value), minzoom(minzoom)
 	{
 	}
-	AttributePair(uint32_t keyIndex, float value, char minzoom)
-		: keyIndex(keyIndex), valueType(AttributePairType::Float), minzoom(minzoom), floatValue_(value)
+	AttributePair(uint32_t keyIndex, double value, char minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Float), minzoom(minzoom), doubleValue_(value)
+	{
+	}
+	AttributePair(uint32_t keyIndex, int value, char minzoom)
+		: keyIndex(keyIndex), valueType(AttributePairType::Int), minzoom(minzoom), doubleValue_(static_cast<double>(value))
 	{
 	}
 
 	AttributePair(const AttributePair& other):
 		keyIndex(other.keyIndex), valueType(other.valueType), minzoom(other.minzoom)
 	{
-		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
-			floatValue_ = other.floatValue_;
+		if (valueType == AttributePairType::String) {
+			stringValue_ = other.stringValue_;
 			return;
 		}
-
-		stringValue_ = other.stringValue_;
+			
+		doubleValue_ = other.doubleValue_;
 	}
 
 	AttributePair& operator=(const AttributePair& other) {
@@ -83,12 +87,12 @@ struct AttributePair {
 		valueType = other.valueType;
 		minzoom = other.minzoom;
 
-		if (valueType == AttributePairType::Bool || valueType == AttributePairType::Float) {
-			floatValue_ = other.floatValue_;
+		if (valueType == AttributePairType::String) {
+			stringValue_ = other.stringValue_;
 			return *this;
 		}
 
-		stringValue_ = other.stringValue_;
+		doubleValue_ = other.doubleValue_;
 		return *this;
 	}
 
@@ -100,30 +104,25 @@ struct AttributePair {
 		if (valueType != other.valueType) return valueType < other.valueType;
 
 		if (hasStringValue()) return pooledString() < other.pooledString();
-		if (hasBoolValue()) return boolValue() < other.boolValue();
-		if (hasFloatValue()) return floatValue() < other.floatValue();
-		throw std::runtime_error("Invalid type in attribute store");
+		return doubleValue_ < other.doubleValue_;
 	}
 
 	bool operator==(const AttributePair &other) const {
 		if (minzoom!=other.minzoom || keyIndex!=other.keyIndex || valueType!=other.valueType) return false;
-		if (valueType == AttributePairType::String)
-			return stringValue_ == other.stringValue_;
-
-		if (valueType == AttributePairType::Float || valueType == AttributePairType::Bool)
-			return floatValue_ == other.floatValue_;
-
-		return true;
+		if (valueType == AttributePairType::String) return stringValue_ == other.stringValue_;
+		return doubleValue_ == other.doubleValue_;
 	}
 
 	bool hasStringValue() const { return valueType == AttributePairType::String; }
 	bool hasFloatValue() const { return valueType == AttributePairType::Float; }
 	bool hasBoolValue() const { return valueType == AttributePairType::Bool; }
+	bool hasIntValue() const { return valueType == AttributePairType::Int; }
 
 	const PooledString& pooledString() const { return stringValue_; }
 	const std::string stringValue() const { return stringValue_.toString(); }
-	float floatValue() const { return floatValue_; }
-	bool boolValue() const { return floatValue_; }
+	float floatValue() const { return static_cast<float>(doubleValue_); }
+	bool boolValue() const { return doubleValue_; }
+	int intValue() const { return static_cast<int64_t>(doubleValue_); }
 
 	void ensureStringIsOwned();
 
@@ -162,7 +161,9 @@ struct AttributePair {
 			const char* data = pooledString().data();
 			boost::hash_range(rv, data, data + pooledString().size());
 		} else if(hasFloatValue())
-			boost::hash_combine(rv, floatValue());
+			boost::hash_combine(rv, doubleValue_);
+		else if(hasIntValue())
+			boost::hash_combine(rv, doubleValue_);
 		else if(hasBoolValue())
 			boost::hash_combine(rv, boolValue());
 		else {
@@ -407,7 +408,8 @@ struct AttributeStore {
 	void finalize();
 
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, const protozero::data_view v, char minzoom);
-	void addAttribute(AttributeSet& attributeSet, std::string const &key, float v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, double v, char minzoom);
+	void addAttribute(AttributeSet& attributeSet, std::string const &key, int v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
 	
 	AttributeStore():

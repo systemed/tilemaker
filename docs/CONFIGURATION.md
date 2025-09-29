@@ -158,7 +158,7 @@ To do that, you use these methods:
 * `Layer(layer_name, is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
 * `LayerAsCentroid(layer_name, algorithm, role, role...)`: write a single centroid point for this way to the named layer (useful for labels and POIs). Only the first argument is required. `algorithm` can be "polylabel" (default) or "centroid". The third arguments onwards specify relation roles: if you're processing a multipolygon-type relation (e.g. a boundary) and it has a "label" node member, then by adding "label" as an argument here, this will be used in preference to the calculated point.
 * `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
-* `AttributeNumeric(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric/boolean columns.
+* `AttributeNumeric(key,value,minzoom)`, `AttributeInteger(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric (floating-point), integer and boolean columns.
 * `Id()`: get the OSM ID of the current object.
 * `IsClosed()`: returns true if the current object is a closed area.
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.

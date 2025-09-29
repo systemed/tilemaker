@@ -38,7 +38,7 @@ function node_function(node)
 		if amenity~="" then Attribute("class",amenity)
 		else Attribute("class",shop) end
 		Attribute("name:latin", Find("name"))
-		AttributeNumeric("rank", 3)
+		AttributeInteger("rank", 3)
 	end
 	
 	-- Places go to a "place" layer
@@ -48,13 +48,13 @@ function node_function(node)
 		Attribute("class", place)
 		Attribute("name:latin", Find("name"))
 		if place=="city" then
-			AttributeNumeric("rank", 4)
+			AttributeInteger("rank", 4)
 			MinZoom(3)
 		elseif place=="town" then
-			AttributeNumeric("rank", 6)
+			AttributeInteger("rank", 6)
 			MinZoom(6)
 		else
-			AttributeNumeric("rank", 9)
+			AttributeInteger("rank", 9)
 			MinZoom(10)
 		end
 	end
@@ -86,7 +86,7 @@ function way_function()
 	if waterway=="stream" or waterway=="river" or waterway=="canal" then
 		Layer("waterway", false)
 		Attribute("class", waterway)
-		AttributeNumeric("intermittent", 0)
+		AttributeInteger("intermittent", 0)
 	end
 
 	-- Lakes and other water polygons
