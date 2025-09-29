@@ -115,6 +115,9 @@ public:
 	// Get the ID of the current object
 	std::string Id() const;
 
+	// Get the Type of the current object
+	std::string OsmType() const;
+
 	// Gets a table of all the keys of the OSM tags
 	kaguya::LuaTable AllKeys(kaguya::State& luaState);
 

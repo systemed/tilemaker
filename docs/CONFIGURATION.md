@@ -160,6 +160,7 @@ To do that, you use these methods:
 * `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
 * `AttributeNumeric(key,value,minzoom)`, `AttributeInteger(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric (floating-point), integer and boolean columns.
 * `Id()`: get the OSM ID of the current object.
+* `OsmType()`: get the OSM type of the current object.
 * `IsClosed()`: returns true if the current object is a closed area.
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.
 * `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
