@@ -360,7 +360,7 @@ string OsmLuaProcessing::Id() const {
 
 // Get the Type of the current object
 string OsmLuaProcessing::OsmType() const {
-	return (isRelation ? "relation " : isWay ? "way " : "node ");
+	return (isRelation ? "relation" : isWay ? "way" : "node");
 }
 
 // Gets a table of all the keys of the OSM tags
