@@ -33,7 +33,7 @@ It also includes these global settings:
 * `basezoom` - the zoom level for which tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles. This option is not compatible with the merging options defined by the `combine_xxx` settings (see the dedicated paragraph below)
 * `compress` - for mbtiles output, whether to compress vector tiles (Any of "gzip","deflate" or "none"(default)). For pmtiles output, compression is hardcoded to gzip
-* `combine_below` - whether to merge adjacent linestrings of the same type: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13)
+* `combine_below` - whether to merge all linestrings in the tile with the same attributes: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13). This global setting will be overridden by the layer-specific parameter `combine_lines_below` in layers where it has been defined (see below).
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `high_resolution` (optional) - whether to use extra coordinate precision at the maximum zoom level (makes tiles a bit bigger)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
@@ -83,6 +83,7 @@ You can add optional parameters to layers:
 * `feature_limit` - restrict the number of features written to each tile
 * `feature_limit_below` - restrict only below this zoom level
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
+* `combine_lines_below` - whether to merge all linestrings in the tile with the same attributes. If not defined, the global setting `combine_below` will be used.
 * `combine_points` - merge points with the same attributes (defaults to `true`: specify `false` to disable)
 * `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
 
@@ -121,9 +122,9 @@ For example:
 Be careful when using both the `include_ids: true` setting to include IDs and the `combine_xxx` settings to lighten tiles : they are not compatible. During the merging process, items with identical tags are combined in a collection, with only 1 ID being retained for all the merged items. If you need to have the exact ID for each item (for example, for a clickable map), you need to remove the merging settings in the target levels and layers:
 
 * set `combine_points: false` (`true` is the default value) in the target layers
-* set `combine_below` and `combine_polygons_below` below the target zoom level (or remove them)
+* set `combine_below` in global settings, or `combine_lines_below` and `combine_polygons_below` in layer properties, below the target zoom level (or remove them)
 
-If you need the include OSM types as well, you will need to modify the `process.lua` script, check issue [#740](https://github.com/systemed/tilemaker/issues/740) for more information.
+If you need the include OSM types as well, you can use the `OsmType()`function in your `process.lua` script.
 
 ## Lua processing reference
 
@@ -162,7 +163,7 @@ To do that, you use these methods:
 * `Id()`: get the OSM ID of the current object.
 * `IsClosed()`: returns true if the current object is a closed area.
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.
-* `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
+* `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below`, `combine_lines_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
 * `MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
 * `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires Boost 1.67+.
 * `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).

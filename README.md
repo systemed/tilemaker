@@ -128,6 +128,12 @@ Bug reports, suggestions and (especially!) pull requests are very welcome on the
 
 Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies or increasing the memory requirement.
 
+To safely rebuild the project after making changes to the code, you need to run :
+
+    make clean
+    make
+    sudo make install
+
 ## Copyright
 
 tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors). We particularly celebrate the invaluable contributions of Wouter van Kleunen, who passed away in 2022.
