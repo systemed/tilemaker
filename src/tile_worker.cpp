@@ -277,13 +277,13 @@ void ProcessObjects(
 	double simplifyLevel,
 	unsigned simplifyAlgo,
 	double filterArea,
-	bool combinePolygons,
 	bool combinePoints,
+	bool combineLines,
+	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
 	vtzero::layer_builder& vtLayer
 ) {
-
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectID oo = *jt;
 		if (zoom < oo.oo.minZoom) { continue; }
@@ -330,7 +330,7 @@ void ProcessObjects(
 			}
 
 			//This may increment the jt iterator
-			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
+			if (oo.oo.geomType == LINESTRING_ && combineLines) {
 				// Append successive linestrings, then reorder afterwards
 				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
@@ -440,7 +440,6 @@ void ProcessLayer(
 		if (zoom < ld.filterBelow) { 
 			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
 		}
-
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
 			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
@@ -449,7 +448,7 @@ void ProcessLayer(
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, ld.simplifyAlgo,
-				filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
+				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

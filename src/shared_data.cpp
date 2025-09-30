@@ -139,8 +139,8 @@ void SharedData::writePMTilesBounds() {
 // Define a layer (as read from the .json file)
 uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		uint simplifyBelow, double simplifyLevel, double simplifyLength, double simplifyRatio, uint simplifyAlgo,
-		uint filterBelow, double filterArea, uint combinePolygonsBelow, bool sortZOrderAscending,
-		uint featureLimit, uint featureLimitBelow, bool combinePoints,
+		uint filterBelow, double filterArea, bool sortZOrderAscending,
+		uint featureLimit, uint featureLimitBelow, bool combinePoints, uint combineLinesBelow, uint combinePolygonsBelow,
 		const std::string &source,
 		const std::vector<std::string> &sourceColumns,
 		bool allSourceColumns,
@@ -150,7 +150,7 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 
 	bool isWriteTo = !writeTo.empty();
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, simplifyAlgo,
-		filterBelow, filterArea, combinePolygonsBelow, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints,
+		filterBelow, filterArea, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints, combineLinesBelow, combinePolygonsBelow,
 		source, sourceColumns, allSourceColumns, indexed, indexName,
 		std::map<std::string,uint>(), isWriteTo };
 	layers.push_back(layer);
@@ -317,10 +317,11 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		double simplifyRatio  = it->value.HasMember("simplify_ratio" ) ? it->value["simplify_ratio" ].GetDouble() : 2.0;
 		int    filterBelow    = it->value.HasMember("filter_below"   ) ? it->value["filter_below"   ].GetInt()    : 0;
 		double filterArea     = it->value.HasMember("filter_area"    ) ? it->value["filter_area"    ].GetDouble() : 0.5;
-		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
 		int    featureLimit   = it->value.HasMember("feature_limit"  ) ? it->value["feature_limit"  ].GetInt()    : 0;
 		int  featureLimitBelow= it->value.HasMember("feature_limit_below") ? it->value["feature_limit_below"].GetInt() : (maxZoom+1);
 		bool combinePoints    = it->value.HasMember("combine_points" ) ? it->value["combine_points" ].GetBool()   : true;
+		int combineLinesBelow = it->value.HasMember("combine_lines_below"  ) ? it->value["combine_lines_below"  ].GetInt()    : combineBelow;
+		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
 		bool sortZOrderAscending = it->value.HasMember("z_order_ascending") ? it->value["z_order_ascending"].GetBool() : (featureLimit==0);
 		string algo           = it->value.HasMember("simplify_algorithm") ? it->value["simplify_algorithm"].GetString() : "";
 		uint simplifyAlgo = algo=="visvalingam" ? LayerDef::VISVALINGAM : LayerDef::DOUGLAS_PEUCKER;
@@ -343,7 +344,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 		layers.addLayer(layerName, minZoom, maxZoom,
 				simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, simplifyAlgo,
-				filterBelow, filterArea, combinePolyBelow, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints,
+				filterBelow, filterArea, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints, combineLinesBelow, combinePolyBelow,
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
