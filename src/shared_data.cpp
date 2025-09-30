@@ -349,9 +349,6 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 				writeTo);
 
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
-		cout << " - combine points: " << combinePoints;
-		cout << " - combine lines below " << combineLinesBelow;
-		cout << " - combine polygons below " << combinePolyBelow;
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;
 	}

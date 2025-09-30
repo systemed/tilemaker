@@ -33,12 +33,12 @@ It also includes these global settings:
 * `basezoom` - the zoom level for which tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
 * `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles. This option is not compatible with the merging options defined by the `combine_xxx` settings (see the dedicated paragraph below)
 * `compress` - for mbtiles output, whether to compress vector tiles (Any of "gzip","deflate" or "none"(default)). For pmtiles output, compression is hardcoded to gzip
-* `combine_below` - whether to merge all linestrings in the tile with the same attributes: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13). This global setting will be overridden by the layer-specific parameter `combine_lines_below` in layers where it has been defined (see below).
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `high_resolution` (optional) - whether to use extra coordinate precision at the maximum zoom level (makes tiles a bit bigger)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
 * `default_view` (optional) - the default location for the client to view, in [lon, lat, zoom] order (MBTiles only)
 * `mvt_version` (optional) - the version of the [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) spec to use; defaults to 2
+* `combine_below` (deprecated) - whether to merge all linestrings in the tile with the same attributes: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13). Please use the layer-specific parameter `combine_lines_below` instead.
 
 A typical config file would look like this:
 
@@ -119,12 +119,14 @@ For example:
 
 ### Including IDs
 
-Be careful when using both the `include_ids: true` setting to include IDs and the `combine_xxx` settings to lighten tiles : they are not compatible. During the merging process, items with identical tags are combined in a collection, with only 1 ID being retained for all the merged items. If you need to have the exact ID for each item (for example, for a clickable map), you need to remove the merging settings in the target levels and layers:
+You can carry the original OpenStreetMap object ID through to each vector tile feature with the global `include_ids` option.
+
+Note that this is not compatible with the `combine_xxx` settings to reduce tilesize. These settings merge items with identical tags into a collection, so only one ID will be retained for all the merged items. If you need to have the exact ID for each item, remove the merging settings in the target levels and layers:
 
 * set `combine_points: false` (`true` is the default value) in the target layers
-* set `combine_below` in global settings, or `combine_lines_below` and `combine_polygons_below` in layer properties, below the target zoom level (or remove them)
+* set `combine_lines_below` and `combine_polygons_below` in layer properties below the target zoom level (or remove them)
 
-If you need the include OSM types as well, you can use the `OsmType()`function in your `process.lua` script.
+If you need to include OSM object types as well, you can use the `OsmType()` function in your `process.lua` script.
 
 ## Lua processing reference
 
