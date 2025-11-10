@@ -314,7 +314,8 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
-	AttributeInteger("layer", tonumber(Find("layer")) or 0, accessMinzoom)
+	local layer = tonumber(Find("layer")) or 0
+	AttributeInteger("layer", math.floor(layer), accessMinzoom)
 	SetBrunnelAttributes()
 	-- We do not write any other attributes for areas.
 	if is_area then
@@ -755,13 +756,14 @@ function WritePOI(class,subclass,rank)
 	Attribute("class", class)
 	Attribute("subclass", subclass)
 	-- layer defaults to 0
-	AttributeInteger("layer", tonumber(Find("layer")) or 0)
+	local layer = tonumber(Find("layer")) or 0
+	AttributeInteger("layer", math.floor(layer))
 	-- indoor defaults to false
 	AttributeBoolean("indoor", (Find("indoor") == "yes"))
 	-- level has no default
 	local level = tonumber(Find("level"))
 	if level then
-		AttributeInteger("level", level)
+		AttributeInteger("level", math.floor(level))
 	end
 end
 
