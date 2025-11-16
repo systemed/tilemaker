@@ -382,7 +382,6 @@ function way_function()
 	local housenumber = Find("addr:housenumber")
 	local write_name = false
 	local construction = Find("construction")
-	local is_highway_area = highway~="" and Find("area")=="yes" and is_closed
 
 	-- Miscellaneous preprocessing
 	if Find("disused") == "yes" then return end
@@ -459,6 +458,7 @@ function way_function()
 	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
 		local surface = Find("surface")
+		local is_area = (public_transport == "platform" or Find("area")=="yes") and is_closed
 
 		local h = highway
 		local is_road = true
@@ -512,13 +512,13 @@ function way_function()
 		end
 
 		-- Drop all areas except infrastructure for pedestrians handled above
-		if is_highway_area and h ~= "path" then
+		if is_area and h ~= "path" then
 			minzoom = INVALID_ZOOM
 		end
 
 		-- Write to layer
 		if minzoom <= 14 then
-			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road, is_highway_area)
+			write_to_transportation_layer(minzoom, h, subclass, ramp, service, false, is_road, is_area)
 
 			-- Write names
 			if not is_closed and (HasNames() or Holds("ref")) then
