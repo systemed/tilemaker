@@ -290,6 +290,11 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
 					castle="castle", ruins="castle" }
+-- POI "class" keys: list of OSM keys that can be used for POI classification
+poiTagsAsClass  = { aerialway = "aerialway",
+					office = "office",
+					railway = "railway",
+					shop = "shop"}
 -- POI classes where class is the matching value and subclass is the value of a separate key
 poiSubClasses = { information="information", place_of_worship="religion", pitch="sport" }
 poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6,
@@ -848,7 +853,7 @@ function GetPOIRank()
 	for k,list in pairs(poiTags) do
 		if list[Find(k)] then
 			v = Find(k)	-- k/v are the OSM tag pair
-			class = poiClasses[v] or k
+			class = poiClasses[v] or poiTagsAsClass[k] or v
 			rank  = poiClassRanks[class] or 25
 			subclassKey = poiSubClasses[v]
 			if subclassKey then
