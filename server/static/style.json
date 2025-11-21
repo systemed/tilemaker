@@ -361,31 +361,6 @@
       "paint": {"fill-color": "rgba(245, 238, 188, 1)", "fill-opacity": 1}
     },
     {
-      "id": "building",
-      "type": "fill",
-      "metadata": {"mapbox:group": "1444849364238.8171"},
-      "source": "openmaptiles",
-      "source-layer": "building",
-      "paint": {
-        "fill-antialias": true,
-        "fill-color": {"base": 1, "stops": [[15.5, "#f2eae2"], [16, "#dfdbd7"]]}
-      }
-    },
-    {
-      "id": "building-top",
-      "type": "fill",
-      "metadata": {"mapbox:group": "1444849364238.8171"},
-      "source": "openmaptiles",
-      "source-layer": "building",
-      "layout": {"visibility": "visible"},
-      "paint": {
-        "fill-color": "#f2eae2",
-        "fill-opacity": {"base": 1, "stops": [[13, 0], [16, 1]]},
-        "fill-outline-color": "#dfdbd7",
-        "fill-translate": {"base": 1, "stops": [[14, [0, 0]], [16, [-2, -2]]]}
-      }
-    },
-    {
       "id": "tunnel-service-track-casing",
       "type": "line",
       "metadata": {"mapbox:group": "1444849354174.1904"},
@@ -2443,6 +2418,38 @@
         "text-halo-blur": 1,
         "text-halo-color": "rgba(255,255,255,0.8)",
         "text-halo-width": 2
+      }
+    },
+
+    {
+      "id": "building",
+      "type": "fill",
+      "metadata": {"mapbox:group": "1444849364238.8171"},
+      "source": "openmaptiles",
+      "source-layer": "building",
+      "minzoom": 13,
+      "maxzoom": 21,
+      "layout": {
+        "visibility": "visible"
+      },
+      "paint": {
+        "fill-color": "rgba(203, 198, 198, 1)",
+        "fill-outline-color": {"base": 1, "stops": [[13,"rgba(131, 123, 123, 0.32)"], [14,"rgba(157, 3, 5, 1)"]]}
+      }
+    },
+    {
+      "id": "building-3d",
+      "type": "fill-extrusion",
+      "metadata": {"mapbox:group": "1444849364238.8171"},
+      "source": "openmaptiles",
+      "source-layer": "building",
+      "minzoom": 14,
+      "layout": {"visibility": "visible"},
+      "paint": {
+        "fill-extrusion-color": "rgba(203, 198, 198, 1)",
+        "fill-extrusion-height": {"property": "render_height","type": "identity"},
+        "fill-extrusion-base": {"property": "render_min_height","type": "identity"},
+        "fill-extrusion-opacity": 0.95
       }
     }
   ],

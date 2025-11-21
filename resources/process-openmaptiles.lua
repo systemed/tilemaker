@@ -383,6 +383,7 @@ function way_function()
 	local write_name = false
 	local construction = Find("construction")
 	local is_highway_area = highway~="" and Find("area")=="yes" and is_closed
+	local building_part = Find("building:part")
 
 	-- Miscellaneous preprocessing
 	if Find("disused") == "yes" then return end
@@ -645,7 +646,7 @@ function way_function()
 	end
 
 	-- Set 'building' and associated
-	if building~="" then
+	if building~="" or building_part~="" then
 		Layer("building", true)
 		SetBuildingHeightAttributes()
 		SetMinZoomByArea()
@@ -869,17 +870,28 @@ end
 
 function SetBuildingHeightAttributes()
 	local height = tonumber(Find("height"), 10)
+	local buildingHeight = tonumber(Find("building:height"), 10)
+	local finalHeight = height or buildingHeight
+
 	local minHeight = tonumber(Find("min_height"), 10)
-	local levels = tonumber(Find("building:levels"), 10)
-	local minLevel = tonumber(Find("building:min_level"), 10)
+	local buildingMinHeight = tonumber(Find("building:min_height"), 10)
+	local finalMinHeight = minHeight or buildingMinHeight
+
+	local levels = tonumber(Find("levels"), 10)
+	local buildingLevels = tonumber(Find("building:levels"), 10)
+	local finalLevels = levels or buildingLevels
+
+	local minLevel = tonumber(Find("min_level"), 10)
+	local buildingMinLevel = tonumber(Find("building:min_level"), 10)
+	local finalMinLevel = minLevel or buildingMinLevel
 
 	local renderHeight = BUILDING_FLOOR_HEIGHT
-	if height or levels then
-		renderHeight = height or (levels * BUILDING_FLOOR_HEIGHT)
+	if finalHeight or finalLevels then
+		renderHeight = finalHeight or (finalLevels * BUILDING_FLOOR_HEIGHT)
 	end
 	local renderMinHeight = 0
-	if minHeight or minLevel then
-		renderMinHeight = minHeight or (minLevel * BUILDING_FLOOR_HEIGHT)
+	if finalMinHeight or finalMinLevel then
+		renderMinHeight = finalMinHeight or (finalMinLevel * BUILDING_FLOOR_HEIGHT)
 	end
 
 	-- Fix upside-down buildings
