@@ -188,6 +188,7 @@ bool rawIsMultiPolygon() { return osmLuaProcessing->IsMultiPolygon(); }
 double rawArea() { return osmLuaProcessing->Area(); }
 double rawLength() { return osmLuaProcessing->Length(); }
 kaguya::optional<std::vector<double>> rawCentroid(kaguya::VariadicArgType algorithm) { return osmLuaProcessing->Centroid(algorithm); }
+void rawModifyId(const int newId) { return osmLuaProcessing->ModifyId(newId); }
 void rawLayer(const std::string& layerName, bool area) { return osmLuaProcessing->Layer(layerName, area); }
 void rawLayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources) { return osmLuaProcessing->LayerAsCentroid(layerName, nodeSources); }
 void rawMinZoom(const double z) { return osmLuaProcessing->MinZoom(z); }
@@ -267,6 +268,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["Centroid"] = &rawCentroid;
 	luaState["Layer"] = &rawLayer;
 	luaState["LayerAsCentroid"] = &rawLayerAsCentroid;
+	luaState["ModifyId"] = &rawModifyId;
 	luaState["Attribute"] = kaguya::overload(
 			[](const std::string &key, const protozero::data_view val) { osmLuaProcessing->Attribute(key, val, 0); },
 			[](const std::string &key, const protozero::data_view val, const char minzoom) { osmLuaProcessing->Attribute(key, val, minzoom); }
@@ -920,6 +922,11 @@ void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
 	}
 
 	outputKeys.push_back(key);
+}
+
+// Force a new ID
+void OsmLuaProcessing::ModifyId(const int newId) {
+    originalOsmID = static_cast<int64_t>(newId);
 }
 
 // Set attributes in a vector tile's Attributes table
