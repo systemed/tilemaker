@@ -128,6 +128,8 @@ Note that this is not compatible with the `combine_xxx` settings to reduce tiles
 
 If you need to include OSM object types as well, you can use the `OsmType()` function in your `process.lua` script.
 
+It is possible to override the original OSM ID using the function `ModifyId(newId)`.
+
 ## Lua processing reference
 
 Your Lua file can supply these functions for tilemaker to call:
@@ -163,6 +165,7 @@ To do that, you use these methods:
 * `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
 * `AttributeNumeric(key,value,minzoom)`, `AttributeInteger(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric (floating-point), integer and boolean columns.
 * `Id()`: get the OSM ID of the current object.
+* `ModifyId(newId)`: replace the ID of the current object with newId.
 * `OsmType()`: get the OSM type of the current object.
 * `IsClosed()`: returns true if the current object is a closed area.
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.

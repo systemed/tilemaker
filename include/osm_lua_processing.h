@@ -197,6 +197,7 @@ public:
 	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
+	void ModifyId(const int newId);
 	void Attribute(const std::string &key, const protozero::data_view val, const char minzoom);
 	void AttributeNumeric(const std::string &key, const double val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
