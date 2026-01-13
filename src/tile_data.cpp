@@ -394,6 +394,11 @@ void populateTilesAtZoom(
 	}
 }
 
+void sortOutputObjectIDs(
+	const std::vector<bool>& sortOrders, 
+	std::vector<OutputObjectID>& data
+);
+
 std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	const std::vector<bool>& sortOrders, 
 	unsigned int zoom,
@@ -402,23 +407,7 @@ std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	std::vector<OutputObjectID> data;
 	collectObjectsForTile(zoom, coordinates, data);
 	collectLargeObjectsForTile(zoom, coordinates, data);
-
-	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-	// Note that attributes is preferred to objectID.
-	// It is to arrange objects with the identical attributes continuously.
-	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
-		if (x.oo.layer < y.oo.layer) return true;
-		if (x.oo.layer > y.oo.layer) return false;
-		if (x.oo.z_order < y.oo.z_order) return  sortOrders[x.oo.layer];
-		if (x.oo.z_order > y.oo.z_order) return !sortOrders[x.oo.layer];
-		if (x.oo.geomType < y.oo.geomType) return true;
-		if (x.oo.geomType > y.oo.geomType) return false;
-		if (x.oo.attributes < y.oo.attributes) return true;
-		if (x.oo.attributes > y.oo.attributes) return false;
-		if (x.oo.objectID < y.oo.objectID) return true;
-		return false;
-	});
+	sortOutputObjectIDs(sortOrders, data);
 	data.erase(unique(data.begin(), data.end()), data.end());
 	return data;
 }
