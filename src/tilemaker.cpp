@@ -22,7 +22,6 @@
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/sort/sort.hpp>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -75,6 +74,11 @@ namespace geom = boost::geometry;
 // Global verbose switch
 bool verbose = false;
 
+void sortTileCoordinates(
+    const size_t baseZoom,
+    const size_t threadNum,
+    std::deque<std::pair<unsigned int, TileCoordinates>>& tileCoordinates
+);
 
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
@@ -454,55 +458,7 @@ int main(const int argc, const char* argv[]) {
 	std::cout << std::endl;
 
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
-	const size_t baseZoom = config.baseZoom;
-	boost::sort::block_indirect_sort(
-		tileCoordinates.begin(), tileCoordinates.end(), 
-		[baseZoom](auto const &a, auto const &b) {
-			const auto aZoom = a.first;
-			const auto bZoom = b.first;
-			const auto aX = a.second.x;
-			const auto aY = a.second.y;
-			const auto bX = b.second.x;
-			const auto bY = b.second.y;
-			const bool aLowZoom = aZoom < CLUSTER_ZOOM;
-			const bool bLowZoom = bZoom < CLUSTER_ZOOM;
-
-			// Breadth-first for z0..5
-			if (aLowZoom != bLowZoom)
-				return aLowZoom;
-
-			if (aLowZoom && bLowZoom) {
-				if (aZoom != bZoom)
-					return aZoom < bZoom;
-
-				if (aX != bX)
-					return aX < bX;
-
-				return aY < bY;
-			}
-
-			for (size_t z = CLUSTER_ZOOM; z <= baseZoom; z++) {
-				// Translate both a and b to zoom z, compare.
-				// First, sanity check: can we translate it to this zoom?
-				if (aZoom < z || bZoom < z) {
-					return aZoom < bZoom;
-				}
-
-				const auto aXz = aX / (1 << (aZoom - z));
-				const auto aYz = aY / (1 << (aZoom - z));
-				const auto bXz = bX / (1 << (bZoom - z));
-				const auto bYz = bY / (1 << (bZoom - z));
-
-				if (aXz != bXz)
-					return aXz < bXz;
-
-				if (aYz != bYz)
-					return aYz < bYz;
-			}
-
-			return false;
-		}, 
-		options.threadNum);
+	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
 	std::size_t batchSize = 0;
 	for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {

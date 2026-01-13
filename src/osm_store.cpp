@@ -6,7 +6,6 @@
 #include <unordered_map>
 
 #include <ciso646>
-#include <boost/sort/sort.hpp>
 #include "node_store.h"
 #include "way_store.h"
 

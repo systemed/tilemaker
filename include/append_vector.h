@@ -4,6 +4,7 @@
 #include "mmap_allocator.h"
 #include <vector>
 #include <queue>
+#include <cstdint>
 
 // Tilemaker collects OutputObjects in a list that
 // - spills to disk
