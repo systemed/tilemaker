@@ -31,7 +31,15 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
 ENDIF ()
 
-find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
+# Try to find Boost 1.89+ first (system is header-only, no need to link)
+# Fall back to older Boost with system component if not found
+find_package(Boost 1.89 QUIET COMPONENTS filesystem program_options)
+if(NOT Boost_FOUND)
+    find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
+    set(BOOST_HAS_SYSTEM TRUE)
+else()
+    set(BOOST_HAS_SYSTEM FALSE)
+endif()
 
 find_package(libshp REQUIRED)
 
@@ -111,6 +119,7 @@ file(GLOB tilemaker_src_files
 	src/tag_map.cpp
 	src/tile_coordinates_set.cpp
 	src/tile_data.cpp
+	src/tile_sorting.cpp
 	src/tilemaker.cpp
 	src/tile_worker.cpp
 	src/visvalingam.cpp
@@ -125,7 +134,10 @@ target_link_libraries(tilemaker
 		shapelib::shp
 		SQLite::SQLite3
 		Rapidjson::rapidjson
-		Boost::system Boost::filesystem Boost::program_options)
+		Boost::filesystem Boost::program_options)
+if(BOOST_HAS_SYSTEM)
+    target_link_libraries(tilemaker Boost::system)
+endif()
 
 include(CheckCxxAtomic)
 if(NOT HAVE_CXX11_ATOMIC)

@@ -28,7 +28,7 @@ COPY server ./server
 RUN mkdir build && \
     cd build && \
     if [ -z "$BUILD_DEBUG" ]; then \
-        cmake -DCMAKE_BUILD_TYPE=Release ..; \
+        cmake -DCMAKE_BUILD_TYPE=Release -DBoost_USE_DEBUG_RUNTIME=OFF ..; \
     else \
         cmake -DCMAKE_BUILD_TYPE=Debug ..; \
     fi; \
