@@ -1,14 +1,15 @@
 // This file contains sorting implementations that use boost::sort.
-// boost::sort is kept in a separate translation unit to avoid conflicts
-// with boost::geometry's boost::range::sort when both are included in
-// the same translation unit (issue with Boost 1.89+).
+// boost::sort conflicts with boost::geometry's boost::range::sort in Boost 1.89+.
+// Files that need both should use std::sort instead.
+// This file needs boost::geometry (via tile_data_base.h) for struct definitions,
+// so we use std::sort here as well for Boost 1.89+ compatibility.
 
-#include <boost/sort/sort.hpp>
+#include "tile_data_base.h"
+#include "append_vector.h"
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
-#include "tile_data_base.h"
-#include "append_vector.h"
 
 template<typename OO> void finalizeObjects(
 	const std::string& name,
@@ -64,7 +65,8 @@ template<typename OO> void finalizeObjects(
 		// better to assign chunks of `objects` to each thread.
 		//
 		// That's a future performance improvement, so deferring for now.
-		boost::sort::block_indirect_sort(
+		// Note: Using std::sort for Boost 1.89+ compatibility (boost::sort conflicts with boost::geometry)
+		std::sort(
 			it->begin(),
 			it->end(),
 			[indexZoom](const OO& a, const OO& b) {
@@ -89,8 +91,7 @@ template<typename OO> void finalizeObjects(
 				}
 
 				return false;
-			},
-			threadNum
+			}
 		);
 	}
 

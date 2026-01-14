@@ -1,7 +1,3 @@
-// boost::sort must be included FIRST, before any headers that might
-// include boost::geometry, to avoid conflicts with boost::range::sort
-#include <boost/sort/sort.hpp>
-
 #include <algorithm>
 #include <iostream>
 #include "tile_data.h"
@@ -411,7 +407,8 @@ std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	// Note that attributes is preferred to objectID.
 	// It is to arrange objects with the identical attributes continuously.
 	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
+	// Note: Using std::sort to avoid conflicts with boost::geometry in Boost 1.89+
+	std::sort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
 		if (x.oo.layer < y.oo.layer) return true;
 		if (x.oo.layer > y.oo.layer) return false;
 		if (x.oo.z_order < y.oo.z_order) return  sortOrders[x.oo.layer];
