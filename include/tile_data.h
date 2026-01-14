@@ -1,4 +1,4 @@
-/*! \file */ 
+/*! \file */
 #ifndef _TILE_DATA_H
 #define _TILE_DATA_H
 
@@ -6,52 +6,18 @@
 #include <set>
 #include <vector>
 #include <memory>
-#include <boost/sort/sort.hpp>
-#include "output_object.h"
+#include "tile_data_base.h"
 #include "append_vector.h"
 #include "clip_cache.h"
 #include "mmap_allocator.h"
 #include "tile_coordinates_set.h"
 
-#define TILE_DATA_ID_SIZE 34
-
 typedef std::vector<class TileDataSource *> SourceList;
 
 class TileBbox;
 
-// We cluster output objects by z6 tile
-#define CLUSTER_ZOOM 6
-#define CLUSTER_ZOOM_WIDTH (1 << CLUSTER_ZOOM)
-#define CLUSTER_ZOOM_AREA (CLUSTER_ZOOM_WIDTH * CLUSTER_ZOOM_WIDTH)
-
-// TileDataSource indexes which tiles have objects in them. The indexed zoom
-// is at most z14; we'll clamp to z14 if the base zoom is higher than z14.
-//
-// As a result, we need at most 15 bits to store an X/Y coordinate. For efficiency,
-// we bucket the world into 4,096 z6 tiles, which each contain some number of 
-// z14 objects. This lets us use only 8 bits to store an X/Y coordinate.
-//
-// Because index zoom is lower than base zoom in the case where base zoom is
-// z15+, we'll get false positives when looking up objects in the index,
-// since, e.g., a single z14 tile covers 4 z15 tiles.
-//
-// This is OK: when writing the z15 tile, there's a clipping step that will filter
-// out the false positives.
-typedef uint8_t Z6Offset;
-
-struct OutputObjectXY {
-	OutputObject oo;
-	Z6Offset x;
-	Z6Offset y;
-};
-
-struct OutputObjectXYID {
-	OutputObject oo;
-	Z6Offset x;
-	Z6Offset y;
-	uint64_t id;
-};
-
+// Declaration only - implementation in tile_sorting.cpp to avoid
+// boost::sort conflicts with boost::geometry in Boost 1.89+
 template<typename OO> void finalizeObjects(
 	const std::string& name,
 	const size_t& threadNum,
@@ -59,85 +25,26 @@ template<typename OO> void finalizeObjects(
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator begin,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator end,
 	typename std::vector<std::vector<OO>>& lowZoom
-	) {
-	size_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
-#ifdef CLOCK_MONOTONIC
-	timespec startTs, endTs;
-	clock_gettime(CLOCK_MONOTONIC, &startTs);
-#endif
+);
 
-	int i = -1;
-	for (auto it = begin; it != end; it++) {
-		i++;
-		if (it->size() > 0 || i % 50 == 0 || i == 4095) {
-			std::cout << "\r" << name << ": finalizing z6 tile " << (i + 1) << "/" << CLUSTER_ZOOM_AREA;
+// Extern template declarations to prevent implicit instantiation
+extern template void finalizeObjects<OutputObjectXY>(
+	const std::string& name,
+	const size_t& threadNum,
+	const unsigned int& indexZoom,
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>>::iterator begin,
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXY>>::iterator end,
+	std::vector<std::vector<OutputObjectXY>>& lowZoom
+);
 
-#ifdef CLOCK_MONOTONIC
-			clock_gettime(CLOCK_MONOTONIC, &endTs);
-			uint64_t elapsedNs = 1e9 * (endTs.tv_sec - startTs.tv_sec) + endTs.tv_nsec - startTs.tv_nsec;
-			std::cout << " (" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)";
-#endif
-			std::cout << std::flush;
-		}
-		if (it->size() == 0)
-			continue;
-
-		// We track a separate copy of low zoom objects to avoid scanning large
-		// lists of objects that may be on slow disk storage.
-		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
-			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
-				lowZoom[i].push_back(*objectIt);
-
-		// If the user is doing a a small extract, there are few populated
-		// entries in `object`.
-		//
-		// e.g. Colorado has ~9 z6 tiles, 1 of which has 95% of its output
-		// objects.
-		//
-		// This optimizes for the small extract case by doing:
-		// - for each vector in objects
-		//   - do a multi-threaded sort of vector
-		//
-		// For small extracts, this ensures that all threads are used even if
-		// only a handful of entries in `objects` are non-empty.
-		//
-		// For a global extract, this will have some overhead of repeatedly
-		// setting up/tearing down threads. In that case, it would be 
-		// better to assign chunks of `objects` to each thread.
-		//
-		// That's a future performance improvement, so deferring for now.
-		boost::sort::block_indirect_sort(
-			it->begin(),
-			it->end(), 
-			[indexZoom](const OO& a, const OO& b) {
-				// Cluster by parent zoom, so that a subsequent search
-				// can find a contiguous range of entries for any tile
-				// at zoom 6 or higher.
-				const size_t aX = a.x;
-				const size_t aY = a.y;
-				const size_t bX = b.x;
-				const size_t bY = b.y;
-				for (size_t z = CLUSTER_ZOOM; z <= indexZoom; z++) {
-					const auto aXz = aX / (1 << (indexZoom - z));
-					const auto bXz = bX / (1 << (indexZoom - z));
-					if (aXz != bXz)
-						return aXz < bXz;
-
-					const auto aYz = aY / (1 << (indexZoom - z));
-					const auto bYz = bY / (1 << (indexZoom - z));
-
-					if (aYz != bYz)
-						return aYz < bYz;
-				}
-
-				return false;
-			},
-			threadNum
-		);
-	}
-
-	std::cout << std::endl;
-}
+extern template void finalizeObjects<OutputObjectXYID>(
+	const std::string& name,
+	const size_t& threadNum,
+	const unsigned int& indexZoom,
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>>::iterator begin,
+	std::vector<AppendVectorNS::AppendVector<OutputObjectXYID>>::iterator end,
+	std::vector<std::vector<OutputObjectXYID>>& lowZoom
+);
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const unsigned int& indexZoom,
