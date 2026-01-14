@@ -15,10 +15,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Enable vcpkg cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: c:\vcpkg\installed
         key: windows-vcpkg-x64-0 # Increase the number whenever dependencies are modified
@@ -36,7 +36,7 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        Invoke-WebRequest -Uri http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf
+        Invoke-WebRequest -Uri https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -OutFile ${{ env.AREA }}.osm.pbf -MaximumRedirection 5
         ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.pmtiles --verbose
         ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --store osm_store --verbose
 
@@ -62,10 +62,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Enable vcpkg cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ${{ matrix.path }}
         key: vcpkg-${{ matrix.triplet }}-0 # Increase the number whenever dependencies are modified
@@ -85,7 +85,7 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
+        curl -L https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
         ${{ github.workspace }}/build/${{ matrix.executable }} ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.pmtiles --verbose
         ${{ github.workspace }}/build/${{ matrix.executable }} ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose --store /tmp/store
 
@@ -109,7 +109,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install Linux dependencies
       if: ${{ matrix.os == 'ubuntu-22.04' }}
@@ -129,7 +129,7 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        curl http://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
+        curl -L https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf -o ${{ env.AREA }}.osm.pbf
         ./tilemaker ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.pmtiles --verbose
         ./tilemaker ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --verbose --store /tmp/store
 
@@ -140,10 +140,10 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Download PBF file
-      run: curl http://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
+      run: curl -L https://download.geofabrik.de/europe/${AREA}-latest.osm.pbf -o ${AREA}.osm.pbf
 
     - name: Build openmaptiles-compatible mbtiles files of given area
       uses: ./
@@ -163,10 +163,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Log in to the Container registry
-        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -174,12 +174,12 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build Docker image
-        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        uses: docker/build-push-action@v6
         if: ${{ github.ref != 'refs/heads/master'}}
         with:
           context: .
@@ -187,7 +187,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
       - name: Build and push Docker image
-        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        uses: docker/build-push-action@v6
         if: ${{ github.ref == 'refs/heads/master'}}
         with:
           context: .
