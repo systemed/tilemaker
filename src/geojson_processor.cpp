@@ -261,7 +261,7 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 			std::string key = it->name.GetString();
 			if (!layer.useColumn(key)) continue;
 			if (it->value.IsString()) { 
-				attributeStore.addAttribute(attributes, key, it->value.GetString(), 0);
+				attributeStore.addAttribute(attributes, key, static_cast<const std::string&>(it->value.GetString()), 0);
 				layer.attributeMap[key] = 0;
 			} else if (it->value.IsBool()) { 
 				attributeStore.addAttribute(attributes, key, it->value.GetBool(), 0);
