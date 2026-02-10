@@ -6,10 +6,8 @@
 #include <string>
 #include <map>
 #include <memory>
-#include "geom.h"
 #include "coordinates.h"
 #include "attribute_store.h"
-#include "osm_store.h"
 #include <vtzero/builder.hpp>
 
 enum OutputGeometryType : unsigned int { POINT_, LINESTRING_, MULTILINESTRING_, POLYGON_ };
