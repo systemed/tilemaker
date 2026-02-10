@@ -129,6 +129,7 @@ tilemaker: \
 	src/tag_map.o \
 	src/tile_coordinates_set.o \
 	src/tile_data.o \
+	src/tile_sorting.o \
 	src/tilemaker.o \
 	src/tile_worker.o \
 	src/visvalingam.o \
