@@ -16,7 +16,7 @@
 #define stat64 __stat64
 #endif
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || !defined (__GLIBC__)
 #define stat64 stat
 #endif
 
