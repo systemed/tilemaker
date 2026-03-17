@@ -1,4 +1,4 @@
--- Data processing based on openmaptiles.org schema
+-- Data processing based on openmaptiles.org schema v3.15 (July 2024)
 -- https://openmaptiles.org/schema/
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
@@ -30,6 +30,11 @@ function Set(list)
 end
 
 -- Meters per pixel if tile is 256x256
+ZRES0 = 156542.97
+ZRES1  = 78271.48
+ZRES2  = 39135.74
+ZRES3  = 19567.87
+ZRES4  = 9783.94
 ZRES5  = 4891.97
 ZRES6  = 2445.98
 ZRES7  = 1222.99
@@ -47,8 +52,8 @@ INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
-pavedValues = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
-unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
+unpavedValues = Set { "unpaved", "artificial_turf", "clay", "compacted", "crushed_limestone", "dirt", "dirt/sand", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "rock", "rocky", "rocks", "salt", "sand", "shells", "snow", "soil", "stepping_stones", "stone", "woodchips" }
+pavedValues = Set { "paved", "acrylic", "asphalt", "brick", "bricks", "cement", "chipseal", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "granite", "interlock", "metal", "metal_grid", "paving_stones", "plastic", "rubber", "sett", "tartan", "unhewn_cobblestone", "wood", "grade1" }
 
 -- Process node tags
 
@@ -64,7 +69,7 @@ function capitalLevel(capital)
 	if capital_al == 0 then
 		return nil
 	end
-        return capital_al
+	return capital_al
 end
 
 -- Calculate rank for place nodes
@@ -96,7 +101,7 @@ function calcRank(place, population, capital_al)
 	end
 	if place ~= "city" and place ~= "town" then
 		return nil
-        end
+	end
 	if population > 3 * 10^6 then
 		return 1
 	elseif population > 1 * 10^6 then
@@ -200,7 +205,7 @@ function node_function()
 
 	-- Write 'mountain_peak' and 'water_name'
 	local natural = Find("natural")
-	if natural == "peak" or natural == "volcano" then
+	if natural == "peak" or natural == "volcano" or natural == "saddle" then
 		Layer("mountain_peak", false)
 		SetEleAttributes()
 		AttributeInteger("rank", 1)
@@ -217,10 +222,12 @@ end
 
 -- Process way tags
 
-majorRoadValues = Set { "motorway", "trunk", "primary" }
-z9RoadValues  = Set { "secondary", "motorway_link", "trunk_link" }
-z10RoadValues  = Set { "primary_link", "secondary_link" }
-z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
+z4RoadValues = Set { "motorway" }
+z5RoadValues = Set { "trunk" }
+z7RoadValues = Set { "primary" }
+z9RoadValues = Set { "secondary", "motorway_link", "trunk_link" }
+z10RoadValues = Set { "primary_link", "secondary_link" }
+z11RoadValues = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 -- On zoom 12, various road classes are merged into "minor"
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
@@ -228,36 +235,43 @@ z13RoadValues     = Set { "track", "service" }
 manMadeRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
-unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
-landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital",
-                        "railway", "cemetery", "military", "residential", "commercial", "industrial",
-                        "retail", "stadium", "pitch", "playground", "theme_park", "bus_station", "zoo" }
+-- landuse "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
+landuseKeys     = Set { "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
+                        "bus_station", "school", "university", "kindergarten", "college", "library", "hospital", "grave_yard", -- from amenity tag
+                        "stadium", "pitch", "playground", "track", --from leisure tag
+                        "theme_park", "zoo", --from tourism tag
+                        "suburb", "quarter", "neighbourhood", --from place tag
+                        "dam" --from waterway tag
+                        }
+-- landcover "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
+-- (wetland subclasses are not listed here but are managed below, in "Set 'landcover'" part)
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
                     farmland="farmland", farm="farmland", orchard="farmland", vineyard="farmland", plant_nursery="farmland",
                     glacier="ice", ice_shelf="ice",
                     bare_rock="rock", scree="rock",
-                    fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
+                    flowerbed="grass", fell="grass", grassland="grass", grass="grass", heath="grass", meadow="grass", allotments="grass", park="grass", village_green="grass", recreation_ground="grass", scrub="grass", shrubbery="grass", tundra="grass", garden="grass", golf_course="grass", park="grass" }
 
 -- POI key/value pairs: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/mapping.yaml
 poiTags         = { aerialway = Set { "station" },
-					amenity = Set { "arts_centre", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "cinema", "clinic", "college", "community_centre", "courthouse", "dentist", "doctors", "embassy", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace", "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "swimming_pool", "taxi", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket" },
-					barrier = Set { "bollard", "border_control", "cycle_barrier", "gate", "lift_gate", "sally_port", "stile", "toll_booth" },
+					amenity = Set { "arts_centre", "bank", "bar", "bbq", "bicycle_parking", "bicycle_rental", "biergarten", "bus_station", "cafe", "car_club", "car_rental", "car_sharing", "car_wash", "casino", "charging_station", "cinema", "clinic", "college", "conference_centre", "convention_center", "community_centre", "community_center", "courthouse", "crematorium", "drinking_water", "dentist", "doctors", "embassy", "emergency_phone", "fast_food", "ferry_terminal", "fire_station", "food_court", "fuel", "grave_yard", "hospital", "ice_cream", "kindergarten", "library", "marketplace","nightclub" , "motorcycle_parking", "nightclub", "nursing_home", "parking", "pharmacy", "place_of_worship", "police", "post_box", "post_office", "prison", "pub", "public_building", "recycling", "restaurant", "school", "shelter", "supermarket", "swimming_pool", "taxi", "telephone",  "car_wash", "telephone", "theatre", "toilets", "townhall", "university", "veterinary", "waste_basket","zoo" },
+					barrier = Set { "bollard", "border_control", "cycle_barrier", "gate", "lift_gate", "sally_port", "stile", "toll_booth" ,"block","kissing_gate" ,"swing_gate","bus_trap" },
 					building = Set { "dormitory" },
 					highway = Set { "bus_stop" },
-					historic = Set { "monument", "castle", "ruins" },
-					landuse = Set { "basin", "brownfield", "cemetery", "reservoir", "winter_sports" },
-					leisure = Set { "dog_park", "escape_game", "garden", "golf_course", "ice_rink", "hackerspace", "marina", "miniature_golf", "park", "pitch", "playground", "sports_centre", "stadium", "swimming_area", "swimming_pool", "water_park" },
+					natural = Set {"bay", "beach", "cape", "cave_entrance", "cliff", "glacier", "peak", "rock", "spring", "stream", "volcano", "waterfall", "wetland"},
+					historic = Set { "monument", "castle", "ruins","memorial","archaeological_site" },
+					landuse = Set { "basin", "brownfield", "cemetery", "military", "reservoir", "winter_sports", "village_green"},
+					leisure = Set { "bowling_alley", "dog_park", "escape_game", "garden", "golf_course", "ice_rink", "hackerspace", "marina", "miniature_golf", "park", "pitch", "playground", "sports_centre", "stadium", "swimming_area", "swimming_pool", "water_park" },
+					office = Set { "accountant", "advertising_agency", "architect", "association", "bail_bond_agent", "charity", "company", "construction_company", "consulting", "cooperative", "courier", "coworking", "diplomatic", "educational_institution", "employment_agency", "energy_supplier", "engineer", "estate_agent", "financial", "financial_advisor", "forestry", "foundation", "geodesist", "government", "graphic_design", "guide", "harbour_master", "health_insurance", "insurance", "interior_design", "it", "lawyer", "logistics", "marketing", "moving_company", "newspaper", "ngo", "notary", "physician", "political_party", "private_investigator", "property_management", "publisher", "quango", "religion", "research", "security", "surveyor", "tax_advisor", "taxi", "telecommunication", "therapist", "translator", "travel_agent", "tutoring", "union", "university", "water_utility", "web_design", "wedding_planner" },
 					railway = Set { "halt", "station", "subway_entrance", "train_station_entrance", "tram_stop" },
-					shop = Set { "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
-					sport = Set { "american_football", "archery", "athletics", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
-					tourism = Set { "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
-					waterway = Set { "dock" } }
+					shop = Set { "boat","car_rental","car_wrecker","fashion", "accessories", "alcohol", "antiques", "art", "bag", "bakery", "beauty", "bed", "beverages", "bicycle", "books", "boutique", "butcher", "camera", "car", "car_repair", "car_parts", "carpet", "charity", "chemist", "chocolate", "clothes", "coffee", "computer", "confectionery", "convenience", "copyshop", "cosmetics", "deli", "delicatessen", "department_store", "doityourself", "dry_cleaning", "electronics", "erotic", "fabric", "florist", "frozen_food", "furniture", "garden_centre", "general", "gift", "greengrocer", "hairdresser", "hardware", "hearing_aids", "hifi", "ice_cream", "interior_decoration", "jewelry", "kiosk", "lamps", "laundry", "locksmith", "mall", "massage", "mobile_phone", "motorcycle", "music", "musical_instrument", "newsagent", "optician", "outdoor", "paint", "perfume", "perfumery", "pet", "photo", "second_hand", "shoes", "sports", "stationery", "supermarket", "tailor", "tattoo", "ticket", "tobacco", "toys", "travel_agency", "video", "video_games", "watches", "weapons", "wholesale", "wine" },
+					sport = Set { "american_football", "archery", "athletics","tyres", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
+					tourism = Set {"wilderness_hut","wine_cellar", "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
+					waterway = Set { "dock","waterfall" } }
 
 -- POI "class" values: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/poi.yaml
 poiClasses      = { townhall="town_hall", public_building="town_hall", courthouse="town_hall", community_centre="town_hall",
@@ -272,14 +286,14 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					books="library", library="library",
 					university="college", college="college",
 					hotel="lodging", motel="lodging", bed_and_breakfast="lodging", guest_house="lodging", hostel="lodging", chalet="lodging", alpine_hut="lodging", dormitory="lodging",
-					chocolate="ice_cream", confectionery="ice_cream",
-					post_box="post",  post_office="post",
+					ice_cream="ice_cream",
+					post_box="post",  post_office="post", parcel_locker="post",
 					cafe="cafe",
 					school="school",  kindergarten="school",
 					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",
 					bar="bar", nightclub="bar",
 					marina="harbor", dock="harbor",
-					car="car", car_repair="car", taxi="car",
+					car="car", car_repair="car", car_parts="car", taxi="car",
 					hospital="hospital", nursing_home="hospital",  clinic="hospital",
 					grave_yard="cemetery", cemetery="cemetery",
 					attraction="attraction", viewpoint="attraction",
@@ -289,15 +303,24 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					art="art_gallery", artwork="art_gallery", gallery="art_gallery", arts_centre="art_gallery",
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
-					castle="castle", ruins="castle" }
+					castle="castle", ruins="castle",
+					atm="atm",
+					fuel="fuel", charging_station="fuel"}
+-- POI "class" keys: list of OSM keys that can be used for POI classification
+poiTagsAsClass  = { aerialway = "aerialway",
+					office = "office",
+					railway = "railway",
+					shop = "shop"}
 -- POI classes where class is the matching value and subclass is the value of a separate key
 poiSubClasses = { information="information", place_of_worship="religion", pitch="sport" }
 poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, college=6,
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
-waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock" }
+waterClasses    = Set { "river", "stream", "canal", "ditch", "drain", "pond", "basin", "wastewater" }
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
+waterNatural = Set {"water", "bay" , "spring" }
+waterLanduse = Set {"basin", "reservoir", "salt_pond" }
 
 -- Scan relations for use in ways
 
@@ -314,6 +337,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
+	local accessMinzoom = 9
 	local layer = tonumber(Find("layer")) or 0
 	AttributeInteger("layer", math.floor(layer), accessMinzoom)
 	SetBrunnelAttributes()
@@ -328,7 +352,6 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	-- Service
 	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
 
-	local accessMinzoom = 9
 	if is_road then
 		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
@@ -337,13 +360,9 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if oneway == "-1" then
 			-- **** TODO
 		end
-		local surface = Find("surface")
 		local surfaceMinzoom = 12
-		if pavedValues[surface] then
-			Attribute("surface", "paved", surfaceMinzoom)
-		elseif unpavedValues[surface] then
-			Attribute("surface", "unpaved", surfaceMinzoom)
-		end
+		local surface = GetSurface()
+		if surface ~= "" then Attribute("surface", surface, surfaceMinzoom) end
 		if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
 		if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
 		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
@@ -352,6 +371,18 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
 		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
 	end
+end
+
+function GetSurface()
+	local surface = split(Find("surface"), ";")
+	-- prioritize unpaved
+	for _, surfaceEntry in ipairs(surface) do
+		if unpavedValues[surfaceEntry] then return "unpaved" end
+	end
+	for _, surfaceEntry in ipairs(surface) do
+		if pavedValues[surfaceEntry] then return "paved" end
+	end
+	return ""
 end
 
 -- Process way tags
@@ -424,7 +455,7 @@ function way_function()
 	-- https://openmaptiles.org/schema/#boundary
 	if isBoundary and not (Find("maritime")=="yes") then
 		local mz = 0
-		if     admin_level>=3 and admin_level<5 then mz=4
+		if     admin_level>=3 and admin_level<5 then mz=3
 		elseif admin_level>=5 and admin_level<7 then mz=8
 		elseif admin_level==7 then mz=10
 		elseif admin_level>=8 then mz=12
@@ -457,7 +488,7 @@ function way_function()
 	-- Roads ('transportation' and 'transportation_name')
 	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
-		local surface = Find("surface")
+		local surface = GetSurface()
 		local is_area = (public_transport == "platform" or Find("area")=="yes") and is_closed
 
 		local h = highway
@@ -473,20 +504,23 @@ function way_function()
 			under_construction = true
 		end
 		local minzoom = INVALID_ZOOM
-		if majorRoadValues[h]        then minzoom = 4
-		elseif h == "trunk"          then minzoom = 5
-		elseif highway == "primary"  then minzoom = 7
+		if z4RoadValues[h]           then minzoom = 4
+		elseif z5RoadValues[h]       then minzoom = 5
+		elseif z7RoadValues[h]       then minzoom = 7
 		elseif z9RoadValues[h]       then minzoom = 9
 		elseif z10RoadValues[h]      then minzoom = 10
 		elseif z11RoadValues[h]      then minzoom = 11
-		elseif z12MinorRoadValues[h] then
-			minzoom = 12
-			subclass = h
-			h = "minor"
+		elseif z12MinorRoadValues[h] then minzoom = 12
 		elseif z12OtherRoadValues[h] then minzoom = 12
 		elseif z13RoadValues[h]      then minzoom = 13
-		elseif pathValues[h]         then
-			minzoom = 14
+		elseif pathValues[h]         then minzoom = 14
+		end
+		
+		if z12MinorRoadValues[h] then
+			subclass = h
+			h = "minor"
+		end
+		if pathValues[h] then
 			subclass = h
 			h = "path"
 		end
@@ -584,7 +618,7 @@ function way_function()
 	end
 
 	-- 'Ferry'
-	if route=="ferry" then
+	if route=="ferry" or highway=="shipway" then
 		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, is_closed)
 
 		if HasNames() then
@@ -605,16 +639,16 @@ function way_function()
 
 	-- 'aerodrome_label'
 	if aeroway=="aerodrome" then
-	 	LayerAsCentroid("aerodrome_label")
-	 	SetNameAttributes()
-	 	Attribute("iata", Find("iata"))
-  		SetEleAttributes()
- 	 	Attribute("icao", Find("icao"))
+		LayerAsCentroid("aerodrome_label")
+		SetNameAttributes()
+		Attribute("iata", Find("iata"))
+		SetEleAttributes()
+		Attribute("icao", Find("icao"))
 
- 	 	local aerodrome = Find(aeroway)
- 	 	local class
- 	 	if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
- 	 	Attribute("class", class)
+		local aerodrome = Find(aeroway)
+		local class
+		if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
+		Attribute("class", class)
 	end
 
 	-- Set 'waterway' and associated
@@ -640,6 +674,7 @@ function way_function()
 			Layer("water_name_detail", false)
 			MinZoom(14)
 		end
+		if Find("intermittent")=="yes" then AttributeNumeric("intermittent", 1) else AttributeNumeric("intermittent", 0) end
 		Attribute("class", waterway)
 		SetNameAttributes()
 	end
@@ -656,34 +691,40 @@ function way_function()
 		LayerAsCentroid("housenumber")
 		Attribute("housenumber", housenumber)
 	end
-
-	-- Set 'water'
-	if natural=="water" or leisure=="swimming_pool" or landuse=="reservoir" or landuse=="basin" or waterClasses[waterway] then
+	
+	-- water mapping : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
+	if waterNatural[natural] or waterLanduse[landuse] or leisure=="swimming_pool" or waterway=="dock" or waterClasses[water] then
 		if Find("covered")=="yes" or not is_closed then return end
-		local class="lake"; if waterway~="" then class="river" end
+		local class="lake"
+		if     waterway=="dock" then class="dock"
+		elseif leisure=="swimming_pool" then class="swimming_pool"
+		elseif landuse=="salt_pond" or water=="pond" or water=="basin" or water=="wastewater" then class="pond"
+		elseif waterClasses[water] then class="river" end --when water==river, stream, canal, ditch, drain
+
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
-		SetMinZoomByArea(way)
+		SetMinZoomByArea()
 		Attribute("class",class)
 
-		if Find("intermittent")=="yes" then Attribute("intermittent",1) end
+		if Find("intermittent")=="yes" then Attribute("intermittent",1) else Attribute("intermittent",0) end
 		-- we only want to show the names of actual lakes not every man-made basin that probably doesn't even have a name other than "basin"
 		-- examples for which we don't want to show a name:
 		--  https://www.openstreetmap.org/way/25958687
 		--  https://www.openstreetmap.org/way/27201902
 		--  https://www.openstreetmap.org/way/25309134
 		--  https://www.openstreetmap.org/way/24579306
-		if Holds("name") and natural=="water" and water ~= "basin" and water ~= "wastewater" then
+		if Holds("name") then
 			LayerAsCentroid("water_name_detail")
 			SetNameAttributes()
 			SetMinZoomByArea()
 			Attribute("class", class)
+			if Find("intermittent")=="yes" then Attribute("intermittent",1) end
 		end
 
 		return -- in case we get any landuse processing
 	end
 
-	-- Set 'landcover' (from landuse, natural, leisure)
+	-- Set 'landcover' (from landuse, natural, leisure, wetland)
 	local l = landuse
 	if l=="" then l=natural end
 	if l=="" then l=leisure end
@@ -695,10 +736,12 @@ function way_function()
 		else Attribute("subclass", l) end
 		write_name = true
 
-	-- Set 'landuse'
+	-- Set 'landuse' (from landuse, amenity, leisure, tourism, place, waterway)
 	else
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
+		if l=="" then l=place end
+		if l=="" then l=waterway end
 		if landuseKeys[l] then
 			Layer("landuse", true)
 			Attribute("class", l)
@@ -712,8 +755,19 @@ function way_function()
 
 	-- Parks
 	-- **** name?
-	if     boundary=="national_park" then Layer("park",true); Attribute("class",boundary); SetNameAttributes()
-	elseif leisure=="nature_reserve" then Layer("park",true); Attribute("class",leisure ); SetNameAttributes() end
+	if boundary=="national_park" or boundary=="protected_area" or leisure=="nature_reserve" then
+		Layer("park",true)
+		if leisure=="nature_reserve" then Attribute("class", leisure)
+		elseif boundary=="national_park" then Attribute("class", boundary)
+		elseif boundary=="protected_area" then
+			local protection_title = Find("protection_title")
+			if protection_title~="" then
+				class = protection_title:gsub(" ", "_"):lower()
+				Attribute("class", class)
+			end
+		end
+		SetNameAttributes()
+	end
 
 	-- POIs ('poi' and 'poi_detail')
 	local rank, class, subclass = GetPOIRank()
@@ -746,6 +800,8 @@ end
 -- ==========================================================
 -- Common functions
 
+restaurant_classes = Set { "restaurant", "fast_food" }
+
 -- Write a way centroid to POI layer
 function WritePOI(class,subclass,rank)
 	local layer = "poi"
@@ -755,6 +811,9 @@ function WritePOI(class,subclass,rank)
 	AttributeInteger("rank", rank)
 	Attribute("class", class)
 	Attribute("subclass", subclass)
+	if restaurant_classes[class] then
+		Attribute("cuisine", Find("cuisine"))
+	end
 	-- layer defaults to 0
 	local layer = tonumber(Find("layer")) or 0
 	AttributeInteger("layer", math.floor(layer))
@@ -784,6 +843,10 @@ end
 function SetNameAttributes()
 	local name = Find("name"), iname
 	local main_written = name
+	if name then 
+		Attribute("name", name)
+		Attribute("name:latin", name)
+	end
 	-- if we have a preferred language, then write that (if available), and additionally write the base name tag
 	if preferred_language and Holds("name:"..preferred_language) then
 		iname = Find("name:"..preferred_language)
@@ -791,26 +854,26 @@ function SetNameAttributes()
 		if iname~=name and default_language_attribute then
 			Attribute(default_language_attribute, name)
 		else main_written = iname end
-	else
+	elseif name ~= "" then
 		Attribute(preferred_language_attribute, name)
 	end
 	-- then set any additional languages
 	for i,lang in ipairs(additional_languages) do
 		iname = Find("name:"..lang)
 		if iname=="" then iname=name end
-		if iname~=main_written then Attribute("name:"..lang, iname) end
+		if iname~=main_written and iname ~= "" then Attribute("name:"..lang, iname) end
 	end
 end
 
 -- Set ele and ele_ft on any object
 function SetEleAttributes()
-    local ele = Find("ele")
+	local ele = Find("ele")
 	if ele ~= "" then
 		local meter = math.floor(tonumber(ele) or 0)
 		local feet = math.floor(meter * 3.2808399)
 		AttributeNumeric("ele", meter)
 		AttributeNumeric("ele_ft", feet)
-    end
+	end
 end
 
 function SetBrunnelAttributes()
@@ -828,7 +891,12 @@ end
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
+	if     minzoom <= 1 and area>ZRES0^2  then MinZoom(1)
+	elseif minzoom <= 2 and area>ZRES1^2  then MinZoom(2)
+	elseif minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
+	elseif minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
+	elseif minzoom <= 5 and area>ZRES4^2  then MinZoom(5)
+	elseif minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
 	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
 	elseif minzoom <= 8 and area>ZRES7^2  then MinZoom(8)
 	elseif minzoom <= 9 and area>ZRES8^2  then MinZoom(9)
@@ -848,7 +916,7 @@ function GetPOIRank()
 	for k,list in pairs(poiTags) do
 		if list[Find(k)] then
 			v = Find(k)	-- k/v are the OSM tag pair
-			class = poiClasses[v] or k
+			class = poiClasses[v] or poiTagsAsClass[k] or v
 			rank  = poiClassRanks[class] or 25
 			subclassKey = poiSubClasses[v]
 			if subclassKey then
@@ -862,6 +930,10 @@ function GetPOIRank()
 	-- Catch-all for shops
 	local shop = Find("shop")
 	if shop~="" then return poiClassRanks['shop'], "shop", shop end
+
+	-- Catch-all for offices
+	local office = Find("office")
+	if office~="" then return poiClassRanks['office'], "office", office end
 
 	-- Nothing found
 	return nil,nil,nil
