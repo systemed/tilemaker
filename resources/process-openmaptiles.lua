@@ -1,4 +1,4 @@
--- Data processing based on openmaptiles.org schema
+-- Data processing based on openmaptiles.org schema v3.15 (July 2024)
 -- https://openmaptiles.org/schema/
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
@@ -238,10 +238,16 @@ linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondar
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
-landuseKeys     = Set { "school", "university", "kindergarten", "college", "library", "hospital","grave_yard",
-                        "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial",
-                        "garages", "retail", "stadium", "pitch", "playground", "track", "theme_park", "bus_station", "zoo",
-                        "suburb", "quarter", "neighbourhood", "dam" }
+-- landuse "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
+landuseKeys     = Set { "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
+                        "bus_station", "school", "university", "kindergarten", "college", "library", "hospital", "grave_yard", -- from amenity tag
+                        "stadium", "pitch", "playground", "track", --from leisure tag
+                        "theme_park", "zoo", --from tourism tag
+                        "suburb", "quarter", "neighbourhood", --from place tag
+                        "dam" --from waterway tag
+                        }
+-- landcover "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
+-- (wetland subclasses are not listed here but are managed below, in "Set 'landcover'" part)
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
                     beach="sand", sand="sand", dune="sand",
@@ -280,14 +286,14 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					books="library", library="library",
 					university="college", college="college",
 					hotel="lodging", motel="lodging", bed_and_breakfast="lodging", guest_house="lodging", hostel="lodging", chalet="lodging", alpine_hut="lodging", dormitory="lodging",
-					chocolate="ice_cream", confectionery="ice_cream",
-					post_box="post",  post_office="post",
+					ice_cream="ice_cream",
+					post_box="post",  post_office="post", parcel_locker="post",
 					cafe="cafe",
 					school="school",  kindergarten="school",
 					alcohol="alcohol_shop",  beverages="alcohol_shop",  wine="alcohol_shop",
 					bar="bar", nightclub="bar",
 					marina="harbor", dock="harbor",
-					car="car", car_repair="car", taxi="car",
+					car="car", car_repair="car", car_parts="car", taxi="car",
 					hospital="hospital", nursing_home="hospital",  clinic="hospital",
 					grave_yard="cemetery", cemetery="cemetery",
 					attraction="attraction", viewpoint="attraction",
@@ -297,7 +303,9 @@ poiClasses      = { townhall="town_hall", public_building="town_hall", courthous
 					art="art_gallery", artwork="art_gallery", gallery="art_gallery", arts_centre="art_gallery",
 					bag="clothing_store", clothes="clothing_store",
 					swimming_area="swimming", swimming="swimming",
-					castle="castle", ruins="castle" }
+					castle="castle", ruins="castle",
+					atm="atm",
+					fuel="fuel", charging_station="fuel"}
 -- POI "class" keys: list of OSM keys that can be used for POI classification
 poiTagsAsClass  = { aerialway = "aerialway",
 					office = "office",
@@ -309,8 +317,10 @@ poiClassRanks   = { hospital=1, railway=2, bus=3, attraction=4, harbor=5, colleg
 					school=7, stadium=8, zoo=9, town_hall=10, campsite=11, cemetery=12,
 					park=13, library=14, police=15, post=16, golf=17, shop=18, grocery=19,
 					fast_food=20, clothing_store=21, bar=22 }
-waterClasses    = Set { "river", "riverbank", "stream", "canal", "drain", "ditch", "dock", "pond", "basin", "wastewater"}
+waterClasses    = Set { "river", "stream", "canal", "ditch", "drain", "pond", "basin", "wastewater" }
 waterwayClasses = Set { "stream", "river", "canal", "drain", "ditch" }
+waterNatural = Set {"water", "bay" , "spring" }
+waterLanduse = Set {"basin", "reservoir", "salt_pond" }
 
 -- Scan relations for use in ways
 
@@ -608,7 +618,7 @@ function way_function()
 	end
 
 	-- 'Ferry'
-	if route=="ferry" then
+	if route=="ferry" or highway=="shipway" then
 		write_to_transportation_layer(9, "ferry", nil, false, nil, false, false, is_closed)
 
 		if HasNames() then
@@ -681,17 +691,17 @@ function way_function()
 		LayerAsCentroid("housenumber")
 		Attribute("housenumber", housenumber)
 	end
-
-	-- Set 'water'
-	water_natural = Set {"water", "bay" , "spring" }
-	water_landuse = Set {"basin", "reservoir", "salt_pond" }
 	
-	if water_natural[natural] or leisure=="swimming_pool" or waterway == "dock" or water_landuse[landuse] or waterClasses[water] then
-		-- if Find("covered")=="yes" or not is_closed then return end
-		local class="lake"; 
-		if waterway~="" then class="river" end
-		if water~="" then class=water end
-		-- if class=="lake" and Find("wikidata")=="Q192770" then return end
+	-- water mapping : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
+	if waterNatural[natural] or waterLanduse[landuse] or leisure=="swimming_pool" or waterway=="dock" or waterClasses[water] then
+		if Find("covered")=="yes" or not is_closed then return end
+		local class="lake"
+		if     waterway=="dock" then class="dock"
+		elseif leisure=="swimming_pool" then class="swimming_pool"
+		elseif landuse=="salt_pond" or water=="pond" or water=="basin" or water=="wastewater" then class="pond"
+		elseif waterClasses[water] then class="river" end --when water==river, stream, canal, ditch, drain
+
+		if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
 		SetMinZoomByArea()
 		Attribute("class",class)
@@ -714,7 +724,7 @@ function way_function()
 		return -- in case we get any landuse processing
 	end
 
-	-- Set 'landcover' (from landuse, natural, leisure)
+	-- Set 'landcover' (from landuse, natural, leisure, wetland)
 	local l = landuse
 	if l=="" then l=natural end
 	if l=="" then l=leisure end
@@ -726,7 +736,7 @@ function way_function()
 		else Attribute("subclass", l) end
 		write_name = true
 
-	-- Set 'landuse'
+	-- Set 'landuse' (from landuse, amenity, leisure, tourism, place, waterway)
 	else
 		if l=="" then l=amenity end
 		if l=="" then l=tourism end
@@ -745,8 +755,19 @@ function way_function()
 
 	-- Parks
 	-- **** name?
-	if     boundary=="national_park" then Layer("park",true); Attribute("class",boundary); SetNameAttributes()
-	elseif leisure=="nature_reserve" then Layer("park",true); Attribute("class",leisure ); SetNameAttributes() end
+	if boundary=="national_park" or boundary=="protected_area" or leisure=="nature_reserve" then
+		Layer("park",true)
+		if leisure=="nature_reserve" then Attribute("class", leisure)
+		elseif boundary=="national_park" then Attribute("class", boundary)
+		elseif boundary=="protected_area" then
+			local protection_title = Find("protection_title")
+			if protection_title~="" then
+				class = protection_title:gsub(" ", "_"):lower()
+				Attribute("class", class)
+			end
+		end
+		SetNameAttributes()
+	end
 
 	-- POIs ('poi' and 'poi_detail')
 	local rank, class, subclass = GetPOIRank()
@@ -909,6 +930,10 @@ function GetPOIRank()
 	-- Catch-all for shops
 	local shop = Find("shop")
 	if shop~="" then return poiClassRanks['shop'], "shop", shop end
+
+	-- Catch-all for offices
+	local office = Find("office")
+	if office~="" then return poiClassRanks['office'], "office", office end
 
 	-- Nothing found
 	return nil,nil,nil
