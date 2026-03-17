@@ -65,7 +65,8 @@ set(CMAKE_CXX_STANDARD 17)
 if(!TM_VERSION)
 	execute_process(
 		COMMAND git describe --tags --abbrev=0
-		OUTPUT_VARIABLE tm_version)
+		OUTPUT_VARIABLE tm_version
+		OUTPUT_STRIP_TRAILING_WHITESPACE)
 	add_compile_definitions(TM_VERSION=${tm_version})
 endif()
 
@@ -73,10 +74,16 @@ if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
 	add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
 	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI -D__restrict__=__restrict)
-  	set(THREAD_LIB "")
+	set(THREAD_LIB "")
 else()
 	find_package(SQLite3 REQUIRED)
-  	set(THREAD_LIB pthread)
+	if(NOT TARGET SQLite::SQLite3)
+	  add_library(SQLite::SQLite3 IMPORTED UNKNOWN)
+	  set_target_properties(SQLite::SQLite3 PROPERTIES
+	    IMPORTED_LOCATION "${SQLite3_LIBRARIES}"
+	    INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIRS}")
+	endif()
+	set(THREAD_LIB pthread)
 endif()
 
 file(GLOB tilemaker_src_files
