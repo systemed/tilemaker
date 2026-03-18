@@ -30,6 +30,11 @@ function Set(list)
 end
 
 -- Meters per pixel if tile is 256x256
+ZRES0 = 156542.97
+ZRES1  = 78271.48
+ZRES2  = 39135.74
+ZRES3  = 19567.87
+ZRES4  = 9783.94
 ZRES5  = 4891.97
 ZRES6  = 2445.98
 ZRES7  = 1222.99
@@ -47,8 +52,8 @@ INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
-pavedValues = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
-unpavedValues = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
+unpavedValues = Set { "unpaved", "artificial_turf", "clay", "compacted", "crushed_limestone", "dirt", "dirt/sand", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "rock", "rocky", "rocks", "salt", "sand", "shells", "snow", "soil", "stepping_stones", "stone", "woodchips" }
+pavedValues = Set { "paved", "acrylic", "asphalt", "brick", "bricks", "cement", "chipseal", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "granite", "interlock", "metal", "metal_grid", "paving_stones", "plastic", "rubber", "sett", "tartan", "unhewn_cobblestone", "wood", "grade1" }
 
 -- Process node tags
 
@@ -64,7 +69,7 @@ function capitalLevel(capital)
 	if capital_al == 0 then
 		return nil
 	end
-        return capital_al
+	return capital_al
 end
 
 -- Calculate rank for place nodes
@@ -96,7 +101,7 @@ function calcRank(place, population, capital_al)
 	end
 	if place ~= "city" and place ~= "town" then
 		return nil
-        end
+	end
 	if population > 3 * 10^6 then
 		return 1
 	elseif population > 1 * 10^6 then
@@ -217,10 +222,12 @@ end
 
 -- Process way tags
 
-majorRoadValues = Set { "motorway", "trunk", "primary" }
-z9RoadValues  = Set { "secondary", "motorway_link", "trunk_link" }
-z10RoadValues  = Set { "primary_link", "secondary_link" }
-z11RoadValues   = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
+z4RoadValues = Set { "motorway" }
+z5RoadValues = Set { "trunk" }
+z7RoadValues = Set { "primary" }
+z9RoadValues = Set { "secondary", "motorway_link", "trunk_link" }
+z10RoadValues = Set { "primary_link", "secondary_link" }
+z11RoadValues = Set { "tertiary", "tertiary_link", "busway", "bus_guideway" }
 -- On zoom 12, various road classes are merged into "minor"
 z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street" }
 z12OtherRoadValues = Set { "raceway" }
@@ -228,8 +235,6 @@ z13RoadValues     = Set { "track", "service" }
 manMadeRoadValues = Set { "pier", "bridge" }
 pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
-pavedValues     = Set { "paved", "asphalt", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "metal", "paving_stones", "sett", "unhewn_cobblestone", "wood" }
-unpavedValues   = Set { "unpaved", "compacted", "dirt", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "salt", "sand", "snow", "woodchips" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
@@ -314,6 +319,7 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	if subclass and subclass ~= "" then
 		Attribute("subclass", subclass)
 	end
+	local accessMinzoom = 9
 	local layer = tonumber(Find("layer")) or 0
 	AttributeInteger("layer", math.floor(layer), accessMinzoom)
 	SetBrunnelAttributes()
@@ -328,7 +334,6 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 	-- Service
 	if (is_rail or highway_class == "service") and (service and service ~="") then Attribute("service", service) end
 
-	local accessMinzoom = 9
 	if is_road then
 		local oneway = Find("oneway")
 		if oneway == "yes" or oneway == "1" then
@@ -337,13 +342,9 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if oneway == "-1" then
 			-- **** TODO
 		end
-		local surface = Find("surface")
 		local surfaceMinzoom = 12
-		if pavedValues[surface] then
-			Attribute("surface", "paved", surfaceMinzoom)
-		elseif unpavedValues[surface] then
-			Attribute("surface", "unpaved", surfaceMinzoom)
-		end
+		local surface = GetSurface()
+		if surface ~= "" then Attribute("surface", surface, surfaceMinzoom) end
 		if Holds("access") then Attribute("access", Find("access"), accessMinzoom) end
 		if Holds("bicycle") then Attribute("bicycle", Find("bicycle"), accessMinzoom) end
 		if Holds("foot") then Attribute("foot", Find("foot"), accessMinzoom) end
@@ -352,6 +353,18 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
 		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
 	end
+end
+
+function GetSurface()
+	local surface = split(Find("surface"), ";")
+	-- prioritize unpaved
+	for _, surfaceEntry in ipairs(surface) do
+		if unpavedValues[surfaceEntry] then return "unpaved" end
+	end
+	for _, surfaceEntry in ipairs(surface) do
+		if pavedValues[surfaceEntry] then return "paved" end
+	end
+	return ""
 end
 
 -- Process way tags
@@ -424,7 +437,7 @@ function way_function()
 	-- https://openmaptiles.org/schema/#boundary
 	if isBoundary and not (Find("maritime")=="yes") then
 		local mz = 0
-		if     admin_level>=3 and admin_level<5 then mz=4
+		if     admin_level>=3 and admin_level<5 then mz=3
 		elseif admin_level>=5 and admin_level<7 then mz=8
 		elseif admin_level==7 then mz=10
 		elseif admin_level>=8 then mz=12
@@ -457,7 +470,7 @@ function way_function()
 	-- Roads ('transportation' and 'transportation_name')
 	if highway ~= "" or public_transport == "platform" then
 		local access = Find("access")
-		local surface = Find("surface")
+		local surface = GetSurface()
 		local is_area = (public_transport == "platform" or Find("area")=="yes") and is_closed
 
 		local h = highway
@@ -473,20 +486,23 @@ function way_function()
 			under_construction = true
 		end
 		local minzoom = INVALID_ZOOM
-		if majorRoadValues[h]        then minzoom = 4
-		elseif h == "trunk"          then minzoom = 5
-		elseif highway == "primary"  then minzoom = 7
+		if z4RoadValues[h]           then minzoom = 4
+		elseif z5RoadValues[h]       then minzoom = 5
+		elseif z7RoadValues[h]       then minzoom = 7
 		elseif z9RoadValues[h]       then minzoom = 9
 		elseif z10RoadValues[h]      then minzoom = 10
 		elseif z11RoadValues[h]      then minzoom = 11
-		elseif z12MinorRoadValues[h] then
-			minzoom = 12
-			subclass = h
-			h = "minor"
+		elseif z12MinorRoadValues[h] then minzoom = 12
 		elseif z12OtherRoadValues[h] then minzoom = 12
 		elseif z13RoadValues[h]      then minzoom = 13
-		elseif pathValues[h]         then
-			minzoom = 14
+		elseif pathValues[h]         then minzoom = 14
+		end
+		
+		if z12MinorRoadValues[h] then
+			subclass = h
+			h = "minor"
+		end
+		if pathValues[h] then
 			subclass = h
 			h = "path"
 		end
@@ -605,16 +621,16 @@ function way_function()
 
 	-- 'aerodrome_label'
 	if aeroway=="aerodrome" then
-	 	LayerAsCentroid("aerodrome_label")
-	 	SetNameAttributes()
-	 	Attribute("iata", Find("iata"))
-  		SetEleAttributes()
- 	 	Attribute("icao", Find("icao"))
+		LayerAsCentroid("aerodrome_label")
+		SetNameAttributes()
+		Attribute("iata", Find("iata"))
+		SetEleAttributes()
+		Attribute("icao", Find("icao"))
 
- 	 	local aerodrome = Find(aeroway)
- 	 	local class
- 	 	if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
- 	 	Attribute("class", class)
+		local aerodrome = Find(aeroway)
+		local class
+		if aerodromeValues[aerodrome] then class = aerodrome else class = "other" end
+		Attribute("class", class)
 	end
 
 	-- Set 'waterway' and associated
@@ -663,7 +679,7 @@ function way_function()
 		local class="lake"; if waterway~="" then class="river" end
 		if class=="lake" and Find("wikidata")=="Q192770" then return end
 		Layer("water",true)
-		SetMinZoomByArea(way)
+		SetMinZoomByArea()
 		Attribute("class",class)
 
 		if Find("intermittent")=="yes" then Attribute("intermittent",1) end
@@ -791,26 +807,26 @@ function SetNameAttributes()
 		if iname~=name and default_language_attribute then
 			Attribute(default_language_attribute, name)
 		else main_written = iname end
-	else
+	elseif name ~= "" then
 		Attribute(preferred_language_attribute, name)
 	end
 	-- then set any additional languages
 	for i,lang in ipairs(additional_languages) do
 		iname = Find("name:"..lang)
 		if iname=="" then iname=name end
-		if iname~=main_written then Attribute("name:"..lang, iname) end
+		if iname~=main_written and iname ~= "" then Attribute("name:"..lang, iname) end
 	end
 end
 
 -- Set ele and ele_ft on any object
 function SetEleAttributes()
-    local ele = Find("ele")
+	local ele = Find("ele")
 	if ele ~= "" then
 		local meter = math.floor(tonumber(ele) or 0)
 		local feet = math.floor(meter * 3.2808399)
 		AttributeNumeric("ele", meter)
 		AttributeNumeric("ele_ft", feet)
-    end
+	end
 end
 
 function SetBrunnelAttributes()
@@ -828,7 +844,12 @@ end
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
 	local area=Area()
-	if     minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
+	if     minzoom <= 1 and area>ZRES0^2  then MinZoom(1)
+	elseif minzoom <= 2 and area>ZRES1^2  then MinZoom(2)
+	elseif minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
+	elseif minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
+	elseif minzoom <= 5 and area>ZRES4^2  then MinZoom(5)
+	elseif minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
 	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
 	elseif minzoom <= 8 and area>ZRES7^2  then MinZoom(8)
 	elseif minzoom <= 9 and area>ZRES8^2  then MinZoom(9)
