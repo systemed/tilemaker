@@ -293,16 +293,32 @@ void ProcessObjects(
 			// so that we can write a multipoint instead of many point features
 
 			std::vector<std::pair<int, int>> multipoint;
+			const int tile_extent = bbox.hires ? 8192 : 4096;
+			const int margin = 256; // Just in case something happens near the edges.
 
 			LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-			multipoint.push_back(xy);
+
+			// Filter out points that are way beyond the reasonable tile extent
+			if (xy.first >= -margin && xy.first <= tile_extent + margin &&
+				xy.second >= -margin && xy.second <= tile_extent + margin) {
+				multipoint.push_back(xy);
+			}
 
 			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo) && combinePoints) {
 				jt++;
 				LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 				pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-				multipoint.push_back(xy);
+
+				if (xy.first >= -margin && xy.first <= tile_extent + margin &&
+					xy.second >= -margin && xy.second <= tile_extent + margin) {
+					multipoint.push_back(xy);
+				}
+			}
+
+			if (multipoint.empty()) {
+				oo = *jt;
+				continue;
 			}
 
 			vtzero::point_feature_builder fbuilder{vtLayer};
