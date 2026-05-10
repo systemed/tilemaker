@@ -538,7 +538,7 @@ int PbfProcessor::ReadPbfFile(
 			break;
 		}
 
-		blocks[blocks.size()] = { (long int)infile->tellg(), bh.datasize, true, true, true, 0, 1 };
+		blocks[blocks.size()] = { static_cast<std::streamoff>(infile->tellg()), bh.datasize, true, true, true, 0, 1 };
 		infile->seekg(bh.datasize, std::ios_base::cur);
 	}
 
