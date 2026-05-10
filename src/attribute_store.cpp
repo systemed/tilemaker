@@ -16,13 +16,12 @@ uint16_t AttributeKeyStore::key2index(const std::string& key) {
 
 	// Not found, ensure our local map is up-to-date for future calls,
 	// and fall through to the main map.
-	//
-	// Note that we can read `keys` without a lock
+	std::lock_guard<std::mutex> lock(keys2indexMutex);
 	while (tlsKeys2IndexSize < keys2indexSize) {
 		tlsKeys2IndexSize++;
 		tlsKeys2Index[&keys[tlsKeys2IndexSize]] = tlsKeys2IndexSize;
 	}
-	std::lock_guard<std::mutex> lock(keys2indexMutex);
+
 	const auto& rv = keys2index.find(&key);
 
 	if (rv != keys2index.end())
@@ -38,9 +37,9 @@ uint16_t AttributeKeyStore::key2index(const std::string& key) {
 	if (newIndex >= 512)
 		throw std::out_of_range("more than 512 unique keys");
 
-	keys2indexSize++;
 	keys.push_back(key);
 	keys2index[&keys[newIndex]] = newIndex;
+	keys2indexSize = newIndex;
 	return newIndex;
 }
 

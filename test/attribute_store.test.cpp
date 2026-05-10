@@ -1,5 +1,8 @@
 #include <iostream>
 #include <algorithm>
+#include <atomic>
+#include <thread>
+#include <vector>
 #include "external/minunit.h"
 #include "attribute_store.h"
 
@@ -126,10 +129,42 @@ MU_TEST(test_attribute_store_capacity) {
 	mu_check(caughtException == true);
 }
 
+MU_TEST(test_attribute_key_store_threaded) {
+	AttributeKeyStore keys;
+	const int keyCount = 128;
+	const int threadCount = 8;
+	const int iterations = 100;
+	std::atomic<bool> start(false);
+	std::atomic<bool> failed(false);
+	std::vector<std::thread> threads;
+
+	for (int thread = 0; thread < threadCount; thread++) {
+		threads.emplace_back([&, thread]() {
+			while (!start.load(std::memory_order_acquire)) {}
+
+			for (int i = 0; i < iterations * keyCount; i++) {
+				const int keyNum = (i + thread * 17) % keyCount;
+				const std::string key = "key" + std::to_string(keyNum);
+				const uint16_t firstIndex = keys.key2index(key);
+				const uint16_t secondIndex = keys.key2index(key);
+				if (firstIndex == 0 || firstIndex > keyCount || firstIndex != secondIndex)
+					failed.store(true, std::memory_order_release);
+			}
+		});
+	}
+
+	start.store(true, std::memory_order_release);
+	for (std::thread& thread : threads)
+		thread.join();
+
+	mu_check(failed.load(std::memory_order_acquire) == false);
+}
+
 MU_TEST_SUITE(test_suite_attribute_store) {
 	MU_RUN_TEST(test_attribute_store);
 	MU_RUN_TEST(test_attribute_store_reuses);
 	MU_RUN_TEST(test_attribute_store_capacity);
+	MU_RUN_TEST(test_attribute_key_store_threaded);
 }
 
 int main() {
