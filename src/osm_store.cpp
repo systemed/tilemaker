@@ -32,6 +32,8 @@ bool UsedObjects::test(NodeID id) {
 
 void UsedObjects::enable() {
 	status = Status::Enabled;
+	if (ids.empty())
+		ids.resize(256 * 1024);
 }
 
 bool UsedObjects::enabled() const {
@@ -51,7 +53,7 @@ void UsedObjects::set(NodeID id) {
 void UsedObjects::clear() {
 	// This data is not needed after PbfProcessor's ReadPhase::Nodes has completed,
 	// and it takes up to ~1.5GB of RAM.
-	ids.clear();
+	std::vector<std::vector<bool>>().swap(ids);
 }
 
 void OSMStore::open(std::string const &osm_store_filename)
