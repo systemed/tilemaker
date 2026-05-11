@@ -27,7 +27,7 @@ public:
 		uint_least8_t l,
 		NodeID id,
 		AttributeIndex attributes,
-		uint mz
+		unsigned int mz
 	):
 		objectID(id),
 		geomType(type),
