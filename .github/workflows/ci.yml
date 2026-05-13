@@ -169,10 +169,27 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.pmtiles --verbose
-        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}-repeat.pmtiles --verbose
-        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --store "${{ runner.temp }}\osm_store" --verbose
-        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}-repeat.mbtiles --store "${{ runner.temp }}\osm_store_repeat" --verbose
+        $tilemaker = "${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe"
+        function Invoke-Tilemaker {
+          param([string] $Output, [string[]] $Arguments)
+          Write-Host "::group::Build $Output"
+          & $tilemaker @Arguments
+          $status = $LASTEXITCODE
+          Write-Host "::endgroup::"
+          if ($status -ne 0) {
+            Write-Error "tilemaker failed while writing $Output with exit code $status"
+            exit $status
+          }
+          if (!(Test-Path -LiteralPath $Output) -or (Get-Item -LiteralPath $Output).Length -eq 0) {
+            Write-Error "tilemaker did not create $Output"
+            exit 1
+          }
+        }
+
+        Invoke-Tilemaker "${{ env.AREA }}.pmtiles" @("${{ env.AREA }}.osm.pbf", "--config=resources/config-openmaptiles.json", "--process=resources/process-openmaptiles.lua", "--output=${{ env.AREA }}.pmtiles", "--verbose")
+        Invoke-Tilemaker "${{ env.AREA }}-repeat.pmtiles" @("${{ env.AREA }}.osm.pbf", "--config=resources/config-openmaptiles.json", "--process=resources/process-openmaptiles.lua", "--output=${{ env.AREA }}-repeat.pmtiles", "--verbose")
+        Invoke-Tilemaker "${{ env.AREA }}.mbtiles" @("${{ env.AREA }}.osm.pbf", "--config=resources/config-openmaptiles.json", "--process=resources/process-openmaptiles.lua", "--output=${{ env.AREA }}.mbtiles", "--store", "${{ runner.temp }}\osm_store", "--verbose")
+        Invoke-Tilemaker "${{ env.AREA }}-repeat.mbtiles" @("${{ env.AREA }}.osm.pbf", "--config=resources/config-openmaptiles.json", "--process=resources/process-openmaptiles.lua", "--output=${{ env.AREA }}-repeat.mbtiles", "--store", "${{ runner.temp }}\osm_store_repeat", "--verbose")
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -246,10 +263,29 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
-        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
-        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
-        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
+        run_tilemaker() {
+          output="$1"
+          shift
+          echo "::group::Build ${output}"
+          if "$@"; then
+            echo "::endgroup::"
+          else
+            status="$?"
+            echo "::endgroup::"
+            echo "::error title=Tile generation failed::tilemaker failed while writing ${output} with exit code ${status}"
+            exit "${status}"
+          fi
+          if [ ! -s "${output}" ]; then
+            echo "::error title=Tile output missing::tilemaker did not create ${output}"
+            exit 1
+          fi
+        }
+
+        tilemaker="${{ github.workspace }}/build/${{ matrix.executable }}"
+        run_tilemaker "${{ env.AREA }}.pmtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
+        run_tilemaker "${{ env.AREA }}-repeat.pmtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
+        run_tilemaker "${{ env.AREA }}.mbtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
+        run_tilemaker "${{ env.AREA }}-repeat.mbtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -312,10 +348,28 @@ jobs:
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
-        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
-        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
-        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
-        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
+        run_tilemaker() {
+          output="$1"
+          shift
+          echo "::group::Build ${output}"
+          if "$@"; then
+            echo "::endgroup::"
+          else
+            status="$?"
+            echo "::endgroup::"
+            echo "::error title=Tile generation failed::tilemaker failed while writing ${output} with exit code ${status}"
+            exit "${status}"
+          fi
+          if [ ! -s "${output}" ]; then
+            echo "::error title=Tile output missing::tilemaker did not create ${output}"
+            exit 1
+          fi
+        }
+
+        run_tilemaker "${{ env.AREA }}.pmtiles" ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
+        run_tilemaker "${{ env.AREA }}-repeat.pmtiles" ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
+        run_tilemaker "${{ env.AREA }}.mbtiles" ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
+        run_tilemaker "${{ env.AREA }}-repeat.mbtiles" ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -368,6 +422,19 @@ jobs:
       with:
         input: ${{ env.AREA }}.osm.pbf
         output: ${{ env.AREA }}-repeat.mbtiles
+
+    - name: Check generated tile files
+      run: |
+        for output in \
+          "${AREA}.mbtiles" \
+          "${AREA}.pmtiles" \
+          "${AREA}-repeat.mbtiles" \
+          "${AREA}-repeat.pmtiles"; do
+          if [ ! -s "${output}" ]; then
+            echo "::error title=Tile output missing::tilemaker did not create ${output}"
+            exit 1
+          fi
+        done
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
