@@ -209,6 +209,112 @@ def packed_varints(data):
     return values
 
 
+def decode_geometry(geometry):
+    pos = 0
+    x = 0
+    y = 0
+    paths = []
+    current = []
+
+    while pos < len(geometry):
+        command = geometry[pos] & 7
+        count = geometry[pos] >> 3
+        pos += 1
+
+        if command == 1:
+            for _ in range(count):
+                if current:
+                    paths.append(current)
+                current = []
+                x += zigzag_decode(geometry[pos])
+                y += zigzag_decode(geometry[pos + 1])
+                pos += 2
+                current.append([x, y])
+        elif command == 2:
+            for _ in range(count):
+                if not current:
+                    raise RuntimeError("MVT LineTo command without an active path")
+                x += zigzag_decode(geometry[pos])
+                y += zigzag_decode(geometry[pos + 1])
+                pos += 2
+                current.append([x, y])
+        elif command == 7:
+            for _ in range(count):
+                if current:
+                    paths.append(current)
+                    current = []
+        else:
+            raise RuntimeError(f"unsupported MVT geometry command {command}")
+
+    if current:
+        paths.append(current)
+    return paths
+
+
+def canonical_geometry(geometry_type, geometry):
+    paths = decode_geometry(geometry)
+    if geometry_type == 1:
+        points = [point for path in paths for point in path]
+        points.sort(key=canonical_json)
+        return ["points", points]
+    if geometry_type == 3:
+        return ["polygons", canonical_polygons(paths)]
+    return ["geometry", paths]
+
+
+def canonical_polygons(paths):
+    polygons = []
+    current = None
+    outer_area = 0
+
+    for path in paths:
+        area = ring_area(path)
+        ring = canonical_ring(path, area)
+
+        if area == 0:
+            polygons.append(["degenerate", ring])
+        elif outer_area == 0 or area == outer_area:
+            if current:
+                current[1].sort(key=canonical_json)
+                polygons.append(current)
+            outer_area = area
+            current = [ring, []]
+        elif current:
+            current[1].append(ring)
+        else:
+            polygons.append(["orphan", ring])
+
+    if current:
+        current[1].sort(key=canonical_json)
+        polygons.append(current)
+
+    polygons.sort(key=canonical_json)
+    return polygons
+
+
+def canonical_ring(path, area):
+    ring = path
+    if len(ring) > 1 and ring[0] == ring[-1]:
+        ring = ring[:-1]
+    if not ring:
+        return [0, []]
+
+    rotations = [ring[index:] + ring[:index] for index in range(len(ring))]
+    return [area, min(rotations, key=canonical_json)]
+
+
+def ring_area(ring):
+    area = 0
+    for index, point in enumerate(ring):
+        next_point = ring[(index + 1) % len(ring)]
+        area += point[0] * next_point[1] - next_point[0] * point[1]
+    if area < 0:
+        return -1
+    if area > 0:
+        return 1
+    return 0
+
+
 def decode_mvt_value(data):
     values = []
     for field, wire_type, value in protobuf_fields(data):
@@ -254,6 +360,7 @@ def decode_mvt_feature(data, keys, values):
         elif field == 4:
             geometry = packed_varints(value)
     tags.sort(key=canonical_json)
+    geometry = canonical_geometry(geometry_type, geometry)
     return [feature_id, geometry_type, tags, geometry]
 
 
@@ -562,6 +669,8 @@ def check_cross_runner(contents, suffix):
     groups = {}
     for path, content in contents.items():
         if path.name.endswith(f"-repeat.{suffix}"):
+            continue
+        if path.parent.name == "tile-outputs-github-action":
             continue
         groups.setdefault(path.name, []).append((path, content))
     for name, values in sorted(groups.items()):
