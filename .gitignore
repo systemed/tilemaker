@@ -8,6 +8,10 @@ tilemaker.dSYM/
 # editor temporaries
 *~
 
+# python cache files
+__pycache__/
+*.pyc
+
 # vagrant local stuff
 .vagrant/
 

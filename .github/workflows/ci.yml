@@ -17,10 +17,77 @@ env:
 
 jobs:
 
+  changes:
+    name: Check changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runtime: ${{ steps.filter.outputs.runtime }}
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Check for runtime changes
+      id: filter
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]] ||
+           ! git cat-file -e "${BASE_SHA}^{commit}" ||
+           ! git cat-file -e "${HEAD_SHA}^{commit}"; then
+          echo "runtime=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Changed file check"
+            echo ""
+            echo "Unable to determine the changed files, so the full CI matrix will run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        runtime=false
+        changed_count=0
+        while IFS= read -r -d '' path; do
+          changed_count=$((changed_count + 1))
+          case "$path" in
+            .github/workflows/ci.yml)
+              runtime=true
+              ;;
+            CMakeLists.txt|Makefile|Dockerfile|action.yml)
+              runtime=true
+              ;;
+            get-coastline.sh|get-landcover.sh|get-monaco.sh)
+              runtime=true
+              ;;
+            cmake/*|include/*|resources/*|server/*|src/*|test/*)
+              runtime=true
+              ;;
+          esac
+        done < <(git diff --name-only -z "${BASE_SHA}" "${HEAD_SHA}")
+
+        echo "runtime=${runtime}" >> "$GITHUB_OUTPUT"
+        {
+          echo "### Changed file check"
+          echo ""
+          echo "Changed files: ${changed_count}"
+          echo "Runtime-impacting changes: ${runtime}"
+          if [[ "${runtime}" != "true" ]]; then
+            echo ""
+            echo "Only non-runtime files changed, so build and tile-generation jobs were skipped."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
   download-pbf:
     name: Download PBF fixture
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
+    if: ${{ needs.changes.outputs.runtime == 'true' }}
     outputs:
       pbf-available: ${{ steps.download.outputs.pbf-available }}
 
@@ -103,7 +170,9 @@ jobs:
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
         ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.pmtiles --verbose
+        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}-repeat.pmtiles --verbose
         ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}.mbtiles --store "${{ runner.temp }}\osm_store" --verbose
+        ${{ github.workspace }}\build\RelWithDebInfo\tilemaker.exe ${{ env.AREA }}.osm.pbf --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output=${{ env.AREA }}-repeat.mbtiles --store "${{ runner.temp }}\osm_store_repeat" --verbose
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -113,6 +182,8 @@ jobs:
         path: |
           ${{ env.AREA }}.mbtiles
           ${{ env.AREA }}.pmtiles
+          ${{ env.AREA }}-repeat.mbtiles
+          ${{ env.AREA }}-repeat.pmtiles
 
     - name: 'Upload compiled executable'
       uses: actions/upload-artifact@v7
@@ -126,6 +197,7 @@ jobs:
 
   unix-build:  
     strategy:  
+      fail-fast: false
       matrix: 
         include:
           - os: ubuntu-22.04
@@ -175,7 +247,9 @@ jobs:
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
         "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
+        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
         "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
+        "${{ github.workspace }}/build/${{ matrix.executable }}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -185,6 +259,8 @@ jobs:
         path: |
           ${{ env.AREA }}.mbtiles
           ${{ env.AREA }}.pmtiles
+          ${{ env.AREA }}-repeat.mbtiles
+          ${{ env.AREA }}-repeat.pmtiles
 
     - name: 'Upload compiled executable'
       uses: actions/upload-artifact@v7
@@ -197,6 +273,7 @@ jobs:
 
   unix-makefile-build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
@@ -236,7 +313,9 @@ jobs:
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
       run: |
         ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.pmtiles" --verbose
+        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.pmtiles" --verbose
         ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
+        ./tilemaker "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -246,6 +325,8 @@ jobs:
         path: |
           ${{ env.AREA }}.mbtiles
           ${{ env.AREA }}.pmtiles
+          ${{ env.AREA }}-repeat.mbtiles
+          ${{ env.AREA }}-repeat.pmtiles
 
 
   Github-Action:
@@ -270,11 +351,23 @@ jobs:
         input: ${{ env.AREA }}.osm.pbf
         output: ${{ env.AREA }}.pmtiles
 
+    - name: Build repeat openmaptiles-compatible pmtiles file
+      uses: ./
+      with:
+        input: ${{ env.AREA }}.osm.pbf
+        output: ${{ env.AREA }}-repeat.pmtiles
+
     - name: Build openmaptiles-compatible mbtiles file
       uses: ./
       with:
         input: ${{ env.AREA }}.osm.pbf
         output: ${{ env.AREA }}.mbtiles
+
+    - name: Build repeat openmaptiles-compatible mbtiles file
+      uses: ./
+      with:
+        input: ${{ env.AREA }}.osm.pbf
+        output: ${{ env.AREA }}-repeat.mbtiles
 
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
@@ -284,6 +377,44 @@ jobs:
         path: |
           ${{ env.AREA }}.mbtiles
           ${{ env.AREA }}.pmtiles
+          ${{ env.AREA }}-repeat.mbtiles
+          ${{ env.AREA }}-repeat.pmtiles
+
+  verify-generated-tiles:
+    name: Verify generated tiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - Windows-Build
+      - unix-build
+      - unix-makefile-build
+      - Github-Action
+    env:
+      PMTILES_VERSION: 1.30.2
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: .github/scripts/verify-generated-tiles.py
+        sparse-checkout-cone-mode: false
+
+    - name: Download generated tiles
+      uses: actions/download-artifact@v8
+      with:
+        pattern: tile-outputs-*
+        path: generated-tiles
+
+    - name: Install pmtiles
+      run: |
+        curl -fsSL -o pmtiles.tar.gz "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz"
+        tar -xzf pmtiles.tar.gz
+        chmod +x pmtiles
+        sudo mv pmtiles /usr/local/bin/pmtiles
+        pmtiles version
+
+    - name: Verify generated tile archives
+      run: |
+        python3 .github/scripts/verify-generated-tiles.py generated-tiles
 
   docker-build:
     env:
@@ -292,6 +423,50 @@ jobs:
 
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    needs: changes
+    if: ${{ needs.changes.outputs.runtime == 'true' && github.ref != 'refs/heads/master' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-publish:
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: changes
+    if: ${{ needs.changes.outputs.runtime == 'true' && github.ref == 'refs/heads/master' }}
     permissions:
       contents: read
       packages: write
@@ -316,19 +491,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v7
-        if: ${{ github.ref != 'refs/heads/master'}}
-        with:
-          context: .
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
-        if: ${{ github.ref == 'refs/heads/master'}}
         with:
           context: .
           push: true
