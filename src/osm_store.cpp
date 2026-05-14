@@ -13,7 +13,7 @@ using namespace std;
 namespace bg = boost::geometry;
 
 static inline bool isClosed(const std::vector<LatpLon>& way) {
-	return way.begin() == way.end();
+	return !way.empty() && way.front() == way.back();
 }
 
 UsedObjects::UsedObjects(Status status): status(status), mutex(256), ids(256 * 1024) {
