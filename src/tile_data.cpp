@@ -330,17 +330,22 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			fast_clip(mp, box);
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-			if (!geom::is_valid(mp,failure)) { 
+			bool valid = geom::is_valid(mp,failure);
+			if (!valid) {
 				if (failure==geom::failure_spikes) {
 					geom::remove_spikes(mp);
-				} else if (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors) {
-					// retry with Boost intersection if fast_clip has caused self-intersections
+					failure = geom::validity_failure_type::no_failure;
+					valid = geom::is_valid(mp,failure);
+				}
+				if (!valid && (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors)) {
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
+
+					// retry with Boost intersection if fast_clip has caused self-intersections
 					multiPolygonClipCache.add(bbox, objectID, output);
 					return output;
-				} else {
+				} else if (!valid) {
 					// occasionally also wrong_topological_dimension, disconnected_interior
 				}
 			}
