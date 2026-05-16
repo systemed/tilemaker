@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 
+import concurrent.futures
 import gzip
 import hashlib
 import json
+import os
 import pathlib
 import sqlite3
 import struct
 import subprocess
 import sys
+import time
 import zlib
 
 
 COMPRESSION_NONE = 1
 COMPRESSION_GZIP = 2
+PROGRESS_INTERVAL = 1024
+SEMANTIC_COMPARE_CHUNK_SIZE = 128
+
+
+worker_left_archive = None
+worker_right_archive = None
+worker_left_compression = None
+worker_right_compression = None
 
 
 status = 0
@@ -37,6 +48,43 @@ def error(path, message):
 def notice(path, message):
     label = archive_label(path)
     print(f"::notice title={label}::{label}: {message}")
+
+
+def progress(path, message):
+    print(f"{archive_label(path)}: {message}", flush=True)
+
+
+def format_duration(seconds):
+    seconds = int(seconds)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+def progress_eta(path, action, current, total, started):
+    elapsed = time.monotonic() - started
+    percent = (current / total) * 100 if total else 100.0
+    if current:
+        remaining = (elapsed / current) * (total - current)
+        eta = format_duration(remaining)
+    else:
+        eta = "unknown"
+    progress(
+        path,
+        f"{action}: {current}/{total} ({percent:.1f}%), "
+        f"elapsed {format_duration(elapsed)}, ETA {eta}",
+    )
+
+
+def semantic_worker_count():
+    value = os.environ.get("VERIFY_TILE_WORKERS")
+    if value:
+        return max(1, int(value))
+    return max(1, min(4, os.cpu_count() or 1))
 
 
 def archive_sha256(path):
@@ -429,6 +477,12 @@ def add_tile_to_semantic_maps(content, z, x, y, payload):
     content.layer_counts[tile] = counts
 
 
+def set_tile_semantic_maps(content, z, x, y, semantic_hash, counts):
+    tile = (z, x, y)
+    content.semantic_tiles[tile] = semantic_hash
+    content.layer_counts[tile] = counts
+
+
 def mbtiles_fingerprint(path):
     con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     cur = con.cursor()
@@ -590,17 +644,153 @@ def pmtiles_fingerprint(path):
     return content
 
 
+def pmtiles_entry_index(path):
+    data = path.read_bytes()
+    header = pmtiles_header(data)
+    entries = []
+    collect_pmtiles_entries(data, header, header["root_dir_offset"], header["root_dir_bytes"], entries)
+    return header["tile_compression"], {
+        (z, x, y): (offset, length)
+        for z, x, y, offset, length in entries
+    }
+
+
+def initialize_pmtiles_compare_worker(left_path, left_compression, right_path, right_compression):
+    global worker_left_archive
+    global worker_right_archive
+    global worker_left_compression
+    global worker_right_compression
+
+    worker_left_archive = open(left_path, "rb")
+    worker_right_archive = open(right_path, "rb")
+    worker_left_compression = left_compression
+    worker_right_compression = right_compression
+
+
+def read_worker_payload(archive, offset, length, compression):
+    archive.seek(offset)
+    return decompress_pmtiles(archive.read(length), compression)
+
+
+def compare_pmtiles_semantic_batch(batch):
+    for tile, left_offset, left_length, right_offset, right_length in batch:
+        left_payload = read_worker_payload(
+            worker_left_archive,
+            left_offset,
+            left_length,
+            worker_left_compression,
+        )
+        right_payload = read_worker_payload(
+            worker_right_archive,
+            right_offset,
+            right_length,
+            worker_right_compression,
+        )
+        left_hash, left_counts = semantic_tile_content(left_payload)
+        right_hash, right_counts = semantic_tile_content(right_payload)
+        if left_hash != right_hash:
+            return {
+                "same": False,
+                "tile": tile,
+                "message": semantic_counts_difference(tile, left_counts, right_counts),
+            }
+    return {"same": True, "count": len(batch)}
+
+
+def compare_pmtiles_semantic_content(path, content, other_path, other_content, differing_tiles, relation, failure_message):
+    left_compression, left_index = pmtiles_entry_index(path)
+    right_compression, right_index = pmtiles_entry_index(other_path)
+    batches = []
+    batch = []
+    for tile in differing_tiles:
+        if tile not in left_index:
+            error(path, f"{tile_label(tile)} is missing from output")
+            return False
+        if tile not in right_index:
+            error(path, f"{tile_label(tile)} is missing from comparison output")
+            return False
+        left_offset, left_length = left_index[tile]
+        right_offset, right_length = right_index[tile]
+        batch.append((tile, left_offset, left_length, right_offset, right_length))
+        if len(batch) == SEMANTIC_COMPARE_CHUNK_SIZE:
+            batches.append(batch)
+            batch = []
+    if batch:
+        batches.append(batch)
+
+    workers = semantic_worker_count()
+    progress(
+        path,
+        f"checking {len(differing_tiles)} semantic tiles with {workers} worker processes "
+        f"against {relation} {archive_label(other_path)}",
+    )
+    started = time.monotonic()
+    checked = 0
+    progress_eta(path, "checked semantic tiles", checked, len(differing_tiles), started)
+
+    executor = concurrent.futures.ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=initialize_pmtiles_compare_worker,
+        initargs=(str(path), left_compression, str(other_path), right_compression),
+    )
+    futures = {
+        executor.submit(compare_pmtiles_semantic_batch, tile_batch): len(tile_batch)
+        for tile_batch in batches
+    }
+    try:
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            checked += futures[future]
+            if not result["same"]:
+                tile = result["tile"]
+                error(
+                    path,
+                    f"semantic content differs from {relation} {archive_label(other_path)}; "
+                    f"{result['message']}",
+                )
+                for pending in futures:
+                    pending.cancel()
+                executor.shutdown(wait=False, cancel_futures=True)
+                return False
+            if checked % PROGRESS_INTERVAL == 0 or checked == len(differing_tiles):
+                progress_eta(path, "checked semantic tiles", checked, len(differing_tiles), started)
+    except Exception as err:
+        error(path, f"{failure_message}: {err}")
+        executor.shutdown(wait=False, cancel_futures=True)
+        return False
+
+    executor.shutdown()
+    progress(
+        path,
+        f"checked {len(differing_tiles)}/{len(differing_tiles)} semantic tiles "
+        f"against {relation} {archive_label(other_path)}",
+    )
+    return True
+
+
 def pmtiles_decode_semantic_tiles(path, content, tiles):
     data = path.read_bytes()
     header = pmtiles_header(data)
     entries = []
     collect_pmtiles_entries(data, header, header["root_dir_offset"], header["root_dir_bytes"], entries)
     wanted = set(tiles)
+    semantic_cache = {}
+    decoded = 0
+    started = time.monotonic()
+    progress_eta(path, "decoded semantic tiles", decoded, len(wanted), started)
     for z, x, y, offset, length in sorted(entries):
         if (z, x, y) not in wanted:
             continue
-        payload = decompress_pmtiles(data[offset:offset + length], header["tile_compression"])
-        add_tile_to_semantic_maps(content, z, x, y, payload)
+        payload_key = (offset, length)
+        if payload_key not in semantic_cache:
+            payload = decompress_pmtiles(data[offset:offset + length], header["tile_compression"])
+            semantic_cache[payload_key] = semantic_tile_content(payload)
+        semantic_hash, counts = semantic_cache[payload_key]
+        set_tile_semantic_maps(content, z, x, y, semantic_hash, counts)
+        decoded += 1
+        if decoded % PROGRESS_INTERVAL == 0 or decoded == len(wanted):
+            progress_eta(path, "decoded semantic tiles", decoded, len(wanted), started)
+    progress(path, f"decoded {len(semantic_cache)} unique semantic tile payloads for {decoded} addressed tiles")
 
 
 def fingerprint_archives(paths, fingerprint, failure_message):
@@ -658,15 +848,19 @@ def tile_difference(left, right, semantic):
 def semantic_tile_difference(left, right, tile):
     left_counts = left.layer_counts.get(tile, {})
     right_counts = right.layer_counts.get(tile, {})
+    return semantic_counts_difference(tile, left_counts, right_counts)
+
+
+def semantic_counts_difference(tile, left_counts, right_counts):
     for layer in sorted(set(left_counts) | set(right_counts)):
         left_count = left_counts.get(layer, 0)
         right_count = right_counts.get(layer, 0)
         if left_count != right_count:
             return (
-                f"first semantic difference at {tile_label(tile)}: "
+                f"semantic difference at {tile_label(tile)}: "
                 f"layer {layer} has {left_count} vs {right_count} features"
             )
-    return f"first semantic difference at {tile_label(tile)}"
+    return f"semantic difference at {tile_label(tile)}"
 
 
 def raw_differing_tiles(left, right):
@@ -690,7 +884,7 @@ def ensure_semantic_tiles(path, content, tiles, semantic_decoder, failure_messag
     return True
 
 
-def compare_content(path, content, other_path, other_content, relation, semantic_decoder, failure_message):
+def compare_content(path, content, other_path, other_content, relation, semantic_decoder, failure_message, semantic_comparator=None):
     if content.raw_hash == other_content.raw_hash:
         return
 
@@ -699,14 +893,36 @@ def compare_content(path, content, other_path, other_content, relation, semantic
         return
 
     differing_tiles = raw_differing_tiles(content, other_content)
+    progress(
+        path,
+        f"semantic comparison needed for {len(differing_tiles)} raw-different tiles "
+        f"against {relation} {archive_label(other_path)}",
+    )
 
-    for tile in differing_tiles:
-        if not ensure_semantic_tiles(path, content, [tile], semantic_decoder, failure_message):
-            return
+    if semantic_comparator:
+        if semantic_comparator(path, content, other_path, other_content, differing_tiles, relation, failure_message):
+            notice(
+                path,
+                f"raw tile bytes differ from {relation} {archive_label(other_path)}, "
+                f"but semantic content matches; {tile_difference(content, other_content, False)}",
+            )
+        return
 
-        if not ensure_semantic_tiles(other_path, other_content, [tile], semantic_decoder, failure_message):
-            return
+    progress(path, f"decoding semantic tiles from {archive_label(path)}")
+    if not ensure_semantic_tiles(path, content, differing_tiles, semantic_decoder, failure_message):
+        return
 
+    progress(path, f"decoding semantic tiles from {archive_label(other_path)}")
+    if not ensure_semantic_tiles(other_path, other_content, differing_tiles, semantic_decoder, failure_message):
+        return
+
+    progress(
+        path,
+        f"checking {len(differing_tiles)} semantic tiles against {relation} {archive_label(other_path)}",
+    )
+    started = time.monotonic()
+    progress_eta(path, "checked semantic tiles", 0, len(differing_tiles), started)
+    for index, tile in enumerate(differing_tiles, 1):
         if content.semantic_tiles.get(tile) != other_content.semantic_tiles.get(tile):
             error(
                 path,
@@ -714,6 +930,14 @@ def compare_content(path, content, other_path, other_content, relation, semantic
                 f"{tile_difference(content, other_content, True)}",
             )
             return
+        if index % PROGRESS_INTERVAL == 0 or index == len(differing_tiles):
+            progress_eta(path, "checked semantic tiles", index, len(differing_tiles), started)
+
+    progress(
+        path,
+        f"checked {len(differing_tiles)}/{len(differing_tiles)} semantic tiles "
+        f"against {relation} {archive_label(other_path)}",
+    )
 
     notice(
         path,
@@ -722,7 +946,7 @@ def compare_content(path, content, other_path, other_content, relation, semantic
     )
 
 
-def check_repeat(contents, suffix, semantic_decoder, failure_message):
+def check_repeat(contents, suffix, semantic_decoder, failure_message, semantic_comparator=None):
     for path, content in sorted(contents.items()):
         if path.name.endswith(f"-repeat.{suffix}"):
             continue
@@ -730,10 +954,10 @@ def check_repeat(contents, suffix, semantic_decoder, failure_message):
         if repeat not in contents:
             error(path, f"missing repeat output {archive_label(repeat)}")
         else:
-            compare_content(path, content, repeat, contents[repeat], "repeat output", semantic_decoder, failure_message)
+            compare_content(path, content, repeat, contents[repeat], "repeat output", semantic_decoder, failure_message, semantic_comparator)
 
 
-def check_cross_runner(contents, suffix, semantic_decoder, failure_message):
+def check_cross_runner(contents, suffix, semantic_decoder, failure_message, semantic_comparator=None):
     groups = {}
     for path, content in contents.items():
         if path.name.endswith(f"-repeat.{suffix}"):
@@ -744,7 +968,7 @@ def check_cross_runner(contents, suffix, semantic_decoder, failure_message):
     for name, values in sorted(groups.items()):
         reference_path, reference = values[0]
         for path, content in values[1:]:
-            compare_content(path, content, reference_path, reference, "output", semantic_decoder, failure_message)
+            compare_content(path, content, reference_path, reference, "output", semantic_decoder, failure_message, semantic_comparator)
 
 
 def main():
@@ -766,9 +990,9 @@ def main():
     )
 
     check_repeat(mbtiles, "mbtiles", mbtiles_decode_semantic_tiles, "MBTiles archive failed verification")
-    check_repeat(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification")
+    check_repeat(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification", compare_pmtiles_semantic_content)
     check_cross_runner(mbtiles, "mbtiles", mbtiles_decode_semantic_tiles, "MBTiles archive failed verification")
-    check_cross_runner(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification")
+    check_cross_runner(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification", compare_pmtiles_semantic_content)
     return status
 
 
