@@ -538,8 +538,10 @@ jobs:
     name: Generate mbtiles with Github Action
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: download-pbf
-    if: ${{ needs.download-pbf.outputs.pbf-available == 'true' }}
+    needs:
+      - download-pbf
+      - docker-publish
+    if: ${{ github.ref == 'refs/heads/master' && needs.download-pbf.outputs.pbf-available == 'true' }}
 
     steps:
     - name: Check out repository
@@ -606,7 +608,6 @@ jobs:
       - Windows-Build
       - unix-build
       - unix-makefile-build
-      - Github-Action
     env:
       PMTILES_VERSION: 1.30.2
 

@@ -127,6 +127,10 @@ def archive_label(path):
     return f"{build_label(path)} {path.name}"
 
 
+def should_validate_archive(path):
+    return path.parent.name != "tile-outputs-github-action"
+
+
 def decompress_payload(data):
     for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
         try:
@@ -973,8 +977,8 @@ def check_cross_runner(contents, suffix, semantic_decoder, failure_message, sema
 
 def main():
     root = pathlib.Path(sys.argv[1])
-    mbtiles_paths = sorted(root.glob("**/*.mbtiles"))
-    pmtiles_paths = sorted(root.glob("**/*.pmtiles"))
+    mbtiles_paths = sorted(filter(should_validate_archive, root.glob("**/*.mbtiles")))
+    pmtiles_paths = sorted(filter(should_validate_archive, root.glob("**/*.pmtiles")))
 
     print("Archive SHA-256")
     mbtiles = fingerprint_archives(
