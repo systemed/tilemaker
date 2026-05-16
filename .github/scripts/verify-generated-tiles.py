@@ -19,12 +19,12 @@ status = 0
 
 
 class ArchiveContent:
-    def __init__(self, raw_hash, semantic_hash, raw_tiles, semantic_tiles, layer_counts):
+    def __init__(self, raw_hash, raw_tiles, metadata_hash):
         self.raw_hash = raw_hash
-        self.semantic_hash = semantic_hash
         self.raw_tiles = raw_tiles
-        self.semantic_tiles = semantic_tiles
-        self.layer_counts = layer_counts
+        self.metadata_hash = metadata_hash
+        self.semantic_tiles = {}
+        self.layer_counts = {}
 
 
 def error(path, message):
@@ -410,16 +410,23 @@ def semantic_tile_content(data):
     return digest, layer_counts
 
 
-def add_tile_to_digests(raw_digest, semantic_digest, raw_tiles, semantic_tiles, layer_counts, z, x, y, payload):
+def content_summary(content):
+    return f"raw {content.raw_hash}"
+
+
+def add_tile_to_raw_digest(raw_digest, raw_tiles, z, x, y, payload):
     tile = (z, x, y)
     raw_hash = hashlib.sha256(payload).hexdigest()
-    semantic_hash, counts = semantic_tile_content(payload)
     raw_tiles[tile] = raw_hash
-    semantic_tiles[tile] = semantic_hash
-    layer_counts[tile] = counts
 
     raw_digest.update(f"T\t{z}\t{x}\t{y}\t{len(payload)}\t{raw_hash}\n".encode())
-    semantic_digest.update(f"T\t{z}\t{x}\t{y}\t{semantic_hash}\n".encode())
+
+
+def add_tile_to_semantic_maps(content, z, x, y, payload):
+    tile = (z, x, y)
+    semantic_hash, counts = semantic_tile_content(payload)
+    content.semantic_tiles[tile] = semantic_hash
+    content.layer_counts[tile] = counts
 
 
 def mbtiles_fingerprint(path):
@@ -441,26 +448,40 @@ def mbtiles_fingerprint(path):
         raise RuntimeError("metadata table is empty")
 
     raw_digest = hashlib.sha256()
-    semantic_digest = hashlib.sha256()
+    metadata_digest = hashlib.sha256()
     for name, value in metadata_rows:
         metadata = f"M\t{name}\t{canonical_metadata_value(value)}\n".encode("utf-8", "surrogateescape")
         raw_digest.update(metadata)
-        semantic_digest.update(metadata)
+        metadata_digest.update(metadata)
 
     raw_tiles = {}
-    semantic_tiles = {}
-    layer_counts = {}
     for z, x, y, tile_data in cur.execute("select zoom_level, tile_column, tile_row, tile_data from tiles order by zoom_level, tile_column, tile_row"):
         payload = decompress_payload(bytes(tile_data))
-        add_tile_to_digests(raw_digest, semantic_digest, raw_tiles, semantic_tiles, layer_counts, z, x, y, payload)
+        add_tile_to_raw_digest(raw_digest, raw_tiles, z, x, y, payload)
     con.close()
 
-    content = ArchiveContent(raw_digest.hexdigest(), semantic_digest.hexdigest(), raw_tiles, semantic_tiles, layer_counts)
+    content = ArchiveContent(raw_digest.hexdigest(), raw_tiles, metadata_digest.hexdigest())
     print(
         f"{archive_label(path)}: {tile_count} tiles, zoom {minzoom}-{maxzoom}, "
-        f"{len(metadata_rows)} metadata rows, raw {content.raw_hash}, semantic {content.semantic_hash}"
+        f"{len(metadata_rows)} metadata rows, raw {content.raw_hash}"
     )
     return content
+
+
+def mbtiles_decode_semantic_tiles(path, content, tiles):
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    cur = con.cursor()
+    for z, x, y in sorted(tiles):
+        row = cur.execute(
+            "select tile_data from tiles where zoom_level=? and tile_column=? and tile_row=?",
+            (z, x, y),
+        ).fetchone()
+        if row is None:
+            continue
+        tile_data = row[0]
+        payload = decompress_payload(bytes(tile_data))
+        add_tile_to_semantic_maps(content, z, x, y, payload)
+    con.close()
 
 
 def canonical_metadata_value(value):
@@ -553,24 +574,33 @@ def pmtiles_fingerprint(path):
     entries = []
     collect_pmtiles_entries(data, header, header["root_dir_offset"], header["root_dir_bytes"], entries)
     raw_digest = hashlib.sha256()
-    semantic_digest = hashlib.sha256()
     metadata_hash = hashlib.sha256(metadata).hexdigest()
     raw_digest.update(f"M\t{metadata_hash}\n".encode())
-    semantic_digest.update(f"M\t{metadata_hash}\n".encode())
 
     raw_tiles = {}
-    semantic_tiles = {}
-    layer_counts = {}
     for z, x, y, offset, length in sorted(entries):
         payload = decompress_pmtiles(data[offset:offset + length], header["tile_compression"])
-        add_tile_to_digests(raw_digest, semantic_digest, raw_tiles, semantic_tiles, layer_counts, z, x, y, payload)
+        add_tile_to_raw_digest(raw_digest, raw_tiles, z, x, y, payload)
 
-    content = ArchiveContent(raw_digest.hexdigest(), semantic_digest.hexdigest(), raw_tiles, semantic_tiles, layer_counts)
+    content = ArchiveContent(raw_digest.hexdigest(), raw_tiles, metadata_hash)
     print(
         f"{archive_label(path)}: {len(entries)} addressed tiles, "
-        f"raw {content.raw_hash}, semantic {content.semantic_hash}"
+        f"raw {content.raw_hash}"
     )
     return content
+
+
+def pmtiles_decode_semantic_tiles(path, content, tiles):
+    data = path.read_bytes()
+    header = pmtiles_header(data)
+    entries = []
+    collect_pmtiles_entries(data, header, header["root_dir_offset"], header["root_dir_bytes"], entries)
+    wanted = set(tiles)
+    for z, x, y, offset, length in sorted(entries):
+        if (z, x, y) not in wanted:
+            continue
+        payload = decompress_pmtiles(data[offset:offset + length], header["tile_compression"])
+        add_tile_to_semantic_maps(content, z, x, y, payload)
 
 
 def fingerprint_archives(paths, fingerprint, failure_message):
@@ -599,7 +629,7 @@ def fingerprint_archives(paths, fingerprint, failure_message):
         if source_path != path:
             print(
                 f"{archive_label(path)}: same archive as {archive_label(source_path)}; "
-                f"raw {content_hash.raw_hash}, semantic {content_hash.semantic_hash}"
+                f"{content_summary(content_hash)}"
             )
 
     return contents
@@ -639,22 +669,60 @@ def semantic_tile_difference(left, right, tile):
     return f"first semantic difference at {tile_label(tile)}"
 
 
-def compare_content(path, content, other_path, other_content, relation):
-    if content.semantic_hash != other_content.semantic_hash:
-        error(
-            path,
-            f"semantic content differs from {relation} {archive_label(other_path)}; "
-            f"{tile_difference(content, other_content, True)}",
-        )
-    elif content.raw_hash != other_content.raw_hash:
-        notice(
-            path,
-            f"raw tile bytes differ from {relation} {archive_label(other_path)}, "
-            f"but semantic content matches; {tile_difference(content, other_content, False)}",
-        )
+def raw_differing_tiles(left, right):
+    differing = []
+    for tile in sorted(set(left.raw_tiles) | set(right.raw_tiles)):
+        if left.raw_tiles.get(tile) != right.raw_tiles.get(tile):
+            differing.append(tile)
+    return differing
 
 
-def check_repeat(contents, suffix):
+def ensure_semantic_tiles(path, content, tiles, semantic_decoder, failure_message):
+    needed = [tile for tile in tiles if tile in content.raw_tiles and tile not in content.semantic_tiles]
+    if not needed:
+        return True
+    try:
+        semantic_decoder(path, content, needed)
+    except Exception as err:
+        error(path, f"{failure_message}: {err}")
+        return False
+
+    return True
+
+
+def compare_content(path, content, other_path, other_content, relation, semantic_decoder, failure_message):
+    if content.raw_hash == other_content.raw_hash:
+        return
+
+    if content.metadata_hash != other_content.metadata_hash:
+        error(path, f"metadata differs from {relation} {archive_label(other_path)}")
+        return
+
+    differing_tiles = raw_differing_tiles(content, other_content)
+
+    for tile in differing_tiles:
+        if not ensure_semantic_tiles(path, content, [tile], semantic_decoder, failure_message):
+            return
+
+        if not ensure_semantic_tiles(other_path, other_content, [tile], semantic_decoder, failure_message):
+            return
+
+        if content.semantic_tiles.get(tile) != other_content.semantic_tiles.get(tile):
+            error(
+                path,
+                f"semantic content differs from {relation} {archive_label(other_path)}; "
+                f"{tile_difference(content, other_content, True)}",
+            )
+            return
+
+    notice(
+        path,
+        f"raw tile bytes differ from {relation} {archive_label(other_path)}, "
+        f"but semantic content matches; {tile_difference(content, other_content, False)}",
+    )
+
+
+def check_repeat(contents, suffix, semantic_decoder, failure_message):
     for path, content in sorted(contents.items()):
         if path.name.endswith(f"-repeat.{suffix}"):
             continue
@@ -662,10 +730,10 @@ def check_repeat(contents, suffix):
         if repeat not in contents:
             error(path, f"missing repeat output {archive_label(repeat)}")
         else:
-            compare_content(path, content, repeat, contents[repeat], "repeat output")
+            compare_content(path, content, repeat, contents[repeat], "repeat output", semantic_decoder, failure_message)
 
 
-def check_cross_runner(contents, suffix):
+def check_cross_runner(contents, suffix, semantic_decoder, failure_message):
     groups = {}
     for path, content in contents.items():
         if path.name.endswith(f"-repeat.{suffix}"):
@@ -676,7 +744,7 @@ def check_cross_runner(contents, suffix):
     for name, values in sorted(groups.items()):
         reference_path, reference = values[0]
         for path, content in values[1:]:
-            compare_content(path, content, reference_path, reference, "output")
+            compare_content(path, content, reference_path, reference, "output", semantic_decoder, failure_message)
 
 
 def main():
@@ -697,10 +765,10 @@ def main():
         "PMTiles archive failed verification",
     )
 
-    check_repeat(mbtiles, "mbtiles")
-    check_repeat(pmtiles, "pmtiles")
-    check_cross_runner(mbtiles, "mbtiles")
-    check_cross_runner(pmtiles, "pmtiles")
+    check_repeat(mbtiles, "mbtiles", mbtiles_decode_semantic_tiles, "MBTiles archive failed verification")
+    check_repeat(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification")
+    check_cross_runner(mbtiles, "mbtiles", mbtiles_decode_semantic_tiles, "MBTiles archive failed verification")
+    check_cross_runner(pmtiles, "pmtiles", pmtiles_decode_semantic_tiles, "PMTiles archive failed verification")
     return status
 
 
