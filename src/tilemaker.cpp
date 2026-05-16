@@ -348,9 +348,6 @@ int main(const int argc, const char* argv[]) {
 
 	// ----	Write out data
 
-	// Launch the pool with threadNum threads
-	boost::asio::thread_pool pool(options.threadNum);
-
 	// Mutex is hold when IO is performed
 	std::mutex io_mutex;
 
@@ -460,86 +457,101 @@ int main(const int argc, const char* argv[]) {
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
-	std::size_t batchSize = 0;
-	for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
-		// Compute how many tiles should be assigned to this batch --
-		// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
-		batchSize = 0;
-		size_t weight = 0;
-		while (weight < 1000 && startIndex + batchSize < tileCoordinates.size()) {
-			const auto& zoom = tileCoordinates[startIndex + batchSize].first;
-			if (zoom > 12)
-				weight++;
-			else if (zoom > 11)
-				weight += 10;
-			else if (zoom > 10)
-				weight += 100;
-			else
-				weight += 1000;
+	auto writeTiles = [&](bool cachedTiles) {
+		boost::asio::thread_pool pool(options.threadNum);
+		std::size_t batchSize = 0;
+		for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
+			while (startIndex < tileCoordinates.size() && (tileCoordinates[startIndex].first <= CLUSTER_ZOOM) != cachedTiles)
+				startIndex++;
 
-			batchSize++;
-		}
+			if (startIndex >= tileCoordinates.size())
+				break;
 
-		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten]() {
-			std::vector<std::string> tileTimings;
-			std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
-			for(std::size_t i = startIndex; i < endIndex; ++i) {
-				unsigned int zoom = tileCoordinates[i].first;
-				TileCoordinates coords = tileCoordinates[i].second;
+			// Compute how many tiles should be assigned to this batch --
+			// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
+			batchSize = 0;
+			size_t weight = 0;
+			while (weight < 1000 && startIndex + batchSize < tileCoordinates.size()) {
+				const auto& zoom = tileCoordinates[startIndex + batchSize].first;
+				if ((zoom <= CLUSTER_ZOOM) != cachedTiles)
+					break;
 
-#ifdef CLOCK_MONOTONIC
-				timespec start, end;
-				if (options.logTileTimings)
-					clock_gettime(CLOCK_MONOTONIC, &start);
-#endif
+				if (zoom > 12)
+					weight++;
+				else if (zoom > 11)
+					weight += 10;
+				else if (zoom > 10)
+					weight += 100;
+				else
+					weight += 1000;
 
-				std::vector<std::vector<OutputObjectID>> data;
-				for (auto source : sources) {
-					data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
-				}
-				outputProc(sharedData, sources, attributeStore, data, coords, zoom);
-
-#ifdef CLOCK_MONOTONIC
-				if (options.logTileTimings) {
-					clock_gettime(CLOCK_MONOTONIC, &end);
-					uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
-					std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
-					tileTimings.push_back(output);
-				}
-#endif
+				batchSize++;
 			}
 
-			if (options.logTileTimings) {
-				const std::lock_guard<std::mutex> lock(io_mutex);
-				std::cout << std::endl;
-				for (const auto& output : tileTimings)
-					std::cout << output << std::endl;
-			}
+			boost::asio::post(pool, [=, &tileCoordinates, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten]() {
+				std::vector<std::string> tileTimings;
+				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
+				for(std::size_t i = startIndex; i < endIndex; ++i) {
+					unsigned int zoom = tileCoordinates[i].first;
+					TileCoordinates coords = tileCoordinates[i].second;
 
-			tilesWritten += (endIndex - startIndex); 
+#ifdef CLOCK_MONOTONIC
+					timespec start, end;
+					if (options.logTileTimings)
+						clock_gettime(CLOCK_MONOTONIC, &start);
+#endif
 
-			if (io_mutex.try_lock()) {
-				uint64_t written = tilesWritten.load();
-
-				if (written >= lastTilesWritten + tileCoordinates.size() / 100 || ISATTY) {
-					lastTilesWritten = written;
-					// Show progress grouped by z6 (or lower)
-					size_t z = tileCoordinates[startIndex].first;
-					size_t x = tileCoordinates[startIndex].second.x;
-					size_t y = tileCoordinates[startIndex].second.y;
-					if (z > CLUSTER_ZOOM) {
-						x = x / (1 << (z - CLUSTER_ZOOM));
-						y = y / (1 << (z - CLUSTER_ZOOM));
-						z = CLUSTER_ZOOM;
+					std::vector<std::vector<OutputObjectID>> data;
+					for (auto source : sources) {
+						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
 					}
-					cout << "z" << z << "/" << x << "/" << y << ", writing tile " << written << " of " << tileCoordinates.size() << "               \r" << std::flush;
+					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
+
+#ifdef CLOCK_MONOTONIC
+					if (options.logTileTimings) {
+						clock_gettime(CLOCK_MONOTONIC, &end);
+						uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+						std::string output = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + " took " + std::to_string(tileNs/1e6) + " ms";
+						tileTimings.push_back(output);
+					}
+#endif
 				}
-				io_mutex.unlock();
-			}
-		});
-	}
-	// Wait for all tasks in the pool to complete.
-	pool.join();
+
+				if (options.logTileTimings) {
+					const std::lock_guard<std::mutex> lock(io_mutex);
+					std::cout << std::endl;
+					for (const auto& output : tileTimings)
+						std::cout << output << std::endl;
+				}
+
+				tilesWritten += (endIndex - startIndex);
+
+				if (io_mutex.try_lock()) {
+					uint64_t written = tilesWritten.load();
+
+					if (written >= lastTilesWritten + tileCoordinates.size() / 100 || ISATTY) {
+						lastTilesWritten = written;
+						// Show progress grouped by z6 (or lower)
+						size_t z = tileCoordinates[startIndex].first;
+						size_t x = tileCoordinates[startIndex].second.x;
+						size_t y = tileCoordinates[startIndex].second.y;
+						if (z > CLUSTER_ZOOM) {
+							x = x / (1 << (z - CLUSTER_ZOOM));
+							y = y / (1 << (z - CLUSTER_ZOOM));
+							z = CLUSTER_ZOOM;
+						}
+						cout << "z" << z << "/" << x << "/" << y << ", writing tile " << written << " of " << tileCoordinates.size() << "               \r" << std::flush;
+					}
+					io_mutex.unlock();
+				}
+			});
+		}
+		// Wait for all tasks in the pool to complete.
+		pool.join();
+	};
+
+	writeTiles(true);
+	writeTiles(false);
 
 	// ----	Close tileset
 
@@ -564,4 +576,3 @@ int main(const int argc, const char* argv[]) {
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
-

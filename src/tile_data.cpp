@@ -27,7 +27,7 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	linestringStores(threadNum),
 	multilinestringStores(threadNum),
 	multipolygonStores(threadNum),
-	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, indexZoom)),
+	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, indexZoom, std::min(indexZoom, static_cast<unsigned int>(CLUSTER_ZOOM)))),
 	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, indexZoom))
 {
 	// TileDataSource can only index up to zoom 14. The caller is responsible for
