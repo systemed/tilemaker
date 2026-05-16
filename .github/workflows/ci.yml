@@ -89,35 +89,128 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.runtime == 'true' }}
     outputs:
-      pbf-available: ${{ steps.download.outputs.pbf-available }}
+      pbf-available: ${{ steps.fixture.outputs.pbf-available }}
 
     steps:
-    - name: Download and verify PBF file
-      id: download
+    - name: Resolve Geofabrik fixture metadata
+      id: metadata
+      env:
+        PBF_URL: https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf
       run: |
-        if curl -fsSL "https://download.geofabrik.de/europe/${AREA}-latest.osm.pbf" -o "${AREA}-latest.osm.pbf" &&
-           curl -fsSL "https://download.geofabrik.de/europe/${AREA}-latest.osm.pbf.md5" -o "${AREA}-latest.osm.pbf.md5" &&
-           md5sum -c "${AREA}-latest.osm.pbf.md5" &&
-           mv "${AREA}-latest.osm.pbf" "${AREA}.osm.pbf"; then
+        python3 <<'PY'
+        import hashlib
+        import os
+        import sys
+        import urllib.request
+
+        url = os.environ["PBF_URL"]
+        output_path = os.environ["GITHUB_OUTPUT"]
+
+        try:
+            request = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(request, timeout=30) as response:
+                headers = response.headers
+                effective_url = response.geturl()
+                etag = headers.get("ETag", "")
+                last_modified = headers.get("Last-Modified", "")
+                content_length = headers.get("Content-Length", "")
+
+            if not etag and not last_modified:
+                raise RuntimeError("Geofabrik response did not include ETag or Last-Modified")
+
+            metadata = "\n".join([
+                f"url={url}",
+                f"effective-url={effective_url}",
+                f"etag={etag}",
+                f"last-modified={last_modified}",
+                f"content-length={content_length}",
+            ])
+            cache_key = hashlib.sha256(metadata.encode("utf-8")).hexdigest()
+
+            with open("geofabrik-fixture-metadata.txt", "w", encoding="utf-8") as metadata_file:
+                metadata_file.write(metadata)
+                metadata_file.write("\n")
+
+            with open(output_path, "a", encoding="utf-8") as output:
+                output.write("metadata-available=true\n")
+                output.write(f"cache-key={cache_key}\n")
+                output.write(f"effective-url={effective_url}\n")
+                output.write(f"etag={etag}\n")
+                output.write(f"last-modified={last_modified}\n")
+                output.write(f"content-length={content_length}\n")
+
+            print(metadata)
+        except Exception as error:
+            print(f"::warning::Geofabrik PBF fixture metadata could not be resolved: {error}")
+            with open(output_path, "a", encoding="utf-8") as output:
+                output.write("metadata-available=false\n")
+            sys.exit(0)
+        PY
+
+    - name: Restore PBF fixture cache
+      id: pbf-cache
+      if: ${{ steps.metadata.outputs.metadata-available == 'true' }}
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.AREA }}.osm.pbf
+        key: geofabrik-${{ env.AREA }}-${{ steps.metadata.outputs.cache-key }}
+
+    - name: Download and verify PBF file
+      id: fixture
+      env:
+        PBF_URL: https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf
+        MD5_URL: https://download.geofabrik.de/europe/${{ env.AREA }}-latest.osm.pbf.md5
+      run: |
+        set -u
+
+        if [ "${{ steps.metadata.outputs.metadata-available }}" != "true" ]; then
+          echo "::warning::Geofabrik PBF fixture metadata could not be resolved; fixture-dependent jobs will be skipped."
+          echo "pbf-available=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ -s "${AREA}.osm.pbf" ]; then
+          echo "Using cached ${AREA}.osm.pbf"
+        else
+          echo "Downloading ${PBF_URL}"
+          if ! curl -fsSL "${PBF_URL}" -o "${AREA}.osm.pbf"; then
+            echo "::warning::Geofabrik PBF fixture could not be downloaded; fixture-dependent jobs will be skipped."
+            rm -f "${AREA}.osm.pbf"
+            echo "pbf-available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+
+        if curl -fsSL "${MD5_URL}" -o "${AREA}-latest.osm.pbf.md5"; then
+          expected_md5="$(awk '{ print $1 }' "${AREA}-latest.osm.pbf.md5")"
+        else
+          echo "::warning::Geofabrik PBF fixture MD5 file could not be downloaded; fixture-dependent jobs will be skipped."
+          rm -f "${AREA}.osm.pbf"
+          echo "pbf-available=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if printf '%s  %s\n' "${expected_md5}" "${AREA}.osm.pbf" | md5sum -c -; then
           echo "pbf-available=true" >> "$GITHUB_OUTPUT"
         else
-          echo "::warning::Geofabrik PBF fixture could not be downloaded or verified; fixture-dependent jobs will be skipped."
+          echo "::warning::Geofabrik PBF fixture did not match the published MD5; fixture-dependent jobs will be skipped."
+          rm -f "${AREA}.osm.pbf"
           echo "pbf-available=false" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Report unavailable PBF fixture
-      if: ${{ steps.download.outputs.pbf-available != 'true' }}
+      if: ${{ steps.fixture.outputs.pbf-available != 'true' }}
       run: |
         echo "::warning title=Tile generation not verified::Geofabrik PBF fixture could not be downloaded or verified. Fixture-dependent jobs were skipped."
         {
           echo "### Tile generation not verified"
           echo ""
-          echo "The Geofabrik PBF fixture could not be downloaded or verified, so jobs that generate MBTiles/PMTiles were skipped."
+          echo "The Geofabrik PBF fixture could not be downloaded or did not match the published MD5, so jobs that generate MBTiles/PMTiles were skipped."
           echo "This does not indicate a code failure, but this run did not verify tile generation."
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload PBF fixture
-      if: ${{ steps.download.outputs.pbf-available == 'true' }}
+      if: ${{ steps.fixture.outputs.pbf-available == 'true' }}
       uses: actions/upload-artifact@v7
       with:
         name: pbf-fixture
