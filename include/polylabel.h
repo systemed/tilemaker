@@ -150,7 +150,11 @@ Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug =
 
     // a priority queue of cells in order of their "potential" (max distance to polygon)
     auto compareMax = [] (const Cell& a, const Cell& b) {
-        return a.max < b.max;
+        if (a.max != b.max) return a.max < b.max;
+        if (a.d != b.d) return a.d < b.d;
+        if (a.h != b.h) return a.h > b.h;
+        if (a.c.get<0>() != b.c.get<0>()) return a.c.get<0>() > b.c.get<0>();
+        return a.c.get<1>() > b.c.get<1>();
     };
     using Queue = std::priority_queue<Cell, std::vector<Cell>, decltype(compareMax)>;
     Queue cellQueue(compareMax);
