@@ -111,18 +111,24 @@ Cell getCentroidCell(const Polygon& polygon) {
     double area = 0;
     double cx = 0, cy = 0;
     const auto& ring = polygon.outer();
+    const Point& origin = ring.at(0);
+    const double ox = origin.get<0>();
+    const double oy = origin.get<1>();
 
     for (std::size_t i = 0, len = ring.size(), j = len - 1; i < len; j = i++) {
         const Point& a = ring[i];
         const Point& b = ring[j];
-        auto f = a.get<0>() * b.get<1>() - b.get<0>() * a.get<1>();
-        cx += (a.get<0>() + b.get<0>()) * f;
-        cy += (a.get<1>() + b.get<1>()) * f;
+        const double ax = a.get<0>() - ox;
+        const double ay = a.get<1>() - oy;
+        const double bx = b.get<0>() - ox;
+        const double by = b.get<1>() - oy;
+        auto f = ax * by - bx * ay;
+        cx += (ax + bx) * f;
+        cy += (ay + by) * f;
         area += f * 3;
     }
 
-    Point c { cx, cy };
-    return Cell(area == 0 ? ring.at(0) : Point { cx / area, cy / area }, 0, polygon);
+    return Cell(area == 0 ? ring.at(0) : Point { ox + cx / area, oy + cy / area }, 0, polygon);
 }
 
 } // namespace detail
