@@ -694,10 +694,12 @@ def tile_label(tile):
     return f"z{z}/{x}/{y}"
 
 
-def tile_difference(left, right, semantic):
+def tile_difference(left, right, semantic, tiles=None):
     left_tiles = left.semantic_tiles if semantic else left.raw_tiles
     right_tiles = right.semantic_tiles if semantic else right.raw_tiles
-    for tile in sorted(set(left_tiles) | set(right_tiles)):
+    if tiles is None:
+        tiles = sorted(set(left_tiles) | set(right_tiles))
+    for tile in tiles:
         if tile not in left_tiles:
             return f"{tile_label(tile)} is missing from output"
         if tile not in right_tiles:
@@ -782,7 +784,7 @@ def compare_content(path, content, other_path, other_content, relation, semantic
             error(
                 path,
                 f"semantic content differs from {relation} {archive_label(other_path)}; "
-                f"{tile_difference(content, other_content, True)}",
+                f"{tile_difference(content, other_content, True, [tile])}",
             )
             return
         if index % PROGRESS_INTERVAL == 0 or index == len(differing_tiles):
