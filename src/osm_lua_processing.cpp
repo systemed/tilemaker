@@ -862,14 +862,25 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
-		Polygon p;
-		geom::assign_points(p, linestringCached());
-
-		if (algorithm == CentroidAlgorithm::Polylabel) {
-			// CONSIDER: pick precision intelligently
-			centroid = mapbox::polylabel(p);
+		if (!isClosed) {
+			const Linestring &ls = linestringCached();
+			if (ls.empty())
+				throw geom::centroid_exception();
+			if (ls.size()==1) {
+				centroid = ls.front();
+			} else {
+				geom::centroid(ls, centroid);
+			}
 		} else {
-			geom::centroid(p, centroid);
+			Polygon p;
+			geom::assign_points(p, linestringCached());
+
+			if (algorithm == CentroidAlgorithm::Polylabel) {
+				// CONSIDER: pick precision intelligently
+				centroid = mapbox::polylabel(p);
+			} else {
+				geom::centroid(p, centroid);
+			}
 		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else {
