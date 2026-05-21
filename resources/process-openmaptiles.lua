@@ -1,4 +1,4 @@
--- Data processing based on openmaptiles.org schema v3.15 (July 2024)
+-- Data processing based on openmaptiles.org schema v3.16
 -- https://openmaptiles.org/schema/
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
@@ -233,12 +233,12 @@ z12MinorRoadValues = Set { "unclassified", "residential", "road", "living_street
 z12OtherRoadValues = Set { "raceway" }
 z13RoadValues     = Set { "track", "service" }
 manMadeRoadValues = Set { "pier", "bridge" }
-pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform" }
+pathValues      = Set { "footway", "cycleway", "bridleway", "path", "steps", "pedestrian", "platform", "corridor" }
 linkValues      = Set { "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link" }
 railwayClasses  = { rail="rail", narrow_gauge="rail", preserved="rail", funicular="rail", subway="transit", light_rail="transit", monorail="transit", tram="transit" }
 
 aerowayBuildings= Set { "terminal", "gate", "tower" }
--- landuse "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
+-- landuse "class" values : based on OMT v3.16 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landuse/mapping.yaml
 landuseKeys     = Set { "railway", "cemetery", "military", "quarry", "residential", "commercial", "industrial", "garages", "retail", -- from landuse tag
                         "bus_station", "school", "university", "kindergarten", "college", "library", "hospital", "grave_yard", -- from amenity tag
                         "stadium", "pitch", "playground", "track", --from leisure tag
@@ -246,7 +246,7 @@ landuseKeys     = Set { "railway", "cemetery", "military", "quarry", "residentia
                         "suburb", "quarter", "neighbourhood", --from place tag
                         "dam" --from waterway tag
                         }
--- landcover "class" values : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
+-- landcover "class" values : based on OMT v3.16 https://github.com/openmaptiles/openmaptiles/blob/master/layers/landcover/landcover.yaml
 -- (wetland subclasses are not listed here but are managed below, in "Set 'landcover'" part)
 landcoverKeys   = { wood="wood", forest="wood",
                     wetland="wetland",
@@ -369,7 +369,12 @@ function write_to_transportation_layer(minzoom, highway_class, subclass, ramp, s
 		if Holds("horse") then Attribute("horse", Find("horse"), accessMinzoom) end
 		AttributeBoolean("toll", Find("toll") == "yes", accessMinzoom)
 		if Find("expressway") == "yes" then AttributeBoolean("expressway", true, 7) end
-		if Holds("mtb_scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
+		if Holds("mtb:scale") then Attribute("mtb_scale", Find("mtb:scale"), 10) end
+		if highway_class == "path" and (subclass == "path" or subclass == "footway" or subclass == "cycleway" or subclass == "bridleway") then
+			local informal = Find("informal")
+			if informal == "yes" then AttributeInteger("official", 0)
+			elseif informal == "no" or Find("operator") ~= "" then AttributeInteger("official", 1) end
+		end
 	end
 end
 
@@ -692,7 +697,7 @@ function way_function()
 		Attribute("housenumber", housenumber)
 	end
 	
-	-- water mapping : based on OMT v3.15 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
+	-- water mapping : based on OMT v3.16 https://github.com/openmaptiles/openmaptiles/blob/master/layers/water/water.yaml
 	if waterNatural[natural] or waterLanduse[landuse] or leisure=="swimming_pool" or waterway=="dock" or waterClasses[water] then
 		if Find("covered")=="yes" or not is_closed then return end
 		local class="lake"
@@ -713,7 +718,7 @@ function way_function()
 		--  https://www.openstreetmap.org/way/27201902
 		--  https://www.openstreetmap.org/way/25309134
 		--  https://www.openstreetmap.org/way/24579306
-		if Holds("name") then
+		if Holds("name") and leisure ~= "swimming_pool" then
 			LayerAsCentroid("water_name_detail")
 			SetNameAttributes()
 			SetMinZoomByArea()
