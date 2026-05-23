@@ -192,15 +192,18 @@ bool writeRing(
 
 	bool firstPoint = true;
 	fbuilder.add_ring(points);
-	for (const Point& point : ring) {
-		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
+	for (auto it = ring.rbegin(); it != ring.rend(); ++it) {
+    	const Point& point = *it;
 
-		if (firstPoint || xy != lastXy) {
-			firstPoint = false;
-			lastXy = xy;
-			fbuilder.set_point(xy.first, xy.second);
-		}
-	}
+    	pair<int, int> xy =
+    		std::make_pair(point.get<0>(), point.get<1>());
+
+    	if (firstPoint || xy != lastXy) {
+    		firstPoint = false;
+    		lastXy = xy;
+    		fbuilder.set_point(xy.first, xy.second);
+    	}
+    }
 
 	return true;
 }
@@ -228,6 +231,8 @@ void writeMultiPolygon(
 	}
 	if (geom::is_empty(current))
 		return;
+
+	geom::correct(current);
 
 	geom::validity_failure_type failure;
 	if (verbose && !geom::is_valid(current, failure)) { 
