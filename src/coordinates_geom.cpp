@@ -33,10 +33,10 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 
 // Scaling with naive self-intersection check - if we've added the new point
 // within the last 5 points, then backtrack to the last time we added it
-std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
-	std::vector<Point> points;
+Ring TileBbox::scaleRing(Ring const &src) const {
+	Ring points;
 	points.reserve(src.size());
-	for(auto &i: src) {
+	for(auto const &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
 		bool found = false;
 		for (size_t j=1; j<5; j++) {
@@ -53,30 +53,25 @@ std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
 
 MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
 	MultiPolygon dst;
-	for(auto poly: src) {
+	dst.reserve(src.size());
+	for(auto const &poly: src) {
 		Polygon p;
 
 		// Copy the outer ring
-		std::vector<Point> points = scaleRing(poly.outer());
+		Ring points = scaleRing(poly.outer());
 		if (points.size()<4) continue;
-		Ring outer;
-		geom::append(outer,points);
-		geom::append(p,outer);
+		p.outer() = std::move(points);
 
 		// Copy the inner rings
-		int num_rings = 0;
-		for(auto &r: poly.inners()) {
+		p.inners().reserve(poly.inners().size());
+		for(auto const &r: poly.inners()) {
 			points = scaleRing(r);
 			if (points.size()<4) continue;
-			Ring inner;
-			geom::append(inner,points);
-			num_rings++;
-			geom::interior_rings(p).resize(num_rings);
-			geom::append(p, inner, num_rings-1);
+			p.inners().push_back(std::move(points));
 		}
 
 		// Add to multipolygon
-		dst.push_back(p);
+		dst.push_back(std::move(p));
 	}
 	return dst;
 }
