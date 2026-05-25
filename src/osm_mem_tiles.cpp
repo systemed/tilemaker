@@ -34,6 +34,7 @@ LatpLon OsmMemTiles::buildNodeGeometry(
 		Linestring& ls = getOrBuildLinestring(objectID);
 		Point centroid;
 		Polygon p;
+		p.outer().reserve(ls.size());
 		geom::assign_points(p, ls);
 		geom::centroid(p, centroid);
 		return LatpLon{(int32_t)(centroid.y()*10000000.0), (int32_t)(centroid.x()*10000000.0)};
@@ -124,8 +125,10 @@ void OsmMemTiles::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	Linestring ls;
 	populateLinestring(ls, objectID);
 	Polygon p;
+	p.outer().reserve(ls.size());
 	geom::assign_points(p, ls);
-	dst.push_back(p);
+	dst.reserve(dst.size() + 1);
+	dst.push_back(std::move(p));
 }
 
 void OsmMemTiles::Clear() {

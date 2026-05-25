@@ -652,10 +652,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			else if (isWay) {
 				//Is there a more efficient way to do this?
-				Linestring ls = linestringCached();
+				const Linestring &ls = linestringCached();
 				Polygon p;
+				p.outer().reserve(ls.size());
 				geom::assign_points(p, ls);
-				mp.push_back(p);
+				mp.reserve(1);
+				mp.push_back(std::move(p));
 
 				auto correctionResult = CorrectGeometry(mp);
 				if(correctionResult == CorrectGeometryResult::Invalid) return;
@@ -872,8 +874,10 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 				geom::centroid(ls, centroid);
 			}
 		} else {
+			const Linestring &ls = linestringCached();
 			Polygon p;
-			geom::assign_points(p, linestringCached());
+			p.outer().reserve(ls.size());
+			geom::assign_points(p, ls);
 
 			if (algorithm == CentroidAlgorithm::Polylabel) {
 				// CONSIDER: pick precision intelligently
