@@ -49,6 +49,10 @@ struct visItem {
 struct minHeap {
 	std::vector<visItem *> h;
 
+	void Reserve(size_t size) {
+		h.reserve(size);
+	}
+
 	void Push(visItem *item) {
 		item->index = h.size();
 		h.push_back(item);
@@ -142,9 +146,9 @@ struct minHeap {
 
 template<typename GeometryType>
 static double doubleTriangleArea(GeometryType const &ls, int start, int i1, int i2, int i3) {
-	Point a = ls[i1 + start];
-	Point b = ls[i2 + start];
-	Point c = ls[i3 + start];
+	Point const &a = ls[i1 + start];
+	Point const &b = ls[i2 + start];
+	Point const &c = ls[i3 + start];
 
 	return std::abs((b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x()));
 }
@@ -158,6 +162,7 @@ GeometryType visvalingam(const GeometryType &ls, double threshold, size_t retain
 
 	// build the initial minheap linked list.
 	minHeap heap;
+	heap.Reserve(end - start);
 
 	visItem linkedListStart;
 	linkedListStart.area = INFINITY;
@@ -232,6 +237,7 @@ GeometryType visvalingam(const GeometryType &ls, double threshold, size_t retain
 	}
 
 	GeometryType output;
+	output.reserve(end - start - removed);
 	visItem *item = &linkedListStart;
 	while (item != NULL) {
 		output.emplace_back(ls[item->pointIndex + start]);
@@ -250,6 +256,7 @@ Polygon simplifyVis(const Polygon &p, double max_distance) {
 	Polygon output;
 	double threshold = max_distance * max_distance * 4;
 	output.outer() = visvalingam(p.outer(), threshold, 4);
+	output.inners().reserve(p.inners().size());
 	for (const auto &ring : p.inners()) {
 		output.inners().emplace_back(visvalingam(ring, threshold, 4));
 	}
@@ -257,6 +264,7 @@ Polygon simplifyVis(const Polygon &p, double max_distance) {
 }
 MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance) { 
 	MultiPolygon output;
+	output.reserve(mp.size());
 	for (const auto &p : mp) {
 		output.emplace_back(simplifyVis(p, max_distance));
 	}
