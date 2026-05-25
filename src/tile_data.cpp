@@ -477,7 +477,7 @@ void TileDataSource::addGeometryToIndex(
 	const std::vector<OutputObject>& outputs,
 	const uint64_t id
 ) {
-	for (Linestring ls : geom) {
+	for (const auto& ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, indexZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
@@ -496,7 +496,7 @@ void TileDataSource::addGeometryToIndex(
 ) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
-	for (Polygon poly : geom) {
+	for (const auto& poly : geom) {
 		unordered_set<TileCoordinates> tileSetTmp;
 		insertIntermediateTiles(poly.outer(), indexZoom, tileSetTmp);
 		fillCoveredTiles(tileSetTmp);
