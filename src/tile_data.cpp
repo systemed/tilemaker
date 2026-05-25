@@ -231,7 +231,8 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::append(current_ls, ls[0]);
 
 			for(size_t i = 1; i < ls.size(); ++i) {
-				if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+				boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
+				if(!geom::intersects(segment, bbox.clippingBox)) {
 					if(current_ls.size() > 1)
 						out.push_back(std::move(current_ls));
 					current_ls.clear();
