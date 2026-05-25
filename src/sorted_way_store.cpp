@@ -194,6 +194,7 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 
 	std::vector<NodeID> nodes = SortedWayStore::decodeWay(wayPtr->flags, wayPtr->data);
 	std::vector<LatpLon> rv;
+	rv.reserve(nodes.size());
 	for (const NodeID& node : nodes)
 		rv.push_back(nodeStore.at(node));
 	return rv;

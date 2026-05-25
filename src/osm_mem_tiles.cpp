@@ -85,6 +85,7 @@ Geometry OsmMemTiles::buildWayGeometry(
 
 void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) const {
 	std::vector<LatpLon> nodes = wayStore.at(OSM_ID(objectID));
+	ls.reserve(nodes.size());
 
 	for (const LatpLon& node : nodes) {
 		boost::geometry::range::push_back(ls, boost::geometry::make<Point>(node.lon/10000000.0, node.latp/10000000.0));
