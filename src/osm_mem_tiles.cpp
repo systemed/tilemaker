@@ -60,6 +60,7 @@ Geometry OsmMemTiles::buildWayGeometry(
 			return out;
 
 		Linestring current_ls;
+		current_ls.reserve(ls.size());
 		geom::append(current_ls, ls[0]);
 
 		for(size_t i = 1; i < ls.size(); ++i) {
@@ -68,6 +69,7 @@ Geometry OsmMemTiles::buildWayGeometry(
 				if(current_ls.size() > 1)
 					out.push_back(std::move(current_ls));
 				current_ls.clear();
+				current_ls.reserve(ls.size() - i);
 			}
 			geom::append(current_ls, ls[i]);
 		}
