@@ -594,5 +594,15 @@ NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
 
 void TileDataSource::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	const auto &input = retrieveMultiPolygon(objectID);
-	boost::geometry::assign(dst, input);
+	dst.resize(input.size());
+	for(std::size_t i = 0; i < input.size(); ++i) {
+		dst[i].outer().resize(input[i].outer().size());
+		boost::geometry::assign(dst[i].outer(), input[i].outer());
+
+		dst[i].inners().resize(input[i].inners().size());
+		for(std::size_t j = 0; j < input[i].inners().size(); ++j) {
+			dst[i].inners()[j].resize(input[i].inners()[j].size());
+			boost::geometry::assign(dst[i].inners()[j], input[i].inners()[j]);
+		}
+	}
 }
