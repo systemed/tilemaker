@@ -33,8 +33,8 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 
 // Scaling with naive self-intersection check - if we've added the new point
 // within the last 5 points, then backtrack to the last time we added it
-Ring TileBbox::scaleRing(Ring const &src) const {
-	Ring points;
+void TileBbox::scaleRing(Ring &points, Ring const &src) const {
+	points.clear();
 	points.reserve(src.size());
 	for(auto const &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
@@ -48,31 +48,46 @@ Ring TileBbox::scaleRing(Ring const &src) const {
 		}
 		if (!found) points.push_back(Point(scaled.first,scaled.second));
 	}
+}
+
+Ring TileBbox::scaleRing(Ring const &src) const {
+	Ring points;
+	scaleRing(points, src);
 	return points;
+}
+
+void TileBbox::scaleGeometry(MultiPolygon &dst, MultiPolygon const &src) const {
+	if (dst.size() < src.size())
+		dst.resize(src.size());
+
+	size_t polygonCount = 0;
+	for(auto const &poly: src) {
+		Polygon &p = dst[polygonCount];
+
+		// Copy the outer ring
+		scaleRing(p.outer(), poly.outer());
+		if (p.outer().size()<4)
+			continue;
+
+		// Copy the inner rings
+		if (p.inners().size() < poly.inners().size())
+			p.inners().resize(poly.inners().size());
+		size_t innerCount = 0;
+		for(auto const &r: poly.inners()) {
+			Ring &points = p.inners()[innerCount];
+			scaleRing(points, r);
+			if (points.size()>=4)
+				innerCount++;
+		}
+		p.inners().resize(innerCount);
+		polygonCount++;
+	}
+	dst.resize(polygonCount);
 }
 
 MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
 	MultiPolygon dst;
-	dst.reserve(src.size());
-	for(auto const &poly: src) {
-		Polygon p;
-
-		// Copy the outer ring
-		Ring points = scaleRing(poly.outer());
-		if (points.size()<4) continue;
-		p.outer() = std::move(points);
-
-		// Copy the inner rings
-		p.inners().reserve(poly.inners().size());
-		for(auto const &r: poly.inners()) {
-			points = scaleRing(r);
-			if (points.size()<4) continue;
-			p.inners().push_back(std::move(points));
-		}
-
-		// Add to multipolygon
-		dst.push_back(std::move(p));
-	}
+	scaleGeometry(dst, src);
 	return dst;
 }
 
