@@ -97,6 +97,8 @@ static inline void dissolve_find_intersections(
 	if(ring.empty()) return;
 
 	boost::geometry::index::rtree<std::pair< boost::geometry::model::segment<point_t>, std::size_t >, boost::geometry::index::quadratic<16>> index;
+	std::vector<point_t> output;
+	output.reserve(2);
 
 	// Generate all by-pass intersections in the graph
 	// Generate a list of all by-pass intersections
@@ -113,7 +115,7 @@ static inline void dissolve_find_intersections(
 			auto const &line_2 = iter.first;
 			auto j = iter.second;
 			
-			std::vector<point_t> output;
+			output.clear();
 			boost::geometry::intersection(line_1, line_2, output);
 
 			for(auto const &p: output) {
