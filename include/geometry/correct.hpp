@@ -10,6 +10,7 @@
  * ----------------------------------------------------------------------------
  */
 
+#include <utility>
 #include <vector>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -25,7 +26,7 @@ namespace impl {
 template<typename C, typename T>
 static inline void result_combine(C &result, T &&new_element)
 {
-    result.push_back(new_element);
+    result.push_back(std::forward<T>(new_element));
 
    	for(std::size_t i = 0; i < result.size() - 1; ) {
         if(!boost::geometry::intersects(result[i], result.back())) {
