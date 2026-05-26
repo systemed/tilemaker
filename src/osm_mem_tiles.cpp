@@ -4,6 +4,7 @@
 using namespace std;
 
 thread_local GeometryCache<Linestring> linestringCache;
+thread_local std::vector<LatpLon> wayNodes;
 
 OsmMemTiles::OsmMemTiles(
 	size_t threadNum,
@@ -87,10 +88,10 @@ Geometry OsmMemTiles::buildWayGeometry(
 }
 
 void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) const {
-	std::vector<LatpLon> nodes = wayStore.at(OSM_ID(objectID));
-	ls.reserve(nodes.size());
+	wayStore.at(OSM_ID(objectID), wayNodes);
+	ls.reserve(wayNodes.size());
 
-	for (const LatpLon& node : nodes) {
+	for (const LatpLon& node : wayNodes) {
 		boost::geometry::range::push_back(ls, boost::geometry::make<Point>(node.lon/10000000.0, node.latp/10000000.0));
 	}
 }

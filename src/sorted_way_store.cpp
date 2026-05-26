@@ -28,6 +28,7 @@ namespace SortedWayStoreTypes {
 		uint64_t groupStart;
 		std::vector<std::pair<WayID, std::vector<NodeID>>>* localWays;
 		std::vector<uint8_t> encodedWay;
+		std::vector<NodeID> decodedWay;
 	};
 
 	thread_local std::deque<std::pair<const SortedWayStore*, ThreadStorage>> threadStorage;
@@ -136,6 +137,12 @@ bool SortedWayStore::contains(size_t shard, WayID id) const {
 }
 
 std::vector<LatpLon> SortedWayStore::at(WayID id) const {
+	std::vector<LatpLon> rv;
+	at(id, rv);
+	return rv;
+}
+
+void SortedWayStore::at(WayID id, std::vector<LatpLon>& rv) const {
 	const size_t groupIndex = id / (GroupSize * ChunkSize);
 	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
 	const uint64_t chunkMaskByte = chunk / 8;
@@ -192,12 +199,13 @@ std::vector<LatpLon> SortedWayStore::at(WayID id) const {
 		wayPtr = (EncodedWay*)(endOfWayOffsetPtr + chunkPtr->wayOffsets[wayOffset] * LargeWayAlignment);
 	}
 
-	std::vector<NodeID> nodes = SortedWayStore::decodeWay(wayPtr->flags, wayPtr->data);
-	std::vector<LatpLon> rv;
+	ThreadStorage& tls = s(this);
+	SortedWayStore::decodeWay(wayPtr->flags, wayPtr->data, tls.decodedWay);
+	const std::vector<NodeID>& nodes = tls.decodedWay;
+	rv.clear();
 	rv.reserve(nodes.size());
 	for (const NodeID& node : nodes)
 		rv.push_back(nodeStore.at(node));
-	return rv;
 }
 
 void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {
@@ -317,11 +325,18 @@ void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vect
 
 std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input) {
 	std::vector<NodeID> rv;
+	decodeWay(flags, input, rv);
+	return rv;
+};
+
+void SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input, std::vector<NodeID>& rv) {
+	rv.clear();
 
 	bool isCompressed = flags & CompressedWay;
 	bool isClosed = flags & ClosedWay;
 
 	const uint16_t length = flags & 0b0000011111111111;
+	rv.reserve(length + (isClosed ? 1 : 0));
 
 	if (!(flags & UniformUpperBits)) {
 		// The nodes don't all share the same upper int; unpack which
@@ -367,7 +382,6 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 
 	if (isClosed)
 		rv.push_back(rv[0]);
-	return rv;
 };
 
 uint16_t SortedWayStore::encodeWay(const std::vector<NodeID>& way, std::vector<uint8_t>& output, bool compress) {
