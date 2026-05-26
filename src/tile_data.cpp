@@ -227,6 +227,14 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			if(ls.empty())
 				return out;
 
+			Box extBox = bbox.getExtendBox();
+			const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
+			const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
+			auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
+				return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
+			};
+			bool needsIntersection = !pointInsideExtBox(ls[0]);
+
 			Linestring current_ls;
 			geom::append(current_ls, ls[0]);
 
@@ -238,13 +246,18 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					current_ls.clear();
 				}
 				geom::append(current_ls, ls[i]);
+				if (!needsIntersection)
+					needsIntersection = !pointInsideExtBox(ls[i]);
 			}
 
 			if(current_ls.size() > 1)
 				out.push_back(std::move(current_ls));
 
+			if (!needsIntersection)
+				return out;
+
 			MultiLinestring result;
-			geom::intersection(out, bbox.getExtendBox(), result);
+			geom::intersection(out, extBox, result);
 			return result;
 		}
 
