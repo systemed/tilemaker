@@ -281,9 +281,11 @@ static inline std::vector<ring_t> correct(ring_t const &ring, boost::geometry::o
 	dissolve_find_intersections(new_ring, pseudo_vertices, start_keys);
 
 	if(start_keys.empty()) {
-		if(std::abs(boost::geometry::area(new_ring)) > remove_spike_min_area) 
-			return { new_ring };
-		else
+		if(std::abs(boost::geometry::area(new_ring)) > remove_spike_min_area) {
+			std::vector<ring_t> result;
+			result.push_back(std::move(new_ring));
+			return result;
+		} else
 			return { };
 	}
 
