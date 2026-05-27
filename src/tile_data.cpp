@@ -340,7 +340,10 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			MultiPolygon mp;
-			geom::assign(mp, input);
+			if (cachedClip == nullptr)
+				mp = std::move(uncached);
+			else
+				geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
@@ -353,7 +356,13 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				}
 				if (!valid && (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors)) {
 					MultiPolygon output;
-					geom::intersection(input, box, output);
+					if (cachedClip == nullptr) {
+						MultiPolygon original;
+						populateMultiPolygon(original, objectID);
+						geom::intersection(original, box, output);
+					} else {
+						geom::intersection(input, box, output);
+					}
 					geom::correct(output);
 
 					// retry with Boost intersection if fast_clip has caused self-intersections
