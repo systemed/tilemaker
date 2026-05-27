@@ -200,6 +200,15 @@ char bit_code(Point const &p, Box const &bbox) {
 void fast_clip(Ring &points, Box const &bbox, Ring &result) {
 	// clip against each side of the clip rectangle
 	for (char edge = 1; edge <= 8; edge *= 2) {
+		bool needsClip = false;
+		for (auto const &p: points) {
+			if (bit_code(p, bbox) & edge) {
+				needsClip = true;
+				break;
+			}
+		}
+		if (!needsClip) continue;
+
 		result.clear();
 		result.reserve(points.size() + 4);
 		Point prev = points[points.size() - 1];
