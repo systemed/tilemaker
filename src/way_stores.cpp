@@ -23,8 +23,14 @@ bool BinarySearchWayStore::contains(size_t shard, WayID id) const {
 }
 
 std::vector<LatpLon> BinarySearchWayStore::at(WayID wayid) const {
+	std::vector<LatpLon> rv;
+	at(wayid, rv);
+	return rv;
+}
+
+void BinarySearchWayStore::at(WayID wayid, std::vector<LatpLon>& rv) const {
 	std::lock_guard<std::mutex> lock(mutex);
-	
+
 	auto iter = std::lower_bound(mLatpLonLists->begin(), mLatpLonLists->end(), wayid, [](auto const &e, auto wayid) { 
 		return e.first < wayid; 
 	});
@@ -32,12 +38,11 @@ std::vector<LatpLon> BinarySearchWayStore::at(WayID wayid) const {
 	if(iter == mLatpLonLists->end() || iter->first != wayid)
 		throw std::out_of_range("Could not find way with id " + std::to_string(wayid));
 
-	std::vector<LatpLon> rv;
+	rv.clear();
 	rv.reserve(iter->second.size());
 	// TODO: copy iter->second to rv more efficiently
 	for (const LatpLon& el : iter->second)
 		rv.push_back(el);
-	return rv;
 }
 
 void BinarySearchWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {

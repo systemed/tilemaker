@@ -512,21 +512,43 @@ void reverse_project(DegPoint& p) {
     geom::set<1>(p, latp2lat(geom::get<1>(p)));
 }
 
+template <typename DstRing, typename SrcRing>
+void projectRing(DstRing& dst, const SrcRing& src) {
+	dst.resize(src.size());
+	for (std::size_t i = 0; i < src.size(); ++i) {
+		geom::set<0>(dst[i], geom::get<0>(src[i]));
+		geom::set<1>(dst[i], latp2lat(geom::get<1>(src[i])));
+	}
+}
+
+#if BOOST_VERSION >= 106700
+double OsmLuaProcessing::projectedPolygonArea(const Polygon &p) {
+	areaPolygonCache.inners().resize(p.inners().size());
+	projectRing(areaPolygonCache.outer(), p.outer());
+	for (std::size_t i = 0; i < p.inners().size(); ++i) {
+		projectRing(areaPolygonCache.inners()[i], p.inners()[i]);
+	}
+
+	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
+	return geom::area(areaPolygonCache, sph_strategy);
+}
+#endif
+
 // Returns area
 double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
 
 #if BOOST_VERSION >= 106700
-	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
 	if (isRelation) {
 		// Boost won't calculate area of a multipolygon, so we just total up the member polygons
-		return multiPolygonArea(multiPolygonCached());
+		double totalArea = 0;
+		const MultiPolygon &mp = multiPolygonCached();
+		for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+			totalArea += projectedPolygonArea(*it);
+		}
+		return totalArea;
 	} else if (isWay) {
-		// Reproject back into lat/lon and then run Boo
-		geom::model::polygon<DegPoint> p;
-		geom::assign(p,polygonCached());
-		geom::for_each_point(p, reverse_project);
-		return geom::area(p, sph_strategy);
+		return projectedPolygonArea(polygonCached());
 	}
 #else
 	if (isRelation) {
@@ -652,10 +674,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			else if (isWay) {
 				//Is there a more efficient way to do this?
-				Linestring ls = linestringCached();
+				const Linestring &ls = linestringCached();
 				Polygon p;
+				p.outer().reserve(ls.size());
 				geom::assign_points(p, ls);
-				mp.push_back(p);
+				mp.reserve(1);
+				mp.push_back(std::move(p));
 
 				auto correctionResult = CorrectGeometry(mp);
 				if(correctionResult == CorrectGeometryResult::Invalid) return;
@@ -872,8 +896,10 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 				geom::centroid(ls, centroid);
 			}
 		} else {
+			const Linestring &ls = linestringCached();
 			Polygon p;
-			geom::assign_points(p, linestringCached());
+			p.outer().reserve(ls.size());
+			geom::assign_points(p, ls);
 
 			if (algorithm == CentroidAlgorithm::Polylabel) {
 				// CONSIDER: pick precision intelligently

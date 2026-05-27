@@ -10,6 +10,7 @@
  * ----------------------------------------------------------------------------
  */
 
+#include <utility>
 #include <vector>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -25,7 +26,7 @@ namespace impl {
 template<typename C, typename T>
 static inline void result_combine(C &result, T &&new_element)
 {
-    result.push_back(new_element);
+    result.push_back(std::forward<T>(new_element));
 
    	for(std::size_t i = 0; i < result.size() - 1; ) {
         if(!boost::geometry::intersects(result[i], result.back())) {
@@ -96,6 +97,8 @@ static inline void dissolve_find_intersections(
 	if(ring.empty()) return;
 
 	boost::geometry::index::rtree<std::pair< boost::geometry::model::segment<point_t>, std::size_t >, boost::geometry::index::quadratic<16>> index;
+	std::vector<point_t> output;
+	output.reserve(2);
 
 	// Generate all by-pass intersections in the graph
 	// Generate a list of all by-pass intersections
@@ -112,7 +115,7 @@ static inline void dissolve_find_intersections(
 			auto const &line_2 = iter.first;
 			auto j = iter.second;
 			
-			std::vector<point_t> output;
+			output.clear();
 			boost::geometry::intersection(line_1, line_2, output);
 
 			for(auto const &p: output) {
@@ -281,9 +284,11 @@ static inline std::vector<ring_t> correct(ring_t const &ring, boost::geometry::o
 	dissolve_find_intersections(new_ring, pseudo_vertices, start_keys);
 
 	if(start_keys.empty()) {
-		if(std::abs(boost::geometry::area(new_ring)) > remove_spike_min_area) 
-			return { new_ring };
-		else
+		if(std::abs(boost::geometry::area(new_ring)) > remove_spike_min_area) {
+			std::vector<ring_t> result;
+			result.push_back(std::move(new_ring));
+			return result;
+		} else
 			return { };
 	}
 

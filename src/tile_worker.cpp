@@ -10,6 +10,7 @@ using namespace std;
 extern bool verbose;
 
 thread_local bool enabledUserSignal = false;
+thread_local MultiPolygon scaledMultiPolygon;
 typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 
@@ -220,7 +221,8 @@ void writeMultiPolygon(
 	unsigned simplifyAlgo,
 	const MultiPolygon& mp
 ) {
-	MultiPolygon current = bbox.scaleGeometry(mp);
+	bbox.scaleGeometry(scaledMultiPolygon, mp);
+	MultiPolygon &current = scaledMultiPolygon;
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
 			current = simplifyVis(current, simplifyLevel/bbox.xscale);
