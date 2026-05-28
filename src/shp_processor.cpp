@@ -30,7 +30,6 @@ void ShpProcessor::fillPointArrayFromShapefile(vector<Point> *points, SHPObject 
 			prevx = x[i];
 			prevy = latp;
 		}
-		points->emplace_back(geom::make<Point>(x[i], lat2latp(y[i])));
 	}
 }
 
