@@ -78,13 +78,13 @@ public:
 	// Mark a way as used
 	void insert(WayID wayid) {
 		std::lock_guard<std::mutex> lock(mutex);
-		if (wayid>usedList.size()) usedList.resize(wayid+256);
+		if (wayid>=usedList.size()) usedList.resize(wayid+256);
 		usedList[wayid] = true;
 	}
 	
 	// See if a way is used
 	bool at(WayID wayid) const {
-		return (wayid>usedList.size()) ? false : usedList[wayid];
+		return (wayid>=usedList.size()) ? false : usedList[wayid];
 	}
 	
 	void clear() {
