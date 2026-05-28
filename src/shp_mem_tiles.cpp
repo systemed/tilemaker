@@ -82,7 +82,7 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 
-			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM + z6y];
+			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM_WIDTH + z6y];
 
 			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
 			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
@@ -214,7 +214,7 @@ void ShpMemTiles::StoreGeometry(
 			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 
-			uint32_t sparseIndex = z6x * CLUSTER_ZOOM + z6y;
+			uint32_t sparseIndex = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 			auto& bitvec = sparseLayerVector[sparseIndex];
 
 			if (bitvec.empty())
