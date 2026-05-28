@@ -149,6 +149,7 @@ test: \
 	test_significant_tags \
 	test_sorted_node_store \
 	test_sorted_way_store \
+	test_osm_store \
 	test_tile_coordinates_set
 
 test_append_vector: \
@@ -187,6 +188,10 @@ test_options_parser: \
 	src/options_parser.o \
 	test/options_parser.test.o
 	$(CXX) $(CXXFLAGS) -o test.options_parser $^ $(INC) $(LIB) $(LDFLAGS) && ./test.options_parser
+
+test_osm_store: \
+	test/osm_store.test.o
+	$(CXX) $(CXXFLAGS) -o test.osm_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.osm_store
 
 test_pooled_string: \
 	src/mmap_allocator.o \
