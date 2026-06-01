@@ -235,13 +235,32 @@ void writeMultiPolygon(
 	geom::correct(current);
 
 	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { 
-		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+	if (!geom::is_valid(current, failure)) {
+		if (verbose) {
+			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
-		if (!geom::is_valid(mp, failure)) 
-			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
-		else
-			cout << "input multipolygon valid" << endl;
+			if (!geom::is_valid(mp, failure))
+				cout << "input multipolygon has " << boost_validity_error(failure) << endl;
+			else
+				cout << "input multipolygon valid" << endl;
+		}
+
+		// Simplification (and the subsequent spike removal) can turn a valid
+		// input polygon into a self-intersecting or spiky one. Such invalid
+		// polygons are silently dropped by many vector-tile renderers, which
+		// shows up as missing features in individual tiles (e.g. holes in a
+		// lake at low zoom). Repair (dissolve, then zero-width buffer) before
+		// writing so only valid geometry is emitted.
+		bool repaired = repair_multi_polygon(current);
+
+		if (geom::is_empty(current))
+			return;
+
+		if (verbose && !repaired) {
+			geom::validity_failure_type postFailure;
+			if (!geom::is_valid(current, postFailure))
+				cout << "output multipolygon STILL invalid after repair: " << boost_validity_error(postFailure) << endl;
+		}
 	}
 
 	vtzero::polygon_feature_builder fbuilder{vtLayer};

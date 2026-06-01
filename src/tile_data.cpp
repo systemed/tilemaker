@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
@@ -7,6 +8,36 @@
 
 using namespace std;
 extern bool verbose;
+
+// Human-readable name for a Boost.Geometry validity failure, used for diagnostics.
+static const char* validityFailureName(geom::validity_failure_type failure) {
+	switch (failure) {
+		case geom::no_failure:                        return "no_failure";
+		case geom::failure_few_points:                return "few_points";
+		case geom::failure_wrong_topological_dimension: return "wrong_topological_dimension";
+		case geom::failure_spikes:                    return "spikes";
+		case geom::failure_duplicate_points:          return "duplicate_points";
+		case geom::failure_not_closed:                return "not_closed";
+		case geom::failure_self_intersections:        return "self_intersections";
+		case geom::failure_wrong_orientation:         return "wrong_orientation";
+		case geom::failure_interior_rings_outside:    return "interior_rings_outside";
+		case geom::failure_nested_interior_rings:     return "nested_interior_rings";
+		case geom::failure_disconnected_interior:     return "disconnected_interior";
+		case geom::failure_intersecting_interiors:    return "intersecting_interiors";
+		case geom::failure_wrong_corner_order:        return "wrong_corner_order";
+		case geom::failure_invalid_coordinate:        return "invalid_coordinate";
+		default:                                      return "unknown";
+	}
+}
+
+// Thin wrapper around the shared repair_multi_polygon() that adds per-object
+// verbose diagnostics. See geom.cpp for the dissolve + zero-width buffer logic.
+static bool repairMultiPolygon(MultiPolygon &mp, NodeID objectID) {
+	bool ok = repair_multi_polygon(mp);
+	if (!ok && verbose)
+		std::cerr << ("multipolygon repair failed for object " + std::to_string(objectID) + "\n");
+	return ok;
+}
 
 thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
@@ -332,21 +363,39 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 			bool valid = geom::is_valid(mp,failure);
 			if (!valid) {
+				if (verbose) {
+					// Build the whole line first and emit it with a single stream write:
+					// tilemaker runs multi-threaded and chained operator<< calls are not
+					// atomic, so per-token writes interleave into unreadable output.
+					std::ostringstream msg;
+					msg << "invalid multipolygon for object " << objectID
+					    << " at z" << bbox.zoom << " " << bbox.index.x << "/" << bbox.index.y
+					    << ": " << validityFailureName(failure) << "\n";
+					std::cerr << msg.str();
+				}
 				if (failure==geom::failure_spikes) {
 					geom::remove_spikes(mp);
 					failure = geom::validity_failure_type::no_failure;
 					valid = geom::is_valid(mp,failure);
 				}
 				if (!valid && (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors)) {
+					// fast_clip can introduce self-intersections; redo the clip with the
+					// slower but robust Boost intersection against the original geometry.
 					MultiPolygon output;
 					geom::intersection(input, box, output);
 					geom::correct(output);
 
-					// retry with Boost intersection if fast_clip has caused self-intersections
+					// The intersection result can itself still be invalid for very complex
+					// multipolygons (e.g. large reservoirs), which previously produced
+					// dropped or holey tiles. Repair it before returning.
+					repairMultiPolygon(output, objectID);
 					multiPolygonClipCache.add(bbox, objectID, output);
 					return output;
 				} else if (!valid) {
-					// occasionally also wrong_topological_dimension, disconnected_interior
+					// occasionally also wrong_topological_dimension, disconnected_interior:
+					// defects geom::correct cannot mend. Repair mp in place; on failure it
+					// is left unchanged so behaviour never regresses.
+					repairMultiPolygon(mp, objectID);
 				}
 			}
 

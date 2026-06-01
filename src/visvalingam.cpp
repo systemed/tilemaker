@@ -255,11 +255,17 @@ Polygon simplifyVis(const Polygon &p, double max_distance) {
 	}
 	return output;
 }
-MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance) { 
+MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance) {
 	MultiPolygon output;
 	for (const auto &p : mp) {
 		output.emplace_back(simplifyVis(p, max_distance));
 	}
-	make_valid(output);
+	// Per-ring simplification can leave the multipolygon invalid. Use the
+	// area-preserving repair instead of a bare make_valid: on large/complex
+	// geometries an unconditional dissolve can collapse the polygon and drop
+	// almost all of its area (which showed up as missing lake tiles at low
+	// zoom). repair_multi_polygon keeps the simplified geometry untouched if a
+	// repair would not preserve the covered area.
+	repair_multi_polygon(output);
 	return output;
 }

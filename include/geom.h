@@ -77,6 +77,12 @@ void make_valid(GeometryT &geom) { }
 
 void make_valid(MultiPolygon &mp);
 
+// Attempt to repair an invalid areal geometry in place: dissolve-based
+// make_valid first (preserves area), then a zero-width buffer as a last
+// resort. Returns true if mp is valid afterwards; on failure mp is left as the
+// best-effort input so callers never regress.
+bool repair_multi_polygon(MultiPolygon &mp);
+
 void union_many(std::vector<MultiPolygon> &mps);
 
 Point intersect_edge(Point const &a, Point const &b, char edge, Box const &bbox);
