@@ -244,22 +244,21 @@ void writeMultiPolygon(
 			else
 				cout << "input multipolygon valid" << endl;
 		}
+		
+		if (simplifyLevel > 0) {
+			// Simplification can turn a valid input into a self-intersecting/spiky
+			// one; such polygons are silently dropped by many renderers (missing
+			// features). Repair (dissolve, then zero-width buffer) before writing.
+			bool repaired = repair_multi_polygon(current);
 
-		// Simplification (and the subsequent spike removal) can turn a valid
-		// input polygon into a self-intersecting or spiky one. Such invalid
-		// polygons are silently dropped by many vector-tile renderers, which
-		// shows up as missing features in individual tiles (e.g. holes in a
-		// lake at low zoom). Repair (dissolve, then zero-width buffer) before
-		// writing so only valid geometry is emitted.
-		bool repaired = repair_multi_polygon(current);
+			if (geom::is_empty(current))
+				return;
 
-		if (geom::is_empty(current))
-			return;
-
-		if (verbose && !repaired) {
-			geom::validity_failure_type postFailure;
-			if (!geom::is_valid(current, postFailure))
-				cout << "output multipolygon STILL invalid after repair: " << boost_validity_error(postFailure) << endl;
+			if (verbose && !repaired) {
+				geom::validity_failure_type postFailure;
+				if (!geom::is_valid(current, postFailure))
+					cout << "output multipolygon STILL invalid after repair: " << boost_validity_error(postFailure) << endl;
+			}
 		}
 	}
 
