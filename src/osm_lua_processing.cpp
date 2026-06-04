@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unordered_set>
 
 #include "osm_lua_processing.h"
 #include "attribute_store.h"
@@ -17,7 +18,7 @@ const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
-std::mutex vectorLayerMetadataMutex;
+std::deque<std::mutex> vectorLayerMetadataMutexes;
 std::unordered_map<std::string, std::string> OsmLuaProcessing::dataStore;
 std::mutex OsmLuaProcessing::dataStoreMutex;
 
@@ -241,6 +242,9 @@ OsmLuaProcessing::OsmLuaProcessing(
 	materializeGeometries(materializeGeometries) {
 
 	sigusr1Handler.initialize();
+	if (vectorLayerMetadataMutexes.size() <= layers.layers.size()) {
+		vectorLayerMetadataMutexes.resize(layers.layers.size() + 1);
+	}
 
 	// ----	Initialise Lua
 	g_luaState = &luaState;
@@ -1031,9 +1035,14 @@ std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
 }
 
 // Record attribute name/type for vector_layers table
+thread_local std::vector<std::unordered_set<std::string>> alreadySeen;
+
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
-	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
+	if (alreadySeen.size() <= layer) alreadySeen.resize(layer + 1);
+	if (alreadySeen[layer].count(key)) return;
+	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutexes[layer]);
 	layers.layers[layer].attributeMap[key] = type;
+	alreadySeen[layer].insert(key);
 }
 
 // Scan relation (but don't write geometry)
