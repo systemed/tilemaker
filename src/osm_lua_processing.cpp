@@ -10,6 +10,7 @@
 #include "node_store.h"
 #include "polylabel.h"
 #include <signal.h>
+#include <unordered_map>
 
 using namespace std;
 
@@ -18,6 +19,8 @@ thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
 std::mutex vectorLayerMetadataMutex;
+thread_local const LayerDefinition* vectorLayerMetadataCacheLayers = nullptr;
+thread_local std::vector<std::unordered_map<std::string, uint>> vectorLayerMetadataCache;
 std::unordered_map<std::string, std::string> OsmLuaProcessing::dataStore;
 std::mutex OsmLuaProcessing::dataStoreMutex;
 
@@ -1032,8 +1035,23 @@ std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
 
 // Record attribute name/type for vector_layers table
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
-	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
-	layers.layers[layer].attributeMap[key] = type;
+	if (vectorLayerMetadataCacheLayers != &layers) {
+		vectorLayerMetadataCache.clear();
+		vectorLayerMetadataCacheLayers = &layers;
+	}
+	if (vectorLayerMetadataCache.size() <= layer)
+		vectorLayerMetadataCache.resize(layer + 1);
+
+	auto &metadataCache = vectorLayerMetadataCache[layer];
+	const auto it = metadataCache.find(key);
+	if (it != metadataCache.end() && it->second == type)
+		return;
+
+	{
+		std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
+		layers.layers[layer].attributeMap[key] = type;
+	}
+	metadataCache[key] = type;
 }
 
 // Scan relation (but don't write geometry)
