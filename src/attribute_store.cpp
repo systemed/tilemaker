@@ -101,8 +101,8 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 thread_local uint64_t tlsPairLookups = 0;
 thread_local uint64_t tlsPairLookupsUncached = 0;
 
-thread_local std::vector<const AttributePair*> cachedAttributePairPointers(64);
-thread_local std::vector<uint32_t> cachedAttributePairIndexes(64);
+thread_local std::vector<const AttributePair*> cachedAttributePairPointers(256);
+thread_local std::vector<uint32_t> cachedAttributePairIndexes(256);
 uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (isHot) {
 		{
@@ -300,8 +300,8 @@ void AttributeSet::finalize() {
 
 // Remember recently queried/added sets so that we can return them in the
 // future without taking a lock.
-thread_local std::vector<const AttributeSet*> cachedAttributeSetPointers(64);
-thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(64);
+thread_local std::vector<const AttributeSet*> cachedAttributeSetPointers(256);
+thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(256);
 
 thread_local uint64_t tlsSetLookups = 0;
 thread_local uint64_t tlsSetLookupsUncached = 0;
