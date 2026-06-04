@@ -503,6 +503,7 @@ end
 -- returns rank, class, subclass
 function GetPOIRank(obj)
 	local k,list,v,class,rank
+	local bestRank,bestClass,bestSubclass
 
 	-- Can we find the tag?
 	for _,k in ipairs(poiTagKeys) do
@@ -511,9 +512,12 @@ function GetPOIRank(obj)
 			v = Find(k)	-- k/v are the OSM tag pair
 			class = poiClasses[v] or v
 			rank  = poiClassRanks[class] or 25
-			return rank, class, v
+			if not bestRank or rank<bestRank then
+				bestRank,bestClass,bestSubclass = rank,class,v
+			end
 		end
 	end
+	if bestRank then return bestRank,bestClass,bestSubclass end
 
 	-- Catch-all for shops
 	local shop = Find("shop")

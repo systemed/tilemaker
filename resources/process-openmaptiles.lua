@@ -844,6 +844,7 @@ end
 -- returns rank, class, subclass
 function GetPOIRank()
 	local k,list,v,class,rank,subclassKey
+	local bestRank,bestClass,bestSubclass
 
 	-- Can we find the tag?
 	for _,k in ipairs(poiTagKeys) do
@@ -857,9 +858,12 @@ function GetPOIRank()
 				class = v
 				v = Find(subclassKey)
 			end
-			return rank, class, v
+			if not bestRank or rank<bestRank then
+				bestRank,bestClass,bestSubclass = rank,class,v
+			end
 		end
 	end
+	if bestRank then return bestRank,bestClass,bestSubclass end
 
 	-- Catch-all for shops
 	local shop = Find("shop")
