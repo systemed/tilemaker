@@ -62,6 +62,9 @@ jobs:
             CMakeLists.txt|Makefile|Dockerfile|action.yml|VERSION)
               runtime=true
               ;;
+            vcpkg.json|vcpkg-configuration.json)
+              runtime=true
+              ;;
             get-coastline.sh|get-landcover.sh|get-monaco.sh)
               runtime=true
               ;;
@@ -131,12 +134,21 @@ jobs:
     - name: Validate version metadata
       run: |
         python3 <<'PY'
+        import json
         import pathlib
         import re
 
         version = pathlib.Path("VERSION").read_text(encoding="utf-8").strip()
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
             raise SystemExit(f"VERSION must use X.Y.Z format, got {version!r}")
+
+        with open("vcpkg.json", encoding="utf-8") as handle:
+            vcpkg_version = json.load(handle).get("version-string")
+
+        if vcpkg_version != version:
+            raise SystemExit(
+                f"vcpkg.json version-string {vcpkg_version!r} does not match VERSION {version!r}"
+            )
         PY
 
     - name: Validate Lua profiles
@@ -316,17 +328,24 @@ jobs:
       uses: actions/cache@v5
       with:
         path: ${{ github.workspace }}\vcpkg-binary-cache
-        key: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-x64-windows-static-md-${{ hashFiles('.github/workflows/ci.yml') }}
+        key: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-x64-windows-static-md-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
         restore-keys: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-x64-windows-static-md-
+
+    - name: Checkout vcpkg manifest baseline
+      shell: pwsh
+      run: |
+        $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+        git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin $baseline
+        git -C $env:VCPKG_INSTALLATION_ROOT checkout --force $baseline
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet=x64-windows-static-md lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+        vcpkg install --triplet=x64-windows-static-md
 
     - name: Build tilemaker
       run: |
         mkdir ${{ github.workspace }}\build
-        cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" ..
+        cd ${{ github.workspace }}\build && cmake -DTILEMAKER_BUILD_STATIC=ON -DVCPKG_TARGET_TRIPLET="x64-windows-static-md" -DVCPKG_INSTALLED_DIR="${{ github.workspace }}\vcpkg_installed" -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake" ..
         cd ${{ github.workspace }}\build && cmake --build . --config RelWithDebInfo
 
     - name: Build openmaptiles-compatible mbtiles files of Liechtenstein
@@ -408,18 +427,24 @@ jobs:
       uses: actions/cache@v5
       with:
         path: ${{ github.workspace }}/vcpkg-binary-cache
-        key: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-${{ matrix.triplet }}-${{ hashFiles('.github/workflows/ci.yml') }}
+        key: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
         restore-keys: vcpkg-binary-${{ runner.os }}-${{ steps.runner-image.outputs.image-os }}-${{ steps.runner-image.outputs.image-version }}-${{ matrix.triplet }}-
+
+    - name: Checkout vcpkg manifest baseline
+      run: |
+        baseline="$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')"
+        git -C "$VCPKG_INSTALLATION_ROOT" fetch --depth=1 origin "$baseline"
+        git -C "$VCPKG_INSTALLATION_ROOT" checkout --force "$baseline"
 
     - name: Build dependencies
       run: |
-        vcpkg install --triplet="${{ matrix.triplet }}" lua shapelib zlib protobuf[zlib] sqlite3 boost-program-options boost-filesystem boost-geometry boost-system boost-asio boost-interprocess boost-iostreams boost-sort rapidjson
+        vcpkg install --triplet="${{ matrix.triplet }}"
 
     - name: Build tilemaker
       run: |
         mkdir build
         cd build
-        cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_CXX_COMPILER=g++ ..
+        cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" -DVCPKG_INSTALLED_DIR="${{ github.workspace }}/vcpkg_installed" -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_CXX_COMPILER=g++ ..
         cmake --build . 
         strip tilemaker
 
