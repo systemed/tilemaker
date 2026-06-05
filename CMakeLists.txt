@@ -4,7 +4,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-project(tilemaker)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" tilemaker_version LIMIT_COUNT 1)
+string(STRIP "${tilemaker_version}" tilemaker_version)
+
+project(tilemaker VERSION ${tilemaker_version})
 
 OPTION(TILEMAKER_BUILD_STATIC "Attempt to link dependencies static" OFF)
 
@@ -68,13 +71,43 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
-if(!TM_VERSION)
-	execute_process(
-		COMMAND git describe --tags --abbrev=0
-		OUTPUT_VARIABLE tm_version
-		OUTPUT_STRIP_TRAILING_WHITESPACE)
-	add_compile_definitions(TM_VERSION=${tm_version})
+if(NOT TM_VERSION)
+	set(TM_VERSION v${PROJECT_VERSION})
+	find_package(Git QUIET)
+	if(NOT GIT_FOUND OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+		set(TM_VERSION ${TM_VERSION}+nogit)
+	else()
+		execute_process(
+			COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --short=12 HEAD
+			OUTPUT_VARIABLE tm_git_sha
+			RESULT_VARIABLE tm_git_sha_result
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+		execute_process(
+			COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" describe --exact-match --tags HEAD
+			OUTPUT_VARIABLE tm_git_tag
+			RESULT_VARIABLE tm_git_tag_result
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+		if(tm_git_sha_result EQUAL 0 AND NOT tm_git_sha STREQUAL "")
+			set(tm_git_dirty_suffix)
+			execute_process(
+				COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" diff-index --quiet HEAD --
+				RESULT_VARIABLE tm_git_dirty_result
+				ERROR_QUIET
+				OUTPUT_QUIET)
+			if(tm_git_dirty_result EQUAL 1)
+				set(tm_git_dirty_suffix .dirty)
+			endif()
+			if(NOT (tm_git_tag_result EQUAL 0 AND tm_git_tag STREQUAL TM_VERSION AND tm_git_dirty_suffix STREQUAL ""))
+				set(TM_VERSION ${TM_VERSION}+g${tm_git_sha}${tm_git_dirty_suffix})
+			endif()
+		else()
+			set(TM_VERSION ${TM_VERSION}+nogit)
+		endif()
+	endif()
 endif()
+add_compile_definitions(TM_VERSION=${TM_VERSION})
 
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
