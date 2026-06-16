@@ -114,7 +114,7 @@ inline OutputObjectID outputObjectWithId<OutputObjectXYID>(const OutputObjectXYI
 
 template<typename OO> void collectLowZoomObjectsForTile(
 	const unsigned int& indexZoom,
-	typename std::vector<std::vector<OO>> objects,
+	const typename std::vector<std::vector<OO>>& objects,
 	unsigned int zoom,
 	const TileCoordinates& dstIndex,
 	std::vector<OutputObjectID>& output

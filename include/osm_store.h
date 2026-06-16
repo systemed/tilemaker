@@ -332,6 +332,7 @@ public:
 	template<class WayIt>
 	Polygon llListPolygon(WayIt begin, WayIt end) const {
 		Polygon poly;
+		poly.outer().reserve(end - begin);
 		fillPoints(poly.outer(), begin, end);
 		boost::geometry::correct(poly);
 		return poly;
@@ -341,6 +342,7 @@ public:
 	template<class WayIt>
 	Linestring llListLinestring(WayIt begin, WayIt end) const {
 		Linestring ls;
+		ls.reserve(end - begin);
 		fillPoints(ls, begin, end);
 		return ls;
 	}

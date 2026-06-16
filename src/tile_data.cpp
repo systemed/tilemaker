@@ -258,23 +258,37 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			if(ls.empty())
 				return out;
 
+			Box extBox = bbox.getExtendBox();
+			const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
+			const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
+			auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
+				return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
+			};
+			bool needsIntersection = !pointInsideExtBox(ls[0]);
+
 			Linestring current_ls;
 			geom::append(current_ls, ls[0]);
 
 			for(size_t i = 1; i < ls.size(); ++i) {
-				if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+				boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
+				if(!geom::intersects(segment, bbox.clippingBox)) {
 					if(current_ls.size() > 1)
 						out.push_back(std::move(current_ls));
 					current_ls.clear();
 				}
 				geom::append(current_ls, ls[i]);
+				if (!needsIntersection)
+					needsIntersection = !pointInsideExtBox(ls[i]);
 			}
 
 			if(current_ls.size() > 1)
 				out.push_back(std::move(current_ls));
 
+			if (!needsIntersection)
+				return out;
+
 			MultiLinestring result;
-			geom::intersection(out, bbox.getExtendBox(), result);
+			geom::intersection(out, extBox, result);
 			return result;
 		}
 
@@ -357,7 +371,10 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			MultiPolygon mp;
-			geom::assign(mp, input);
+			if (cachedClip == nullptr)
+				mp = std::move(uncached);
+			else
+				geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
@@ -382,7 +399,13 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					// fast_clip can introduce self-intersections; redo the clip with the
 					// slower but robust Boost intersection against the original geometry.
 					MultiPolygon output;
-					geom::intersection(input, box, output);
+					if (cachedClip == nullptr) {
+						MultiPolygon original;
+						populateMultiPolygon(original, objectID);
+						geom::intersection(original, box, output);
+					} else {
+						geom::intersection(input, box, output);
+					}
 					geom::correct(output);
 
 					// The intersection result can itself still be invalid for very complex
@@ -526,7 +549,7 @@ void TileDataSource::addGeometryToIndex(
 	const std::vector<OutputObject>& outputs,
 	const uint64_t id
 ) {
-	for (Linestring ls : geom) {
+	for (const auto& ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, indexZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
@@ -545,7 +568,7 @@ void TileDataSource::addGeometryToIndex(
 ) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
-	for (Polygon poly : geom) {
+	for (const auto& poly : geom) {
 		unordered_set<TileCoordinates> tileSetTmp;
 		insertIntermediateTiles(poly.outer(), indexZoom, tileSetTmp);
 		fillCoveredTiles(tileSetTmp);
@@ -642,5 +665,15 @@ NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
 
 void TileDataSource::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	const auto &input = retrieveMultiPolygon(objectID);
-	boost::geometry::assign(dst, input);
+	dst.resize(input.size());
+	for(std::size_t i = 0; i < input.size(); ++i) {
+		dst[i].outer().resize(input[i].outer().size());
+		boost::geometry::assign(dst[i].outer(), input[i].outer());
+
+		dst[i].inners().resize(input[i].inners().size());
+		for(std::size_t j = 0; j < input[i].inners().size(); ++j) {
+			dst[i].inners()[j].resize(input[i].inners()[j].size());
+			boost::geometry::assign(dst[i].inners()[j], input[i].inners()[j]);
+		}
+	}
 }

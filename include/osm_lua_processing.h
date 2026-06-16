@@ -276,6 +276,8 @@ private:
 	const inline Point getPoint() {
 		return Point(lon/10000000.0,latp/10000000.0);
 	}
+
+	double projectedPolygonArea(const Polygon &p);
 	
 	OSMStore &osmStore;	// global OSM store
 
@@ -310,6 +312,7 @@ private:
 	bool multiLinestringInited;
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
+	geom::model::polygon<DegPoint> areaPolygonCache;
 
 	NodeID lastStoredGeometryId;
 	OutputGeometryType lastStoredGeometryType;

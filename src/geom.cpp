@@ -276,10 +276,20 @@ char bit_code(Point const &p, Box const &bbox) {
 }
 
 // Sutherland-Hodgeman polygon clipping algorithm
-void fast_clip(Ring &points, Box const &bbox) {
+void fast_clip(Ring &points, Box const &bbox, Ring &result) {
 	// clip against each side of the clip rectangle
 	for (char edge = 1; edge <= 8; edge *= 2) {
-		Ring result;
+		bool needsClip = false;
+		for (auto const &p: points) {
+			if (bit_code(p, bbox) & edge) {
+				needsClip = true;
+				break;
+			}
+		}
+		if (!needsClip) continue;
+
+		result.clear();
+		result.reserve(points.size() + 4);
 		Point prev = points[points.size() - 1];
 		bool prevInside = (bit_code(prev, bbox) & edge)==0;
 
@@ -293,20 +303,26 @@ void fast_clip(Ring &points, Box const &bbox) {
 			prev = p;
 			prevInside = inside;
 		}
-		points = std::move(result);
+		points.swap(result);
 		if (points.size()==0) break;
 	}
 }
 
+void fast_clip(Ring &points, Box const &bbox) {
+	Ring result;
+	fast_clip(points, bbox, result);
+}
+
 // Wrappers for polygon/multipolygon
 void fast_clip(Polygon &polygon, Box const &bbox) {
-	fast_clip(polygon.outer(), bbox);
+	Ring result;
+	fast_clip(polygon.outer(), bbox, result);
 	if (polygon.outer().empty()) {
 		polygon.inners().resize(0);
 		return;
 	}
 	for (auto &inner: polygon.inners()) {
-		fast_clip(inner, bbox);
+		fast_clip(inner, bbox, result);
 	}
 	polygon.inners().erase(std::remove_if(
 		polygon.inners().begin(), polygon.inners().end(), 

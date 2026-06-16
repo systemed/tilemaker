@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <bitset>
+#include <array>
 #include "sorted_node_store.h"
 #include "external/libpopcnt.h"
 #include "external/streamvbyte.h"
@@ -14,15 +15,26 @@ namespace SortedNodeStoreTypes {
 	const uint16_t ChunkSize = 256;
 	const uint16_t ChunkAlignment = 16;
 	const uint32_t ChunkCompressed = 1 << 31;
+	const uint8_t ChunkCacheSize = 4;
+
+	struct CachedChunk {
+		CachedChunk(): id(-1) {}
+
+		int64_t id;
+		std::array<int32_t, ChunkSize> lons;
+		std::array<int32_t, ChunkSize> latps;
+	};
 
 	struct ThreadStorage {
 		ThreadStorage():
 			collectingOrphans(true),
 			groupStart(-1),
 			localNodes(nullptr),
-			cachedChunk(-1),
 			arenaSpace(0),
-			arenaPtr(nullptr) {}
+			arenaPtr(nullptr) {
+				for (uint8_t i = 0; i < ChunkCacheSize; ++i)
+					cacheOrder[i] = i;
+			}
 		// When SortedNodeStore first starts, it's not confident that it has seen an
 		// entire segment, so it's in "collecting orphans" mode. Once it crosses a
 		// threshold of 64K elements, it ceases to be in this mode.
@@ -33,9 +45,8 @@ namespace SortedNodeStoreTypes {
 		uint64_t groupStart = -1;
 		std::vector<NodeStore::element_t>* localNodes = nullptr;
 
-		int64_t cachedChunk = -1;
-		std::vector<int32_t> cacheChunkLons;
-		std::vector<int32_t> cacheChunkLatps;
+		std::array<CachedChunk, ChunkCacheSize> cacheChunks;
+		std::array<uint8_t, ChunkCacheSize> cacheOrder;
 
 		uint32_t arenaSpace = 0;
 		char* arenaPtr = nullptr;
@@ -52,6 +63,13 @@ namespace SortedNodeStoreTypes {
 
 		auto& rv = threadStorage.back();
 		return rv.second;
+	}
+
+	void promoteCacheSlot(ThreadStorage& tls, size_t orderIndex) {
+		const uint8_t slot = tls.cacheOrder[orderIndex];
+		for (size_t i = orderIndex; i > 0; --i)
+			tls.cacheOrder[i] = tls.cacheOrder[i - 1];
+		tls.cacheOrder[0] = slot;
 	}
 }
 
@@ -166,25 +184,40 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 
 		const size_t neededChunk = groupIndex * ChunkSize + chunk;
 
-		// Really naive caching strategy - just cache the last-used chunk.
-		// Probably good enough?
+		// Keep a few recently decoded chunks per worker. Way geometry tends to
+		// revisit adjacent chunks, but not always the immediately preceding one.
 		ThreadStorage& tls = s(this);
-		if (tls.cachedChunk != neededChunk) {
-			tls.cachedChunk = neededChunk;
-			tls.cacheChunkLons.reserve(256);
-			tls.cacheChunkLatps.reserve(256);
+		size_t orderIndex = ChunkCacheSize;
+		for (size_t i = 0; i < ChunkCacheSize; ++i) {
+			if (tls.cacheChunks[tls.cacheOrder[i]].id == neededChunk) {
+				orderIndex = i;
+				break;
+			}
+		}
+
+		size_t cacheSlot;
+		if (orderIndex == ChunkCacheSize) {
+			cacheSlot = tls.cacheOrder[ChunkCacheSize - 1];
+			CachedChunk& cached = tls.cacheChunks[cacheSlot];
+			cached.id = neededChunk;
 
 			uint8_t* latpData = ptr->data;
 			uint8_t* lonData = ptr->data + latpSize;
 			uint32_t recovdata[256] = {0};
 
 			streamvbyte_decode(latpData, recovdata, n);
-			tls.cacheChunkLatps[0] = ptr->firstLatp;
-			zigzag_delta_decode(recovdata, &tls.cacheChunkLatps[1], n, tls.cacheChunkLatps[0]);
+			cached.latps[0] = ptr->firstLatp;
+			zigzag_delta_decode(recovdata, &cached.latps[1], n, cached.latps[0]);
 
 			streamvbyte_decode(lonData, recovdata, n);
-			tls.cacheChunkLons[0] = ptr->firstLon;
-			zigzag_delta_decode(recovdata, &tls.cacheChunkLons[1], n, tls.cacheChunkLons[0]);
+			cached.lons[0] = ptr->firstLon;
+			zigzag_delta_decode(recovdata, &cached.lons[1], n, cached.lons[0]);
+
+			promoteCacheSlot(tls, ChunkCacheSize - 1);
+		} else {
+			cacheSlot = tls.cacheOrder[orderIndex];
+			if (orderIndex != 0)
+				promoteCacheSlot(tls, orderIndex);
 		}
 
 		size_t nodeOffset = 0;
@@ -195,7 +228,8 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
 			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
 
-		return { tls.cacheChunkLatps[nodeOffset], tls.cacheChunkLons[nodeOffset] };
+		const CachedChunk& cached = tls.cacheChunks[cacheSlot];
+		return { cached.latps[nodeOffset], cached.lons[nodeOffset] };
 	}
 
 	UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)basePtr;

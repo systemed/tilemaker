@@ -33,10 +33,10 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 
 // Scaling with naive self-intersection check - if we've added the new point
 // within the last 5 points, then backtrack to the last time we added it
-std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
-	std::vector<Point> points;
+void TileBbox::scaleRing(Ring &points, Ring const &src) const {
+	points.clear();
 	points.reserve(src.size());
-	for(auto &i: src) {
+	for(auto const &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
 		bool found = false;
 		for (size_t j=1; j<5; j++) {
@@ -48,36 +48,46 @@ std::vector<Point> TileBbox::scaleRing(Ring const &src) const {
 		}
 		if (!found) points.push_back(Point(scaled.first,scaled.second));
 	}
+}
+
+Ring TileBbox::scaleRing(Ring const &src) const {
+	Ring points;
+	scaleRing(points, src);
 	return points;
+}
+
+void TileBbox::scaleGeometry(MultiPolygon &dst, MultiPolygon const &src) const {
+	if (dst.size() < src.size())
+		dst.resize(src.size());
+
+	size_t polygonCount = 0;
+	for(auto const &poly: src) {
+		Polygon &p = dst[polygonCount];
+
+		// Copy the outer ring
+		scaleRing(p.outer(), poly.outer());
+		if (p.outer().size()<4)
+			continue;
+
+		// Copy the inner rings
+		if (p.inners().size() < poly.inners().size())
+			p.inners().resize(poly.inners().size());
+		size_t innerCount = 0;
+		for(auto const &r: poly.inners()) {
+			Ring &points = p.inners()[innerCount];
+			scaleRing(points, r);
+			if (points.size()>=4)
+				innerCount++;
+		}
+		p.inners().resize(innerCount);
+		polygonCount++;
+	}
+	dst.resize(polygonCount);
 }
 
 MultiPolygon TileBbox::scaleGeometry(MultiPolygon const &src) const {
 	MultiPolygon dst;
-	for(auto poly: src) {
-		Polygon p;
-
-		// Copy the outer ring
-		std::vector<Point> points = scaleRing(poly.outer());
-		if (points.size()<4) continue;
-		Ring outer;
-		geom::append(outer,points);
-		geom::append(p,outer);
-
-		// Copy the inner rings
-		int num_rings = 0;
-		for(auto &r: poly.inners()) {
-			points = scaleRing(r);
-			if (points.size()<4) continue;
-			Ring inner;
-			geom::append(inner,points);
-			num_rings++;
-			geom::interior_rings(p).resize(num_rings);
-			geom::append(p, inner, num_rings-1);
-		}
-
-		// Add to multipolygon
-		dst.push_back(p);
-	}
+	scaleGeometry(dst, src);
 	return dst;
 }
 

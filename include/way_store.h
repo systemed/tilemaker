@@ -15,6 +15,7 @@ public:
 	// meaningful for SortedWayStore
 	virtual void batchStart() = 0;
 	virtual std::vector<LatpLon> at(WayID wayid) const = 0;
+	virtual void at(WayID wayid, std::vector<LatpLon>& output) const = 0;
 	virtual bool requiresNodes() const = 0;
 	virtual void insertLatpLons(std::vector<ll_element_t>& newWays) = 0;
 	virtual void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) = 0;
