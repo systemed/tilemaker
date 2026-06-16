@@ -3,6 +3,8 @@
 
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
+#include <boost/geometry/algorithms/buffer.hpp>
+#include <boost/geometry/strategies/buffer.hpp>
 
 #include "geometry/correct.hpp"
 
@@ -142,6 +144,83 @@ void make_valid(MultiPolygon &mp)
 		geometry::correct(p, result, 1E-12);
 	}
 	mp = result;
+}
+
+// Repair a single (possibly invalid) polygon in an area-preserving way and
+// append the resulting valid polygon(s) to `out`. Returns true on success.
+// `minArea` is the lower bound on the repaired area we are willing to accept.
+static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &out)
+{
+	// 1) Dissolve (resolves self-intersections of this single polygon).
+	try {
+		MultiPolygon fixed;
+		geometry::correct(p, fixed, 1E-12);
+		if (geom::is_valid(fixed) && std::abs(geom::area(fixed)) >= minArea) {
+			for (auto &fp : fixed) out.push_back(std::move(fp));
+			return true;
+		}
+	} catch (const std::exception &) {
+		// fall through to the buffer attempt
+	}
+
+	// 2) Zero-width buffer as a last resort.
+	try {
+		MultiPolygon buffered;
+		geom::strategy::buffer::distance_symmetric<double> distanceStrategy(0.0);
+		geom::strategy::buffer::side_straight sideStrategy;
+		geom::strategy::buffer::join_miter joinStrategy;
+		geom::strategy::buffer::end_flat endStrategy;
+		geom::strategy::buffer::point_square pointStrategy;
+
+		geom::buffer(p, buffered, distanceStrategy, sideStrategy, joinStrategy, endStrategy, pointStrategy);
+		geom::correct(buffered);
+		if (geom::is_valid(buffered) && std::abs(geom::area(buffered)) >= minArea) {
+			for (auto &bp : buffered) out.push_back(std::move(bp));
+			return true;
+		}
+	} catch (const std::exception &) {
+		// keep best-effort polygon
+	}
+
+	return false;
+}
+
+bool repair_multi_polygon(MultiPolygon &mp)
+{
+	if (geom::is_valid(mp)) return true;
+
+	// Repair PER POLYGON, area-preserving. Running make_valid/buffer on the whole
+	// multipolygon can catastrophically COLLAPSE large/complex inputs: a clipped
+	// reservoir with >1000 rings dropped ~99% of its area, leaving missing lake
+	// tiles at low zoom. Conversely, simply keeping the whole invalid geometry
+	// lets a single self-intersecting ring render as a spurious "spike".
+	//
+	// Fixing each polygon independently gets the best of both: a self-touching
+	// ring is cleaned (no spike) while the rest stays intact, and we avoid the
+	// O(n^2) cross-polygon union that caused the collapse. A polygon whose repair
+	// would not preserve its area is kept as-is (invalid but complete renders;
+	// only a tiny local artefact, never a dropped area).
+	MultiPolygon out;
+	bool allValid = true;
+	for (const auto &p : mp) {
+		if (geom::is_valid(p)) {
+			out.push_back(p);
+			continue;
+		}
+		// Lenient threshold: resolving a self-intersection legitimately changes a
+		// single polygon's (shoelace) area, so anything down to half the original
+		// is accepted. Per-polygon repair cannot trigger the cross-polygon union
+		// that previously caused the catastrophic ~99% collapse, so this only
+		// rejects a genuine local collapse.
+		const double minArea = 0.5 * std::abs(geom::area(p));
+		if (!repair_one_polygon(p, minArea, out)) {
+			out.push_back(p);
+			allValid = false;
+		}
+	}
+
+	mp = std::move(out);
+	return allValid;
 }
 
 // ---------------

@@ -235,13 +235,31 @@ void writeMultiPolygon(
 	geom::correct(current);
 
 	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { 
-		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+	if (!geom::is_valid(current, failure)) {
+		if (verbose) {
+			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
-		if (!geom::is_valid(mp, failure)) 
-			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
-		else
-			cout << "input multipolygon valid" << endl;
+			if (!geom::is_valid(mp, failure))
+				cout << "input multipolygon has " << boost_validity_error(failure) << endl;
+			else
+				cout << "input multipolygon valid" << endl;
+		}
+		
+		if (simplifyLevel > 0) {
+			// Simplification can turn a valid input into a self-intersecting/spiky
+			// one; such polygons are silently dropped by many renderers (missing
+			// features). Repair (dissolve, then zero-width buffer) before writing.
+			bool repaired = repair_multi_polygon(current);
+
+			if (geom::is_empty(current))
+				return;
+
+			if (verbose && !repaired) {
+				geom::validity_failure_type postFailure;
+				if (!geom::is_valid(current, postFailure))
+					cout << "output multipolygon STILL invalid after repair: " << boost_validity_error(postFailure) << endl;
+			}
+		}
 	}
 
 	vtzero::polygon_feature_builder fbuilder{vtLayer};
