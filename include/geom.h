@@ -34,6 +34,7 @@ typedef boost::geometry::model::polygon<Point> Polygon;
 typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
 typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
 typedef boost::geometry::model::box<Point> Box;
+typedef boost::geometry::model::segment<Point> Segment;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
 typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
