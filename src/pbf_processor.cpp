@@ -674,6 +674,7 @@ int PbfProcessor::ReadPbfFile(
 
 			blocksToProcess = filteredBlocks.size();
 			blocksProcessed = 0;
+			phaseProgress = 0;
 
 			// Relations have very non-uniform processing times, so prefer
 			// to process them as granularly as possible.
