@@ -18,6 +18,7 @@ __pycache__/
 # protocol buffers generated headers
 include/osmformat.pb.h
 include/vector_tile.pb.h
+src/config_schema.h
 
 # downloaded data
 coastline

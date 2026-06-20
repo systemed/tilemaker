@@ -1,0 +1,90 @@
+{
+	"type": "object",
+	"required": ["settings", "layers"],
+	"properties": {
+		"settings": {
+			"type": "object",
+			"required": ["basezoom", "minzoom", "maxzoom", "include_ids", "compress", "name", "version", "description"],
+			"properties": {
+				"basezoom": { "type": "integer", "minimum": 0 },
+				"minzoom": { "type": "integer", "minimum": 0 },
+				"maxzoom": { "type": "integer", "minimum": 0 },
+				"include_ids": { "type": "boolean" },
+				"compress": { "type": "string", "enum": ["gzip", "deflate", "none"] },
+				"name": { "type": "string" },
+				"version": { "type": "string" },
+				"description": { "type": "string" },
+				"high_resolution": { "type": "boolean" },
+				"combine_below": { "type": "integer", "minimum": 0 },
+				"mvt_version": { "type": "integer", "minimum": 1 },
+				"bounding_box": {
+					"type": "array",
+					"minItems": 4,
+					"maxItems": 4,
+					"items": { "type": "number" }
+				},
+				"default_view": {
+					"type": "array",
+					"minItems": 3,
+					"maxItems": 3,
+					"items": [
+						{ "type": "number" },
+						{ "type": "number" },
+						{ "type": "integer" }
+					]
+				},
+				"metadata": {
+					"type": "object",
+					"properties": {
+						"attribution": { "type": "string" }
+					},
+					"additionalProperties": true
+				},
+				"filemetadata": { "type": "object" }
+			},
+			"additionalProperties": true
+		},
+		"layers": {
+			"type": "object",
+			"additionalProperties": {
+				"type": "object",
+				"required": ["minzoom", "maxzoom"],
+				"properties": {
+					"minzoom": { "type": "integer", "minimum": 0 },
+					"maxzoom": { "type": "integer", "minimum": 0 },
+					"write_to": { "type": "string" },
+					"simplify_below": { "type": "integer", "minimum": 0 },
+					"simplify_level": { "type": "number" },
+					"simplify_length": { "type": "number" },
+					"simplify_ratio": { "type": "number" },
+					"filter_below": { "type": "integer", "minimum": 0 },
+					"filter_area": { "type": "number" },
+					"feature_limit": { "type": "integer", "minimum": 0 },
+					"feature_limit_below": { "type": "integer", "minimum": 0 },
+					"combine_points": { "type": "boolean" },
+					"combine_lines_below": { "type": "integer", "minimum": 0 },
+					"combine_polygons_below": { "type": "integer", "minimum": 0 },
+					"z_order_ascending": { "type": "boolean" },
+					"simplify_algorithm": { "type": "string" },
+					"source": { "type": "string" },
+					"source_columns": {
+						"oneOf": [
+							{
+								"type": "boolean",
+								"enum": [true]
+							},
+							{
+								"type": "array",
+								"items": { "type": "string" }
+							}
+						]
+					},
+					"index": { "type": "boolean" },
+					"index_column": { "type": "string" }
+				},
+				"additionalProperties": true
+			}
+		}
+	},
+	"additionalProperties": true
+}
