@@ -125,6 +125,7 @@ tilemaker: \
 	src/shp_mem_tiles.o \
 	src/shp_processor.o \
 	src/significant_tags.o \
+	src/simplify_buildings.o \
 	src/sorted_node_store.o \
 	src/sorted_way_store.o \
 	src/tag_map.o \

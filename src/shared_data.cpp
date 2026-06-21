@@ -324,7 +324,8 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 		int    combinePolyBelow=it->value.HasMember("combine_polygons_below") ? it->value["combine_polygons_below"].GetInt() : 0;
 		bool sortZOrderAscending = it->value.HasMember("z_order_ascending") ? it->value["z_order_ascending"].GetBool() : (featureLimit==0);
 		string algo           = it->value.HasMember("simplify_algorithm") ? it->value["simplify_algorithm"].GetString() : "";
-		uint simplifyAlgo = algo=="visvalingam" ? LayerDef::VISVALINGAM : LayerDef::DOUGLAS_PEUCKER;
+		uint simplifyAlgo = algo=="visvalingam" ? LayerDef::VISVALINGAM : 
+		                    algo=="buildings"   ? LayerDef::BUILDINGS : LayerDef::DOUGLAS_PEUCKER;
 		string source = it->value.HasMember("source") ? it->value["source"].GetString() : "";
 		vector<string> sourceColumns;
 		bool allSourceColumns = false;

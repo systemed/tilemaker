@@ -132,6 +132,7 @@ file(GLOB tilemaker_src_files
 	src/shp_mem_tiles.cpp
 	src/shp_processor.cpp
 	src/significant_tags.cpp
+	src/simplify_buildings.cpp
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
 	src/tag_map.cpp
