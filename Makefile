@@ -73,7 +73,17 @@ $(info - library path is ${LUA_LIBS})
 prefix = /usr/local
 
 MANPREFIX := /usr/share/man
-TM_VERSION ?= $(shell git describe --tags --abbrev=0)
+TM_BASE_VERSION := v$(shell sed -n '1p' VERSION)
+TM_GIT_SHA := $(shell git rev-parse --short=12 HEAD 2>/dev/null)
+TM_GIT_TAG := $(shell git describe --exact-match --tags HEAD 2>/dev/null)
+TM_GIT_DIRTY := $(shell if git diff-index --quiet HEAD -- 2>/dev/null; then :; elif test $$? -eq 1; then printf '.dirty'; fi)
+ifeq ($(TM_GIT_SHA),)
+  TM_VERSION ?= $(TM_BASE_VERSION)+nogit
+else ifeq ($(TM_GIT_TAG)$(TM_GIT_DIRTY),$(TM_BASE_VERSION))
+  TM_VERSION ?= $(TM_BASE_VERSION)
+else
+  TM_VERSION ?= $(TM_BASE_VERSION)+g$(TM_GIT_SHA)$(TM_GIT_DIRTY)
+endif
 CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 BOOST_SYSTEM_LIB := $(shell printf 'int main(){return 0;}\n' | $(CXX) -x c++ - -o /tmp/tilemaker-boost-system-check -lboost_system >/dev/null 2>&1 && echo -lboost_system; rm -f /tmp/tilemaker-boost-system-check)

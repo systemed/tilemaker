@@ -1,5 +1,7 @@
 FROM debian:bookworm-slim AS src
-LABEL Description="Tilemaker" Version="1.4.0"
+ARG TILEMAKER_VERSION=unknown
+ARG TILEMAKER_BUILD_VERSION=
+LABEL Description="Tilemaker" Version="${TILEMAKER_VERSION}"
 
 ARG BUILD_DEBUG=
 
@@ -20,6 +22,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 WORKDIR /usr/src/app
 
 COPY CMakeLists.txt ./
+COPY VERSION ./
 COPY cmake ./cmake
 COPY src ./src
 COPY include ./include
@@ -27,10 +30,14 @@ COPY server ./server
 
 RUN mkdir build && \
     cd build && \
+    tm_version_arg= && \
+    if [ -n "$TILEMAKER_BUILD_VERSION" ]; then \
+        tm_version_arg="-DTM_VERSION=$TILEMAKER_BUILD_VERSION"; \
+    fi && \
     if [ -z "$BUILD_DEBUG" ]; then \
-        cmake -DCMAKE_BUILD_TYPE=Release -DBoost_USE_DEBUG_RUNTIME=OFF ..; \
+        cmake -DCMAKE_BUILD_TYPE=Release -DBoost_USE_DEBUG_RUNTIME=OFF $tm_version_arg ..; \
     else \
-        cmake -DCMAKE_BUILD_TYPE=Debug ..; \
+        cmake -DCMAKE_BUILD_TYPE=Debug $tm_version_arg ..; \
     fi; \
     cmake --build . --parallel $(nproc) && \
     if [ -z "$BUILD_DEBUG" ]; then \
@@ -43,6 +50,8 @@ ENV PATH="/usr/src/app/build:$PATH"
 FROM debian:bookworm-slim
 
 ARG BUILD_DEBUG=
+ARG TILEMAKER_VERSION=unknown
+LABEL Description="Tilemaker" Version="${TILEMAKER_VERSION}"
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     liblua5.1-0 \
@@ -62,6 +71,7 @@ COPY --from=src /usr/src/app/build/tilemaker-server .
 COPY --from=src /usr/local/lib/lua/5.1/flock.so /usr/local/lib/lua/5.1/flock.so
 COPY server/static ./static
 COPY resources ./resources
+COPY VERSION ./
 COPY process.lua ./
 COPY config.json ./
 
