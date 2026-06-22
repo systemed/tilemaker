@@ -92,8 +92,15 @@ else()
 	set(THREAD_LIB pthread)
 endif()
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/config-schema.json" TILEMAKER_CONFIG_SCHEMA_JSON)
+configure_file(
+	cmake/config_schema.h.in
+	"${CMAKE_BINARY_DIR}/config_schema.h"
+	@ONLY)
+
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
+	src/config_validator.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
 	src/external/streamvbyte_decode.c

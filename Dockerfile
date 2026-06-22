@@ -24,6 +24,7 @@ COPY cmake ./cmake
 COPY src ./src
 COPY include ./include
 COPY server ./server
+COPY resources/config-schema.json ./resources/config-schema.json
 
 RUN mkdir build && \
     cd build && \

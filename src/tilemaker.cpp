@@ -28,6 +28,7 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/filewritestream.h"
+#include "rapidjson/error/en.h"
 
 #ifndef _MSC_VER
 #include <sys/resource.h>
@@ -38,6 +39,7 @@
 #include "way_stores.h"
 
 // Tilemaker code
+#include "config_validator.h"
 #include "helpers.h"
 #include "coordinates.h"
 #include "coordinates_geom.h"
@@ -173,8 +175,18 @@ int main(const int argc, const char* argv[]) {
 		char readBuffer[65536];
 		rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
 		jsonConfig.ParseStream(is);
-		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
 		fclose(fp);
+		if (jsonConfig.HasParseError()) {
+			cerr << "Invalid JSON file: " << rapidjson::GetParseError_En(jsonConfig.GetParseError())
+			     << " at offset " << jsonConfig.GetErrorOffset() << "." << endl;
+			return -1;
+		}
+
+		string jsonError;
+		if (!validateConfigJson(jsonConfig, jsonError)) {
+			cerr << "Invalid JSON file: " << jsonError << "." << endl;
+			return -1;
+		}
 
 		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
 	} catch (...) {
