@@ -1,4 +1,6 @@
 #include <iostream>
+#include <iterator>
+#include <type_traits>
 #include <boost/sort/sort.hpp>
 #include "external/minunit.h"
 #include "append_vector.h"
@@ -30,6 +32,32 @@ MU_TEST(test_append_vector) {
 	mu_check(*(vec.end() - 2) == 9998);
 	mu_check(*(vec.end() - 9000) == 1000);
 	mu_check(*(vec.begin() - -1) == 1);
+	mu_check(vec.begin()[25] == 25);
+	mu_check(25 + vec.begin() == vec.begin() + 25);
+	mu_check((vec.begin() + 25) - vec.begin() == 25);
+	mu_check(vec.end() - vec.begin() == 10000);
+	mu_check(vec.begin() < vec.end());
+	mu_check(vec.begin() <= vec.begin());
+	mu_check(vec.end() > vec.begin());
+	mu_check(vec.end() >= vec.end());
+
+	auto postfix = vec.begin();
+	mu_check(*(postfix++) == 0);
+	mu_check(*postfix == 1);
+	mu_check(*(postfix--) == 1);
+	mu_check(*postfix == 0);
+
+	const int32_t chunkBoundary = 8192;
+	auto boundary = vec.begin();
+	boundary += chunkBoundary;
+	mu_check(*boundary == chunkBoundary);
+	boundary -= 1;
+	mu_check(*boundary == chunkBoundary - 1);
+
+	static_assert(std::is_same<
+		std::iterator_traits<AppendVector<int32_t>::Iterator>::iterator_category,
+		std::random_access_iterator_tag
+	>::value, "AppendVector iterator should advertise random access");
 
 	boost::sort::block_indirect_sort(
 		vec.begin(),
@@ -95,4 +123,3 @@ int main() {
 	MU_REPORT();
 	return MU_EXIT_CODE;
 }
-
