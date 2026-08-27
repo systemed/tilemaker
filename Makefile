@@ -99,6 +99,7 @@ tilemaker: \
 	src/attribute_store.o \
 	src/coordinates_geom.o \
 	src/coordinates.o \
+	src/declutter.o \
 	src/external/streamvbyte_decode.o \
 	src/external/streamvbyte_encode.o \
 	src/external/streamvbyte_zigzag.o \

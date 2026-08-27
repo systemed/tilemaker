@@ -39,6 +39,10 @@ struct LayerDef {
 	std::string indexName;
 	std::map<std::string, uint> attributeMap; // string 0, number 1, bool 2
 	bool writeTo;
+	// Decluttering: set after addLayer(), so these live at the end of the struct
+	uint declutterBelow = 0;			// zoom below which point features are thinned out by Score()
+	double declutterDistance = 40;		// how far apart (in 256px screen pixels) they should be kept
+	double declutterThreshold = 0;		// score needed at the layer's minzoom (halves at each zoom)
 	
 	const bool useColumn(std::string &col) {
 		return allSourceColumns || (std::find(sourceColumns.begin(), sourceColumns.end(), col) != sourceColumns.end());

@@ -194,6 +194,7 @@ void rawLayer(const std::string& layerName, bool area) { return osmLuaProcessing
 void rawLayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources) { return osmLuaProcessing->LayerAsCentroid(layerName, nodeSources); }
 void rawMinZoom(const double z) { return osmLuaProcessing->MinZoom(z); }
 void rawZOrder(const double z) { return osmLuaProcessing->ZOrder(z); }
+void rawScore(const double score) { return osmLuaProcessing->Score(score); }
 OsmLuaProcessing::OptionalRelation rawNextRelation() { return osmLuaProcessing->NextRelation(); }
 void rawRestartRelations() { return osmLuaProcessing->RestartRelations(); }
 std::string rawFindInRelation(const std::string& key) { return osmLuaProcessing->FindInRelation(key); }
@@ -230,12 +231,14 @@ OsmLuaProcessing::OsmLuaProcessing(
 	const class ShpMemTiles &shpMemTiles, 
 	class OsmMemTiles &osmMemTiles,
 	AttributeStore &attributeStore,
+	class Declutter &declutter,
 	bool materializeGeometries,
 	bool isFirst) :
 	osmStore(osmStore),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),
+	declutter(declutter),
 	config(configIn),
 	currentTags(NULL),
 	layers(layers),
@@ -292,6 +295,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 
 	luaState["MinZoom"] = &rawMinZoom;
 	luaState["ZOrder"] = &rawZOrder;
+	luaState["Score"] = &rawScore;
 	luaState["Accept"] = &rawAccept;
 	luaState["NextRelation"] = &rawNextRelation;
 	luaState["RestartRelations"] = &rawRestartRelations;
@@ -657,6 +661,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				id = osmMemTiles.storePoint(p);
 			OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 			outputs.push_back(std::make_pair(std::move(oo), attributes));
+			noteIfDecluttered(LatpLon { latp, lon });
 			return;
 		}
 		else if (geomType==POLYGON_) {
@@ -860,6 +865,14 @@ void OsmLuaProcessing::LayerAsCentroid(const string &layerName, kaguya::Variadic
 	}
 	OutputObject oo(POINT_, layers.layerMap[layerName], id, 0, layerMinZoom);
 	outputs.push_back(std::make_pair(std::move(oo), attributes));
+	noteIfDecluttered(LatpLon { (int32_t)geomp.y(), (int32_t)geomp.x() });
+}
+
+// If the layer we've just written a point to is decluttered, remember where the point is:
+// it'll be held back from the tile index until all features have been read and ranked.
+void OsmLuaProcessing::noteIfDecluttered(LatpLon point) {
+	if (!declutter.isDecluttered(outputs.back().first.layer)) return;
+	declutterOutputs.push_back({ (uint32_t)(outputs.size() - 1), point, 0 });
 }
 
 Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
@@ -1003,6 +1016,16 @@ void OsmLuaProcessing::AttributeInteger(const string &key, const int val, const 
 void OsmLuaProcessing::MinZoom(const double z) {
 	if (outputs.size()==0) { ProcessingError("Can't set minimum zoom if no Layer set"); return; }
 	outputs.back().first.setMinZoom(z);
+}
+
+// Set the score used to rank this feature against its neighbours when decluttering
+void OsmLuaProcessing::Score(const double score) {
+	if (outputs.size()==0) { ProcessingError("Can't set score if no Layer set"); return; }
+	if (declutterOutputs.empty() || declutterOutputs.back().outputIndex != outputs.size()-1) {
+		ProcessingError("Score() only applies to point features in a layer with declutter_below set");
+		return;
+	}
+	declutterOutputs.back().score = OutputObject::finite_cast<int32_t>(score);
 }
 
 // Set z_order
@@ -1179,7 +1202,8 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	}
 
 	if (!this->empty()) {
-		osmMemTiles.addGeometryToIndex(linestringCached(), finalizeOutputs(), originalOsmID);
+		std::vector<OutputObject> objects = finalizeOutputs();
+		if (!objects.empty()) osmMemTiles.addGeometryToIndex(linestringCached(), objects, originalOsmID);
 		return wayEmitted;
 	}
 
@@ -1227,11 +1251,12 @@ void OsmLuaProcessing::setRelation(
 	if (this->empty()) return;
 
 	try {
+		std::vector<OutputObject> objects = finalizeOutputs();
+		if (objects.empty()) return;
 		if (isClosed) {
-			std::vector<OutputObject> objects = finalizeOutputs();
 			osmMemTiles.addGeometryToIndex(multiPolygonCached(), objects, originalOsmID);
 		} else {
-			osmMemTiles.addGeometryToIndex(multiLinestringCached(), finalizeOutputs(), originalOsmID);
+			osmMemTiles.addGeometryToIndex(multiLinestringCached(), objects, originalOsmID);
 		}
 	} catch(std::out_of_range &err) {
 		cout << "In relation " << originalOsmID << ": " << err.what() << endl;
@@ -1260,9 +1285,17 @@ SignificantTags OsmLuaProcessing::GetSignificantWayKeys() {
 std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
 	std::vector<OutputObject> list;
 	list.reserve(this->outputs.size());
-	for (auto jt = this->outputs.begin(); jt != this->outputs.end(); ++jt) {
-		jt->first.setAttributeSet(attributeStore.add(jt->second));
-		list.push_back(jt->first);
+	size_t nextDeclutter = 0;
+	for (size_t i = 0; i < this->outputs.size(); i++) {
+		auto& output = this->outputs[i];
+		output.first.setAttributeSet(attributeStore.add(output.second));
+		if (nextDeclutter < declutterOutputs.size() && declutterOutputs[nextDeclutter].outputIndex == i) {
+			// Park it: Declutter::apply() will set its minimum zoom and index it later
+			const auto& pending = declutterOutputs[nextDeclutter++];
+			declutter.add(output.first, pending.point, originalOsmID, pending.score, false);
+			continue;
+		}
+		list.push_back(output.first);
 	}
 	return list;
 }

@@ -129,6 +129,7 @@ file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
+	src/declutter.cpp
 	src/external/streamvbyte_decode.c
 	src/external/streamvbyte_encode.c
 	src/external/streamvbyte_zigzag.c
