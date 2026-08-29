@@ -203,6 +203,13 @@ uint64_t getFileSize(std::string filename) {
 	throw std::runtime_error("unable to stat " + filename);
 }
 
+FilePtr openFile(const std::string &filename, const char *mode) {
+	FilePtr fp(fopen(filename.c_str(), mode));
+	if (fp == nullptr)
+		throw std::runtime_error("unable to open " + filename);
+	return fp;
+}
+
 // Given a file, attempt to divide it into N chunks, with each chunk separated
 // by a newline.
 //
@@ -212,7 +219,7 @@ std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint6
 
 	const uint64_t size = getFileSize(filename);
 	const uint64_t chunkSize = std::max<uint64_t>(size / chunks, 1ul);
-	FILE* fp = fopen(filename.c_str(), "r");
+	FilePtr fp = openFile(filename, "r");
 
 	// Our approach is naive: skip chunkSize bytes, scan for a newline, repeat.
 	//
@@ -226,12 +233,12 @@ std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint6
 		// The last chunk will not be a full `chunkSize`.
 		length = std::min(chunkSize, size - offset);
 
-		if (fseek(fp, offset + length, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(offset) + " in " + filename);
+		if (fseek(fp.get(), offset + length, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(offset) + " in " + filename);
 
 		bool foundNewline = false;
 
 		while(!foundNewline) {
-			size_t read = fread(buffer, 1, sizeof(buffer), fp);
+			size_t read = fread(buffer, 1, sizeof(buffer), fp.get());
 			if (read == 0) break;
 			for (int i = 0; i < read; i++) {
 				if (buffer[i] == '\n') {
@@ -248,6 +255,5 @@ std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint6
 		offset += length;
 	}
 
-	fclose(fp);
 	return rv;
 }

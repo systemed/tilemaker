@@ -2,10 +2,18 @@
 #include <stdexcept>
 #include <mutex>
 #include <cstring>
+#include <cstdlib>
 #include <deque>
+#include <memory>
 
 namespace PooledStringNS {
-	std::deque<char*> tables;
+	struct TableDeleter {
+		void operator()(char* table) const {
+			std::free(table);
+		}
+	};
+
+	std::deque<std::unique_ptr<char, TableDeleter>> tables;
 	std::mutex mutex;
 
 	const uint8_t ShortString = 0b00;
@@ -33,10 +41,10 @@ PooledString::PooledString(const std::string& str) {
 		if (spaceLeft < 0 || spaceLeft < str.size()) {
 			std::lock_guard<std::mutex> lock(mutex);
 			spaceLeft = 65536;
-			char* buffer = (char*)malloc(spaceLeft);
-			if (buffer == 0)
+			std::unique_ptr<char, TableDeleter> buffer(static_cast<char*>(std::malloc(spaceLeft)));
+			if (!buffer)
 				throw std::runtime_error("PooledString could not malloc");
-			tables.push_back(buffer);
+			tables.emplace_back(std::move(buffer));
 			tableIndex = tables.size() - 1;
 		}
 
@@ -52,7 +60,7 @@ PooledString::PooledString(const std::string& str) {
 		storage[6] = length >> 8;
 		storage[7] = length;
 
-		memcpy(tables[tableIndex] + offset, str.data(), str.size());
+		memcpy(tables[tableIndex].get() + offset, str.data(), str.size());
 
 		spaceLeft -= str.size();
 	}
@@ -106,7 +114,7 @@ const char* PooledStringNS::PooledString::data() const {
 	uint32_t tableIndex = (storage[1] << 16) + (storage[2] << 8) + storage[3];
 	uint16_t offset = (storage[4] << 8) + storage[5];
 
-	const char* data = tables[tableIndex] + offset;
+	const char* data = tables[tableIndex].get() + offset;
 	return data;
 }
 
@@ -136,7 +144,7 @@ std::string PooledStringNS::PooledString::toString() const {
 		uint32_t tableIndex = (storage[1] << 16) + (storage[2] << 8) + storage[3];
 		uint16_t offset = (storage[4] << 8) + storage[5];
 
-		char* data = tables[tableIndex] + offset;
+		char* data = tables[tableIndex].get() + offset;
 		rv.append(data, size());
 		return rv;
 	}
@@ -169,4 +177,3 @@ bool PooledStringNS::PooledString::operator<(const PooledString& other) const {
 
 	return memcmp(data(), other.data(), mySize) < 0;
 }
-

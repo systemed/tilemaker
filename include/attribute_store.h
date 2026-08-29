@@ -167,7 +167,7 @@ struct AttributePair {
 		else if(hasBoolValue())
 			boost::hash_combine(rv, boolValue());
 		else {
-			throw new std::out_of_range("cannot hash pair, unknown value");
+			throw std::out_of_range("cannot hash pair, unknown value");
 		}
 
 		return rv;
