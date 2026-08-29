@@ -97,6 +97,7 @@ all: tilemaker server
 
 tilemaker: \
 	src/attribute_store.o \
+	src/config_validator.o \
 	src/coordinates_geom.o \
 	src/coordinates.o \
 	src/declutter.o \
@@ -152,6 +153,7 @@ tilemaker: \
 test: \
 	test_append_vector \
 	test_attribute_store \
+	test_config_validator \
 	test_deque_map \
 	test_helpers \
 	test_options_parser \
@@ -175,6 +177,19 @@ test_attribute_store: \
 	src/pooled_string.o \
 	test/attribute_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.attribute_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.attribute_store
+
+test_config_validator: \
+	src/config_validator.o \
+	test/config_validator.test.o
+	$(CXX) $(CXXFLAGS) -o test.config_validator $^ $(INC) $(LIB) $(LDFLAGS) && ./test.config_validator
+
+src/config_schema.h: resources/config-schema.json
+	printf '#ifndef _CONFIG_SCHEMA_H\n#define _CONFIG_SCHEMA_H\n\nstatic const char* CONFIG_SCHEMA = R"TMCONFIGSCHEMA(\n' > $@
+	cat $< >> $@
+	printf '\n)TMCONFIGSCHEMA";\n\n#endif //_CONFIG_SCHEMA_H\n' >> $@
+
+src/config_validator.o: src/config_validator.cpp include/config_validator.h src/config_schema.h
+	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)
 
 test_deque_map: \
 	test/deque_map.test.o
@@ -280,6 +295,6 @@ install:
 	@install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/ || true
 
 clean:
-	rm -f tilemaker tilemaker-server src/*.o src/external/*.o src/external/libdeflate/lib/*.o src/external/libdeflate/lib/*/*.o include/*.o include/*.pb.h server/*.o test/*.o
+	rm -f tilemaker tilemaker-server src/*.o src/external/*.o src/external/libdeflate/lib/*.o src/external/libdeflate/lib/*/*.o include/*.o include/*.pb.h server/*.o test/*.o src/config_schema.h
 
 .PHONY: install
