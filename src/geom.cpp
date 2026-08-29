@@ -254,6 +254,8 @@ void union_many(std::vector<MultiPolygon> &to_unify) {
 			size_t ri = find(i), rj = find(v.second);
 			if (ri != rj) parent[ri] = rj;
 		}
+		if (boxes[i].min_corner().x() > boxes[i].max_corner().x() ||
+		    boxes[i].min_corner().y() > boxes[i].max_corner().y()) continue;
 		rtree.insert({boxes[i], i});
 	}
 
