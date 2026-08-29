@@ -112,7 +112,8 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 	std::string name;
 	const rapidjson::Value &pr = feature["properties"];
 	unsigned minzoom = layer.minzoom;
-	AttributeIndex attrIdx = readProperties(pr, hasName, name, layer, minzoom);
+	int32_t score = 0;
+	AttributeIndex attrIdx = readProperties(pr, hasName, name, layer, minzoom, score);
 
 	// Parse geometry
 	auto geometry = feature["geometry"].GetObject();
@@ -130,7 +131,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		// coordinates is [x,y]
 		Point p( coords[0].GetDouble(), lat2latp(coords[1].GetDouble()) );
 		if (geom::within(p, clippingBox)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else if (geomType=="LineString") {
@@ -140,7 +141,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		MultiLinestring out;
 		geom::intersection(ls, clippingBox, out);
 		if (!geom::is_empty(out)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, MULTILINESTRING_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, MULTILINESTRING_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else if (geomType=="Polygon") {
@@ -151,7 +152,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		MultiPolygon out;
 		geom::intersection(polygon, clippingBox, out);
 		if (!geom::is_empty(out)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else if (geomType=="MultiPoint") {
@@ -159,7 +160,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		for (auto &pt : coords) {
 			Point p( pt[0].GetDouble(), lat2latp(pt[1].GetDouble()) );
 			if (geom::within(p, clippingBox)) {
-				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, score, attrIdx);
 			}
 		}
 		
@@ -174,7 +175,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		MultiLinestring out;
 		geom::intersection(mls, clippingBox, out);
 		if (!geom::is_empty(out)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, MULTILINESTRING_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, MULTILINESTRING_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else if (geomType=="MultiPolygon") {
@@ -187,7 +188,7 @@ void GeoJSONProcessor::processFeature(rapidjson::GenericObject<Flag, T> feature,
 		MultiPolygon out;
 		geom::intersection(mp, clippingBox, out);
 		if (!geom::is_empty(out)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 	}
 }
@@ -215,7 +216,7 @@ std::vector<Point> GeoJSONProcessor::pointsFromGeoJSONArray(const rapidjson::Gen
 }
 
 // Read properties and generate an AttributeIndex
-AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool &hasName, std::string &name, LayerDef &layer, unsigned &minzoom) {
+AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool &hasName, std::string &name, LayerDef &layer, unsigned &minzoom, int32_t &score) {
 	std::lock_guard<std::mutex> lock(attributeMutex);
 	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
 	AttributeSet attributes;
@@ -259,6 +260,7 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
+				if (key=="_score") { score=val; continue; }
 				attributeStore.addAttribute(attributes, key, (int)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {

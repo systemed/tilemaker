@@ -58,7 +58,7 @@ void ShpProcessor::fillPointArrayFromShapefile(vector<Point> *points, SHPObject 
 AttributeIndex ShpProcessor::readShapefileAttributes(
 		DBFHandle dbf,
 		int recordNum, unordered_map<int,string> &columnMap, unordered_map<int,int> &columnTypeMap,
-		LayerDef &layer, uint &minzoom) {
+		LayerDef &layer, uint &minzoom, int32_t &score) {
 
 	std::lock_guard<std::mutex> lock(attributeMutex);
 	AttributeStore& attributeStore = osmLuaProcessing.getAttributeStore();
@@ -89,6 +89,7 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
+				if (key=="_score") { score=val; continue; }
 				attributeStore.addAttribute(attributes, key, (int)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
@@ -188,9 +189,10 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 					std::lock_guard<std::mutex> lock(attributeMutex);
 					name=DBFReadStringAttribute(dbf.get(), i, indexField); hasName = true;
 				}
-				AttributeIndex attrIdx = readShapefileAttributes(dbf.get(), i, columnMap, columnTypeMap, layer, layer.minzoom);
+				int32_t score = 0;
+				AttributeIndex attrIdx = readShapefileAttributes(dbf.get(), i, columnMap, columnTypeMap, layer, layer.minzoom, score);
 				// process geometry
-				processShapeGeometry(shape.get(), attrIdx, layer, layerNum, hasName, name);
+				processShapeGeometry(shape.get(), attrIdx, layer, layerNum, hasName, name, score);
 			} catch (...) {
 				std::lock_guard<std::mutex> lock(errorMutex);
 				if (!error)
@@ -204,7 +206,7 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 }
 
 void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx,
-                                        const LayerDef &layer, uint layerNum, bool hasName, const string &name) {
+                                        const LayerDef &layer, uint layerNum, bool hasName, const string &name, int32_t score) {
 	int shapeType = shape->nSHPType;	// 1=point, 3=polyline, 5=(multi)polygon [8=multipoint, 11+=3D]
 	int minzoom = layer.minzoom;
 
@@ -212,7 +214,7 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 		// Points
 		Point p( shape->padfX[0], lat2latp(shape->padfY[0]) );
 		if (geom::within(p, clippingBox)) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else if (shapeType==8 || shapeType==18 || shapeType==28) {
@@ -220,7 +222,7 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 		for (uint i=0; i<shape->nVertices; i++) {
 			Point p( shape->padfX[i], lat2latp(shape->padfY[i]) );
 			if (geom::within(p, clippingBox)) {
-				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, attrIdx);
+				shpMemTiles.StoreGeometry(layerNum, layer.name, POINT_, p, layer.indexed, hasName, name, minzoom, score, attrIdx);
 			}
 		}
 
@@ -236,7 +238,7 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 			MultiLinestring out;
 			geom::intersection(ls, clippingBox, out);
 			for (MultiLinestring::const_iterator it = out.begin(); it != out.end(); ++it) {
-				shpMemTiles.StoreGeometry(layerNum, layer.name, LINESTRING_, *it, layer.indexed, hasName, name, minzoom, attrIdx);
+				shpMemTiles.StoreGeometry(layerNum, layer.name, LINESTRING_, *it, layer.indexed, hasName, name, minzoom, score, attrIdx);
 			}
 		}
 
@@ -295,7 +297,7 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 		MultiPolygon out;
 		geom::intersection(multi, clippingBox, out);
 		if (boost::size(out)>0) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, attrIdx);
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
 		}
 
 	} else {

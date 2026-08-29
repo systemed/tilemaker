@@ -43,7 +43,7 @@ private:
 	template <bool Flag, typename T>
 	std::vector<Point> pointsFromGeoJSONArray(const rapidjson::GenericArray<Flag, T> &arr);
 	
-	AttributeIndex readProperties(const rapidjson::Value &pr, bool &hasName, std::string &name, LayerDef &layer, unsigned &minzoom);
+	AttributeIndex readProperties(const rapidjson::Value &pr, bool &hasName, std::string &name, LayerDef &layer, unsigned &minzoom, int32_t &score);
 };
 
 #endif //_GEOJSON_PROCESSOR_H

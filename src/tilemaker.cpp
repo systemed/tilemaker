@@ -261,14 +261,17 @@ int main(const int argc, const char* argv[]) {
 
 	class LayerDefinition layers(config.layers);
 
+	class Declutter declutter;
+	declutter.configure(layers.layers);
+
 	const unsigned int indexZoom = std::min(config.baseZoom, 14u);
 	class OsmMemTiles osmMemTiles(options.threadNum, indexZoom, config.includeID, *nodeStore, *wayStore);
-	class ShpMemTiles shpMemTiles(options.threadNum, indexZoom);
+	class ShpMemTiles shpMemTiles(options.threadNum, indexZoom, declutter);
 	osmMemTiles.open();
 	shpMemTiles.open();
 
 	OsmLuaProcessing osmLuaProcessing(osmStore, config, layers, options.luaFile, 
-		shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries, true);
+		shpMemTiles, osmMemTiles, attributeStore, declutter, options.osm.materializeGeometries, true);
 
 	// ---- Load external sources (shp/geojson)
 
@@ -336,7 +339,7 @@ int main(const int argc, const char* argv[]) {
 			[&]() {
 				thread_local std::pair<std::string, std::shared_ptr<OsmLuaProcessing>> osmLuaProcessing;
 				if (osmLuaProcessing.first != inputFile) {
-					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, options.osm.materializeGeometries, false));
+					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, declutter, options.osm.materializeGeometries, false));
 				}
 				return osmLuaProcessing.second;
 			},
@@ -377,6 +380,9 @@ int main(const int argc, const char* argv[]) {
 
 	// Loop through tiles
 	std::atomic<uint64_t> tilesWritten(0), lastTilesWritten(0);
+
+	// Rank any decluttered point features, and index them at their allotted zoom levels
+	declutter.apply(layers.layers, osmMemTiles, shpMemTiles);
 
 	for (auto source : sources) {
 		source->finalize(options.threadNum);

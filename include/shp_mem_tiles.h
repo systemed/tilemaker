@@ -3,13 +3,14 @@
 #define _SHP_MEM_TILES
 
 #include "tile_data.h"
+#include "declutter.h"
 
 extern bool verbose;
 
 class ShpMemTiles : public TileDataSource
 {
 public:
-	ShpMemTiles(size_t threadNum, uint indexZoom);
+	ShpMemTiles(size_t threadNum, uint indexZoom, class Declutter& declutter);
 
 	std::string name() const override { return "shp"; }
 
@@ -25,6 +26,7 @@ public:
 		bool hasName,
 		const std::string& name,
 		uint minzoom,
+		int32_t score,
 		AttributeIndex attrIdx
 	);
 
@@ -62,6 +64,7 @@ public:
 	}
 
 private:
+	class Declutter& declutter;
 	std::vector<OutputObject> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices

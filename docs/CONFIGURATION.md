@@ -86,6 +86,9 @@ You can add optional parameters to layers:
 * `combine_lines_below` - whether to merge all linestrings in the tile with the same attributes. If not defined, the global setting `combine_below` will be used.
 * `combine_points` - merge points with the same attributes (defaults to `true`: specify `false` to disable)
 * `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
+* `declutter_below` - thin out point features below this zoom level, so only the most important appear when zoomed out (see 'Decluttering point features' below)
+* `declutter_distance` - how far apart (in pixels) decluttered features should be kept - defaults to 40
+* `declutter_threshold` - the score a feature needs to appear at the layer's `minzoom`; this halves at each subsequent zoom level - defaults to 0 (no threshold)
 
 `write_to` enables you to combine different layer specs within one outputted layer. For example:
 
@@ -97,6 +100,30 @@ You can add optional parameters to layers:
 This would combine the `roads` (z12-14) and `low_roads` (z9-11) layers into a single `roads` layer on writing, with simplified geometries for `low_roads`.
 
 (See also 'Shapefiles and GeoJSON' below.)
+
+### Decluttering point features
+
+For more effective maps at lower zoom levels, tilemaker allows you to prioritise the most important point features - such as the largest cities or the highest peaks.
+
+In your Lua profile, give each point a `Score()`, typically calculated from OSM tags such as `population` or `ele`. Then set three `declutter` properties on the layer (see above) to determine which zoom levels this applies at, and the distance between each selected feature.
+
+    "place": {
+      "minzoom": 4, "maxzoom": 14,
+      "declutter_below": 11, "declutter_distance": 40, "declutter_threshold": 50000
+    }
+
+```lua
+    local place = Find("place")
+    if place=="city" or place=="town" or place=="village" then
+      Layer("place", false)
+      Attribute("name", Find("name"))
+      Score(tonumber(Find("population")) or 0)
+    end
+```
+
+Starting at the layer's `minzoom`, tilemaker takes the features whose score is at least `declutter_threshold` (highest score first), and places each one that isn't within `declutter_distance` of a feature already placed. It then moves up a zoom level, halving the threshold so that less important features are included. Anything still unplaced by the time we reach `declutter_below` is written from that zoom level upwards.
+
+A feature whose `MinZoom()` is above the zoom being considered isn't eligible for it. Only point features are decluttered, not lines or polygons.
 
 ### Additional metadata
 
@@ -171,6 +198,7 @@ To do that, you use these methods:
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.
 * `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below`, `combine_lines_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
 * `MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
+* `Score(number)`: set how important this point feature is (a whole number; anything else is rounded down), so that tilemaker can decide which zoom level to show it from. Only meaningful for points (i.e. features written with `Layer` for a node, or `LayerAsCentroid`) in a layer with `declutter_below` set - see 'Decluttering point features' below.
 * `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires Boost 1.67+.
 * `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
 
@@ -232,6 +260,8 @@ You can specify attribute columns to import using the `source_columns` parameter
 Limited Lua transformations are available for these files. You can supply an `attribute_function(attr,layer)` which takes a Lua table (hash) of shapefile attributes, as already filtered by `source_columns`, and the layer name. It must return a table (hash) of the vector tile attributes to set.
 
 To set the minimum zoom level at which an individual feature is rendered, use `attribute_function` to set a `_minzoom` value in your return table.
+
+Similarly, to declutter shapefile/GeoJSON points, set a `_score` value in your return table and `declutter_below` on the layer.
 
 Shapefiles/GeoJSON **must** be in WGS84 projection, i.e. pure latitude/longitude. (Use ogr2ogr to reproject them if your source material is in a different projection.) They will be clipped to the bounds of the first .pbf that you import, unless you specify otherwise with a `bounding_box` setting in your JSON file.
 

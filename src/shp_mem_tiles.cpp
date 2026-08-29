@@ -7,8 +7,9 @@ using namespace std;
 namespace geom = boost::geometry;
 extern bool verbose;
 
-ShpMemTiles::ShpMemTiles(size_t threadNum, uint indexZoom)
+ShpMemTiles::ShpMemTiles(size_t threadNum, uint indexZoom, class Declutter& declutter)
 	: TileDataSource(threadNum, indexZoom, false),
+	declutter(declutter),
 	spatialIndexZoom(15)
 { }
 
@@ -135,6 +136,7 @@ void ShpMemTiles::StoreGeometry(
 	bool hasName,
 	const std::string& name, 
 	uint minzoom,
+	int32_t score,
 	AttributeIndex attrIdx
 ) {
 
@@ -151,9 +153,14 @@ void ShpMemTiles::StoreGeometry(
 				Point sp(p->x()*10000000.0, p->y()*10000000.0);
 				NodeID oid = storePoint(sp);
 				oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
-				tilex =  lon2tilex(p->x(), indexZoom);
-				tiley = latp2tiley(p->y(), indexZoom);
-				addObjectToSmallIndex(TileCoordinates(tilex, tiley), *oo, 0);
+				if (declutter.isDecluttered(layerNum)) {
+					// held back until all features have been read and ranked
+					declutter.add(*oo, LatpLon { (int32_t)sp.y(), (int32_t)sp.x() }, 0, score, true);
+				} else {
+					tilex =  lon2tilex(p->x(), indexZoom);
+					tiley = latp2tiley(p->y(), indexZoom);
+					addObjectToSmallIndex(TileCoordinates(tilex, tiley), *oo, 0);
+				}
 			} else { return; }
 		} break;
 
