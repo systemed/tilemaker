@@ -1,5 +1,48 @@
 # Changelog
 
+## [3.2.0] - 2026-08-29
+
+### Added
+- Declutter point features (cities/peaks) at low zoom (@systemed)
+- Check config JSON against reference schema (@Symmetricity)
+- Read release from VERSION file (@Symmetricity)
+- Simplify buildings algorithm (@systemed)
+- Faster polygon merging (@systemed)
+- Build ARM docker images (@pnorman)
+
+### Changed
+- OMT-compatible schema fixes (@etienneJr, @jonasmatthias, @arichnad)
+- Update installation instructions for Lua version 5.3 (@laem, @SomeoneElseOSM)
+- Fix progress display for shards 1+ (@systemed)
+- Speed up runtime by reducing allocation churn in tile generation (@Symmetricity)
+- Increase AttributeStore lookup caches (@Symmetricity)
+- Stabilize polylabel placement (@Symmetricity)
+- Improve CI workflow (@Symmetricity)
+
+### Fixed
+- Repair corrupt (multi)polygons as far as possible (@geoneutrino)
+- Skip empty multipolygons in union_many() (@geoneutrino)
+- Fix memory leaks (@Symmetricity)
+- Fix AppendVector random access iterator (@Symmetricity)
+- Clamp affected tiles calculation to sane latitudes (@systemed)
+- Optimise locking when writing types to metadata (@systemed)
+- Fix UsedWays bounds check (@Symmetricity)
+- Ignore points too far out of the valid tile (@prgm767)
+- Fix shapefile z6 index (@Symmetricity)
+- Synchronize attribute key cache refresh (@Symmetricity)
+- Parse decimal building heights (@Symmetricity)
+- Skip duplicate shapefile points (@Symmetricity)
+- Read relation blocks without multipolygons (@Symmetricity)
+- Decode PBF blobs by data field (@Symmetricity)
+- Detect closed multipolygon ways (@Symmetricity)
+- Reinitialize UsedObjects when enabling (@Symmetricity)
+- Write rings in opposite order since Y axis is inverted (@dougkpowers)
+- Handle open way centroids as lines (@Symmetricity)
+- Write PMTiles archives in binary mode (@Symmetricity)
+- Fix PBF block offsets on Windows (@Symmetricity)
+- Fix build issues (@Symmetricity)
+- Revalidate fast-clip spike repairs (@Symmetricity)
+
 ## [3.1.0] - 2026-03-18
 
 ### Added
