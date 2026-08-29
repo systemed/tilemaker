@@ -250,6 +250,7 @@ void union_many(std::vector<MultiPolygon> &to_unify) {
 	// whose bboxes intersect (transitivity is handled by union-find)
 	bgi::rtree<BoxIdx, bgi::quadratic<16>> rtree;
 	for (size_t i = 0; i < to_unify.size(); i++) {
+		if (boost::geometry::is_empty(to_unify[i])) continue;
 		for (auto const &v : rtree | bgi::adaptors::queried(bgi::intersects(boxes[i]))) {
 			size_t ri = find(i), rj = find(v.second);
 			if (ri != rj) parent[ri] = rj;
