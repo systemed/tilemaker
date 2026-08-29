@@ -5,6 +5,7 @@
 #include <vector>
 #include <queue>
 #include <cstdint>
+#include <iterator>
 
 // Tilemaker collects OutputObjects in a list that
 // - spills to disk
@@ -32,114 +33,111 @@ namespace AppendVectorNS {
 			using reference         = T&;
 
 			Iterator(AppendVector<T>& appendVector, uint16_t vec, uint16_t offset):
-				appendVector(&appendVector), vec(vec), offset(offset) {}
+				appendVector(&appendVector), index(difference_type(vec) * APPEND_VECTOR_SIZE + offset) {}
 
 			Iterator():
-				appendVector(nullptr), vec(0), offset(0) {}
+				appendVector(nullptr), index(0) {}
 
 
 			bool operator<(const Iterator& other) const {
-				if (vec < other.vec)
-					return true;
+				return index < other.index;
+			}
 
-				if (vec > other.vec)
-					return false;
+			bool operator>(const Iterator& other) const {
+				return other < *this;
+			}
 
-				return offset < other.offset;
+			bool operator<=(const Iterator& other) const {
+				return !(other < *this);
 			}
 
 			bool operator>=(const Iterator& other) const {
 				return !(*this < other);
 			}
 
-			Iterator operator-(int delta) const {
-				int64_t absolute = vec * APPEND_VECTOR_SIZE + offset;
-				absolute -= delta;
-				return Iterator(*appendVector, absolute / APPEND_VECTOR_SIZE, absolute % APPEND_VECTOR_SIZE);
+			Iterator operator-(difference_type delta) const {
+				Iterator result = *this;
+				result -= delta;
+				return result;
 			}
 
-			Iterator operator+(int delta) const {
-				int64_t absolute = vec * APPEND_VECTOR_SIZE + offset;
-				absolute += delta;
-				return Iterator(*appendVector, absolute / APPEND_VECTOR_SIZE, absolute % APPEND_VECTOR_SIZE);
+			Iterator operator+(difference_type delta) const {
+				Iterator result = *this;
+				result += delta;
+				return result;
+			}
+
+			friend Iterator operator+(difference_type delta, const Iterator& iterator) {
+				return iterator + delta;
 			}
 
 			bool operator==(const Iterator& other) const {
-				return appendVector == other.appendVector && vec == other.vec && offset == other.offset;
+				return appendVector == other.appendVector && index == other.index;
 			}
 
 			bool operator!=(const Iterator& other) const {
 				return !(*this == other);
 			}
 
-			std::ptrdiff_t operator-(const Iterator& other) const {
-				int64_t absolute = vec * APPEND_VECTOR_SIZE + offset;
-				int64_t otherAbsolute = other.vec * APPEND_VECTOR_SIZE + other.offset;
-
-				return absolute - otherAbsolute;
+			difference_type operator-(const Iterator& other) const {
+				return index - other.index;
 			}
 
 			reference operator*() const {
-				auto& vector = appendVector->vecs[vec];
-				auto& el = vector[offset];
+				auto& vector = appendVector->vecs[index / APPEND_VECTOR_SIZE];
+				auto& el = vector[index % APPEND_VECTOR_SIZE];
 				return el;
 			}
 
+			reference operator[](difference_type delta) const {
+				return *(*this + delta);
+			}
+
 			pointer operator->() const {
-				auto& vector = appendVector->vecs[vec];
-				auto& el = vector[offset];
+				auto& vector = appendVector->vecs[index / APPEND_VECTOR_SIZE];
+				auto& el = vector[index % APPEND_VECTOR_SIZE];
 				return &el;
 			}
 
-			Iterator& operator+= (int delta) {
-				int64_t absolute = vec * APPEND_VECTOR_SIZE + offset;
-				absolute += delta;
-
-				vec = absolute / APPEND_VECTOR_SIZE;
-				offset = absolute % APPEND_VECTOR_SIZE;
+			Iterator& operator+= (difference_type delta) {
+				index += delta;
 				return *this;
 			}
 
-			Iterator& operator-= (int delta) {
-				int64_t absolute = vec * APPEND_VECTOR_SIZE + offset;
-				absolute -= delta;
-
-				vec = absolute / APPEND_VECTOR_SIZE;
-				offset = absolute % APPEND_VECTOR_SIZE;
+			Iterator& operator-= (difference_type delta) {
+				index -= delta;
 				return *this;
 			}
 
 			// Prefix increment
 			Iterator& operator++() {
-				offset++;
-				if (offset == APPEND_VECTOR_SIZE) {
-					offset = 0;
-					vec++;
-				}
+				index++;
 				return *this;
 			}  
 
 			// Postfix increment
-			Iterator operator++(int) { Iterator tmp = *this; ++(*this); return tmp; }
+			Iterator operator++(int) {
+				Iterator result = *this;
+				++*this;
+				return result;
+			}
 
 			// Prefix decrement
 			Iterator& operator--() {
-				if (offset > 0) {
-					offset--;
-				} else {
-					vec--;
-					offset = APPEND_VECTOR_SIZE - 1;
-				}
-
+				index--;
 				return *this;
 			}
 
 			// Postfix decrement
-			Iterator operator--(int) { Iterator tmp = *this; --(*this); return tmp; }
+			Iterator operator--(int) {
+				Iterator result = *this;
+				--*this;
+				return result;
+			}
 
 		private:
 			mutable AppendVector<T>* appendVector;
-			int32_t vec, offset;
+			difference_type index;
 		};
 
 		AppendVector():

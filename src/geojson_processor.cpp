@@ -3,6 +3,7 @@
 #include "helpers.h"
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <exception>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -24,25 +25,34 @@ void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
 void GeoJSONProcessor::readFeatureCollection(class LayerDef &layer, uint layerNum) {
 	// Read a JSON file containing a single GeoJSON FeatureCollection object.
 	rapidjson::Document doc;
-	FILE* fp = fopen(layer.source.c_str(), "r");
+	FilePtr fp = openFile(layer.source, "r");
 	char readBuffer[65536];
-	rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+	rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 	doc.ParseStream(is);
 	if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
-	fclose(fp);
 
 	if (strcmp(doc["type"].GetString(), "FeatureCollection") != 0) { 
 		throw std::runtime_error("Top-level GeoJSON object must be a FeatureCollection.");
 	}
 
 	// Process each feature
+	std::exception_ptr error;
+	std::mutex errorMutex;
 	boost::asio::thread_pool pool(threadNum);
 	for (auto &feature : doc["features"].GetArray()) { 
 		boost::asio::post(pool, [&]() {
-			processFeature(std::move(feature.GetObject()), layer, layerNum);
+			try {
+				processFeature(std::move(feature.GetObject()), layer, layerNum);
+			} catch (...) {
+				std::lock_guard<std::mutex> lock(errorMutex);
+				if (!error)
+					error = std::current_exception();
+			}
 		});
 	}
 	pool.join();
+	if (error)
+		std::rethrow_exception(error);
 }
 
 void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
@@ -50,30 +60,39 @@ void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
 	std::vector<OffsetAndLength> chunks = getNewlineChunks(layer.source, threadNum * 4);
 
 	// Process each feature
+	std::exception_ptr error;
+	std::mutex errorMutex;
 	boost::asio::thread_pool pool(threadNum);
 	for (auto &chunk : chunks) { 
 		boost::asio::post(pool, [&]() {
-			FILE* fp = fopen(layer.source.c_str(), "r");
-			if (fseek(fp, chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
-			char readBuffer[65536];
-			rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+			try {
+				FilePtr fp = openFile(layer.source, "r");
+				if (fseek(fp.get(), chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
+				char readBuffer[65536];
+				rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 
-			// Skip leading whitespace.
-			while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
-
-			while(is.Tell() < chunk.length) {
-				auto doc = rapidjson::Document();
-				doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
-				if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
-				processFeature(std::move(doc.GetObject()), layer, layerNum);
-
-				// Skip trailing whitespace.
+				// Skip leading whitespace.
 				while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+
+				while(is.Tell() < chunk.length) {
+					auto doc = rapidjson::Document();
+					doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
+					if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
+					processFeature(std::move(doc.GetObject()), layer, layerNum);
+
+					// Skip trailing whitespace.
+					while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+				}
+			} catch (...) {
+				std::lock_guard<std::mutex> lock(errorMutex);
+				if (!error)
+					error = std::current_exception();
 			}
-			fclose(fp);
 		});
 	}
 	pool.join();
+	if (error)
+		std::rethrow_exception(error);
 }
 
 template <bool Flag, typename T>

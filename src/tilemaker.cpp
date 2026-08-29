@@ -171,11 +171,10 @@ int main(const int argc, const char* argv[]) {
 	rapidjson::Document jsonConfig;
 	class Config config;
 	try {
-		FILE* fp = fopen(options.jsonFile.c_str(), "r");
+		FilePtr fp = openFile(options.jsonFile, "r");
 		char readBuffer[65536];
-		rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+		rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 		jsonConfig.ParseStream(is);
-		fclose(fp);
 		if (jsonConfig.HasParseError()) {
 			cerr << "Invalid JSON file: " << rapidjson::GetParseError_En(jsonConfig.GetParseError())
 			     << " at offset " << jsonConfig.GetErrorOffset() << "." << endl;
@@ -284,12 +283,22 @@ int main(const int argc, const char* argv[]) {
 				if (!hasClippingBox) {
 					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 					exit(EXIT_FAILURE);
-				} else if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ")) {
-					cout << "Reading GeoJSON " << layer.name << endl;
-					geoJSONProcessor.read(layers.layers[layerNum], layerNum);
 				} else {
-					cout << "Reading shapefile " << layer.name << endl;
-					shpProcessor.read(layers.layers[layerNum], layerNum);
+					try {
+						if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ")) {
+							cout << "Reading GeoJSON " << layer.name << endl;
+							geoJSONProcessor.read(layers.layers[layerNum], layerNum);
+						} else {
+							cout << "Reading shapefile " << layer.name << endl;
+							shpProcessor.read(layers.layers[layerNum], layerNum);
+						}
+					} catch (const std::exception& e) {
+						cerr << "Error reading external source " << layer.source << ": " << e.what() << endl;
+						return -1;
+					} catch (...) {
+						cerr << "Unknown error reading external source " << layer.source << endl;
+						return -1;
+					}
 				}
 			}
 		}
@@ -576,4 +585,3 @@ int main(const int argc, const char* argv[]) {
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
-

@@ -24,7 +24,7 @@ Once you've installed those, then `cd` back to your Tilemaker directory and simp
     make
     sudo make install
 
-If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again. The above lines install Lua 5.1, but you can also choose any newer version.
+If it fails, check that the LIB and INC lines in the Makefile correspond with your system, then try again. The above lines install Lua 5.3, but you can also choose any newer version.
 
 ### Fedora
 

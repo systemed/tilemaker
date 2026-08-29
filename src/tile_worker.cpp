@@ -6,6 +6,7 @@
 #include <signal.h>
 #include "helpers.h"
 #include "visvalingam.h"
+#include "simplify_buildings.h"
 using namespace std;
 extern bool verbose;
 
@@ -120,6 +121,7 @@ void writeMultiLinestring(
 			if (simplifyAlgo==LayerDef::VISVALINGAM) {
 				tmp.push_back(simplifyVis(ls, simplifyLevel));
 			} else {
+				// buildings algorithm not supported for linestrings, so fall back to DP
 				tmp.push_back(simplify(ls, simplifyLevel));
 			}
 		}
@@ -226,6 +228,11 @@ void writeMultiPolygon(
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
 			current = simplifyVis(current, simplifyLevel/bbox.xscale);
+		} else if (simplifyAlgo == LayerDef::BUILDINGS) {
+			if (current.size() > 1 || boost::geometry::num_points(current)>5) {
+				geom::correct(current); // self-intersections can break simplification
+				simplifyBuildings(current, simplifyLevel/bbox.xscale);
+			}
 		} else {
 			current = simplify(current, simplifyLevel/bbox.xscale);
 		}

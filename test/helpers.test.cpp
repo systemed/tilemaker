@@ -1,6 +1,21 @@
 #include <iostream>
+#include <stdexcept>
 #include "external/minunit.h"
 #include "helpers.h"
+
+MU_TEST(test_open_file) {
+	FilePtr fp = openFile("test/test.jsonl", "r");
+	mu_check(fp != nullptr);
+	mu_check(fgetc(fp.get()) == '{');
+
+	bool caughtException = false;
+	try {
+		openFile("test/this-file-does-not-exist", "r");
+	} catch (const std::runtime_error&) {
+		caughtException = true;
+	}
+	mu_check(caughtException);
+}
 
 MU_TEST(test_get_chunks) {
 	{
@@ -83,6 +98,7 @@ MU_TEST(test_compression_zlib) {
 
 
 MU_TEST_SUITE(test_suite_helpers) {
+	MU_RUN_TEST(test_open_file);
 	MU_RUN_TEST(test_get_chunks);
 	MU_RUN_TEST(test_compression_gzip);
 	MU_RUN_TEST(test_compression_zlib);

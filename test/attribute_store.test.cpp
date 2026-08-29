@@ -122,7 +122,7 @@ MU_TEST(test_attribute_store_capacity) {
 
 	try {
 		keys.key2index("key512");
-	} catch (std::out_of_range) {
+	} catch (const std::out_of_range&) {
 		caughtException = true;
 	}
 

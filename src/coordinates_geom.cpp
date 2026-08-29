@@ -117,13 +117,15 @@ void impl_insertIntermediateTiles(T const &points, uint baseZoom, std::unordered
 		p2 = *it;
 
 		// Calculate p2 tile, and mark it
-		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2.y(), baseZoom);
+		double p2y = std::min(MaxLatp, std::max(MinLatp, p2.y()));
+		double tileXf2 = lon2tilexf(p2.x(), baseZoom), tileYf2 = latp2tileyf(p2y, baseZoom);
 		TileCoordinate tileX2 = static_cast<TileCoordinate>(tileXf2), tileY2 = static_cast<TileCoordinate>(tileYf2);
 		tileSet.insert(TileCoordinates(tileX2, tileY2));
 		if (it == points.begin()) continue;	// first point, so no line
 
 		// Calculate p1 tile
-		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1.y(), baseZoom);
+		double p1y = std::min(MaxLatp, std::max(MinLatp, p1.y()));
+		double tileXf1 = lon2tilexf(p1.x(), baseZoom), tileYf1 = latp2tileyf(p1y, baseZoom);
 		TileCoordinate tileX1 = static_cast<TileCoordinate>(tileXf1), tileY1 = static_cast<TileCoordinate>(tileYf1);
 		tileSet.insert(TileCoordinates(tileX1,tileY1));
 

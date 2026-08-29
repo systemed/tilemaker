@@ -46,6 +46,7 @@ struct LayerDef {
 	
 	static const uint DOUGLAS_PEUCKER = 0;
 	static const uint VISVALINGAM = 1;
+	static const uint BUILDINGS = 2;
 };
 
 ///\brief Defines layers used in map rendering
