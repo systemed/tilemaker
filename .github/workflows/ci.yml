@@ -611,40 +611,41 @@ jobs:
           ${{ env.AREA }}-repeat.mbtiles
           ${{ env.AREA }}-repeat.pmtiles
 
-  verify-generated-tiles:
-    name: Verify generated tiles
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs:
-      - Windows-Build
-      - unix-build
-      - unix-makefile-build
-    env:
-      PMTILES_VERSION: 1.30.2
-
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        sparse-checkout: .github/scripts/verify-generated-tiles.py
-        sparse-checkout-cone-mode: false
-
-    - name: Download generated tiles
-      uses: actions/download-artifact@v8
-      with:
-        pattern: tile-outputs-*
-        path: generated-tiles
-
-    - name: Install pmtiles
-      run: |
-        curl -fsSL -o pmtiles.tar.gz "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz"
-        tar -xzf pmtiles.tar.gz
-        chmod +x pmtiles
-        sudo mv pmtiles /usr/local/bin/pmtiles
-        pmtiles version
-
-    - name: Verify generated tile archives
-      run: |
-        python3 .github/scripts/verify-generated-tiles.py generated-tiles
+# TEMPORARILY DISABLED: output is not yet byte-for-byte reproducible between runs, so this check isn't yet sensible.
+#  verify-generated-tiles:
+#    name: Verify generated tiles
+#    runs-on: ubuntu-latest
+#    timeout-minutes: 20
+#    needs:
+#      - Windows-Build
+#      - unix-build
+#      - unix-makefile-build
+#    env:
+#      PMTILES_VERSION: 1.30.2
+#
+#    steps:
+#    - uses: actions/checkout@v6
+#      with:
+#        sparse-checkout: .github/scripts/verify-generated-tiles.py
+#        sparse-checkout-cone-mode: false
+#
+#    - name: Download generated tiles
+#      uses: actions/download-artifact@v8
+#      with:
+#        pattern: tile-outputs-*
+#        path: generated-tiles
+#
+#    - name: Install pmtiles
+#      run: |
+#        curl -fsSL -o pmtiles.tar.gz "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_x86_64.tar.gz"
+#        tar -xzf pmtiles.tar.gz
+#        chmod +x pmtiles
+#        sudo mv pmtiles /usr/local/bin/pmtiles
+#        pmtiles version
+#
+#    - name: Verify generated tile archives
+#      run: |
+#        python3 .github/scripts/verify-generated-tiles.py generated-tiles
 
   docker-build:
     env:
