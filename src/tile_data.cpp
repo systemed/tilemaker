@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
@@ -7,6 +8,36 @@
 
 using namespace std;
 extern bool verbose;
+
+// Human-readable name for a Boost.Geometry validity failure, used for diagnostics.
+static const char* validityFailureName(geom::validity_failure_type failure) {
+	switch (failure) {
+		case geom::no_failure:                        return "no_failure";
+		case geom::failure_few_points:                return "few_points";
+		case geom::failure_wrong_topological_dimension: return "wrong_topological_dimension";
+		case geom::failure_spikes:                    return "spikes";
+		case geom::failure_duplicate_points:          return "duplicate_points";
+		case geom::failure_not_closed:                return "not_closed";
+		case geom::failure_self_intersections:        return "self_intersections";
+		case geom::failure_wrong_orientation:         return "wrong_orientation";
+		case geom::failure_interior_rings_outside:    return "interior_rings_outside";
+		case geom::failure_nested_interior_rings:     return "nested_interior_rings";
+		case geom::failure_disconnected_interior:     return "disconnected_interior";
+		case geom::failure_intersecting_interiors:    return "intersecting_interiors";
+		case geom::failure_wrong_corner_order:        return "wrong_corner_order";
+		case geom::failure_invalid_coordinate:        return "invalid_coordinate";
+		default:                                      return "unknown";
+	}
+}
+
+// Thin wrapper around the shared repair_multi_polygon() that adds per-object
+// verbose diagnostics. See geom.cpp for the dissolve + zero-width buffer logic.
+static bool repairMultiPolygon(MultiPolygon &mp, NodeID objectID) {
+	bool ok = repair_multi_polygon(mp);
+	if (!ok && verbose)
+		std::cerr << ("multipolygon repair failed for object " + std::to_string(objectID) + "\n");
+	return ok;
+}
 
 thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
@@ -227,23 +258,37 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			if(ls.empty())
 				return out;
 
+			Box extBox = bbox.getExtendBox();
+			const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
+			const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
+			auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
+				return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
+			};
+			bool needsIntersection = !pointInsideExtBox(ls[0]);
+
 			Linestring current_ls;
 			geom::append(current_ls, ls[0]);
 
 			for(size_t i = 1; i < ls.size(); ++i) {
-				if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+				boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
+				if(!geom::intersects(segment, bbox.clippingBox)) {
 					if(current_ls.size() > 1)
 						out.push_back(std::move(current_ls));
 					current_ls.clear();
 				}
 				geom::append(current_ls, ls[i]);
+				if (!needsIntersection)
+					needsIntersection = !pointInsideExtBox(ls[i]);
 			}
 
 			if(current_ls.size() > 1)
 				out.push_back(std::move(current_ls));
 
+			if (!needsIntersection)
+				return out;
+
 			MultiLinestring result;
-			geom::intersection(out, bbox.getExtendBox(), result);
+			geom::intersection(out, extBox, result);
 			return result;
 		}
 
@@ -326,22 +371,54 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			MultiPolygon mp;
-			geom::assign(mp, input);
+			if (cachedClip == nullptr)
+				mp = std::move(uncached);
+			else
+				geom::assign(mp, input);
 			fast_clip(mp, box);
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-			if (!geom::is_valid(mp,failure)) { 
+			bool valid = geom::is_valid(mp,failure);
+			if (!valid) {
+				if (verbose) {
+					// Build the whole line first and emit it with a single stream write:
+					// tilemaker runs multi-threaded and chained operator<< calls are not
+					// atomic, so per-token writes interleave into unreadable output.
+					std::ostringstream msg;
+					msg << "invalid multipolygon for object " << objectID
+					    << " at z" << bbox.zoom << " " << bbox.index.x << "/" << bbox.index.y
+					    << ": " << validityFailureName(failure) << "\n";
+					std::cerr << msg.str();
+				}
 				if (failure==geom::failure_spikes) {
 					geom::remove_spikes(mp);
-				} else if (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors) {
-					// retry with Boost intersection if fast_clip has caused self-intersections
+					failure = geom::validity_failure_type::no_failure;
+					valid = geom::is_valid(mp,failure);
+				}
+				if (!valid && (failure==geom::failure_self_intersections || failure==geom::failure_intersecting_interiors)) {
+					// fast_clip can introduce self-intersections; redo the clip with the
+					// slower but robust Boost intersection against the original geometry.
 					MultiPolygon output;
-					geom::intersection(input, box, output);
+					if (cachedClip == nullptr) {
+						MultiPolygon original;
+						populateMultiPolygon(original, objectID);
+						geom::intersection(original, box, output);
+					} else {
+						geom::intersection(input, box, output);
+					}
 					geom::correct(output);
+
+					// The intersection result can itself still be invalid for very complex
+					// multipolygons (e.g. large reservoirs), which previously produced
+					// dropped or holey tiles. Repair it before returning.
+					repairMultiPolygon(output, objectID);
 					multiPolygonClipCache.add(bbox, objectID, output);
 					return output;
-				} else {
-					// occasionally also wrong_topological_dimension, disconnected_interior
+				} else if (!valid) {
+					// occasionally also wrong_topological_dimension, disconnected_interior:
+					// defects geom::correct cannot mend. Repair mp in place; on failure it
+					// is left unchanged so behaviour never regresses.
+					repairMultiPolygon(mp, objectID);
 				}
 			}
 
@@ -394,6 +471,11 @@ void populateTilesAtZoom(
 	}
 }
 
+void sortOutputObjectIDs(
+	const std::vector<bool>& sortOrders, 
+	std::vector<OutputObjectID>& data
+);
+
 std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	const std::vector<bool>& sortOrders, 
 	unsigned int zoom,
@@ -402,23 +484,7 @@ std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	std::vector<OutputObjectID> data;
 	collectObjectsForTile(zoom, coordinates, data);
 	collectLargeObjectsForTile(zoom, coordinates, data);
-
-	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
-	// Note that attributes is preferred to objectID.
-	// It is to arrange objects with the identical attributes continuously.
-	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
-		if (x.oo.layer < y.oo.layer) return true;
-		if (x.oo.layer > y.oo.layer) return false;
-		if (x.oo.z_order < y.oo.z_order) return  sortOrders[x.oo.layer];
-		if (x.oo.z_order > y.oo.z_order) return !sortOrders[x.oo.layer];
-		if (x.oo.geomType < y.oo.geomType) return true;
-		if (x.oo.geomType > y.oo.geomType) return false;
-		if (x.oo.attributes < y.oo.attributes) return true;
-		if (x.oo.attributes > y.oo.attributes) return false;
-		if (x.oo.objectID < y.oo.objectID) return true;
-		return false;
-	});
+	sortOutputObjectIDs(sortOrders, data);
 	data.erase(unique(data.begin(), data.end()), data.end());
 	return data;
 }
@@ -483,7 +549,7 @@ void TileDataSource::addGeometryToIndex(
 	const std::vector<OutputObject>& outputs,
 	const uint64_t id
 ) {
-	for (Linestring ls : geom) {
+	for (const auto& ls : geom) {
 		unordered_set<TileCoordinates> tileSet;
 		insertIntermediateTiles(ls, indexZoom, tileSet);
 		for (auto it = tileSet.begin(); it != tileSet.end(); ++it) {
@@ -502,7 +568,7 @@ void TileDataSource::addGeometryToIndex(
 ) {
 	unordered_set<TileCoordinates> tileSet;
 	bool singleOuter = geom.size()==1;
-	for (Polygon poly : geom) {
+	for (const auto& poly : geom) {
 		unordered_set<TileCoordinates> tileSetTmp;
 		insertIntermediateTiles(poly.outer(), indexZoom, tileSetTmp);
 		fillCoveredTiles(tileSetTmp);
@@ -599,5 +665,15 @@ NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {
 
 void TileDataSource::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	const auto &input = retrieveMultiPolygon(objectID);
-	boost::geometry::assign(dst, input);
+	dst.resize(input.size());
+	for(std::size_t i = 0; i < input.size(); ++i) {
+		dst[i].outer().resize(input[i].outer().size());
+		boost::geometry::assign(dst[i].outer(), input[i].outer());
+
+		dst[i].inners().resize(input[i].inners().size());
+		for(std::size_t j = 0; j < input[i].inners().size(); ++j) {
+			dst[i].inners()[j].resize(input[i].inners()[j].size());
+			boost::geometry::assign(dst[i].inners()[j], input[i].inners()[j]);
+		}
+	}
 }

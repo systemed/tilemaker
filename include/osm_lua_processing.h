@@ -115,6 +115,9 @@ public:
 	// Get the ID of the current object
 	std::string Id() const;
 
+	// Get the Type of the current object
+	std::string OsmType() const;
+
 	// Gets a table of all the keys of the OSM tags
 	kaguya::LuaTable AllKeys(kaguya::State& luaState);
 
@@ -194,9 +197,11 @@ public:
 	void LayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources);
 	
 	// Set attributes in a vector tile's Attributes table
+	void ModifyId(const int newId);
 	void Attribute(const std::string &key, const protozero::data_view val, const char minzoom);
-	void AttributeNumeric(const std::string &key, const float val, const char minzoom);
+	void AttributeNumeric(const std::string &key, const double val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
+	void AttributeInteger(const std::string &key, const int val, const char minzoom);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
 	
@@ -271,6 +276,8 @@ private:
 	const inline Point getPoint() {
 		return Point(lon/10000000.0,latp/10000000.0);
 	}
+
+	double projectedPolygonArea(const Polygon &p);
 	
 	OSMStore &osmStore;	// global OSM store
 
@@ -305,6 +312,7 @@ private:
 	bool multiLinestringInited;
 	MultiPolygon multiPolygonCache;
 	bool multiPolygonInited;
+	geom::model::polygon<DegPoint> areaPolygonCache;
 
 	NodeID lastStoredGeometryId;
 	OutputGeometryType lastStoredGeometryType;

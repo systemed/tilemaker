@@ -3,6 +3,8 @@
 
 #include <boost/geometry/geometries/segment.hpp>
 #include <boost/geometry/index/rtree.hpp>
+#include <boost/geometry/algorithms/buffer.hpp>
+#include <boost/geometry/strategies/buffer.hpp>
 
 #include "geometry/correct.hpp"
 
@@ -144,28 +146,147 @@ void make_valid(MultiPolygon &mp)
 	mp = result;
 }
 
+// Repair a single (possibly invalid) polygon in an area-preserving way and
+// append the resulting valid polygon(s) to `out`. Returns true on success.
+// `minArea` is the lower bound on the repaired area we are willing to accept.
+static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &out)
+{
+	// 1) Dissolve (resolves self-intersections of this single polygon).
+	try {
+		MultiPolygon fixed;
+		geometry::correct(p, fixed, 1E-12);
+		if (geom::is_valid(fixed) && std::abs(geom::area(fixed)) >= minArea) {
+			for (auto &fp : fixed) out.push_back(std::move(fp));
+			return true;
+		}
+	} catch (const std::exception &) {
+		// fall through to the buffer attempt
+	}
+
+	// 2) Zero-width buffer as a last resort.
+	try {
+		MultiPolygon buffered;
+		geom::strategy::buffer::distance_symmetric<double> distanceStrategy(0.0);
+		geom::strategy::buffer::side_straight sideStrategy;
+		geom::strategy::buffer::join_miter joinStrategy;
+		geom::strategy::buffer::end_flat endStrategy;
+		geom::strategy::buffer::point_square pointStrategy;
+
+		geom::buffer(p, buffered, distanceStrategy, sideStrategy, joinStrategy, endStrategy, pointStrategy);
+		geom::correct(buffered);
+		if (geom::is_valid(buffered) && std::abs(geom::area(buffered)) >= minArea) {
+			for (auto &bp : buffered) out.push_back(std::move(bp));
+			return true;
+		}
+	} catch (const std::exception &) {
+		// keep best-effort polygon
+	}
+
+	return false;
+}
+
+bool repair_multi_polygon(MultiPolygon &mp)
+{
+	if (geom::is_valid(mp)) return true;
+
+	// Repair PER POLYGON, area-preserving. Running make_valid/buffer on the whole
+	// multipolygon can catastrophically COLLAPSE large/complex inputs: a clipped
+	// reservoir with >1000 rings dropped ~99% of its area, leaving missing lake
+	// tiles at low zoom. Conversely, simply keeping the whole invalid geometry
+	// lets a single self-intersecting ring render as a spurious "spike".
+	//
+	// Fixing each polygon independently gets the best of both: a self-touching
+	// ring is cleaned (no spike) while the rest stays intact, and we avoid the
+	// O(n^2) cross-polygon union that caused the collapse. A polygon whose repair
+	// would not preserve its area is kept as-is (invalid but complete renders;
+	// only a tiny local artefact, never a dropped area).
+	MultiPolygon out;
+	bool allValid = true;
+	for (const auto &p : mp) {
+		if (geom::is_valid(p)) {
+			out.push_back(p);
+			continue;
+		}
+		// Lenient threshold: resolving a self-intersection legitimately changes a
+		// single polygon's (shoelace) area, so anything down to half the original
+		// is accepted. Per-polygon repair cannot trigger the cross-polygon union
+		// that previously caused the catastrophic ~99% collapse, so this only
+		// rejects a genuine local collapse.
+		const double minArea = 0.5 * std::abs(geom::area(p));
+		if (!repair_one_polygon(p, minArea, out)) {
+			out.push_back(p);
+			allValid = false;
+		}
+	}
+
+	mp = std::move(out);
+	return allValid;
+}
+
 // ---------------
 // Union multipolygons
-// from https://github.com/boostorg/geometry/discussions/947
+// Groups polygons into connected components by bbox intersection (via R-tree +
+// union-find), then runs the binary reduction only within each component.
+// Disjoint polygons are concatenated directly, skipping the expensive union_()
+// call that Boost still runs even for non-overlapping geometry.
 void union_many(std::vector<MultiPolygon> &to_unify) {
-	if (to_unify.size()<2) return;
-	size_t step = 1;
-	size_t half_step;
+	if (to_unify.size() < 2) return;
 
-	// the outer loop doubles the distance between two polygons to be merged at every iteration
-	do {
-		half_step = step;
-		step *= 2;
-		size_t i = 0;
+	namespace bgi = boost::geometry::index;
+	typedef std::pair<Box, size_t> BoxIdx;
 
-		// the inner loop merges polygons at i and i+half_step storing the result at i
+	std::vector<Box> boxes(to_unify.size());
+	for (size_t i = 0; i < to_unify.size(); i++)
+		boost::geometry::envelope(to_unify[i], boxes[i]);
+
+	// Union-find with path compression
+	std::vector<size_t> parent(to_unify.size());
+	for (size_t i = 0; i < to_unify.size(); i++) parent[i] = i;
+	std::function<size_t(size_t)> find = [&](size_t x) -> size_t {
+		return parent[x] == x ? x : (parent[x] = find(parent[x]));
+	};
+
+	// Incrementally build an R-tree; unite each polygon with all prior ones
+	// whose bboxes intersect (transitivity is handled by union-find)
+	bgi::rtree<BoxIdx, bgi::quadratic<16>> rtree;
+	for (size_t i = 0; i < to_unify.size(); i++) {
+		for (auto const &v : rtree | bgi::adaptors::queried(bgi::intersects(boxes[i]))) {
+			size_t ri = find(i), rj = find(v.second);
+			if (ri != rj) parent[ri] = rj;
+		}
+		rtree.insert({boxes[i], i});
+	}
+
+	// Bucket indices by component root (roots are in 0..n-1)
+	std::vector<std::vector<size_t>> components(to_unify.size());
+	for (size_t i = 0; i < to_unify.size(); i++)
+		components[find(i)].push_back(i);
+
+	// Union within each component; concatenate all results into to_unify[0]
+	MultiPolygon result;
+	for (auto &comp : components) {
+		if (comp.empty()) continue;
+		if (comp.size() == 1) {
+			for (auto &p : to_unify[comp[0]]) result.push_back(std::move(p));
+			continue;
+		}
+		std::vector<MultiPolygon> sub;
+		sub.reserve(comp.size());
+		for (size_t idx : comp) sub.push_back(std::move(to_unify[idx]));
+
+		size_t step = 1, half_step;
 		do {
-			MultiPolygon unified;
-			boost::geometry::union_(to_unify.at(i), to_unify.at(i + half_step), unified);
-			to_unify.at(i) = std::move(unified);
-			i += step;
-		} while (i + half_step < to_unify.size());
-	} while (step < to_unify.size());
+			half_step = step; step *= 2;
+			for (size_t i = 0; i + half_step < sub.size(); i += step) {
+				MultiPolygon unified;
+				boost::geometry::union_(sub[i], sub[i + half_step], unified);
+				sub[i] = std::move(unified);
+			}
+		} while (step < sub.size());
+
+		for (auto &p : sub[0]) result.push_back(std::move(p));
+	}
+	to_unify[0] = std::move(result);
 }
 
 // ---------------
@@ -197,10 +318,20 @@ char bit_code(Point const &p, Box const &bbox) {
 }
 
 // Sutherland-Hodgeman polygon clipping algorithm
-void fast_clip(Ring &points, Box const &bbox) {
+void fast_clip(Ring &points, Box const &bbox, Ring &result) {
 	// clip against each side of the clip rectangle
 	for (char edge = 1; edge <= 8; edge *= 2) {
-		Ring result;
+		bool needsClip = false;
+		for (auto const &p: points) {
+			if (bit_code(p, bbox) & edge) {
+				needsClip = true;
+				break;
+			}
+		}
+		if (!needsClip) continue;
+
+		result.clear();
+		result.reserve(points.size() + 4);
 		Point prev = points[points.size() - 1];
 		bool prevInside = (bit_code(prev, bbox) & edge)==0;
 
@@ -214,20 +345,26 @@ void fast_clip(Ring &points, Box const &bbox) {
 			prev = p;
 			prevInside = inside;
 		}
-		points = std::move(result);
+		points.swap(result);
 		if (points.size()==0) break;
 	}
 }
 
+void fast_clip(Ring &points, Box const &bbox) {
+	Ring result;
+	fast_clip(points, bbox, result);
+}
+
 // Wrappers for polygon/multipolygon
 void fast_clip(Polygon &polygon, Box const &bbox) {
-	fast_clip(polygon.outer(), bbox);
+	Ring result;
+	fast_clip(polygon.outer(), bbox, result);
 	if (polygon.outer().empty()) {
 		polygon.inners().resize(0);
 		return;
 	}
 	for (auto &inner: polygon.inners()) {
-		fast_clip(inner, bbox);
+		fast_clip(inner, bbox, result);
 	}
 	polygon.inners().erase(std::remove_if(
 		polygon.inners().begin(), polygon.inners().end(), 

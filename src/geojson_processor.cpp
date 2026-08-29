@@ -3,6 +3,7 @@
 #include "helpers.h"
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <exception>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -24,25 +25,34 @@ void GeoJSONProcessor::read(class LayerDef &layer, uint layerNum) {
 void GeoJSONProcessor::readFeatureCollection(class LayerDef &layer, uint layerNum) {
 	// Read a JSON file containing a single GeoJSON FeatureCollection object.
 	rapidjson::Document doc;
-	FILE* fp = fopen(layer.source.c_str(), "r");
+	FilePtr fp = openFile(layer.source, "r");
 	char readBuffer[65536];
-	rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+	rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 	doc.ParseStream(is);
 	if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
-	fclose(fp);
 
 	if (strcmp(doc["type"].GetString(), "FeatureCollection") != 0) { 
 		throw std::runtime_error("Top-level GeoJSON object must be a FeatureCollection.");
 	}
 
 	// Process each feature
+	std::exception_ptr error;
+	std::mutex errorMutex;
 	boost::asio::thread_pool pool(threadNum);
 	for (auto &feature : doc["features"].GetArray()) { 
 		boost::asio::post(pool, [&]() {
-			processFeature(std::move(feature.GetObject()), layer, layerNum);
+			try {
+				processFeature(std::move(feature.GetObject()), layer, layerNum);
+			} catch (...) {
+				std::lock_guard<std::mutex> lock(errorMutex);
+				if (!error)
+					error = std::current_exception();
+			}
 		});
 	}
 	pool.join();
+	if (error)
+		std::rethrow_exception(error);
 }
 
 void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
@@ -50,30 +60,39 @@ void GeoJSONProcessor::readFeatureLines(class LayerDef &layer, uint layerNum) {
 	std::vector<OffsetAndLength> chunks = getNewlineChunks(layer.source, threadNum * 4);
 
 	// Process each feature
+	std::exception_ptr error;
+	std::mutex errorMutex;
 	boost::asio::thread_pool pool(threadNum);
 	for (auto &chunk : chunks) { 
 		boost::asio::post(pool, [&]() {
-			FILE* fp = fopen(layer.source.c_str(), "r");
-			if (fseek(fp, chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
-			char readBuffer[65536];
-			rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+			try {
+				FilePtr fp = openFile(layer.source, "r");
+				if (fseek(fp.get(), chunk.offset, SEEK_SET) != 0) throw std::runtime_error("unable to seek to " + std::to_string(chunk.offset) + " in " + layer.source);
+				char readBuffer[65536];
+				rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 
-			// Skip leading whitespace.
-			while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
-
-			while(is.Tell() < chunk.length) {
-				auto doc = rapidjson::Document();
-				doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
-				if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
-				processFeature(std::move(doc.GetObject()), layer, layerNum);
-
-				// Skip trailing whitespace.
+				// Skip leading whitespace.
 				while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+
+				while(is.Tell() < chunk.length) {
+					auto doc = rapidjson::Document();
+					doc.ParseStream<rapidjson::kParseStopWhenDoneFlag>(is);
+					if (doc.HasParseError()) { throw std::runtime_error("Invalid JSON file."); }
+					processFeature(std::move(doc.GetObject()), layer, layerNum);
+
+					// Skip trailing whitespace.
+					while(is.Tell() < chunk.length && isspace(is.Peek())) is.Take();
+				}
+			} catch (...) {
+				std::lock_guard<std::mutex> lock(errorMutex);
+				if (!error)
+					error = std::current_exception();
 			}
-			fclose(fp);
 		});
 	}
 	pool.join();
+	if (error)
+		std::rethrow_exception(error);
 }
 
 template <bool Flag, typename T>
@@ -240,10 +259,10 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 				layer.attributeMap[key] = 0;
 			} else if (val.isType<int>()) {
 				if (key=="_minzoom") { minzoom=val; continue; }
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (int)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<double>()) {
-				attributeStore.addAttribute(attributes, key, (float)val, 0);
+				attributeStore.addAttribute(attributes, key, (double)val, 0);
 				layer.attributeMap[key] = 1;
 			} else if (val.isType<bool>()) {
 				attributeStore.addAttribute(attributes, key, (bool)val, 0);
@@ -261,13 +280,13 @@ AttributeIndex GeoJSONProcessor::readProperties(const rapidjson::Value &pr, bool
 			std::string key = it->name.GetString();
 			if (!layer.useColumn(key)) continue;
 			if (it->value.IsString()) { 
-				attributeStore.addAttribute(attributes, key, it->value.GetString(), 0);
+				attributeStore.addAttribute(attributes, key, static_cast<const std::string&>(it->value.GetString()), 0);
 				layer.attributeMap[key] = 0;
 			} else if (it->value.IsBool()) { 
 				attributeStore.addAttribute(attributes, key, it->value.GetBool(), 0);
 				layer.attributeMap[key] = 2;
 			} else if (it->value.IsNumber()) { 
-				attributeStore.addAttribute(attributes, key, it->value.GetFloat(), 0);
+				attributeStore.addAttribute(attributes, key, it->value.GetDouble(), 0);
 				layer.attributeMap[key] = 1;
 			} else {
 				// something different, so coerce to string

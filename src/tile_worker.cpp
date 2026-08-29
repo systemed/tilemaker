@@ -6,10 +6,12 @@
 #include <signal.h>
 #include "helpers.h"
 #include "visvalingam.h"
+#include "simplify_buildings.h"
 using namespace std;
 extern bool verbose;
 
 thread_local bool enabledUserSignal = false;
+thread_local MultiPolygon scaledMultiPolygon;
 typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 
@@ -119,6 +121,7 @@ void writeMultiLinestring(
 			if (simplifyAlgo==LayerDef::VISVALINGAM) {
 				tmp.push_back(simplifyVis(ls, simplifyLevel));
 			} else {
+				// buildings algorithm not supported for linestrings, so fall back to DP
 				tmp.push_back(simplify(ls, simplifyLevel));
 			}
 		}
@@ -192,15 +195,18 @@ bool writeRing(
 
 	bool firstPoint = true;
 	fbuilder.add_ring(points);
-	for (const Point& point : ring) {
-		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
+	for (auto it = ring.rbegin(); it != ring.rend(); ++it) {
+    	const Point& point = *it;
 
-		if (firstPoint || xy != lastXy) {
-			firstPoint = false;
-			lastXy = xy;
-			fbuilder.set_point(xy.first, xy.second);
-		}
-	}
+    	pair<int, int> xy =
+    		std::make_pair(point.get<0>(), point.get<1>());
+
+    	if (firstPoint || xy != lastXy) {
+    		firstPoint = false;
+    		lastXy = xy;
+    		fbuilder.set_point(xy.first, xy.second);
+    	}
+    }
 
 	return true;
 }
@@ -217,10 +223,16 @@ void writeMultiPolygon(
 	unsigned simplifyAlgo,
 	const MultiPolygon& mp
 ) {
-	MultiPolygon current = bbox.scaleGeometry(mp);
+	bbox.scaleGeometry(scaledMultiPolygon, mp);
+	MultiPolygon &current = scaledMultiPolygon;
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
 			current = simplifyVis(current, simplifyLevel/bbox.xscale);
+		} else if (simplifyAlgo == LayerDef::BUILDINGS) {
+			if (current.size() > 1 || boost::geometry::num_points(current)>5) {
+				geom::correct(current); // self-intersections can break simplification
+				simplifyBuildings(current, simplifyLevel/bbox.xscale);
+			}
 		} else {
 			current = simplify(current, simplifyLevel/bbox.xscale);
 		}
@@ -229,14 +241,34 @@ void writeMultiPolygon(
 	if (geom::is_empty(current))
 		return;
 
-	geom::validity_failure_type failure;
-	if (verbose && !geom::is_valid(current, failure)) { 
-		cout << "output multipolygon has " << boost_validity_error(failure) << endl; 
+	geom::correct(current);
 
-		if (!geom::is_valid(mp, failure)) 
-			cout << "input multipolygon has " << boost_validity_error(failure) << endl; 
-		else
-			cout << "input multipolygon valid" << endl;
+	geom::validity_failure_type failure;
+	if (!geom::is_valid(current, failure)) {
+		if (verbose) {
+			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
+
+			if (!geom::is_valid(mp, failure))
+				cout << "input multipolygon has " << boost_validity_error(failure) << endl;
+			else
+				cout << "input multipolygon valid" << endl;
+		}
+		
+		if (simplifyLevel > 0) {
+			// Simplification can turn a valid input into a self-intersecting/spiky
+			// one; such polygons are silently dropped by many renderers (missing
+			// features). Repair (dissolve, then zero-width buffer) before writing.
+			bool repaired = repair_multi_polygon(current);
+
+			if (geom::is_empty(current))
+				return;
+
+			if (verbose && !repaired) {
+				geom::validity_failure_type postFailure;
+				if (!geom::is_valid(current, postFailure))
+					cout << "output multipolygon STILL invalid after repair: " << boost_validity_error(postFailure) << endl;
+			}
+		}
 	}
 
 	vtzero::polygon_feature_builder fbuilder{vtLayer};
@@ -277,13 +309,13 @@ void ProcessObjects(
 	double simplifyLevel,
 	unsigned simplifyAlgo,
 	double filterArea,
-	bool combinePolygons,
 	bool combinePoints,
+	bool combineLines,
+	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
 	vtzero::layer_builder& vtLayer
 ) {
-
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectID oo = *jt;
 		if (zoom < oo.oo.minZoom) { continue; }
@@ -293,16 +325,32 @@ void ProcessObjects(
 			// so that we can write a multipoint instead of many point features
 
 			std::vector<std::pair<int, int>> multipoint;
+			const int tile_extent = bbox.hires ? 8192 : 4096;
+			const int margin = 256; // Just in case something happens near the edges.
 
 			LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-			multipoint.push_back(xy);
+
+			// Filter out points that are way beyond the reasonable tile extent
+			if (xy.first >= -margin && xy.first <= tile_extent + margin &&
+				xy.second >= -margin && xy.second <= tile_extent + margin) {
+				multipoint.push_back(xy);
+			}
 
 			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo) && combinePoints) {
 				jt++;
 				LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 				pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-				multipoint.push_back(xy);
+
+				if (xy.first >= -margin && xy.first <= tile_extent + margin &&
+					xy.second >= -margin && xy.second <= tile_extent + margin) {
+					multipoint.push_back(xy);
+				}
+			}
+
+			if (multipoint.empty()) {
+				oo = *jt;
+				continue;
 			}
 
 			vtzero::point_feature_builder fbuilder{vtLayer};
@@ -330,7 +378,7 @@ void ProcessObjects(
 			}
 
 			//This may increment the jt iterator
-			if (oo.oo.geomType == LINESTRING_ && zoom < sharedData.config.combineBelow) {
+			if (oo.oo.geomType == LINESTRING_ && combineLines) {
 				// Append successive linestrings, then reorder afterwards
 				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
@@ -440,7 +488,6 @@ void ProcessLayer(
 		if (zoom < ld.filterBelow) { 
 			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
 		}
-
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
 			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
@@ -449,7 +496,7 @@ void ProcessLayer(
 			ProcessObjects(sources[i], attributeStore, 
 				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, ld.simplifyAlgo,
-				filterArea, zoom < ld.combinePolygonsBelow, ld.combinePoints, zoom, bbox, vtLayer);
+				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

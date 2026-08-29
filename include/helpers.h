@@ -2,6 +2,9 @@
 #ifndef _HELPERS_H
 #define _HELPERS_H
 
+#include <cstdio>
+#include <cstdint>
+#include <memory>
 #include <sstream>
 #include <vector>
 
@@ -40,6 +43,16 @@ struct OffsetAndLength {
 	uint64_t length;
 };
 
+struct FileCloser {
+	void operator()(FILE* fp) const {
+		if (fp != nullptr)
+			fclose(fp);
+	}
+};
+
+using FilePtr = std::unique_ptr<FILE, FileCloser>;
+
+FilePtr openFile(const std::string &filename, const char *mode);
 uint64_t getFileSize(std::string filename);
 std::vector<OffsetAndLength> getNewlineChunks(const std::string &filename, uint64_t chunks);
 

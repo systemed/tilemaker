@@ -24,16 +24,22 @@ void ShardedWayStore::batchStart() {
 }
 
 std::vector<LatpLon> ShardedWayStore::at(WayID wayid) const {
+	std::vector<LatpLon> rv;
+	at(wayid, rv);
+	return rv;
+}
+
+void ShardedWayStore::at(WayID wayid, std::vector<LatpLon>& output) const {
 	for (int i = 0; i < shards(); i++) {
 		size_t index = (lastWayShard + i) % shards();
 		if (stores[index]->contains(0, wayid)) {
 			lastWayShard = index;
-			return stores[index]->at(wayid);
+			stores[index]->at(wayid, output);
+			return;
 		}
 	}
 
-	// Superfluous return to silence a compiler warning
-	return stores[shards() - 1]->at(wayid);
+	stores[shards() - 1]->at(wayid, output);
 }
 
 bool ShardedWayStore::requiresNodes() const {
@@ -78,4 +84,3 @@ const WayStore& ShardedWayStore::shard(size_t shard) const {
 }
 
 size_t ShardedWayStore::shards() const { return nodeStore.shards(); }
-

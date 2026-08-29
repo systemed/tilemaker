@@ -407,6 +407,23 @@ namespace SimpleWeb {
       if(!io_service) {
         io_service = std::make_shared<io_context>();
         internal_io_service = true;
+        
+        // Create signal_set responding to signals
+        signals = std::make_shared<boost::asio::signal_set>(*io_service, SIGINT, SIGTERM);
+        #ifdef SIGQUIT
+        signals->add(SIGQUIT);
+        #endif
+        signals->async_wait(
+          [ref(io_service), this](const boost::system::error_code &ec, int signal_number) {
+            if (!ec) {
+                std::cout << "Signal number " << signal_number << std::endl;
+                std::cout << "Gracefully stopping server"<< std::endl;
+                io_service->stop();
+            } else {
+                std::cout << "Error " << ec.value() << " - " << ec.message()
+                          << " - Signal number - " << signal_number << std::endl;
+            }
+        });
       }
 
       if(!acceptor)
@@ -499,6 +516,7 @@ namespace SimpleWeb {
     std::mutex start_stop_mutex;
 
     bool internal_io_service = false;
+    std::shared_ptr<boost::asio::signal_set> signals;
 
     std::unique_ptr<asio::ip::tcp::acceptor> acceptor;
     std::vector<std::thread> threads;

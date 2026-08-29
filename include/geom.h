@@ -34,6 +34,7 @@ typedef boost::geometry::model::polygon<Point> Polygon;
 typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
 typedef boost::geometry::model::multi_linestring<Linestring> MultiLinestring;
 typedef boost::geometry::model::box<Point> Box;
+typedef boost::geometry::model::segment<Point> Segment;
 typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
 typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
@@ -76,6 +77,12 @@ template<class GeometryT>
 void make_valid(GeometryT &geom) { }
 
 void make_valid(MultiPolygon &mp);
+
+// Attempt to repair an invalid areal geometry in place: dissolve-based
+// make_valid first (preserves area), then a zero-width buffer as a last
+// resort. Returns true if mp is valid afterwards; on failure mp is left as the
+// best-effort input so callers never regress.
+bool repair_multi_polygon(MultiPolygon &mp);
 
 void union_many(std::vector<MultiPolygon> &mps);
 

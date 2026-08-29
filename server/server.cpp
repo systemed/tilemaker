@@ -77,7 +77,6 @@ int main(int argc, char* argv[]) {
     server.config.port = port;
     sqlite::database db;
     db.init(input);
-    cout << "Starting local server on port " << server.config.port << endl;
 
     server.resource["^/([0-9]+)/([0-9]+)/([0-9]+).pbf$"]["GET"] = [&db](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
         int32_t zoom = stoi(request->path_match[1]);
@@ -146,5 +145,6 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    cout << "Starting local server on port " << server.config.port << endl;
     server.start();
 }

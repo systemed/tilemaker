@@ -15,7 +15,7 @@ PMTiles::~PMTiles() { }
 
 void PMTiles::open(std::string &filename) {
 	std::cout << "Creating pmtiles at " << filename << std::endl;
-	outputStream.open(filename);
+	outputStream.open(filename, std::ios::out | std::ios::trunc | std::ios::binary);
 	// dummy header/root directory for now - we'll write it all later
 	char header[HEADER_ROOT] = "PMTiles";
 	outputStream.write(header, HEADER_ROOT);
@@ -122,7 +122,7 @@ void PMTiles::flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vect
 	std::lock_guard<std::mutex> lock(fileMutex);
 	uint64_t location = outputStream.tellp();
 	uint64_t length = compressed.size();
-	outputStream << compressed;
+	outputStream.write(compressed.c_str(), compressed.size());
 
 	// append reference to the root directory
 	pmtiles::entryv3 rootEntry = pmtiles::entryv3(startId, location-leafStart, length, 0);
@@ -150,7 +150,7 @@ void PMTiles::saveTile(int zoom, int x, int y, std::string &data) {
 		std::lock_guard<std::mutex> lock(fileMutex);
 		// write to file
 		offset = TileOffset(static_cast<uint64_t>(outputStream.tellp()) - HEADER_ROOT, compressed.size());
-		outputStream << compressed;
+		outputStream.write(compressed.c_str(), compressed.size());
 		numTilesWritten++;
 		isNew = true;
 	}

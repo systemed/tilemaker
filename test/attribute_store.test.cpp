@@ -1,5 +1,8 @@
 #include <iostream>
 #include <algorithm>
+#include <atomic>
+#include <thread>
+#include <vector>
 #include "external/minunit.h"
 #include "attribute_store.h"
 
@@ -14,14 +17,15 @@ MU_TEST(test_attribute_store) {
 	store.addAttribute(s1, "str2", std::string("a very long string"), 14);
 	store.addAttribute(s1, "bool1", false, 0);
 	store.addAttribute(s1, "bool2", true, 0);
-	store.addAttribute(s1, "float1", (float)42.0, 4);
+	store.addAttribute(s1, "double1", (double)42.0, 4);
+	store.addAttribute(s1, "int1", 43, 8);
 
 	const auto s1Index = store.add(s1);
 
 	mu_check(store.size() == 1);
 
 	const auto s1Pairs = store.getUnsafe(s1Index);
-	mu_check(s1Pairs.size() == 5);
+	mu_check(s1Pairs.size() == 6);
 	const auto str1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
 			return ap->keyIndex == store.keyStore.key2index("str1");
 	});
@@ -51,13 +55,21 @@ MU_TEST(test_attribute_store) {
 	mu_check((*bool2)->hasBoolValue());
 	mu_check((*bool2)->boolValue() == true);
 
-	const auto float1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
-			return ap->keyIndex == store.keyStore.key2index("float1");
+	const auto double1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
+			return ap->keyIndex == store.keyStore.key2index("double1");
 	});
-	mu_check(float1 != s1Pairs.end());
-	mu_check((*float1)->hasFloatValue());
-	mu_check((*float1)->floatValue() == 42);
-	mu_check((*float1)->minzoom == 4);
+	mu_check(double1 != s1Pairs.end());
+	mu_check((*double1)->hasFloatValue());
+	mu_check((*double1)->floatValue() == 42);
+	mu_check((*double1)->minzoom == 4);
+
+	const auto int1 = std::find_if(s1Pairs.begin(), s1Pairs.end(), [&store](auto ap) {
+			return ap->keyIndex == store.keyStore.key2index("int1");
+	});
+	mu_check(int1 != s1Pairs.end());
+	mu_check((*int1)->hasIntValue());
+	mu_check((*int1)->intValue() == 43);
+	mu_check((*int1)->minzoom == 8);
 }
 
 MU_TEST(test_attribute_store_reuses) {
@@ -110,17 +122,49 @@ MU_TEST(test_attribute_store_capacity) {
 
 	try {
 		keys.key2index("key512");
-	} catch (std::out_of_range) {
+	} catch (const std::out_of_range&) {
 		caughtException = true;
 	}
 
 	mu_check(caughtException == true);
 }
 
+MU_TEST(test_attribute_key_store_threaded) {
+	AttributeKeyStore keys;
+	const int keyCount = 128;
+	const int threadCount = 8;
+	const int iterations = 100;
+	std::atomic<bool> start(false);
+	std::atomic<bool> failed(false);
+	std::vector<std::thread> threads;
+
+	for (int thread = 0; thread < threadCount; thread++) {
+		threads.emplace_back([&, thread]() {
+			while (!start.load(std::memory_order_acquire)) {}
+
+			for (int i = 0; i < iterations * keyCount; i++) {
+				const int keyNum = (i + thread * 17) % keyCount;
+				const std::string key = "key" + std::to_string(keyNum);
+				const uint16_t firstIndex = keys.key2index(key);
+				const uint16_t secondIndex = keys.key2index(key);
+				if (firstIndex == 0 || firstIndex > keyCount || firstIndex != secondIndex)
+					failed.store(true, std::memory_order_release);
+			}
+		});
+	}
+
+	start.store(true, std::memory_order_release);
+	for (std::thread& thread : threads)
+		thread.join();
+
+	mu_check(failed.load(std::memory_order_acquire) == false);
+}
+
 MU_TEST_SUITE(test_suite_attribute_store) {
 	MU_RUN_TEST(test_attribute_store);
 	MU_RUN_TEST(test_attribute_store_reuses);
 	MU_RUN_TEST(test_attribute_store_capacity);
+	MU_RUN_TEST(test_attribute_key_store_threaded);
 }
 
 int main() {

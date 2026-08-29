@@ -88,6 +88,7 @@ public:
 	void reopen() override;
 	void batchStart() override;
 	std::vector<LatpLon> at(WayID wayid) const override;
+	void at(WayID wayid, std::vector<LatpLon>& output) const override;
 	bool requiresNodes() const override { return true; }
 	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
 	void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;
@@ -107,6 +108,7 @@ public:
 	);
 
 	static std::vector<NodeID> decodeWay(uint16_t flags, const uint8_t* input);
+	static void decodeWay(uint16_t flags, const uint8_t* input, std::vector<NodeID>& output);
 
 private:
 	bool compressWays;

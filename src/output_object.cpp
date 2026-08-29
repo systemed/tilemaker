@@ -49,6 +49,9 @@ void OutputObject::writeAttributes(
 			fbuilder.add_property(key, it->stringValue());
 		} else if (it->hasBoolValue()) {
 			fbuilder.add_property(key, it->boolValue());
+		} else if (it->hasIntValue()) {
+			// could potentially add ,vtzero::sint_value_type(2) to force sint encoding (efficient for -ve ints)
+			fbuilder.add_property(key, it->intValue());
 		} else if (it->hasFloatValue()) {
 			fbuilder.add_property(key, it->floatValue());
 		}

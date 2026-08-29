@@ -1,5 +1,53 @@
 # Changelog
 
+## [3.1.0] - 2026-03-18
+
+### Added
+- Simple key/value store (@systemed)
+- Visvalingam-Whyatt simplification (@systemed, based on code by @e-n-f and @paulmach)
+- --quiet flag (@oobayly)
+- New ModifyId Lua function (@etienneJr)
+- New OsmType Lua function (@etienneJr)
+- New AttributeInteger Lua function (@systemed)
+- New IsMultiPolygon Lua function (@systemed)
+- New AllKeys and AllTags Lua functions (@oobayly)
+- Allow combine_lines_below on each layer (@etienneJr)
+- tilemaker-server graceful shutdown (@c84c)
+- Write attribution in pmtiles metadata (@echozio)
+- mbtiles use default UTF-8 (@systemed)
+- Merge compatible points into multipoints (@daniel-j-h)
+- Per-layer ability to disable multipoints (@systemed)
+- Support points and linestrings with GeoJSON writer (@cldellow)
+- Convenience scripts to download coastline and landuse data (@daniel-j-h)
+- GeoJSON lines/seq (@cldellow)
+- Standalone coastline config (@systemed)
+### Changed
+- Be less chatty when run non-interactively (@cldellow)
+- Run without Lua functions (@cldellow)
+- Faster intersects queries (@cldellow)
+- OMT: handle numeric values of layer and level tags with math.floor (@etienneJr)
+- Use libdeflate rather than zlib (@cldellow)
+- Remove FAT_TILE_INDEX (@cldellow)
+- Faster polygon combining (@systemed)
+- Add CORS header to server (@amandasaurus)
+- Improve docs (@etienneJr, @daniel-j-h, @cldellow, @mvanlaar, @systemed)
+### Fixed
+- Always set leafStart when closing pmtiles file (@bdon)
+- Thread safety and out-of-bounds fixes (@cldellow, @systemed)
+- Fix indexing nodes when basezoom>14 (@systemed)
+- Centroid returns nil on error (@cldellow)
+- Limit attribute names to 512 (@cldellow)
+- Support multiple input files (@cldellow)
+- OMT fixes (@nakaner)
+- OMT: remove duplicate untagged railway lines (@laem)
+- OMT: fix area test for platforms (@etienneJr)
+- OMT: use visvalingam for landuse etc. (@arichnad)
+- Fix filter_area when used with combine_polygons_below (@systemed)
+- Fix Lua 5.4 compatibility (@johncarmack1984)
+- Fix GeoJSON string reading (@systemed)
+- Fix reading bools from shapefiles (@systemed)
+- Build updates (various contributors, thank you)
+
 ## [3.0.0] - 2024-01-15
 
 3.0 is a major release that significantly reduces tilemaker's memory footprint and improves running time. Note that it has __breaking changes__ in the way you write your Lua scripts (`way:Layer` becomes simply `Layer`, and so on).

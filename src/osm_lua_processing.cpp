@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unordered_set>
 
 #include "osm_lua_processing.h"
 #include "attribute_store.h"
@@ -17,7 +18,7 @@ const std::string EMPTY_STRING = "";
 thread_local kaguya::State *g_luaState = nullptr;
 thread_local OsmLuaProcessing* osmLuaProcessing = nullptr;
 
-std::mutex vectorLayerMetadataMutex;
+std::deque<std::mutex> vectorLayerMetadataMutexes;
 std::unordered_map<std::string, std::string> OsmLuaProcessing::dataStore;
 std::mutex OsmLuaProcessing::dataStoreMutex;
 
@@ -141,6 +142,7 @@ kaguya::LuaTable getAllTags(kaguya::State& luaState, const boost::container::fla
 }
 
 std::string rawId() { return osmLuaProcessing->Id(); }
+std::string rawOsmType() { return osmLuaProcessing->OsmType(); }
 kaguya::LuaTable rawAllKeys() {
 	if (osmLuaProcessing->isPostScanRelation) {
 		return osmLuaProcessing->AllKeys(*g_luaState);
@@ -187,6 +189,7 @@ bool rawIsMultiPolygon() { return osmLuaProcessing->IsMultiPolygon(); }
 double rawArea() { return osmLuaProcessing->Area(); }
 double rawLength() { return osmLuaProcessing->Length(); }
 kaguya::optional<std::vector<double>> rawCentroid(kaguya::VariadicArgType algorithm) { return osmLuaProcessing->Centroid(algorithm); }
+void rawModifyId(const int newId) { return osmLuaProcessing->ModifyId(newId); }
 void rawLayer(const std::string& layerName, bool area) { return osmLuaProcessing->Layer(layerName, area); }
 void rawLayerAsCentroid(const std::string &layerName, kaguya::VariadicArgType nodeSources) { return osmLuaProcessing->LayerAsCentroid(layerName, nodeSources); }
 void rawMinZoom(const double z) { return osmLuaProcessing->MinZoom(z); }
@@ -239,6 +242,9 @@ OsmLuaProcessing::OsmLuaProcessing(
 	materializeGeometries(materializeGeometries) {
 
 	sigusr1Handler.initialize();
+	if (vectorLayerMetadataMutexes.size() <= layers.layers.size()) {
+		vectorLayerMetadataMutexes.resize(layers.layers.size() + 1);
+	}
 
 	// ----	Initialise Lua
 	g_luaState = &luaState;
@@ -247,6 +253,7 @@ OsmLuaProcessing::OsmLuaProcessing(
 
 	osmLuaProcessing = this;
 	luaState["Id"] = &rawId;
+	luaState["OsmType"] = &rawOsmType;
 	luaState["AllKeys"] = &rawAllKeys;
 	luaState["AllTags"] = &rawAllTags;
 	luaState["Holds"] = &rawHolds;
@@ -265,13 +272,18 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["Centroid"] = &rawCentroid;
 	luaState["Layer"] = &rawLayer;
 	luaState["LayerAsCentroid"] = &rawLayerAsCentroid;
+	luaState["ModifyId"] = &rawModifyId;
 	luaState["Attribute"] = kaguya::overload(
 			[](const std::string &key, const protozero::data_view val) { osmLuaProcessing->Attribute(key, val, 0); },
 			[](const std::string &key, const protozero::data_view val, const char minzoom) { osmLuaProcessing->Attribute(key, val, minzoom); }
 	);
 	luaState["AttributeNumeric"] = kaguya::overload(
-			[](const std::string &key, const float val) { osmLuaProcessing->AttributeNumeric(key, val, 0); },
-			[](const std::string &key, const float val, const char minzoom) { osmLuaProcessing->AttributeNumeric(key, val, minzoom); }
+			[](const std::string &key, const double val) { osmLuaProcessing->AttributeNumeric(key, val, 0); },
+			[](const std::string &key, const double val, const char minzoom) { osmLuaProcessing->AttributeNumeric(key, val, minzoom); }
+	);
+	luaState["AttributeInteger"] = kaguya::overload(
+			[](const std::string &key, const int val) { osmLuaProcessing->AttributeInteger(key, val, 0); },
+			[](const std::string &key, const int val, const char minzoom) { osmLuaProcessing->AttributeInteger(key, val, minzoom); }
 	);
 	luaState["AttributeBoolean"] = kaguya::overload(
 			[](const std::string &key, const bool val) { osmLuaProcessing->AttributeBoolean(key, val, 0); },
@@ -354,6 +366,11 @@ kaguya::LuaTable OsmLuaProcessing::remapAttributes(kaguya::LuaTable& in_table, c
 // Get the ID of the current object
 string OsmLuaProcessing::Id() const {
 	return to_string(originalOsmID);
+}
+
+// Get the Type of the current object
+string OsmLuaProcessing::OsmType() const {
+	return (isRelation ? "relation" : isWay ? "way" : "node");
 }
 
 // Gets a table of all the keys of the OSM tags
@@ -499,21 +516,43 @@ void reverse_project(DegPoint& p) {
     geom::set<1>(p, latp2lat(geom::get<1>(p)));
 }
 
+template <typename DstRing, typename SrcRing>
+void projectRing(DstRing& dst, const SrcRing& src) {
+	dst.resize(src.size());
+	for (std::size_t i = 0; i < src.size(); ++i) {
+		geom::set<0>(dst[i], geom::get<0>(src[i]));
+		geom::set<1>(dst[i], latp2lat(geom::get<1>(src[i])));
+	}
+}
+
+#if BOOST_VERSION >= 106700
+double OsmLuaProcessing::projectedPolygonArea(const Polygon &p) {
+	areaPolygonCache.inners().resize(p.inners().size());
+	projectRing(areaPolygonCache.outer(), p.outer());
+	for (std::size_t i = 0; i < p.inners().size(); ++i) {
+		projectRing(areaPolygonCache.inners()[i], p.inners()[i]);
+	}
+
+	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
+	return geom::area(areaPolygonCache, sph_strategy);
+}
+#endif
+
 // Returns area
 double OsmLuaProcessing::Area() {
 	if (!IsClosed()) return 0;
 
 #if BOOST_VERSION >= 106700
-	geom::strategy::area::spherical<> sph_strategy(RadiusMeter);
 	if (isRelation) {
 		// Boost won't calculate area of a multipolygon, so we just total up the member polygons
-		return multiPolygonArea(multiPolygonCached());
+		double totalArea = 0;
+		const MultiPolygon &mp = multiPolygonCached();
+		for (MultiPolygon::const_iterator it = mp.begin(); it != mp.end(); ++it) {
+			totalArea += projectedPolygonArea(*it);
+		}
+		return totalArea;
 	} else if (isWay) {
-		// Reproject back into lat/lon and then run Boo
-		geom::model::polygon<DegPoint> p;
-		geom::assign(p,polygonCached());
-		geom::for_each_point(p, reverse_project);
-		return geom::area(p, sph_strategy);
+		return projectedPolygonArea(polygonCached());
 	}
 #else
 	if (isRelation) {
@@ -639,10 +678,12 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			}
 			else if (isWay) {
 				//Is there a more efficient way to do this?
-				Linestring ls = linestringCached();
+				const Linestring &ls = linestringCached();
 				Polygon p;
+				p.outer().reserve(ls.size());
 				geom::assign_points(p, ls);
-				mp.push_back(p);
+				mp.reserve(1);
+				mp.push_back(std::move(p));
 
 				auto correctionResult = CorrectGeometry(mp);
 				if(correctionResult == CorrectGeometryResult::Invalid) return;
@@ -849,14 +890,27 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else if (isWay) {
-		Polygon p;
-		geom::assign_points(p, linestringCached());
-
-		if (algorithm == CentroidAlgorithm::Polylabel) {
-			// CONSIDER: pick precision intelligently
-			centroid = mapbox::polylabel(p);
+		if (!isClosed) {
+			const Linestring &ls = linestringCached();
+			if (ls.empty())
+				throw geom::centroid_exception();
+			if (ls.size()==1) {
+				centroid = ls.front();
+			} else {
+				geom::centroid(ls, centroid);
+			}
 		} else {
-			geom::centroid(p, centroid);
+			const Linestring &ls = linestringCached();
+			Polygon p;
+			p.outer().reserve(ls.size());
+			geom::assign_points(p, ls);
+
+			if (algorithm == CentroidAlgorithm::Polylabel) {
+				// CONSIDER: pick precision intelligently
+				centroid = mapbox::polylabel(p);
+			} else {
+				geom::centroid(p, centroid);
+			}
 		}
 		return Point(centroid.x()*10000000.0, centroid.y()*10000000.0);
 	} else {
@@ -911,6 +965,11 @@ void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
 	outputKeys.push_back(key);
 }
 
+// Force a new ID
+void OsmLuaProcessing::ModifyId(const int newId) {
+    originalOsmID = static_cast<int64_t>(newId);
+}
+
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const protozero::data_view val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
@@ -919,7 +978,7 @@ void OsmLuaProcessing::Attribute(const string &key, const protozero::data_view v
 	setVectorLayerMetadata(outputs.back().first.layer, key, 0);
 }
 
-void OsmLuaProcessing::AttributeNumeric(const string &key, const float val, const char minzoom) {
+void OsmLuaProcessing::AttributeNumeric(const string &key, const double val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
 	removeAttributeIfNeeded(key);
 	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
@@ -931,6 +990,13 @@ void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val, const
 	removeAttributeIfNeeded(key);
 	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 2);
+}
+
+void OsmLuaProcessing::AttributeInteger(const string &key, const int val, const char minzoom) {
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
+	removeAttributeIfNeeded(key);
+	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
+	setVectorLayerMetadata(outputs.back().first.layer, key, 3);
 }
 
 // Set minimum zoom
@@ -995,9 +1061,14 @@ std::string OsmLuaProcessing::FindInRelation(const std::string &key) {
 }
 
 // Record attribute name/type for vector_layers table
+thread_local std::vector<std::unordered_set<std::string>> alreadySeen;
+
 void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const string &key, const uint type) {
-	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutex);
+	if (alreadySeen.size() <= layer) alreadySeen.resize(layer + 1);
+	if (alreadySeen[layer].count(key)) return;
+	std::lock_guard<std::mutex> lock(vectorLayerMetadataMutexes[layer]);
 	layers.layers[layer].attributeMap[key] = type;
+	alreadySeen[layer].insert(key);
 }
 
 // Scan relation (but don't write geometry)

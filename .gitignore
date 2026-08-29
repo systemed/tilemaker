@@ -8,12 +8,17 @@ tilemaker.dSYM/
 # editor temporaries
 *~
 
+# python cache files
+__pycache__/
+*.pyc
+
 # vagrant local stuff
 .vagrant/
 
 # protocol buffers generated headers
 include/osmformat.pb.h
 include/vector_tile.pb.h
+src/config_schema.h
 
 # downloaded data
 coastline

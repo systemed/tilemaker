@@ -4,6 +4,7 @@
 using namespace std;
 
 thread_local GeometryCache<Linestring> linestringCache;
+thread_local std::vector<LatpLon> wayNodes;
 
 OsmMemTiles::OsmMemTiles(
 	size_t threadNum,
@@ -34,6 +35,7 @@ LatpLon OsmMemTiles::buildNodeGeometry(
 		Linestring& ls = getOrBuildLinestring(objectID);
 		Point centroid;
 		Polygon p;
+		p.outer().reserve(ls.size());
 		geom::assign_points(p, ls);
 		geom::centroid(p, centroid);
 		return LatpLon{(int32_t)(centroid.y()*10000000.0), (int32_t)(centroid.x()*10000000.0)};
@@ -58,23 +60,39 @@ Geometry OsmMemTiles::buildWayGeometry(
 		if(ls.empty())
 			return out;
 
+		Box extBox = bbox.getExtendBox();
+		const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
+		const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
+		auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
+			return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
+		};
+		bool needsIntersection = !pointInsideExtBox(ls[0]);
+
 		Linestring current_ls;
+		current_ls.reserve(ls.size());
 		geom::append(current_ls, ls[0]);
 
 		for(size_t i = 1; i < ls.size(); ++i) {
-			if(!geom::intersects(Linestring({ ls[i-1], ls[i] }), bbox.clippingBox)) {
+			boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
+			if(!geom::intersects(segment, bbox.clippingBox)) {
 				if(current_ls.size() > 1)
 					out.push_back(std::move(current_ls));
 				current_ls.clear();
+				current_ls.reserve(ls.size() - i);
 			}
 			geom::append(current_ls, ls[i]);
+			if (!needsIntersection)
+				needsIntersection = !pointInsideExtBox(ls[i]);
 		}
 
 		if(current_ls.size() > 1)
 			out.push_back(std::move(current_ls));
 
+		if (!needsIntersection)
+			return out;
+
 		MultiLinestring result;
-		geom::intersection(out, bbox.getExtendBox(), result);
+		geom::intersection(out, extBox, result);
 		return result;
 
 	}
@@ -83,9 +101,10 @@ Geometry OsmMemTiles::buildWayGeometry(
 }
 
 void OsmMemTiles::populateLinestring(Linestring& ls, NodeID objectID) const {
-	std::vector<LatpLon> nodes = wayStore.at(OSM_ID(objectID));
+	wayStore.at(OSM_ID(objectID), wayNodes);
+	ls.reserve(wayNodes.size());
 
-	for (const LatpLon& node : nodes) {
+	for (const LatpLon& node : wayNodes) {
 		boost::geometry::range::push_back(ls, boost::geometry::make<Point>(node.lon/10000000.0, node.latp/10000000.0));
 	}
 }
@@ -122,8 +141,10 @@ void OsmMemTiles::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	Linestring ls;
 	populateLinestring(ls, objectID);
 	Polygon p;
+	p.outer().reserve(ls.size());
 	geom::assign_points(p, ls);
-	dst.push_back(p);
+	dst.reserve(dst.size() + 1);
+	dst.push_back(std::move(p));
 }
 
 void OsmMemTiles::Clear() {

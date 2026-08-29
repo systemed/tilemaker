@@ -128,11 +128,13 @@ Bug reports, suggestions and (especially!) pull requests are very welcome on the
 
 Formatting: braces and indents as shown, hard tabs (4sp). (Yes, I know.) Please be conservative about adding dependencies or increasing the memory requirement.
 
+The Makefile does not currently pick up changes to header files (.h). If you change these, you may need to run `make clean` before building with `make` and `sudo make install`.
+
 ## Copyright
 
 tilemaker is maintained by Richard Fairhurst and supported by [many contributors](https://github.com/systemed/tilemaker/graphs/contributors). We particularly celebrate the invaluable contributions of Wouter van Kleunen, who passed away in 2022.
 
-Copyright tilemaker contributors, 2015-2024.
+Copyright tilemaker contributors, 2015-2025.
 
 The tilemaker code is licensed as FTWPL; you may do anything you like with this code and there is no warranty.
 

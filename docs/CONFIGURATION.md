@@ -31,14 +31,14 @@ It also includes these global settings:
 * `minzoom` - the minimum zoom level at which any tiles will be generated
 * `maxzoom` - the maximum zoom level at which any tiles will be generated
 * `basezoom` - the zoom level for which tilemaker will generate tiles internally (should usually be the same as `maxzoom`)
-* `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles
-* `compress` - whether to compress vector tiles (Any of "gzip","deflate" or "none"(default))
-* `combine_below` - whether to merge adjacent linestrings of the same type: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13)
+* `include_ids` - whether you want to store the OpenStreetMap IDs for each way/node within your vector tiles. This option is not compatible with the merging options defined by the `combine_xxx` settings (see the dedicated paragraph below)
+* `compress` - for mbtiles output, whether to compress vector tiles (Any of "gzip","deflate" or "none"(default)). For pmtiles output, compression is hardcoded to gzip
 * `name`, `version` and `description` - about your project (these are written into the MBTiles file)
 * `high_resolution` (optional) - whether to use extra coordinate precision at the maximum zoom level (makes tiles a bit bigger)
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
 * `default_view` (optional) - the default location for the client to view, in [lon, lat, zoom] order (MBTiles only)
 * `mvt_version` (optional) - the version of the [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) spec to use; defaults to 2
+* `combine_below` (deprecated) - whether to merge all linestrings in the tile with the same attributes: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13). Please use the layer-specific parameter `combine_lines_below` instead.
 
 A typical config file would look like this:
 
@@ -77,12 +77,13 @@ You can add optional parameters to layers:
 * `simplify_level` - how much to simplify features (in degrees of longitude) on the zoom level `simplify_below-1`
 * `simplify_length` - how much to simplify features (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
 * `simplify_ratio` - (optional: the default value is 2.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
-* `simplify_algorithm` - which simplification algorithm to use (defaults to Douglas-Peucker; you can also specify `"visvalingam"`, which can be better for landuse and similar polygons)
+* `simplify_algorithm` - which simplification algorithm to use (defaults to Douglas-Peucker; you can also specify `"visvalingam"`, which can be better for landuse and similar polygons, or `"buildings"`, which preserves rectilinear shapes)
 * `filter_below` - filter areas by minimum size below this zoom level
 * `filter_area` - minimum size (in square degrees of longitude) for the zoom level `filter_below-1`
 * `feature_limit` - restrict the number of features written to each tile
 * `feature_limit_below` - restrict only below this zoom level
 * `combine_polygons_below` - merge adjacent polygons with the same attributes below this zoom level
+* `combine_lines_below` - whether to merge all linestrings in the tile with the same attributes. If not defined, the global setting `combine_below` will be used.
 * `combine_points` - merge points with the same attributes (defaults to `true`: specify `false` to disable)
 * `z_order_ascending` - sort features in ascending order by a numeric value set in the Lua processing script (defaults to `true`: specify `false` for descending order)
 
@@ -115,7 +116,20 @@ For example:
         }
       }
     }
-	
+
+### Including IDs
+
+You can carry the original OpenStreetMap object ID through to each vector tile feature with the global `include_ids` option.
+
+Note that this is not compatible with the `combine_xxx` settings to reduce tilesize. These settings merge items with identical tags into a collection, so only one ID will be retained for all the merged items. If you need to have the exact ID for each item, remove the merging settings in the target levels and layers:
+
+* set `combine_points: false` (`true` is the default value) in the target layers
+* set `combine_lines_below` and `combine_polygons_below` in layer properties below the target zoom level (or remove them)
+
+If you need to include OSM object types as well, you can use the `OsmType()` function in your `process.lua` script.
+
+It is possible to override the original OSM ID using the function `ModifyId(newId)`.
+
 ## Lua processing reference
 
 Your Lua file can supply these functions for tilemaker to call:
@@ -149,11 +163,13 @@ To do that, you use these methods:
 * `Layer(layer_name, is_area)`: write this node/way to the named layer. This is how you put objects in your vector tile. is_area (true/false) specifies whether a way should be treated as an area, or just as a linestring.
 * `LayerAsCentroid(layer_name, algorithm, role, role...)`: write a single centroid point for this way to the named layer (useful for labels and POIs). Only the first argument is required. `algorithm` can be "polylabel" (default) or "centroid". The third arguments onwards specify relation roles: if you're processing a multipolygon-type relation (e.g. a boundary) and it has a "label" node member, then by adding "label" as an argument here, this will be used in preference to the calculated point.
 * `Attribute(key,value,minzoom)`: add an attribute to the most recently written layer. Argument `minzoom` is optional, use it if you do not want to write the attribute on lower zoom levels.
-* `AttributeNumeric(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric/boolean columns.
+* `AttributeNumeric(key,value,minzoom)`, `AttributeInteger(key,value,minzoom)`, `AttributeBoolean(key,value,minzoom)`: for numeric (floating-point), integer and boolean columns.
 * `Id()`: get the OSM ID of the current object.
+* `ModifyId(newId)`: replace the ID of the current object with newId.
+* `OsmType()`: get the OSM type of the current object.
 * `IsClosed()`: returns true if the current object is a closed area.
 * `IsMultiPolygon()`: returns true if the current object is a multipolygon.
-* `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
+* `ZOrder(number)`: Set a numeric value (default 0) used to sort features within a layer. Use this feature to ensure a proper rendering order if the rendering engine itself does not support sorting. Sorting is not supported across layers merged with `write_to`. Features with different z-order are not merged if `combine_below`, `combine_lines_below` or `combine_polygons_below` is used. Use this in conjunction with `feature_limit` to only write the most important (highest z-order) features within a tile. (Values can be -50,000,000 to 50,000,000 and are lossy, particularly beyond -1000 to 1000.)
 * `MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
 * `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires Boost 1.67+.
 * `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).

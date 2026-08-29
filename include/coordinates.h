@@ -93,6 +93,8 @@ double rad2deg(double rad);
 // max/min latitudes
 constexpr double MaxLat = 85.0511;
 constexpr double MinLat = -MaxLat;
+constexpr double MaxLatp = 180.0;
+constexpr double MinLatp = -MaxLatp;
 
 // Project latitude (spherical Mercator)
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)

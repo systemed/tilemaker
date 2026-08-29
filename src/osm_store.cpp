@@ -6,7 +6,6 @@
 #include <unordered_map>
 
 #include <ciso646>
-#include <boost/sort/sort.hpp>
 #include "node_store.h"
 #include "way_store.h"
 
@@ -14,7 +13,7 @@ using namespace std;
 namespace bg = boost::geometry;
 
 static inline bool isClosed(const std::vector<LatpLon>& way) {
-	return way.begin() == way.end();
+	return !way.empty() && way.front() == way.back();
 }
 
 UsedObjects::UsedObjects(Status status): status(status), mutex(256), ids(256 * 1024) {
@@ -33,6 +32,8 @@ bool UsedObjects::test(NodeID id) {
 
 void UsedObjects::enable() {
 	status = Status::Enabled;
+	if (ids.empty())
+		ids.resize(256 * 1024);
 }
 
 bool UsedObjects::enabled() const {
@@ -52,7 +53,7 @@ void UsedObjects::set(NodeID id) {
 void UsedObjects::clear() {
 	// This data is not needed after PbfProcessor's ReadPhase::Nodes has completed,
 	// and it takes up to ~1.5GB of RAM.
-	ids.clear();
+	std::vector<std::vector<bool>>().swap(ids);
 }
 
 void OSMStore::open(std::string const &osm_store_filename)

@@ -22,13 +22,13 @@
 #include <boost/variant.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/sort/sort.hpp>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/filewritestream.h"
+#include "rapidjson/error/en.h"
 
 #ifndef _MSC_VER
 #include <sys/resource.h>
@@ -39,6 +39,7 @@
 #include "way_stores.h"
 
 // Tilemaker code
+#include "config_validator.h"
 #include "helpers.h"
 #include "coordinates.h"
 #include "coordinates_geom.h"
@@ -75,6 +76,11 @@ namespace geom = boost::geometry;
 // Global verbose switch
 bool verbose = false;
 
+void sortTileCoordinates(
+    const size_t baseZoom,
+    const size_t threadNum,
+    std::deque<std::pair<unsigned int, TileCoordinates>>& tileCoordinates
+);
 
 /**
  *\brief The Main function is responsible for command line processing, loading data and starting worker threads.
@@ -165,12 +171,21 @@ int main(const int argc, const char* argv[]) {
 	rapidjson::Document jsonConfig;
 	class Config config;
 	try {
-		FILE* fp = fopen(options.jsonFile.c_str(), "r");
+		FilePtr fp = openFile(options.jsonFile, "r");
 		char readBuffer[65536];
-		rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
+		rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 		jsonConfig.ParseStream(is);
-		if (jsonConfig.HasParseError()) { cerr << "Invalid JSON file." << endl; return -1; }
-		fclose(fp);
+		if (jsonConfig.HasParseError()) {
+			cerr << "Invalid JSON file: " << rapidjson::GetParseError_En(jsonConfig.GetParseError())
+			     << " at offset " << jsonConfig.GetErrorOffset() << "." << endl;
+			return -1;
+		}
+
+		string jsonError;
+		if (!validateConfigJson(jsonConfig, jsonError)) {
+			cerr << "Invalid JSON file: " << jsonError << "." << endl;
+			return -1;
+		}
 
 		config.readConfig(jsonConfig, hasClippingBox, clippingBox);
 	} catch (...) {
@@ -268,12 +283,22 @@ int main(const int argc, const char* argv[]) {
 				if (!hasClippingBox) {
 					cerr << "Can't read shapefiles unless a bounding box is provided." << endl;
 					exit(EXIT_FAILURE);
-				} else if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ")) {
-					cout << "Reading GeoJSON " << layer.name << endl;
-					geoJSONProcessor.read(layers.layers[layerNum], layerNum);
 				} else {
-					cout << "Reading shapefile " << layer.name << endl;
-					shpProcessor.read(layers.layers[layerNum], layerNum);
+					try {
+						if (ends_with(layer.source, "json") || ends_with(layer.source, "jsonl") || ends_with(layer.source, "JSON") || ends_with(layer.source, "JSONL") || ends_with(layer.source, "jsonseq") || ends_with(layer.source, "JSONSEQ")) {
+							cout << "Reading GeoJSON " << layer.name << endl;
+							geoJSONProcessor.read(layers.layers[layerNum], layerNum);
+						} else {
+							cout << "Reading shapefile " << layer.name << endl;
+							shpProcessor.read(layers.layers[layerNum], layerNum);
+						}
+					} catch (const std::exception& e) {
+						cerr << "Error reading external source " << layer.source << ": " << e.what() << endl;
+						return -1;
+					} catch (...) {
+						cerr << "Unknown error reading external source " << layer.source << endl;
+						return -1;
+					}
 				}
 			}
 		}
@@ -454,55 +479,7 @@ int main(const int argc, const char* argv[]) {
 	std::cout << std::endl;
 
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
-	const size_t baseZoom = config.baseZoom;
-	boost::sort::block_indirect_sort(
-		tileCoordinates.begin(), tileCoordinates.end(), 
-		[baseZoom](auto const &a, auto const &b) {
-			const auto aZoom = a.first;
-			const auto bZoom = b.first;
-			const auto aX = a.second.x;
-			const auto aY = a.second.y;
-			const auto bX = b.second.x;
-			const auto bY = b.second.y;
-			const bool aLowZoom = aZoom < CLUSTER_ZOOM;
-			const bool bLowZoom = bZoom < CLUSTER_ZOOM;
-
-			// Breadth-first for z0..5
-			if (aLowZoom != bLowZoom)
-				return aLowZoom;
-
-			if (aLowZoom && bLowZoom) {
-				if (aZoom != bZoom)
-					return aZoom < bZoom;
-
-				if (aX != bX)
-					return aX < bX;
-
-				return aY < bY;
-			}
-
-			for (size_t z = CLUSTER_ZOOM; z <= baseZoom; z++) {
-				// Translate both a and b to zoom z, compare.
-				// First, sanity check: can we translate it to this zoom?
-				if (aZoom < z || bZoom < z) {
-					return aZoom < bZoom;
-				}
-
-				const auto aXz = aX / (1 << (aZoom - z));
-				const auto aYz = aY / (1 << (aZoom - z));
-				const auto bXz = bX / (1 << (bZoom - z));
-				const auto bYz = bY / (1 << (bZoom - z));
-
-				if (aXz != bXz)
-					return aXz < bXz;
-
-				if (aYz != bYz)
-					return aYz < bYz;
-			}
-
-			return false;
-		}, 
-		options.threadNum);
+	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
 	std::size_t batchSize = 0;
 	for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
@@ -592,7 +569,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.mbtiles.closeForWriting();
 	} else if (options.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.writePMTilesBounds();
-		std::string metadata = sharedData.pmTilesMetadata();
+		std::string metadata = sharedData.pmTilesMetadata(jsonConfig);
 		sharedData.pmtiles.close(metadata);
 	} else {
 		sharedData.writeFileMetadata(jsonConfig);
@@ -608,4 +585,3 @@ int main(const int argc, const char* argv[]) {
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
 }
-

@@ -4,7 +4,10 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-project(tilemaker)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" tilemaker_version LIMIT_COUNT 1)
+string(STRIP "${tilemaker_version}" tilemaker_version)
+
+project(tilemaker VERSION ${tilemaker_version})
 
 OPTION(TILEMAKER_BUILD_STATIC "Attempt to link dependencies static" OFF)
 
@@ -31,7 +34,26 @@ IF ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
     LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
 ENDIF ()
 
-find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(Boost_USE_DEBUG_RUNTIME true)
+else()
+	set(Boost_USE_DEBUG_RUNTIME false)
+endif()
+
+set(BOOST_HAS_SYSTEM false)
+set(BOOST_HAS_THROW_EXCEPTION false)
+
+find_package(Boost 1.89 QUIET COMPONENTS filesystem program_options)
+
+if(Boost_FOUND)
+	find_package(Boost 1.89 QUIET COMPONENTS throw_exception)
+	if(TARGET Boost::throw_exception)
+		set(BOOST_HAS_THROW_EXCEPTION true)
+	endif()
+else()
+	find_package(Boost 1.66 REQUIRED COMPONENTS system filesystem program_options)
+	set(BOOST_HAS_SYSTEM true)
+endif()
 
 find_package(libshp REQUIRED)
 
@@ -49,25 +71,69 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
-if(!TM_VERSION)
-	execute_process(
-		COMMAND git describe --tags --abbrev=0
-		OUTPUT_VARIABLE tm_version)
-	add_compile_definitions(TM_VERSION=${tm_version})
+if(NOT TM_VERSION)
+	set(TM_VERSION v${PROJECT_VERSION})
+	find_package(Git QUIET)
+	if(NOT GIT_FOUND OR NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+		set(TM_VERSION ${TM_VERSION}+nogit)
+	else()
+		execute_process(
+			COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --short=12 HEAD
+			OUTPUT_VARIABLE tm_git_sha
+			RESULT_VARIABLE tm_git_sha_result
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+		execute_process(
+			COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" describe --exact-match --tags HEAD
+			OUTPUT_VARIABLE tm_git_tag
+			RESULT_VARIABLE tm_git_tag_result
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+		if(tm_git_sha_result EQUAL 0 AND NOT tm_git_sha STREQUAL "")
+			set(tm_git_dirty_suffix)
+			execute_process(
+				COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}" diff-index --quiet HEAD --
+				RESULT_VARIABLE tm_git_dirty_result
+				ERROR_QUIET
+				OUTPUT_QUIET)
+			if(tm_git_dirty_result EQUAL 1)
+				set(tm_git_dirty_suffix .dirty)
+			endif()
+			if(NOT (tm_git_tag_result EQUAL 0 AND tm_git_tag STREQUAL TM_VERSION AND tm_git_dirty_suffix STREQUAL ""))
+				set(TM_VERSION ${TM_VERSION}+g${tm_git_sha}${tm_git_dirty_suffix})
+			endif()
+		else()
+			set(TM_VERSION ${TM_VERSION}+nogit)
+		endif()
+	endif()
 endif()
+add_compile_definitions(TM_VERSION=${TM_VERSION})
 
 if(MSVC)
  	find_package(unofficial-sqlite3 CONFIG REQUIRED)
 	add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
 	add_definitions(-D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOGDI -D__restrict__=__restrict)
-  	set(THREAD_LIB "")
+	set(THREAD_LIB "")
 else()
 	find_package(SQLite3 REQUIRED)
-  	set(THREAD_LIB pthread)
+	if(NOT TARGET SQLite::SQLite3)
+	  add_library(SQLite::SQLite3 IMPORTED UNKNOWN)
+	  set_target_properties(SQLite::SQLite3 PROPERTIES
+	    IMPORTED_LOCATION "${SQLite3_LIBRARIES}"
+	    INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIRS}")
+	endif()
+	set(THREAD_LIB pthread)
 endif()
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/config-schema.json" TILEMAKER_CONFIG_SCHEMA_JSON)
+configure_file(
+	cmake/config_schema.h.in
+	"${CMAKE_BINARY_DIR}/config_schema.h"
+	@ONLY)
 
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
+	src/config_validator.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
 	src/external/streamvbyte_decode.c
@@ -106,11 +172,13 @@ file(GLOB tilemaker_src_files
 	src/shp_mem_tiles.cpp
 	src/shp_processor.cpp
 	src/significant_tags.cpp
+	src/simplify_buildings.cpp
 	src/sorted_node_store.cpp
 	src/sorted_way_store.cpp
 	src/tag_map.cpp
 	src/tile_coordinates_set.cpp
 	src/tile_data.cpp
+	src/tile_sorting.cpp
 	src/tilemaker.cpp
 	src/tile_worker.cpp
 	src/visvalingam.cpp
@@ -125,7 +193,13 @@ target_link_libraries(tilemaker
 		shapelib::shp
 		SQLite::SQLite3
 		Rapidjson::rapidjson
-		Boost::system Boost::filesystem Boost::program_options)
+		Boost::filesystem Boost::program_options)
+if(BOOST_HAS_SYSTEM)
+	target_link_libraries(tilemaker Boost::system)
+endif()
+if(BOOST_HAS_THROW_EXCEPTION)
+	target_link_libraries(tilemaker Boost::throw_exception)
+endif()
 
 include(CheckCxxAtomic)
 if(NOT HAVE_CXX11_ATOMIC)
@@ -138,5 +212,8 @@ install(FILES docs/man/tilemaker.1 DESTINATION share/man/man1)
 add_executable(tilemaker-server server/server.cpp)
 target_include_directories(tilemaker-server PRIVATE include)
 target_link_libraries(tilemaker-server ${THREAD_LIB} ${CMAKE_DL_LIBS} SQLite::SQLite3 Boost::filesystem Boost::program_options)
+if(BOOST_HAS_THROW_EXCEPTION)
+	target_link_libraries(tilemaker-server Boost::throw_exception)
+endif()
 
 install(TARGETS tilemaker tilemaker-server RUNTIME DESTINATION bin)

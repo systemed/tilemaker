@@ -14,6 +14,7 @@ public:
 	void reopen() override;
 	void batchStart() override;
 	std::vector<LatpLon> at(WayID wayid) const override;
+	void at(WayID wayid, std::vector<LatpLon>& output) const override;
 	bool requiresNodes() const override;
 	void insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) override;
 	void insertNodes(const std::vector<std::pair<WayID, std::vector<NodeID>>>& newWays) override;

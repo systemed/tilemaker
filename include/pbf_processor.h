@@ -3,6 +3,7 @@
 #define _READ_PBF_H
 
 #include <atomic>
+#include <ios>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -20,7 +21,7 @@ extern const std::string OptionSortTypeThenID;
 extern const std::string OptionLocationsOnWays;
 
 struct BlockMetadata {
-	long int offset;
+	std::streamoff offset;
 	int32_t length;
 	bool hasNodes;
 	bool hasWays;
