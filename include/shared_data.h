@@ -43,6 +43,8 @@ struct LayerDef {
 	uint declutterBelow = 0;			// zoom below which point features are thinned out by Score()
 	double declutterDistance = 40;		// how far apart (in 256px screen pixels) they should be kept
 	double declutterThreshold = 0;		// score needed at the layer's minzoom (halves at each zoom)
+	// Geometry repair: also set after addLayer()
+	uint repairScope = 0;				// REPAIR_SIMPLIFIED_ONLY (default) or REPAIR_ALL
 	
 	const bool useColumn(std::string &col) {
 		return allSourceColumns || (std::find(sourceColumns.begin(), sourceColumns.end(), col) != sourceColumns.end());
@@ -51,6 +53,16 @@ struct LayerDef {
 	static const uint DOUGLAS_PEUCKER = 0;
 	static const uint VISVALINGAM = 1;
 	static const uint BUILDINGS = 2;
+
+	// Which invalid output polygons are repaired before being written to a tile.
+	// REPAIR_SIMPLIFIED_ONLY (default) repairs only polygons that simplification
+	// may have broken - the historic behaviour. REPAIR_ALL is a superset: it also
+	// repairs polygons that were merely clipped and quantised onto the integer
+	// tile grid (e.g. ocean shapefiles). For those, a repair must not GROW the
+	// polygon, because growing means a hole was filled and an island would
+	// silently disappear.
+	static const uint REPAIR_SIMPLIFIED_ONLY = 0;
+	static const uint REPAIR_ALL = 1;
 };
 
 ///\brief Defines layers used in map rendering
