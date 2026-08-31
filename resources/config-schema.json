@@ -69,6 +69,7 @@
 					"combine_polygons_below": { "type": "integer", "minimum": 0 },
 					"z_order_ascending": { "type": "boolean" },
 					"simplify_algorithm": { "type": "string" },
+					"invalid_polygon_repair_scope": { "type": "string", "enum": [ "simplified_only", "all" ] },
 					"source": { "type": "string" },
 					"source_columns": {
 						"oneOf": [

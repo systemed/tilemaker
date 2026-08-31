@@ -349,6 +349,20 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
+		// Which invalid polygons to repair: "simplified_only" (default) repairs
+		// what simplification may have broken; "all" additionally repairs
+		// clipped-and-quantised geometry such as ocean shapefiles, which is
+		// otherwise written out invalid.
+		if (it->value.HasMember("invalid_polygon_repair_scope")) {
+			const string scope = it->value["invalid_polygon_repair_scope"].GetString();
+			if (scope == "all") {
+				layers.layers[layerNum].repairScope = LayerDef::REPAIR_ALL;
+			} else if (scope != "simplified_only") {
+				cerr << "Unknown invalid_polygon_repair_scope \"" << scope << "\" in layer " << layerName
+				     << "; expected \"simplified_only\" or \"all\"" << endl;
+			}
+		}
+
 		// Decluttering (thinning out point features by the score their profile gives them)
 		if (it->value.HasMember("declutter_below")) {
 			LayerDef &layerDef = layers.layers[layerNum];

@@ -7,6 +7,7 @@
 #include <boost/geometry/strategies/buffer.hpp>
 
 #include "geometry/correct.hpp"
+#include <limits>
 
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/irange.hpp>
@@ -148,14 +149,27 @@ void make_valid(MultiPolygon &mp)
 
 // Repair a single (possibly invalid) polygon in an area-preserving way and
 // append the resulting valid polygon(s) to `out`. Returns true on success.
-// `minArea` is the lower bound on the repaired area we are willing to accept.
-static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &out)
+// A repair is only accepted if the resulting area stays within
+// [minArea, maxArea]:
+//  - the LOWER bound catches a collapse (dissolve/buffer dropping most of the
+//    covered area on huge inputs);
+//  - the UPPER bound catches a FILLED HOLE, which is what used to make an ocean
+//    polygon swallow a whole island. Measured on real data, the separation is
+//    large: genuine repairs of quantised ocean polygons change the area by
+//    <=0.01 %, whereas filling one island hole grew it by 32 %.
+static bool repair_one_polygon(const Polygon &p, double minArea, double maxArea, MultiPolygon &out)
 {
+	auto acceptable = [&](const MultiPolygon &candidate) {
+		if (!geom::is_valid(candidate)) return false;
+		const double a = std::abs(geom::area(candidate));
+		return a >= minArea && a <= maxArea;
+	};
+
 	// 1) Dissolve (resolves self-intersections of this single polygon).
 	try {
 		MultiPolygon fixed;
 		geometry::correct(p, fixed, 1E-12);
-		if (geom::is_valid(fixed) && std::abs(geom::area(fixed)) >= minArea) {
+		if (acceptable(fixed)) {
 			for (auto &fp : fixed) out.push_back(std::move(fp));
 			return true;
 		}
@@ -174,7 +188,7 @@ static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &o
 
 		geom::buffer(p, buffered, distanceStrategy, sideStrategy, joinStrategy, endStrategy, pointStrategy);
 		geom::correct(buffered);
-		if (geom::is_valid(buffered) && std::abs(geom::area(buffered)) >= minArea) {
+		if (acceptable(buffered)) {
 			for (auto &bp : buffered) out.push_back(std::move(bp));
 			return true;
 		}
@@ -185,7 +199,7 @@ static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &o
 	return false;
 }
 
-bool repair_multi_polygon(MultiPolygon &mp)
+bool repair_multi_polygon(MultiPolygon &mp, bool strictArea)
 {
 	if (geom::is_valid(mp)) return true;
 
@@ -207,13 +221,19 @@ bool repair_multi_polygon(MultiPolygon &mp)
 			out.push_back(p);
 			continue;
 		}
-		// Lenient threshold: resolving a self-intersection legitimately changes a
-		// single polygon's (shoelace) area, so anything down to half the original
-		// is accepted. Per-polygon repair cannot trigger the cross-polygon union
-		// that previously caused the catastrophic ~99% collapse, so this only
-		// rejects a genuine local collapse.
-		const double minArea = 0.5 * std::abs(geom::area(p));
-		if (!repair_one_polygon(p, minArea, out)) {
+		// Lenient lower bound: resolving a self-intersection legitimately changes
+		// a single polygon's (shoelace) area, so anything down to half the
+		// original is accepted. Per-polygon repair cannot trigger the
+		// cross-polygon union that previously caused the catastrophic ~99%
+		// collapse, so this only rejects a genuine local collapse.
+		// The upper bound is only applied in strict mode, i.e. for geometry that
+		// was not simplified. Applying it to simplified geometry would be wrong:
+		// it rejects legitimate repairs there and measurably made things worse
+		// (5 -> 20 invalid features in one tile).
+		const double origArea = std::abs(geom::area(p));
+		const double maxArea = strictArea ? 1.01 * origArea
+		                                  : std::numeric_limits<double>::infinity();
+		if (!repair_one_polygon(p, 0.5 * origArea, maxArea, out)) {
 			out.push_back(p);
 			allValid = false;
 		}
