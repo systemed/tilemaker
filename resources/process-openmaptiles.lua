@@ -742,8 +742,8 @@ function way_function()
 			Layer("landuse", true)
 			Attribute("class", l)
 			if l=="residential" then
-				if Area()<ZRES8^2 then MinZoom(8)
-				else SetMinZoomByArea() end
+				if Area()>ZRES6^2 then SetMinZoomByArea()
+				else MinZoom(8) end
 			else MinZoom(11) end
 			write_name = true
 		end
