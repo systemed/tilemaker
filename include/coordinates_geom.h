@@ -25,6 +25,7 @@ public:
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
 	void scaleRing(Ring &dst, Ring const &src) const;
 	Ring scaleRing(Ring const &src) const;
+	void scaleRingNoBacktrack(Ring &dst, Ring const &src) const;
 	void scaleGeometry(MultiPolygon &dst, MultiPolygon const &src) const;
 	MultiPolygon scaleGeometry(MultiPolygon const &src) const;
 	std::pair<double, double> floorLatpLon(double latp, double lon) const;

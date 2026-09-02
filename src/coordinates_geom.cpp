@@ -50,6 +50,24 @@ void TileBbox::scaleRing(Ring &points, Ring const &src) const {
 	}
 }
 
+// Scaling that only drops points repeating their immediate predecessor. Used as
+// a fallback for rings that scaleRing() collapses below 4 points: its
+// backtracking window is positional, so a duplicated FIRST vertex shifts every
+// later vertex by one, the closing vertex then matches that duplicate at j==4,
+// and resize() truncates the whole ring. Without the backtracking there is
+// nothing to mis-align, and the ring survives with its shape intact.
+void TileBbox::scaleRingNoBacktrack(Ring &points, Ring const &src) const {
+	points.clear();
+	points.reserve(src.size());
+	for(auto const &i: src) {
+		auto scaled = scaleLatpLon(i.y(), i.x());
+		if (!points.empty() &&
+		    points.back().x()==scaled.first && points.back().y()==scaled.second)
+			continue;
+		points.push_back(Point(scaled.first,scaled.second));
+	}
+}
+
 Ring TileBbox::scaleRing(Ring const &src) const {
 	Ring points;
 	scaleRing(points, src);
@@ -66,8 +84,15 @@ void TileBbox::scaleGeometry(MultiPolygon &dst, MultiPolygon const &src) const {
 
 		// Copy the outer ring
 		scaleRing(p.outer(), poly.outer());
-		if (p.outer().size()<4)
-			continue;
+		if (p.outer().size()<4) {
+			// A collapsed outer ring means the whole feature disappears from the
+			// tile, at any size - so before giving up, retry without the
+			// backtracking that can truncate a ring to two points. Every ring that
+			// already survives is left untouched.
+			scaleRingNoBacktrack(p.outer(), poly.outer());
+			if (p.outer().size()<4)
+				continue;
+		}
 
 		// Copy the inner rings
 		if (p.inners().size() < poly.inners().size())
