@@ -12,6 +12,9 @@ extern bool verbose;
 
 thread_local bool enabledUserSignal = false;
 thread_local MultiPolygon scaledMultiPolygon;
+// Reused scratch buffers, so writing a feature does not allocate per feature.
+thread_local std::vector<std::pair<int, int>> scaledLinestring;
+thread_local std::vector<std::pair<int, int>> multipointBuffer;
 typedef std::vector<OutputObjectID>::const_iterator OutputObjectsConstIt;
 typedef std::pair<OutputObjectsConstIt, OutputObjectsConstIt> OutputObjectsConstItPair;
 
@@ -138,9 +141,14 @@ void writeMultiLinestring(
 
 		// vtzero dislikes linesegments that have zero-length segments,
 		// e.g. where p(x) == p(x + 1). So filter those out.
+		// Both passes below need the same tile coordinates, so scale each point
+		// once into a reused buffer rather than calling scaleLatpLon() twice.
+		scaledLinestring.clear();
+		scaledLinestring.reserve(ls.size());
 		int points = 0;
 		for (const Point& p : ls) {
 			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
+			scaledLinestring.push_back(xy);
 			if (points == 0 || xy != lastXy) {
 				points++;
 				lastXy = xy;
@@ -154,8 +162,7 @@ void writeMultiLinestring(
 		hadLine = true;
 		fbuilder.add_linestring(points);
 		bool firstPoint = true;
-		for (const Point& p : ls) {
-			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
+		for (const pair<int,int>& xy : scaledLinestring) {
 			if (firstPoint || xy != lastXy) {
 				// vtzero doesn't like linesegments with zero-length segments,
 				// so filter those out
@@ -324,7 +331,8 @@ void ProcessObjects(
 			// The very first point; below we check if there are more compatible points
 			// so that we can write a multipoint instead of many point features
 
-			std::vector<std::pair<int, int>> multipoint;
+			multipointBuffer.clear();
+			std::vector<std::pair<int, int>>& multipoint = multipointBuffer;
 			const int tile_extent = bbox.hires ? 8192 : 4096;
 			const int margin = 256; // Just in case something happens near the edges.
 
