@@ -244,8 +244,19 @@ void writeMultiPolygon(
 
 	geom::correct(current);
 
+	// Simplification can turn a valid input into a self-intersecting/spiky one;
+	// such polygons are silently dropped by many renderers (missing features), so
+	// those are always repaired. Geometry that was NOT simplified is only invalid
+	// because of the integer quantisation onto the tile grid; repairing that as
+	// well is opt-in per layer ("invalid_polygon_repair_scope": "all"), and uses
+	// the strict area guard so a repair can never fill a hole and hide an island.
+	const bool mayRepair = (simplifyLevel > 0 || repairScope == LayerDef::REPAIR_ALL);
+
+	// is_valid() runs full self-intersection detection, so only evaluate it when
+	// the answer can change what we write: for a layer that is neither simplified
+	// nor opted into repair the block below is a no-op.
 	geom::validity_failure_type failure;
-	if (!geom::is_valid(current, failure)) {
+	if ((mayRepair || verbose) && !geom::is_valid(current, failure)) {
 		if (verbose) {
 			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
@@ -254,16 +265,8 @@ void writeMultiPolygon(
 			else
 				cout << "input multipolygon valid" << endl;
 		}
-		
-		// Simplification can turn a valid input into a self-intersecting/spiky
-		// one; such polygons are silently dropped by many renderers (missing
-		// features), so those are always repaired. Geometry that was NOT
-		// simplified is only invalid because of the integer quantisation onto the
-		// tile grid; repairing that as well is opt-in per layer
-		// ("invalid_polygon_repair_scope": "all"), and uses the strict area guard
-		// so a repair can never fill a hole and hide an island.
-		const bool alsoRepairUnsimplified = (repairScope == LayerDef::REPAIR_ALL);
-		if (simplifyLevel > 0 || alsoRepairUnsimplified) {
+
+		if (mayRepair) {
 			bool repaired = repair_multi_polygon(current, /*strictArea=*/ simplifyLevel == 0);
 
 			if (geom::is_empty(current))
