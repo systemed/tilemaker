@@ -78,6 +78,7 @@ You can add optional parameters to layers:
 * `simplify_length` - how much to simplify features (in kilometers) on the zoom level `simplify_below-1`, preceding `simplify_level`
 * `simplify_ratio` - (optional: the default value is 2.0) the actual simplify level will be `simplify_level * pow(simplify_ratio, (simplify_below-1) - <current zoom>)`
 * `simplify_algorithm` - which simplification algorithm to use (defaults to Douglas-Peucker; you can also specify `"visvalingam"`, which can be better for landuse and similar polygons, or `"buildings"`, which preserves rectilinear shapes)
+* `invalid_polygon_repair_scope` - which invalid output polygons are repaired before being written. `"simplified_only"` (default) repairs just those that simplification may have broken; `"all"` is a superset and additionally repairs polygons that were merely clipped and quantised onto the integer tile grid. Use `"all"` for layers built from large clipped polygons such as coastline/ocean shapefiles, whose tiles are otherwise written out invalid and can be mis-rendered by strict renderers. For those, a repair is only accepted if it preserves the polygon's area, so it can never fill a hole and make an island disappear.
 * `filter_below` - filter areas by minimum size below this zoom level
 * `filter_area` - minimum size (in square degrees of longitude) for the zoom level `filter_below-1`
 * `feature_limit` - restrict the number of features written to each tile
