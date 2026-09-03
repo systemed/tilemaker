@@ -86,6 +86,8 @@ else
 endif
 CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
+DEPFLAGS := -MD -MP
+DEPS := $(wildcard src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d)
 BOOST_SYSTEM_LIB := $(shell printf 'int main(){return 0;}\n' | $(CXX) -x c++ - -o /tmp/tilemaker-boost-system-check -lboost_system >/dev/null 2>&1 && echo -lboost_system; rm -f /tmp/tilemaker-boost-system-check)
 LIB := -L$(PLATFORM_PATH)/lib -Wl,-rpath,$(PLATFORM_PATH)/lib $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem $(BOOST_SYSTEM_LIB) -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
@@ -188,8 +190,7 @@ src/config_schema.h: resources/config-schema.json
 	cat $< >> $@
 	printf '\n)TMCONFIGSCHEMA";\n\n#endif //_CONFIG_SCHEMA_H\n' >> $@
 
-src/config_validator.o: src/config_validator.cpp include/config_validator.h src/config_schema.h
-	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)
+src/config_validator.o: src/config_schema.h
 
 test_deque_map: \
 	test/deque_map.test.o
@@ -282,10 +283,12 @@ server: \
 	$(CXX) $(CXXFLAGS) -o tilemaker-server $^ $(INC) $(LIB) $(LDFLAGS)
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -o $@ -c $< $(INC)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -o $@ -c $< $(INC)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -o $@ -c $< $(INC)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -o $@ -c $< $(INC)
+
+-include $(DEPS)
 
 install:
 	install -m 0755 -d $(DESTDIR)$(prefix)/bin/
@@ -296,5 +299,6 @@ install:
 
 clean:
 	rm -f tilemaker tilemaker-server src/*.o src/external/*.o src/external/libdeflate/lib/*.o src/external/libdeflate/lib/*/*.o include/*.o include/*.pb.h server/*.o test/*.o src/config_schema.h
+	rm -f src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d
 
 .PHONY: install
