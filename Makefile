@@ -87,10 +87,43 @@ endif
 CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 DEPFLAGS := -MD -MP
-DEPS := $(wildcard src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d)
+DEPS := $(wildcard src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d mlt-obj/*.d)
 BOOST_SYSTEM_LIB := $(shell printf 'int main(){return 0;}\n' | $(CXX) -x c++ - -o /tmp/tilemaker-boost-system-check -lboost_system >/dev/null 2>&1 && echo -lboost_system; rm -f /tmp/tilemaker-boost-system-check)
 LIB := -L$(PLATFORM_PATH)/lib -Wl,-rpath,$(PLATFORM_PATH)/lib $(LUA_LIBS) -lboost_program_options -lsqlite3 -lboost_filesystem $(BOOST_SYSTEM_LIB) -lshp -pthread
 INC := -I$(PLATFORM_PATH)/include -isystem ./include -I./src $(LUA_CFLAGS)
+
+# MLT (MapLibre Tiles) support - off by default, enable with `make MLT=1`
+# Requires C++20 (GCC 11+/Clang 15+) and the maplibre-tile-spec submodule;
+# run `make mlt-deps` once to fetch it.
+MLT_CPP := maplibre-tile-spec/cpp
+MLT_OBJ := mlt-obj
+ifeq ($(MLT),1)
+  ifneq ($(MAKECMDGOALS),mlt-deps)
+    ifeq ($(wildcard $(MLT_CPP)/src/mlt/encoder.cpp),)
+      $(error MLT=1 but the maplibre-tile-spec submodule is not populated - run `make mlt-deps` first)
+    endif
+  endif
+  MLT_SHA := $(shell git -C maplibre-tile-spec rev-parse --short=12 HEAD 2>/dev/null)
+  ifeq ($(MLT_SHA),)
+    MLT_SHA := unknown
+  endif
+  MLT_INC := -isystem $(MLT_CPP)/include -isystem $(MLT_CPP)/src \
+	-isystem $(MLT_CPP)/vendor/fsst -isystem $(MLT_CPP)/vendor/fastpfor \
+	-isystem $(MLT_CPP)/vendor/earcut/include
+  # Only the MLT sources and the bridge are built as C++20; tilemaker stays C++14
+  MLT_CXXFLAGS := $(filter-out -std=c++14,$(CXXFLAGS)) -std=c++20
+  MLT_OBJS := \
+	$(MLT_OBJ)/encoder.o \
+	$(MLT_OBJ)/int.o \
+	$(MLT_OBJ)/stream.o \
+	$(MLT_OBJ)/tileset.o \
+	$(MLT_OBJ)/libfsst.o \
+	$(MLT_OBJ)/fsst_avx512.o \
+	$(MLT_OBJ)/bitpacking.o
+  TILEMAKER_MLT_OBJS := src/mlt_writer.o $(MLT_OBJS)
+else
+  TILEMAKER_MLT_OBJS := src/mlt_writer_stub.o
+endif
 
 # Targets
 .PHONY: test
@@ -149,7 +182,8 @@ tilemaker: \
 	src/tilemaker.o \
 	src/tile_worker.o \
 	src/visvalingam.o \
-	src/way_stores.o
+	src/way_stores.o \
+	$(TILEMAKER_MLT_OBJS)
 	$(CXX) $(CXXFLAGS) -o tilemaker $^ $(INC) $(LIB) $(LDFLAGS)
 
 test: \
@@ -214,6 +248,7 @@ test_helpers: \
 
 test_options_parser: \
 	src/options_parser.o \
+	$(TILEMAKER_MLT_OBJS) \
 	test/options_parser.test.o
 	$(CXX) $(CXXFLAGS) -o test.options_parser $^ $(INC) $(LIB) $(LDFLAGS) && ./test.options_parser
 
@@ -288,6 +323,30 @@ server: \
 %.o: %.c
 	$(CC) $(CFLAGS) $(DEPFLAGS) -o $@ -c $< $(INC)
 
+# The bridge is the only tilemaker source that sees MLT's headers, so it alone
+# is built as C++20; everything it exposes to the rest of tilemaker is C++14.
+src/mlt_writer.o: src/mlt_writer.cpp
+	$(CXX) $(MLT_CXXFLAGS) $(DEPFLAGS) -DMLT_VERSION=$(MLT_SHA) -o $@ -c $< $(INC) $(MLT_INC)
+
+$(MLT_OBJ):
+	mkdir -p $@
+
+$(MLT_OBJ)/%.o: $(MLT_CPP)/src/mlt/%.cpp | $(MLT_OBJ)
+	$(CXX) $(MLT_CXXFLAGS) $(DEPFLAGS) -o $@ -c $< $(MLT_INC)
+
+$(MLT_OBJ)/%.o: $(MLT_CPP)/src/mlt/encode/%.cpp | $(MLT_OBJ)
+	$(CXX) $(MLT_CXXFLAGS) $(DEPFLAGS) -o $@ -c $< $(MLT_INC)
+
+$(MLT_OBJ)/%.o: $(MLT_CPP)/src/mlt/metadata/%.cpp | $(MLT_OBJ)
+	$(CXX) $(MLT_CXXFLAGS) $(DEPFLAGS) -o $@ -c $< $(MLT_INC)
+
+$(MLT_OBJ)/%.o: $(MLT_CPP)/vendor/fastpfor/fastpfor/%.cpp | $(MLT_OBJ)
+	$(CXX) $(MLT_CXXFLAGS) $(DEPFLAGS) -w -o $@ -c $< $(MLT_INC)
+
+# fsst is C++17 and warns freely
+$(MLT_OBJ)/%.o: $(MLT_CPP)/vendor/fsst/%.cpp | $(MLT_OBJ)
+	$(CXX) $(filter-out -std=c++20,$(MLT_CXXFLAGS)) -std=c++17 $(DEPFLAGS) -w -o $@ -c $< $(MLT_INC)
+
 -include $(DEPS)
 
 install:
@@ -297,8 +356,21 @@ install:
 	@install -m 0755 -d ${DESTDIR}${MANPREFIX}/man1/ || true
 	@install docs/man/tilemaker.1 ${DESTDIR}${MANPREFIX}/man1/ || true
 
+# Fetch just enough of the MLT submodule to build the encoder: a partial,
+# sparse checkout of cpp/ (~2MB rather than ~380MB for the full tree), plus the
+# two nested vendor submodules the encoder needs. json, googletest and
+# mvt-fixtures are only used by MLT's own decoder, tests and tools.
+mlt-deps:
+	git submodule update --init --depth 1 --filter=blob:none maplibre-tile-spec
+	git -C maplibre-tile-spec sparse-checkout set cpp
+	git -C maplibre-tile-spec submodule update --init --depth 1 \
+		cpp/vendor/fsst cpp/vendor/earcut
+	git -C maplibre-tile-spec/cpp/vendor/fsst sparse-checkout set --no-cone \
+		'/*' '!/paper' '!/*.mp4' '!/*.pptx' '!/*.pdf'
+
 clean:
+	rm -rf $(MLT_OBJ)
 	rm -f tilemaker tilemaker-server src/*.o src/external/*.o src/external/libdeflate/lib/*.o src/external/libdeflate/lib/*/*.o include/*.o include/*.pb.h server/*.o test/*.o src/config_schema.h
 	rm -f src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d
 
-.PHONY: install
+.PHONY: install mlt-deps

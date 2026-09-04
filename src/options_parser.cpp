@@ -6,6 +6,8 @@
 #include <iostream>
 #include "helpers.h"
 
+#include "mlt_writer.h"
+
 #ifndef TM_VERSION
 #define TM_VERSION (version not set)
 #endif
@@ -16,7 +18,9 @@ using namespace std;
 namespace po = boost::program_options;
 
 po::options_description getParser(OptionsParser::Options& options) {
-	po::options_description desc("tilemaker " STR(TM_VERSION) "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
+	const string mltBanner = MltWriter::isAvailable()
+		? " (with MLT encoder " + MltWriter::version() + ")" : "";
+	po::options_description desc("tilemaker " STR(TM_VERSION) + mltBanner + "\nConvert OpenStreetMap .pbf files into vector tiles\n\nAvailable options");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&options.inputFiles),                     "source .osm.pbf file")

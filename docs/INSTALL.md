@@ -52,6 +52,35 @@ You can optionally use cmake to build:
     make
     sudo make install
 
+### MLT (MapLibre Tiles) support
+
+Support for encoding [MapLibre Tiles](https://github.com/maplibre/maplibre-tile-spec)
+is optional and off by default, because the MLT encoder requires C++20 (GCC 11+
+or Clang 15+, and on macOS Xcode 15+) while the rest of tilemaker is built as
+C++14.
+
+The encoder lives in the `maplibre-tile-spec` submodule, which is not populated
+by a plain `git clone`. To fetch it:
+
+    make mlt-deps
+
+This makes a partial, sparse checkout of the parts tilemaker needs (a few MB,
+rather than ~380MB for the full tree with all its submodules). Then build with:
+
+    make MLT=1
+
+or, with cmake:
+
+    cmake -B build -DTILEMAKER_BUILD_MLT=ON
+
+`tilemaker --help` reports the encoder revision when MLT support is compiled in.
+
+To move to a newer MLT revision, update the submodule and rebuild:
+
+    git -C maplibre-tile-spec fetch --depth 1 origin main
+    git -C maplibre-tile-spec checkout FETCH_HEAD
+    git add maplibre-tile-spec
+
 ### Docker
 
 **The Dockerfile is not formally supported by project maintainers and you are encouraged to send pull requests to fix any issues you encounter.**

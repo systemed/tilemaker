@@ -1,0 +1,3 @@
+[submodule "maplibre-tile-spec"]
+	path = maplibre-tile-spec
+	url = https://github.com/maplibre/maplibre-tile-spec.git

@@ -10,6 +10,7 @@ string(STRIP "${tilemaker_version}" tilemaker_version)
 project(tilemaker VERSION ${tilemaker_version})
 
 OPTION(TILEMAKER_BUILD_STATIC "Attempt to link dependencies static" OFF)
+OPTION(TILEMAKER_BUILD_MLT "Build with MapLibre Tiles (MLT) encoder support" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -200,6 +201,60 @@ if(BOOST_HAS_SYSTEM)
 endif()
 if(BOOST_HAS_THROW_EXCEPTION)
 	target_link_libraries(tilemaker Boost::throw_exception)
+endif()
+
+# MLT (MapLibre Tiles) support - off by default. The MLT encoder requires
+# C++20 while tilemaker is built as C++17, so the encoder, its vendored
+# dependencies and the tilemaker bridge are built as separate libraries, each
+# with the standard it needs. Run `make mlt-deps` to fetch the submodule.
+if(TILEMAKER_BUILD_MLT)
+	set(MLT_CPP "${CMAKE_CURRENT_SOURCE_DIR}/maplibre-tile-spec/cpp")
+	if(NOT EXISTS "${MLT_CPP}/src/mlt/encoder.cpp")
+		message(FATAL_ERROR
+			"TILEMAKER_BUILD_MLT is ON but the maplibre-tile-spec submodule is not "
+			"populated. Run `make mlt-deps` first.")
+	endif()
+
+	# fsst is C++17 and warns freely
+	add_library(mlt-fsst STATIC
+		"${MLT_CPP}/vendor/fsst/libfsst.cpp"
+		"${MLT_CPP}/vendor/fsst/fsst_avx512.cpp")
+	target_include_directories(mlt-fsst SYSTEM PUBLIC "${MLT_CPP}/vendor/fsst")
+	set_target_properties(mlt-fsst PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+	target_compile_options(mlt-fsst PRIVATE -w)
+
+	add_library(mlt-encoder STATIC
+		"${MLT_CPP}/src/mlt/encoder.cpp"
+		"${MLT_CPP}/src/mlt/encode/int.cpp"
+		"${MLT_CPP}/src/mlt/metadata/stream.cpp"
+		"${MLT_CPP}/src/mlt/metadata/tileset.cpp"
+		"${MLT_CPP}/vendor/fastpfor/fastpfor/bitpacking.cpp")
+	target_include_directories(mlt-encoder SYSTEM PUBLIC
+		"${MLT_CPP}/include"
+		"${MLT_CPP}/vendor/fastpfor"
+		"${MLT_CPP}/vendor/earcut/include")
+	target_include_directories(mlt-encoder SYSTEM PRIVATE "${MLT_CPP}/src")
+	set_target_properties(mlt-encoder PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+	target_link_libraries(mlt-encoder mlt-fsst)
+
+	# The bridge is the only tilemaker source that sees MLT's headers
+	add_library(tilemaker-mlt STATIC src/mlt_writer.cpp)
+	target_include_directories(tilemaker-mlt PRIVATE include)
+	set_target_properties(tilemaker-mlt PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+	target_link_libraries(tilemaker-mlt mlt-encoder)
+
+	find_package(Git QUIET)
+	execute_process(COMMAND ${GIT_EXECUTABLE} -C "${CMAKE_CURRENT_SOURCE_DIR}/maplibre-tile-spec"
+			rev-parse --short=12 HEAD
+		OUTPUT_VARIABLE MLT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	if(NOT MLT_SHA)
+		set(MLT_SHA unknown)
+	endif()
+	target_compile_definitions(tilemaker-mlt PRIVATE MLT_VERSION=${MLT_SHA})
+
+	target_link_libraries(tilemaker tilemaker-mlt)
+else()
+	target_sources(tilemaker PRIVATE src/mlt_writer_stub.cpp)
 endif()
 
 include(CheckCxxAtomic)
