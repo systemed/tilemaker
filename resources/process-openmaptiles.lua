@@ -742,7 +742,7 @@ function way_function()
 			Layer("landuse", true)
 			Attribute("class", l)
 			if l=="residential" then
-				if Area()<ZRES8^2 then MinZoom(8)
+				if MercatorArea()<ZRES8^2 then MinZoom(8)
 				else SetMinZoomByArea() end
 			else MinZoom(11) end
 			write_name = true
@@ -870,6 +870,18 @@ function SetBrunnelAttributes()
 	end
 end
 
+-- Area of the feature in Web Mercator square metres.
+function MercatorArea()
+	local area = Area()
+	if area == 0 then return 0 end
+	local centre = Centroid("centroid")
+	if centre == nil then return area end
+	-- Clamp to the Web Mercator cutoff: beyond it nothing is rendered anyway
+	local lat = math.min(math.abs(centre[1]), 85.05112878)
+	local coslat = math.cos(math.rad(lat))
+	return area / (coslat * coslat)
+end
+
 -- Set minimum zoom level by area
 function SetMinZoomByArea()
 	SetMinZoomByAreaWithLimit(0)
@@ -877,7 +889,7 @@ end
 
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
-	local area=Area()
+	local area=MercatorArea()
 	if     minzoom <= 1 and area>ZRES0^2  then MinZoom(1)
 	elseif minzoom <= 2 and area>ZRES1^2  then MinZoom(2)
 	elseif minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
