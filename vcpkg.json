@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "tilemaker",
+  "version-string": "3.1.0",
+  "builtin-baseline": "f3e10653cc27d62a37a3763cd84b38bca07c6075",
+  "dependencies": [
+    "lua",
+    "shapelib",
+    "zlib",
+    {
+      "name": "protobuf",
+      "features": [
+        "zlib"
+      ]
+    },
+    "sqlite3",
+    "boost-program-options",
+    "boost-filesystem",
+    "boost-geometry",
+    "boost-system",
+    "boost-asio",
+    "boost-interprocess",
+    "boost-iostreams",
+    "boost-sort",
+    "rapidjson"
+  ]
+}
