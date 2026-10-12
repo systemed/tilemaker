@@ -6,6 +6,9 @@
 #include "helpers.h"
 #include "coordinates_geom.h"
 #include <iostream>
+#ifdef TILEMAKER_WITH_MLT
+#include "mlt_writer.h"
+#endif
 using namespace std;
 namespace geom = boost::geometry;
 
@@ -31,11 +34,13 @@ std::ostream& operator<<(std::ostream& os, OutputGeometryType geomType)
 	return os;
 }
 
-void OutputObject::writeAttributes(
+template<class FeatureBuilder>
+static void writeAttributesTo(
 	const AttributeStore& attributeStore,
-	vtzero::feature_builder& fbuilder,
+	AttributeIndex attributes,
+	FeatureBuilder& fbuilder,
 	char zoom
-) const {
+) {
 	auto attr = attributeStore.getUnsafe(attributes);
 
 	for(auto const &it: attr) {
@@ -57,6 +62,24 @@ void OutputObject::writeAttributes(
 		}
 	}
 }
+
+void OutputObject::writeAttributes(
+	const AttributeStore& attributeStore,
+	vtzero::feature_builder& fbuilder,
+	char zoom
+) const {
+	writeAttributesTo(attributeStore, attributes, fbuilder, zoom);
+}
+
+#ifdef TILEMAKER_WITH_MLT
+void OutputObject::writeAttributes(
+	const AttributeStore& attributeStore,
+	MltFeatureBuilder& fbuilder,
+	char zoom
+) const {
+	writeAttributesTo(attributeStore, attributes, fbuilder, zoom);
+}
+#endif
 
 bool OutputObject::compatible(const OutputObject &other) {
 	return geomType == other.geomType &&

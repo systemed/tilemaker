@@ -259,7 +259,13 @@ namespace sqlite {
 		~database_binder() noexcept(false) {
 			/* Will be executed if no >>op is found, but not if an exception
 			is in mid flight */
-			if(!execution_started && !std::uncaught_exception() && _stmt) {
+#if __cplusplus >= 201703L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L)
+			// std::uncaught_exception() was removed in C++20
+			const bool unwinding = std::uncaught_exceptions() > 0;
+#else
+			const bool unwinding = std::uncaught_exception();
+#endif
+			if(!execution_started && !unwinding && _stmt) {
 				execute();
 			}
 		}

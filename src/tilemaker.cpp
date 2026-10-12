@@ -360,6 +360,10 @@ int main(const int argc, const char* argv[]) {
 	sharedData.outputFile = options.outputFile;
 	sharedData.outputMode = options.outputMode;
 	sharedData.mergeSqlite = options.mergeSqlite;
+	if (sharedData.mergeSqlite && config.tileFormat == TileFormat::MLT) {
+		cerr << "--merge is not supported with \"tile_format\": \"mlt\"" << endl;
+		return 0;
+	}
 
 	// ----	Initialise mbtiles/pmtiles if required
 	
@@ -368,6 +372,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.writeMBTilesProjectData();
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.pmtiles.open(sharedData.outputFile);
+		if (config.tileFormat == TileFormat::MLT) sharedData.pmtiles.tileType = TILETYPE_MLT;
 	}
 
 	// ----	Write out data

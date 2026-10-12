@@ -7,8 +7,31 @@
 #include "helpers.h"
 #include "visvalingam.h"
 #include "simplify_buildings.h"
+#ifdef TILEMAKER_WITH_MLT
+#include "mlt_writer.h"
+#endif
 using namespace std;
 extern bool verbose;
+
+// The tile is written through one of these backends. Both expose the same builder API,
+// so the geometry and attribute code below is shared between the output formats.
+struct MvtBackend {
+	using LayerBuilder = vtzero::layer_builder;
+	using PointFeature = vtzero::point_feature_builder;
+	using LinestringFeature = vtzero::linestring_feature_builder;
+	using PolygonFeature = vtzero::polygon_feature_builder;
+	static void addRing(PolygonFeature& fbuilder, uint32_t points, bool /*outer*/) { fbuilder.add_ring(points); }
+};
+
+#ifdef TILEMAKER_WITH_MLT
+struct MltBackend {
+	using LayerBuilder = MltLayerBuilder;
+	using PointFeature = MltPointFeatureBuilder;
+	using LinestringFeature = MltLinestringFeatureBuilder;
+	using PolygonFeature = MltPolygonFeatureBuilder;
+	static void addRing(PolygonFeature& fbuilder, uint32_t points, bool outer) { fbuilder.add_ring(points, outer); }
+};
+#endif
 
 thread_local bool enabledUserSignal = false;
 thread_local MultiPolygon scaledMultiPolygon;
@@ -95,10 +118,11 @@ void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
 	}
 }
 
+template<class Backend>
 void writeMultiLinestring(
 	const AttributeStore& attributeStore,
 	const SharedData& sharedData,
-	vtzero::layer_builder& vtLayer,
+	typename Backend::LayerBuilder& vtLayer,
 	const TileBbox& bbox,
 	const OutputObjectID& oo,
 	unsigned zoom,
@@ -106,7 +130,7 @@ void writeMultiLinestring(
 	unsigned simplifyAlgo,
 	const MultiLinestring& mls
 ) {
-	vtzero::linestring_feature_builder fbuilder{vtLayer};
+	typename Backend::LinestringFeature fbuilder{vtLayer};
 
 	if (sharedData.config.includeID && oo.id)
 		fbuilder.set_id(oo.id);
@@ -174,9 +198,11 @@ void writeMultiLinestring(
 	}
 }
 
+template<class Backend>
 bool writeRing(
-	vtzero::polygon_feature_builder& fbuilder,
-	const Ring& ring
+	typename Backend::PolygonFeature& fbuilder,
+	const Ring& ring,
+	bool outer
 ) {
 	// vtzero doesn't like zero-length segments in rings
 	pair<int, int> lastXy = std::make_pair(0, 0);
@@ -194,7 +220,7 @@ bool writeRing(
 		return false;
 
 	bool firstPoint = true;
-	fbuilder.add_ring(points);
+	Backend::addRing(fbuilder, points, outer);
 	for (auto it = ring.rbegin(); it != ring.rend(); ++it) {
     	const Point& point = *it;
 
@@ -212,10 +238,11 @@ bool writeRing(
 }
 
 
+template<class Backend>
 void writeMultiPolygon(
 	const AttributeStore& attributeStore,
 	const SharedData& sharedData,
-	vtzero::layer_builder& vtLayer,
+	typename Backend::LayerBuilder& vtLayer,
 	const TileBbox& bbox,
 	const OutputObjectID& oo,
 	unsigned zoom,
@@ -271,7 +298,7 @@ void writeMultiPolygon(
 		}
 	}
 
-	vtzero::polygon_feature_builder fbuilder{vtLayer};
+	typename Backend::PolygonFeature fbuilder{vtLayer};
 
 	if (sharedData.config.includeID && oo.id)
 		fbuilder.set_id(oo.id);
@@ -282,14 +309,14 @@ void writeMultiPolygon(
 		const Ring& ring = geom::exterior_ring(p);
 
 		// If we failed to write the outer, no need to write the inners.
-		if (!writeRing(fbuilder, ring))
+		if (!writeRing<Backend>(fbuilder, ring, true))
 			continue;
 
 		hadPoly = true;
 
 		const InteriorRing& interiors = geom::interior_rings(p);
 		for (const Ring& ring : interiors)
-			writeRing(fbuilder, ring);
+			writeRing<Backend>(fbuilder, ring, false);
 	}
 
 	if (hadPoly) {
@@ -300,6 +327,7 @@ void writeMultiPolygon(
 	}
 }
 
+template<class Backend>
 void ProcessObjects(
 	TileDataSource* source,
 	const AttributeStore& attributeStore,
@@ -314,7 +342,7 @@ void ProcessObjects(
 	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
-	vtzero::layer_builder& vtLayer
+	typename Backend::LayerBuilder& vtLayer
 ) {
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectID oo = *jt;
@@ -353,7 +381,7 @@ void ProcessObjects(
 				continue;
 			}
 
-			vtzero::point_feature_builder fbuilder{vtLayer};
+			typename Backend::PointFeature fbuilder{vtLayer};
 			if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
 
 			fbuilder.add_points(multipoint.size());
@@ -410,9 +438,9 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
-				writeMultiLinestring(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g));
+				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g));
 			else if (oo.oo.geomType == POLYGON_)
-				writeMultiPolygon(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g));
+				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g));
 		}
 	}
 }
@@ -433,23 +461,12 @@ OutputObjectsConstItPair getObjectsAtSubLayer(
 	return equal_range(data.begin(), data.end(), layerNum, layerComp());
 }
 
-
-
-void ProcessLayer(
-	const SourceList& sources,
-	const AttributeStore& attributeStore,
-	TileCoordinates index,
-	uint zoom, 
-	const std::vector<std::vector<OutputObjectID>>& data,
-	vtzero::vector_tile existingTile,
-	vtzero::tile_builder& tile, 
-	const TileBbox& bbox,
-	const std::vector<uint>& ltx,
-	SharedData& sharedData
+// Copy a layer of a tile we're merging into (MVT only)
+void CopyExistingLayer(
+	vtzero::vector_tile& existingTile,
+	const std::string& layerName,
+	vtzero::layer_builder& vtLayer
 ) {
-	std::string layerName = sharedData.layers.layers[ltx.at(0)].name;
-	vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, bbox.hires ? 8192u : 4096u};
-
 	vtzero::layer existingLayer = existingTile.get_layer_by_name(layerName);
 	if (existingLayer) {
 		while (auto feature = existingLayer.next_feature()) {
@@ -463,6 +480,21 @@ void ProcessLayer(
 			fb.commit();
 		}
 	}
+}
+
+template<class Backend>
+void ProcessLayer(
+	const SourceList& sources,
+	const AttributeStore& attributeStore,
+	TileCoordinates index,
+	uint zoom,
+	const std::vector<std::vector<OutputObjectID>>& data,
+	typename Backend::LayerBuilder& vtLayer,
+	const TileBbox& bbox,
+	const std::vector<uint>& ltx,
+	SharedData& sharedData
+) {
+	const std::string& layerName = sharedData.layers.layers[ltx.at(0)].name;
 
 	//TileCoordinate tileX = index.x;
 	TileCoordinate tileY = index.y;
@@ -493,7 +525,7 @@ void ProcessLayer(
 			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
 			auto end = ooListSameLayer.second;
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
-			ProcessObjects(sources[i], attributeStore, 
+			ProcessObjects<Backend>(sources[i], attributeStore,
 				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, ld.simplifyAlgo,
 				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
@@ -518,9 +550,6 @@ void outputProc(
 	TileCoordinates coordinates,
 	uint zoom
 ) {
-	// Create tile
-	vtzero::tile_builder tile;
-
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (
 			sharedData.config.maxLon <= bbox.minLon ||
@@ -528,13 +557,6 @@ void outputProc(
 			sharedData.config.maxLat <= bbox.minLat ||
 			sharedData.config.minLat >= bbox.maxLat))
 		return;
-
-	// Read existing tile if merging
-	std::string rawExistingTile;
-	if (sharedData.mergeSqlite) {
-		sharedData.mbtiles.readTileAndUncompress(rawExistingTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip);
-	}
-	vtzero::vector_tile existingTile{rawExistingTile};
 
 	// Loop through layers
 #ifndef _WIN32
@@ -545,39 +567,64 @@ void outputProc(
 #endif
 	signalStop=false;
 
-	for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
-		if (signalStop) break;
-		ProcessLayer(sources, attributeStore, coordinates, zoom, data, existingTile, tile, bbox, *lt, sharedData);
+	const uint32_t extent = bbox.hires ? 8192u : 4096u;
+	string outputdata, compressed;
+
+#ifdef TILEMAKER_WITH_MLT
+	if (sharedData.config.tileFormat == TileFormat::MLT) {
+		std::vector<mlt::Encoder::Layer> layers;
+		for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
+			if (signalStop) break;
+			MltLayerBuilder layer{sharedData.layers.layers[lt->at(0)].name, extent};
+			ProcessLayer<MltBackend>(sources, attributeStore, coordinates, zoom, data, layer, bbox, *lt, sharedData);
+			if (!layer.layer.features.empty()) layers.push_back(std::move(layer.layer));
+		}
+		// .pmtiles output is always gzipped
+		const bool compressed = sharedData.config.compress || sharedData.outputMode == OptionsParser::OutputMode::PMTiles;
+		encodeMltTile(layers, sharedData.config.includeID, compressed, outputdata);
+	} else
+#endif
+	{
+		vtzero::tile_builder tile;
+
+		// Read existing tile if merging
+		std::string rawExistingTile;
+		if (sharedData.mergeSqlite) {
+			sharedData.mbtiles.readTileAndUncompress(rawExistingTile, zoom, bbox.index.x, bbox.index.y, sharedData.config.compress, sharedData.config.gzip);
+		}
+		vtzero::vector_tile existingTile{rawExistingTile};
+
+		for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
+			if (signalStop) break;
+			const std::string& layerName = sharedData.layers.layers[lt->at(0)].name;
+			vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, extent};
+			CopyExistingLayer(existingTile, layerName, vtLayer);
+			ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData);
+		}
+		tile.serialize(outputdata);
 	}
 
 	// Write to file or sqlite
-	string outputdata, compressed;
 	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {
 		// Write to sqlite
-		//tile.SerializeToString(&outputdata);
-		tile.serialize(outputdata);
-
 		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
 		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
 
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		// Write to pmtiles
-		tile.serialize(outputdata);
 		sharedData.pmtiles.saveTile(zoom, bbox.index.x, bbox.index.y, outputdata);
 
 	} else {
 		// Write to file
 		stringstream dirname, filename;
 		dirname  << sharedData.outputFile << "/" << zoom << "/" << bbox.index.x;
-		filename << sharedData.outputFile << "/" << zoom << "/" << bbox.index.x << "/" << bbox.index.y << ".pbf";
+		filename << sharedData.outputFile << "/" << zoom << "/" << bbox.index.x << "/" << bbox.index.y
+		         << (sharedData.config.tileFormat == TileFormat::MLT ? ".mlt" : ".pbf");
 		boost::filesystem::create_directories(dirname.str());
 		fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 		if (sharedData.config.compress) {
-			//tile.SerializeToString(&outputdata);
-			tile.serialize(outputdata);
 			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
 		} else {
-			tile.serialize(outputdata);
 			outfile << outputdata;
 		}
 		outfile.close();

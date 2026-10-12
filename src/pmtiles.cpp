@@ -75,7 +75,7 @@ void PMTiles::close(std::string &metadata) {
 	header.clustered = false;
 	header.internal_compression = pmtiles::COMPRESSION_GZIP;
 	header.tile_compression = pmtiles::COMPRESSION_GZIP;
-	header.tile_type = pmtiles::TILETYPE_MVT;
+	header.tile_type = tileType;
 
 	// write header
 	std::string headerString = header.serialize();

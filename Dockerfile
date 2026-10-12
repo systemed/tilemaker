@@ -15,7 +15,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     libboost-system-dev \
     luarocks \
     rapidjson-dev \
-    cmake && \
+    cmake \
+    git \
+    ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     luarocks install luaflock
 
@@ -36,9 +38,9 @@ RUN mkdir build && \
         tm_version_arg="-DTM_VERSION=$TILEMAKER_BUILD_VERSION"; \
     fi && \
     if [ -z "$BUILD_DEBUG" ]; then \
-        cmake -DCMAKE_BUILD_TYPE=Release -DBoost_USE_DEBUG_RUNTIME=OFF $tm_version_arg ..; \
+        cmake -DCMAKE_BUILD_TYPE=Release -DBoost_USE_DEBUG_RUNTIME=OFF -DTILEMAKER_WITH_MLT=ON $tm_version_arg ..; \
     else \
-        cmake -DCMAKE_BUILD_TYPE=Debug $tm_version_arg ..; \
+        cmake -DCMAKE_BUILD_TYPE=Debug -DTILEMAKER_WITH_MLT=ON $tm_version_arg ..; \
     fi; \
     cmake --build . --parallel $(nproc) && \
     if [ -z "$BUILD_DEBUG" ]; then \

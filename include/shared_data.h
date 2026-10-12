@@ -77,12 +77,15 @@ public:
 	std::string serialiseToJSON() const;
 };
 
+enum class TileFormat { MVT, MLT };
+
 ///\brief Config read from JSON to control behavior of program
 class Config {
-	
+
 public:
 	class LayerDefinition layers;
 	uint baseZoom, startZoom, endZoom;
+	TileFormat tileFormat;
 	uint mvtVersion, combineBelow;
 	bool includeID, compress, gzip, highResolution;
 	std::string compressOpt;

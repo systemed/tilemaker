@@ -153,6 +153,39 @@ MU_TEST(test_invalid_source_columns) {
 	mu_check(error.find("oneOf") != std::string::npos);
 }
 
+MU_TEST(test_tile_format) {
+	const char* config = R"({
+		"settings": {
+			"basezoom": 14,
+			"minzoom": 0,
+			"maxzoom": 14,
+			"include_ids": false,
+			"compress": "gzip",
+			"name": "Test",
+			"version": "1",
+			"description": "Test config",
+			"tile_format": "%s"
+		},
+		"layers": {
+			"water": {
+				"minzoom": 0,
+				"maxzoom": 14
+			}
+		}
+	})";
+	char json[1024];
+
+	std::string error;
+	snprintf(json, sizeof(json), config, "mlt");
+	mu_check(validateString(json, error));
+	mu_check(error.empty());
+
+	error.clear();
+	snprintf(json, sizeof(json), config, "geojson");
+	mu_check(!validateString(json, error));
+	mu_check(error.find("#/settings/tile_format") != std::string::npos);
+}
+
 MU_TEST(test_bundled_configs) {
 	std::vector<std::string> configs = {
 		"resources/config-coastline.json",
@@ -173,6 +206,7 @@ MU_TEST_SUITE(test_suite_config_validator) {
 	MU_RUN_TEST(test_missing_multiple_required_settings);
 	MU_RUN_TEST(test_invalid_layer_type);
 	MU_RUN_TEST(test_invalid_source_columns);
+	MU_RUN_TEST(test_tile_format);
 	MU_RUN_TEST(test_bundled_configs);
 }
 

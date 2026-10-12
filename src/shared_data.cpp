@@ -22,7 +22,7 @@ void SharedData::writeMBTilesProjectData() {
 	mbtiles.writeMetadata("type", "baselayer");
 	mbtiles.writeMetadata("version", config.projectVersion);
 	mbtiles.writeMetadata("description", config.projectDesc);
-	mbtiles.writeMetadata("format", "pbf");
+	mbtiles.writeMetadata("format", config.tileFormat == TileFormat::MLT ? "mlt" : "pbf");
 	mbtiles.writeMetadata("minzoom", to_string(config.startZoom));
 	mbtiles.writeMetadata("maxzoom", to_string(config.endZoom));
 
@@ -230,6 +230,7 @@ Config::Config() {
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
 	combineBelow = 0;
+	tileFormat = TileFormat::MVT;
 }
 
 Config::~Config() { }
@@ -266,6 +267,19 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
 	combineBelow   = jsonConfig["settings"].HasMember("combine_below") ? jsonConfig["settings"]["combine_below"].GetUint() : 0;
 	mvtVersion     = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
+	std::string tileFormatOpt = jsonConfig["settings"].HasMember("tile_format") ? jsonConfig["settings"]["tile_format"].GetString() : "mvt";
+	if      (tileFormatOpt == "mvt") { tileFormat = TileFormat::MVT; }
+	else if (tileFormatOpt == "mlt") {
+#ifdef TILEMAKER_WITH_MLT
+		tileFormat = TileFormat::MLT;
+#else
+		cerr << "\"tile_format\": \"mlt\" requires tilemaker to be built with MLT support (cmake -DTILEMAKER_WITH_MLT=ON)." << endl;
+		exit (EXIT_FAILURE);
+#endif
+	} else {
+		cerr << "\"tile_format\" should be any of \"mvt\",\"mlt\" in JSON file." << endl;
+		exit (EXIT_FAILURE);
+	}
 	projectName    = jsonConfig["settings"]["name"].GetString();
 	projectVersion = jsonConfig["settings"]["version"].GetString();
 	projectDesc    = jsonConfig["settings"]["description"].GetString();
