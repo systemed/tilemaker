@@ -33,6 +33,10 @@
 #ifndef _MSC_VER
 #include <sys/resource.h>
 #endif
+#ifdef __GLIBC__
+#include <malloc.h>
+#include <cstdlib>
+#endif
 
 #include "geom.h"
 #include "node_stores.h"
@@ -90,6 +94,17 @@ void sortTileCoordinates(
  * Worker threads write the output tiles, and start in the outputProc function.
  */
 int main(const int argc, const char* argv[]) {
+#ifdef __GLIBC__
+	// glibc raises its mmap threshold dynamically (up to 32/64 MB) once a large
+	// mmapped chunk is freed; multi-MB buffers then land in per-thread arenas
+	// that are never trimmed, inflating peak RSS. Setting the trim threshold
+	// explicitly also disables that dynamic adjustment (the mmap threshold
+	// stays at its 128 KB default), unless the user tunes malloc via the environment.
+	if (!getenv("MALLOC_TRIM_THRESHOLD_") && !getenv("MALLOC_MMAP_THRESHOLD_") && !getenv("GLIBC_TUNABLES")) {
+		mallopt(M_TRIM_THRESHOLD, 4 << 20);
+	}
+#endif
+
 	// ----	Read command-line options
 	OptionsParser::Options options;
 	try {
@@ -360,6 +375,10 @@ int main(const int argc, const char* argv[]) {
 	sharedData.outputFile = options.outputFile;
 	sharedData.outputMode = options.outputMode;
 	sharedData.mergeSqlite = options.mergeSqlite;
+	if (sharedData.mergeSqlite && config.tileFormat == TileFormat::MLT) {
+		cerr << "--merge is not supported with \"tile_format\": \"mlt\"" << endl;
+		return 0;
+	}
 
 	// ----	Initialise mbtiles/pmtiles if required
 	
@@ -368,6 +387,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.writeMBTilesProjectData();
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.pmtiles.open(sharedData.outputFile);
+		if (config.tileFormat == TileFormat::MLT) sharedData.pmtiles.tileType = TILETYPE_MLT;
 	}
 
 	// ----	Write out data
@@ -449,27 +469,22 @@ int main(const int argc, const char* argv[]) {
 
 		const auto& zoomResult = zoomResults[zoom];
 		int numTiles = 0;
-		for (int x = 0; x < 1 << zoom; x++) {
-			for (int y = 0; y < 1 << zoom; y++) {
-				if (!zoomResult->test(x, y))
-					continue;
-			
-				if (hasClippingBox) {
-					bool isInAWhollyCoveredZ6Tile = false;
-					if (zoom >= 6) {
-						TileCoordinate z6x = x / (1 << (zoom - 6));
-						TileCoordinate z6y = y / (1 << (zoom - 6));
-						isInAWhollyCoveredZ6Tile = coveredZ6Tiles.test(z6x, z6y);
-					}
-
-					if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
-						continue;
+		zoomResult->forEachSet([&](TileCoordinate x, TileCoordinate y) {
+			if (hasClippingBox) {
+				bool isInAWhollyCoveredZ6Tile = false;
+				if (zoom >= 6) {
+					TileCoordinate z6x = x / (1 << (zoom - 6));
+					TileCoordinate z6y = y / (1 << (zoom - 6));
+					isInAWhollyCoveredZ6Tile = coveredZ6Tiles.test(z6x, z6y);
 				}
 
-				tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
-				numTiles++;
+				if(!isInAWhollyCoveredZ6Tile && !boost::geometry::intersects(TileBbox(TileCoordinates(x, y), zoom, false, false).getTileBox(), clippingBox)) 
+					return;
 			}
-		}
+
+			tileCoordinates.push_back(std::make_pair(zoom, TileCoordinates(x, y)));
+			numTiles++;
+		});
 
 		std::cout << " (" << numTiles;
 #ifdef CLOCK_MONOTONIC
@@ -487,14 +502,22 @@ int main(const int argc, const char* argv[]) {
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
+	std::atomic<uint64_t> batchCounter(0);
+	const uint cutZoom = std::max<uint>(12, config.startZoom);
 	std::size_t batchSize = 0;
 	for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
 		// Compute how many tiles should be assigned to this batch --
 		// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
 		batchSize = 0;
 		size_t weight = 0;
-		while (weight < 1000 && startIndex + batchSize < tileCoordinates.size()) {
+		// Batches are a fixed partition: each z<=11 tile is its own batch, and
+		// z12 subtrees are grouped (~2 per batch), so z13/z14 tiles usually share
+		// a batch with their z12 ancestor (batch-local ClipCache can reuse its clips).
+		// The partition doesn't depend on thread count, so neither does the output.
+		while (startIndex + batchSize < tileCoordinates.size()) {
 			const auto& zoom = tileCoordinates[startIndex + batchSize].first;
+			if (batchSize > 0 && (weight >= 1000 || (weight >= 50 && zoom <= cutZoom)))
+				break;
 			if (zoom > 12)
 				weight++;
 			else if (zoom > 11)
@@ -507,7 +530,10 @@ int main(const int argc, const char* argv[]) {
 			batchSize++;
 		}
 
-		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten]() {
+		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten, &batchCounter]() {
+			clipCacheBatchId = ++batchCounter;
+			// A single-tile batch has no descendants to reuse its clips.
+			clipCacheNoStore = batchSize == 1;
 			std::vector<std::string> tileTimings;
 			std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 			for(std::size_t i = startIndex; i < endIndex; ++i) {

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unordered_set>
+#include <cstring>
 
 #include "osm_lua_processing.h"
 #include "attribute_store.h"
@@ -160,26 +161,124 @@ kaguya::LuaTable rawAllKeys() {
 
 	return getAllTags(*g_luaState, &tags);
 }
-bool rawHolds(const KnownTagKey& key) {
-	if (osmLuaProcessing->isPostScanRelation) {
-		return osmLuaProcessing->Holds(key.stringValue);
-	}
-
-	return key.found;
-}
 bool rawHasTags() { return osmLuaProcessing->HasTags(); }
 void rawSetTag(const std::string &key, const std::string &value) { return osmLuaProcessing->SetTag(key, value); }
-const std::string rawFind(const KnownTagKey& key) {
-	if (osmLuaProcessing->isPostScanRelation)
-		return osmLuaProcessing->Find(key.stringValue);
+// Native lua_CFunction versions of Holds/Find, bypassing kaguya's invoker.
+// Semantics match the former kaguya-bound versions (KnownTagKey): kaguya does
+// no type check for a single (non-overloaded) function, so the argument is
+// read with lua_tolstring (numbers are coerced; other types give NULL/0 and
+// simply miss).
+static int luaHolds(lua_State* L) {
+	size_t size = 0;
+	const char* buffer = lua_tolstring(L, 1, &size);
 
-	if (key.found) {
-		auto value = *(osmLuaProcessing->currentTags->getValueFromKey(key.index));
-		return std::string(value.data(), value.size());
+	if (osmLuaProcessing->isPostScanRelation) {
+		bool threw = false, rv = false;
+		try {
+			rv = osmLuaProcessing->Holds(std::string(buffer ? buffer : "", size));
+		} catch (std::exception& e) {
+			lua_pushstring(L, e.what());
+			threw = true;
+		}
+		if (threw) return lua_error(L);
+		lua_pushboolean(L, rv);
+		return 1;
 	}
 
-	return EMPTY_STRING;
+	lua_pushboolean(L, osmLuaProcessing->currentTags->getKey(buffer, size) >= 0);
+	return 1;
 }
+
+// Upvalue 1: the empty string, returned on a miss.
+static int luaFind(lua_State* L) {
+	size_t size = 0;
+	const char* buffer = lua_tolstring(L, 1, &size);
+
+	if (osmLuaProcessing->isPostScanRelation) {
+		bool threw = false;
+		try {
+			const std::string rv = osmLuaProcessing->Find(std::string(buffer ? buffer : "", size));
+			lua_pushlstring(L, rv.data(), rv.size());
+		} catch (std::exception& e) {
+			lua_pushstring(L, e.what());
+			threw = true;
+		}
+		if (threw) return lua_error(L);
+		return 1;
+	}
+
+	const TagMap* tags = osmLuaProcessing->currentTags;
+	int64_t tagLoc = tags->getKey(buffer, size);
+	if (tagLoc >= 0) {
+		const protozero::data_view* value = tags->getValueFromKey(tagLoc);
+		lua_pushlstring(L, value->data(), value->size());
+	} else {
+		lua_pushvalue(L, lua_upvalueindex(1));
+	}
+	return 1;
+}
+
+// Native lua_CFunction versions of Attribute*/MinZoom/ZOrder. Each wraps the
+// kaguya binding registered under the same name (see wrapKaguyaBinding):
+// upvalue 1 is kaguya's function tuple, upvalue 2 kaguya's closure. Calls whose
+// arguments exactly match one overload (kaguya's strictCheckType, right arg
+// count) are handled here; anything else goes to kaguya's own invoker on the
+// same stack, so overload resolution, conversions and errors are unchanged.
+static int kaguyaFallback(lua_State* L) {
+	return lua_tocfunction(L, lua_upvalueindex(2))(L);
+}
+
+// Exceptions are reported as kaguya's invoker does
+template<typename F> static int luaGuarded(lua_State* L, F&& fn) {
+	try {
+		fn();
+		return 0;
+	} catch (std::exception& e) {
+		kaguya::util::traceBack(L, e.what());
+	} catch (...) {
+		kaguya::util::traceBack(L, "Unknown exception");
+	}
+	return lua_error(L);
+}
+
+template<typename T, unsigned Type> static int luaAttributeT(lua_State* L) {
+	const int n = lua_gettop(L);
+	if ((n != 2 && n != 3) ||
+		!kaguya::lua_type_traits<std::string>::strictCheckType(L, 1) ||
+		!kaguya::lua_type_traits<T>::strictCheckType(L, 2) ||
+		(n == 3 && !kaguya::lua_type_traits<char>::strictCheckType(L, 3)))
+		return kaguyaFallback(L);
+
+	size_t keyLen = 0;
+	const char* key = lua_tolstring(L, 1, &keyLen);
+	const T val = kaguya::lua_type_traits<T>::get(L, 2);
+	const char minzoom = n == 3 ? kaguya::lua_type_traits<char>::get(L, 3) : 0;
+	return luaGuarded(L, [&]() { osmLuaProcessing->attributeFast(key, keyLen, val, minzoom, Type); });
+}
+
+static int luaMinZoom(lua_State* L) {
+	if (lua_type(L, 1) != LUA_TNUMBER) return kaguyaFallback(L);
+	const double z = kaguya::lua_type_traits<double>::get(L, 1);
+	return luaGuarded(L, [&]() { osmLuaProcessing->MinZoom(z); });
+}
+
+static int luaZOrder(lua_State* L) {
+	if (lua_type(L, 1) != LUA_TNUMBER) return kaguyaFallback(L);
+	const double z = kaguya::lua_type_traits<double>::get(L, 1);
+	return luaGuarded(L, [&]() { osmLuaProcessing->ZOrder(z); });
+}
+
+// Replace the kaguya-bound global `name` with native function fn, keeping
+// kaguya's closure and function tuple as upvalues for kaguyaFallback.
+static void wrapKaguyaBinding(lua_State* L, const char* name, lua_CFunction fn) {
+	lua_getglobal(L, name);
+	lua_getupvalue(L, -1, 1);
+	lua_pushvalue(L, -2);
+	lua_pushcclosure(L, fn, 2);
+	lua_setglobal(L, name);
+	lua_pop(L, 1);
+}
+
 std::vector<std::string> rawFindIntersecting(const std::string &layerName) { return osmLuaProcessing->FindIntersecting(layerName); }
 bool rawIntersects(const std::string& layerName) { return osmLuaProcessing->Intersects(layerName); }
 std::vector<std::string> rawFindCovering(const std::string& layerName) { return osmLuaProcessing->FindCovering(layerName); }
@@ -223,6 +322,84 @@ int lua_error_handler(int errCode, const char *errMessage)
 
 // ----	initialization routines
 
+// Same setup as kaguya::State's owning constructor (and luaL_newstate), but with LuaPool
+// as the allocator: kaguya's allocator interface drops osize, which the pool needs.
+#if !defined(LUAJIT) && LUA_VERSION_NUM <= 504
+#define TM_LUA_POOL 1
+#endif
+
+#if defined(TM_LUA_POOL) && LUA_VERSION_NUM == 504
+// Lua 5.4 luaL_newstate() also installs these (static in lauxlib.c): warnings default off
+static void tmLuaWarnfOff(void *ud, const char *message, int tocont);
+static void tmLuaWarnfOn(void *ud, const char *message, int tocont);
+static void tmLuaWarnfCont(void *ud, const char *message, int tocont);
+static int tmLuaWarnCheckControl(lua_State *L, const char *message, int tocont) {
+	if (tocont || *(message++) != '@') return 0;
+	if (strcmp(message, "off") == 0) lua_setwarnf(L, tmLuaWarnfOff, L);
+	else if (strcmp(message, "on") == 0) lua_setwarnf(L, tmLuaWarnfOn, L);
+	return 1;
+}
+static void tmLuaWarnfOff(void *ud, const char *message, int tocont) {
+	tmLuaWarnCheckControl((lua_State *)ud, message, tocont);
+}
+static void tmLuaWarnfCont(void *ud, const char *message, int tocont) {
+	lua_State *L = (lua_State *)ud;
+	lua_writestringerror("%s", message);
+	if (tocont) lua_setwarnf(L, tmLuaWarnfCont, L);
+	else {
+		lua_writestringerror("%s", "\n");
+		lua_setwarnf(L, tmLuaWarnfOn, L);
+	}
+}
+static void tmLuaWarnfOn(void *ud, const char *message, int tocont) {
+	if (tmLuaWarnCheckControl((lua_State *)ud, message, tocont)) return;
+	lua_writestringerror("%s", "Lua warning: ");
+	tmLuaWarnfCont(ud, message, tocont);
+}
+#endif
+
+// Copies of kaguya::State's private initializing_panic/default_panic/stderror_out
+static int tmLuaInitializingPanic(lua_State *L) {
+	kaguya::ErrorHandler::throwDefaultError(lua_status(L), lua_tostring(L, -1));
+	return 0;
+}
+static int tmLuaDefaultPanic(lua_State *L) {
+	if (kaguya::ErrorHandler::handle(lua_status(L), L)) return 0;
+	fprintf(stderr, "PANIC: unprotected error in call to Lua API (%s)\n", lua_tostring(L, -1));
+	fflush(stderr);
+	return 0;
+}
+static void tmLuaStderrorOut(int status, const char* message) {
+	std::cerr << message << std::endl;
+}
+
+lua_State *OsmLuaProcessing::newLuaState(LuaPool &pool) {
+#ifdef TM_LUA_POOL
+	lua_State *L = lua_newstate(&LuaPool::alloc, &pool);
+#if LUA_VERSION_NUM == 504
+	if (L) lua_setwarnf(L, tmLuaWarnfOff, L);
+#endif
+	if (!L) L = luaL_newstate(); // e.g. LuaJIT not detected as such: behave like base
+#else
+	lua_State *L = luaL_newstate();
+#endif
+	if (!L) return L;
+	// kaguya::State::init(AllLoadLibs())
+	lua_atpanic(L, &tmLuaInitializingPanic);
+	try {
+		if (!kaguya::ErrorHandler::getHandler(L)) {
+			kaguya::util::ScopedSavedStack save(L);
+			kaguya::ErrorHandler::registerHandler(L, &tmLuaStderrorOut);
+		}
+		luaL_openlibs(L);
+		lua_atpanic(L, &tmLuaDefaultPanic);
+	} catch (const kaguya::LuaException&) {
+		lua_close(L);
+		L = nullptr;
+	}
+	return L;
+}
+
 OsmLuaProcessing::OsmLuaProcessing(
 	OSMStore &osmStore,
 	const class Config &configIn,
@@ -235,6 +412,8 @@ OsmLuaProcessing::OsmLuaProcessing(
 	bool materializeGeometries,
 	bool isFirst) :
 	osmStore(osmStore),
+	luaStateHolder(newLuaState(luaPool)),
+	luaState(luaStateHolder.L),
 	shpMemTiles(shpMemTiles),
 	osmMemTiles(osmMemTiles),
 	attributeStore(attributeStore),
@@ -259,8 +438,12 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["OsmType"] = &rawOsmType;
 	luaState["AllKeys"] = &rawAllKeys;
 	luaState["AllTags"] = &rawAllTags;
-	luaState["Holds"] = &rawHolds;
-	luaState["Find"] = &rawFind;
+	lua_State* L = luaState.state();
+	lua_pushcclosure(L, luaHolds, 0);
+	lua_setglobal(L, "Holds");
+	lua_pushlstring(L, "", 0);
+	lua_pushcclosure(L, luaFind, 1);
+	lua_setglobal(L, "Find");
 	luaState["HasTags"] = &rawHasTags;
 	luaState["SetTag"] = &rawSetTag;
 	luaState["FindIntersecting"] = &rawFindIntersecting;
@@ -295,6 +478,12 @@ OsmLuaProcessing::OsmLuaProcessing(
 
 	luaState["MinZoom"] = &rawMinZoom;
 	luaState["ZOrder"] = &rawZOrder;
+	wrapKaguyaBinding(L, "Attribute", luaAttributeT<protozero::data_view, 0>);
+	wrapKaguyaBinding(L, "AttributeNumeric", luaAttributeT<double, 1>);
+	wrapKaguyaBinding(L, "AttributeBoolean", luaAttributeT<bool, 2>);
+	wrapKaguyaBinding(L, "AttributeInteger", luaAttributeT<int, 3>);
+	wrapKaguyaBinding(L, "MinZoom", luaMinZoom);
+	wrapKaguyaBinding(L, "ZOrder", luaZOrder);
 	luaState["Score"] = &rawScore;
 	luaState["Accept"] = &rawAccept;
 	luaState["NextRelation"] = &rawNextRelation;
@@ -594,10 +783,30 @@ double OsmLuaProcessing::Length() {
 }
 
 // Cached geometries creation
+#ifdef TMOPT_VERIFY
+template<class A, class B>
+static bool tmVerifySamePoints(const A &a, const B &b) {
+	if (a.size() != b.size()) return false;
+	for (size_t i = 0; i < a.size(); i++)
+		if (!(a[i].x() == b[i].x() && a[i].y() == b[i].y())) return false;
+	return true;
+}
+#endif
+
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
 		linestringInited = true;
-		linestringCache = osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend());
+		// Same as osmStore.llListLinestring(), refilling the cache in place
+		linestringCache.clear();
+		linestringCache.reserve(llVecPtr->size());
+		for (const LatpLon &ll : *llVecPtr)
+			linestringCache.push_back(geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
+#ifdef TMOPT_VERIFY
+		if (!tmVerifySamePoints(linestringCache, osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend()))) {
+			std::cerr << "TMOPT_VERIFY linestringCached mismatch on way " << originalOsmID << std::endl;
+			std::abort();
+		}
+#endif
 	}
 	return linestringCache;
 }
@@ -667,11 +876,9 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		else if (geomType==POLYGON_) {
 			// polygon
 
-			MultiPolygon mp;
-
 			if (isRelation) {
 				try {
-					mp = multiPolygonCached();
+					MultiPolygon mp = multiPolygonCached();
 					if(CorrectGeometry(mp) == CorrectGeometryResult::Invalid) return;
 					NodeID id = osmMemTiles.storeMultiPolygon(mp);
 					OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
@@ -684,17 +891,34 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			else if (isWay) {
 				//Is there a more efficient way to do this?
 				const Linestring &ls = linestringCached();
-				Polygon p;
-				p.outer().reserve(ls.size());
-				geom::assign_points(p, ls);
-				mp.reserve(1);
-				mp.push_back(std::move(p));
+				// Reused scratch: a single polygon with ls as its outer ring and no inners
+				MultiPolygon &mp = layerScratchMultiPolygon;
+				mp.resize(1);
+				mp[0].outer().assign(ls.begin(), ls.end());
+				mp[0].inners().clear();
+#ifdef TMOPT_VERIFY
+				{
+					Polygon p;
+					p.outer().reserve(ls.size());
+					geom::assign_points(p, ls);
+					MultiPolygon old;
+					old.push_back(std::move(p));
+					if (!(old.size() == mp.size() && tmVerifySamePoints(old[0].outer(), mp[0].outer()) && old[0].inners().empty() && mp[0].inners().empty())) {
+						std::cerr << "TMOPT_VERIFY Layer polygon scratch mismatch on way " << originalOsmID << std::endl;
+						std::abort();
+					}
+				}
+#endif
 
-				auto correctionResult = CorrectGeometry(mp);
+				auto correctionResult = CorrectGeometry(mp, /*allowReverse=*/isWay);
 				if(correctionResult == CorrectGeometryResult::Invalid) return;
 				NodeID id = 0;
 				if (!materializeGeometries && correctionResult == CorrectGeometryResult::Valid) {
 					id = USE_WAY_STORE | originalOsmID;
+					wayEmitted = true;
+				} else if (!materializeGeometries && correctionResult == CorrectGeometryResult::Reversed) {
+					// Only defect was ring orientation: rebuild from the way store, reversed.
+					id = USE_WAY_STORE_REVERSED | originalOsmID;
 					wayEmitted = true;
 				} else 
 					id = osmMemTiles.storeMultiPolygon(mp);
@@ -722,9 +946,26 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 		}
 		else if (geomType==LINESTRING_) {
 			// linestring
-			Linestring ls = linestringCached();
-
-			auto correctionResult = CorrectGeometry(ls);
+			// Check the cached linestring in place; copy it only if it needs correcting
+			const Linestring &cachedLs = linestringCached();
+			geom::validity_failure_type failure = CheckGeometry(cachedLs);
+			Linestring correctedLs;
+			auto correctionResult = CorrectGeometryResult::Valid;
+			if (failure != geom::validity_failure_type::no_failure) {
+				correctedLs = cachedLs;
+				correctionResult = CorrectGeometryAfterCheck(correctedLs, failure);
+			}
+			const Linestring &ls = failure != geom::validity_failure_type::no_failure ? correctedLs : cachedLs;
+#ifdef TMOPT_VERIFY
+			{
+				Linestring old = linestringCached();
+				auto oldResult = CorrectGeometry(old);
+				if (oldResult != correctionResult || (oldResult != CorrectGeometryResult::Invalid && !tmVerifySamePoints(old, ls))) {
+					std::cerr << "TMOPT_VERIFY Layer linestring mismatch on way " << originalOsmID << std::endl;
+					std::abort();
+				}
+			}
+#endif
 			if(correctionResult == CorrectGeometryResult::Invalid) return;
 
 			if (isWay && !isRelation) {
@@ -876,10 +1117,28 @@ void OsmLuaProcessing::noteIfDecluttered(LatpLon point) {
 }
 
 Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
+	// Memoized per object: profiles often ask for the same centroid more than once
+	// (e.g. housenumber and POI on the same building). Exceptions are not memoized.
+	const int a = static_cast<int>(algorithm);
+	if (centroidMemoValid[a]) {
+#ifdef TMOPT_VERIFY
+		Point check = calculateCentroidUncached(algorithm);
+		if (memcmp(&check, &centroidMemo[a], sizeof(Point)) != 0) {
+			std::cerr << "TMOPT_VERIFY centroid memo mismatch on " << originalOsmID << std::endl;
+			std::abort();
+		}
+#endif
+		return centroidMemo[a];
+	}
+	centroidMemo[a] = calculateCentroidUncached(algorithm);
+	centroidMemoValid[a] = true;
+	return centroidMemo[a];
+}
+
+Point OsmLuaProcessing::calculateCentroidUncached(CentroidAlgorithm algorithm) {
 	Point centroid;
 	if (isRelation) {
-		MultiPolygon tmp;
-		tmp = multiPolygonCached();
+		const MultiPolygon &tmp = multiPolygonCached();
 
 		if (algorithm == CentroidAlgorithm::Polylabel) {
 			int index = 0;
@@ -914,9 +1173,10 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 			}
 		} else {
 			const Linestring &ls = linestringCached();
-			Polygon p;
-			p.outer().reserve(ls.size());
-			geom::assign_points(p, ls);
+			// Reused scratch polygon: ls as the outer ring, no inners
+			Polygon &p = centroidScratchPolygon;
+			p.outer().assign(ls.begin(), ls.end());
+			p.inners().clear();
 
 			if (algorithm == CentroidAlgorithm::Polylabel) {
 				// CONSIDER: pick precision intelligently
@@ -965,17 +1225,17 @@ void OsmLuaProcessing::SetTag(const std::string &key, const std::string &value) 
 	osmStore.scannedRelations.set_relation_tag(originalOsmID, key, value);
 }
 
-void OsmLuaProcessing::removeAttributeIfNeeded(const string& key) {
+void OsmLuaProcessing::removeAttributeIfNeeded(uint16_t keyIndex) {
 	// Does it exist?
 	for (int i = 0; i < outputKeys.size(); i++) {
-		if (outputKeys[i] == key) {
+		if (outputKeys[i] == keyIndex) {
 			AttributeSet& set = outputs.back().second;
-			set.removePairWithKey(attributeStore.pairStore, attributeStore.keyStore.key2index(key));
+			set.removePairWithKey(attributeStore.pairStore, keyIndex);
 			return;
 		}
 	}
 
-	outputKeys.push_back(key);
+	outputKeys.push_back(keyIndex);
 }
 
 // Force a new ID
@@ -986,29 +1246,33 @@ void OsmLuaProcessing::ModifyId(const int newId) {
 // Set attributes in a vector tile's Attributes table
 void OsmLuaProcessing::Attribute(const string &key, const protozero::data_view val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	removeAttributeIfNeeded(key);
-	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
+	const uint16_t keyIndex = attributeStore.keyStore.key2index(key);
+	removeAttributeIfNeeded(keyIndex);
+	attributeStore.addAttributeWithKeyIndex(outputs.back().second, keyIndex, key, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 0);
 }
 
 void OsmLuaProcessing::AttributeNumeric(const string &key, const double val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	removeAttributeIfNeeded(key);
-	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
+	const uint16_t keyIndex = attributeStore.keyStore.key2index(key);
+	removeAttributeIfNeeded(keyIndex);
+	attributeStore.addAttributeWithKeyIndex(outputs.back().second, keyIndex, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 1);
 }
 
 void OsmLuaProcessing::AttributeBoolean(const string &key, const bool val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	removeAttributeIfNeeded(key);
-	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
+	const uint16_t keyIndex = attributeStore.keyStore.key2index(key);
+	removeAttributeIfNeeded(keyIndex);
+	attributeStore.addAttributeWithKeyIndex(outputs.back().second, keyIndex, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 2);
 }
 
 void OsmLuaProcessing::AttributeInteger(const string &key, const int val, const char minzoom) {
 	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
-	removeAttributeIfNeeded(key);
-	attributeStore.addAttribute(outputs.back().second, key, val, minzoom);
+	const uint16_t keyIndex = attributeStore.keyStore.key2index(key);
+	removeAttributeIfNeeded(keyIndex);
+	attributeStore.addAttributeWithKeyIndex(outputs.back().second, keyIndex, val, minzoom);
 	setVectorLayerMetadata(outputs.back().first.layer, key, 3);
 }
 
@@ -1094,6 +1358,105 @@ void OsmLuaProcessing::setVectorLayerMetadata(const uint_least8_t layer, const s
 	alreadySeen[layer].insert(key);
 }
 
+// Per-thread cache of attribute keys, indexed by the address of the Lua
+// string buffer. A hit needs the same address, length and bytes, so a reused
+// address or a non-interned string simply misses. seenLayers caches, per
+// layer, that setVectorLayerMetadata has already run for this key on this
+// thread (alreadySeen is thread_local and never cleared, so a set bit stays
+// true; an evicted entry just starts again with no bits set).
+namespace {
+struct AttrKeyCacheEntry {
+	const char* ptr = nullptr;
+	size_t len = 0;
+	std::string key;
+	uint16_t keyIndex = 0;
+	std::vector<uint64_t> seenLayers;
+};
+const size_t ATTR_KEY_CACHE_SIZE = 512;
+thread_local std::vector<AttrKeyCacheEntry> attrKeyCache;
+thread_local const AttributeKeyStore* attrKeyCacheStore = nullptr;
+
+AttrKeyCacheEntry& lookupAttrKey(AttributeKeyStore& keyStore, const char* key, size_t keyLen) {
+	if (attrKeyCacheStore != &keyStore) {
+		attrKeyCache.assign(ATTR_KEY_CACHE_SIZE, AttrKeyCacheEntry());
+		attrKeyCacheStore = &keyStore;
+	}
+	const uintptr_t p = reinterpret_cast<uintptr_t>(key);
+	AttrKeyCacheEntry& e = attrKeyCache[((p >> 4) ^ (p >> 13)) & (ATTR_KEY_CACHE_SIZE - 1)];
+	if (e.ptr == key && e.len == keyLen && e.key.size() == keyLen && memcmp(e.key.data(), key, keyLen) == 0) {
+#ifdef TMOPT_VERIFY
+		if (keyStore.key2index(e.key) != e.keyIndex) { std::cerr << "TMOPT_VERIFY: keyIndex mismatch for " << e.key << std::endl; abort(); }
+#endif
+		return e;
+	}
+	// resolve the index first: key2index may throw (too many keys), and a pcall in Lua could continue
+	std::string k(key, keyLen);
+	const uint16_t idx = keyStore.key2index(k);
+	e.key.swap(k);
+	e.keyIndex = idx;
+	e.ptr = key;
+	e.len = keyLen;
+	e.seenLayers.clear();
+	return e;
+}
+
+inline void addAttributeByIndex(AttributeStore& store, AttributeSet& set, const AttrKeyCacheEntry& e, const protozero::data_view val, char minzoom) {
+	store.addAttributeWithKeyIndex(set, e.keyIndex, e.key, val, minzoom);
+}
+template<typename T> inline void addAttributeByIndex(AttributeStore& store, AttributeSet& set, const AttrKeyCacheEntry& e, T val, char minzoom) {
+	store.addAttributeWithKeyIndex(set, e.keyIndex, val, minzoom);
+}
+}
+
+// Same as Attribute/AttributeNumeric/AttributeBoolean/AttributeInteger, with
+// the key index and vector_layers bookkeeping served from the key cache.
+template<typename T>
+void OsmLuaProcessing::attributeFast(const char *key, size_t keyLen, T val, char minzoom, uint type) {
+	if (outputs.size()==0) { ProcessingError("Can't add Attribute if no Layer set"); return; }
+	AttrKeyCacheEntry& e = lookupAttrKey(attributeStore.keyStore, key, keyLen);
+	removeAttributeIfNeeded(e.keyIndex);
+	addAttributeByIndex(attributeStore, outputs.back().second, e, val, minzoom);
+
+	const uint_least8_t layer = outputs.back().first.layer;
+	const size_t word = layer / 64;
+	const uint64_t bit = uint64_t(1) << (layer % 64);
+	if (e.seenLayers.size() > word && (e.seenLayers[word] & bit)) {
+#ifdef TMOPT_VERIFY
+		if (alreadySeen.size() <= layer || !alreadySeen[layer].count(e.key)) { std::cerr << "TMOPT_VERIFY: seen-bit mismatch for " << e.key << std::endl; abort(); }
+#endif
+		return;
+	}
+	setVectorLayerMetadata(layer, e.key, type);
+	if (e.seenLayers.size() <= word) e.seenLayers.resize(word + 1, 0);
+	e.seenLayers[word] |= bit;
+}
+
+// Call global Lua function `name` with no arguments, as kaguya does for a
+// function value (its pcall has no message handler; on error the registered
+// error handler gets the status and message). Results are discarded.
+// keepGlobals: luaState[name]() keeps the globals table on the stack below the
+// call (visible in the error handler's stack dump); calling through a
+// kaguya::LuaFunction doesn't.
+bool OsmLuaProcessing::callLuaGlobal(const char *name, bool keepGlobals) {
+	lua_State* L = luaState.state();
+	const int top = lua_gettop(L);
+#if LUA_VERSION_NUM >= 502
+	lua_pushglobaltable(L);
+#else
+	lua_pushvalue(L, LUA_GLOBALSINDEX);
+#endif
+	lua_getfield(L, -1, name);
+	if (!keepGlobals) lua_remove(L, -2);
+	if (lua_type(L, -1) != LUA_TFUNCTION) {
+		lua_settop(L, top);
+		return false;
+	}
+	const int status = lua_pcall(L, 0, 0, 0);
+	kaguya::except::checkErrorAndThrow(status, L);
+	lua_settop(L, top);
+	return true;
+}
+
 // Scan relation (but don't write geometry)
 // return true if we want it, false if we don't
 bool OsmLuaProcessing::scanRelation(WayID id, const TagMap& tags) {
@@ -1143,7 +1506,7 @@ bool OsmLuaProcessing::setNode(NodeID id, LatpLon node, const TagMap& tags) {
 
 	//Start Lua processing for node
 	try {
-		luaState["node_function"]();
+		if (!callLuaGlobal("node_function", true)) luaState["node_function"]();
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on node " << originalOsmID << std::endl;
 		exit(1);
@@ -1172,6 +1535,7 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	outerWayVecPtr = nullptr;
 	innerWayVecPtr = nullptr;
 	linestringInited = polygonInited = multiPolygonInited = false;
+	centroidMemoValid[0] = centroidMemoValid[1] = false;
 
 	if (supportsReadingRelations && osmStore.scannedRelations.way_in_any_relations(wayId)) {
 		relationList = osmStore.scannedRelations.relations_for_way(wayId);
@@ -1192,9 +1556,11 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	if (ok) {
 		//Start Lua processing for way
 		try {
-			kaguya::LuaFunction way_function = luaState["way_function"];
-			kaguya::LuaRef ret = way_function();
-			assert(!ret);
+			if (!callLuaGlobal("way_function", false)) {
+				kaguya::LuaFunction way_function = luaState["way_function"];
+				kaguya::LuaRef ret = way_function();
+				assert(!ret);
+			}
 		} catch(luaProcessingException &e) {
 			std::cerr << "Lua error on way " << originalOsmID << std::endl;
 			exit(1);
@@ -1202,7 +1568,7 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	}
 
 	if (!this->empty()) {
-		std::vector<OutputObject> objects = finalizeOutputs();
+		std::vector<OutputObject> &objects = finalizeOutputs();
 		if (!objects.empty()) osmMemTiles.addGeometryToIndex(linestringCached(), objects, originalOsmID);
 		return wayEmitted;
 	}
@@ -1240,10 +1606,11 @@ void OsmLuaProcessing::setRelation(
 	// Start Lua processing for relation
 	if (!isNativeMP && !supportsWritingRelations) return;
 	try {
-		if (isNativeMP && supportsWritingWays)
-			luaState["way_function"]();
-		else if (!isNativeMP && supportsWritingRelations)
-			luaState["relation_function"]();
+		if (isNativeMP && supportsWritingWays) {
+			if (!callLuaGlobal("way_function", true)) luaState["way_function"]();
+		} else if (!isNativeMP && supportsWritingRelations) {
+			if (!callLuaGlobal("relation_function", true)) luaState["relation_function"]();
+		}
 	} catch(luaProcessingException &e) {
 		std::cerr << "Lua error on relation " << originalOsmID << std::endl;
 		exit(1);
@@ -1251,7 +1618,7 @@ void OsmLuaProcessing::setRelation(
 	if (this->empty()) return;
 
 	try {
-		std::vector<OutputObject> objects = finalizeOutputs();
+		std::vector<OutputObject> &objects = finalizeOutputs();
 		if (objects.empty()) return;
 		if (isClosed) {
 			osmMemTiles.addGeometryToIndex(multiPolygonCached(), objects, originalOsmID);
@@ -1282,8 +1649,9 @@ SignificantTags OsmLuaProcessing::GetSignificantWayKeys() {
 }
 
 
-std::vector<OutputObject> OsmLuaProcessing::finalizeOutputs() {
-	std::vector<OutputObject> list;
+std::vector<OutputObject> &OsmLuaProcessing::finalizeOutputs() {
+	std::vector<OutputObject> &list = finalizedOutputs;
+	list.clear();
 	list.reserve(this->outputs.size());
 	size_t nextDeclutter = 0;
 	for (size_t i = 0; i < this->outputs.size(); i++) {

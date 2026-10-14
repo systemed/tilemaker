@@ -277,6 +277,7 @@ namespace PbfReader {
 	public:
 		BlobHeader readBlobHeader(std::istream& input);
 		protozero::data_view readBlob(int32_t datasize, std::istream& input);
+		protozero::data_view readBlob(int32_t datasize, std::istream& input, std::string& output, bool copyRaw);
 		HeaderBlock readHeaderBlock(protozero::data_view data);
 		HeaderBBox readHeaderBBox(protozero::data_view data);
 		PrimitiveBlock& readPrimitiveBlock(protozero::data_view data);

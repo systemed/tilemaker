@@ -17,6 +17,7 @@
 				"high_resolution": { "type": "boolean" },
 				"combine_below": { "type": "integer", "minimum": 0 },
 				"mvt_version": { "type": "integer", "minimum": 1 },
+				"tile_format": { "enum": ["mvt", "mlt"] },
 				"bounding_box": {
 					"type": "array",
 					"minItems": 4,

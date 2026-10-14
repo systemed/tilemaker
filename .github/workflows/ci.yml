@@ -419,7 +419,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake -DTILEMAKER_BUILD_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_CXX_COMPILER=g++ ..
+        cmake -DTILEMAKER_BUILD_STATIC=ON -DTILEMAKER_WITH_MLT=ON -DCMAKE_BUILD_TYPE=Release -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_CXX_COMPILER=g++ ..
         cmake --build . 
         strip tilemaker
 
@@ -449,6 +449,9 @@ jobs:
         run_tilemaker "${{ env.AREA }}.mbtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}.mbtiles" --verbose --store "${{ runner.temp }}/store"
         run_tilemaker "${{ env.AREA }}-repeat.mbtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config=resources/config-openmaptiles.json --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-repeat.mbtiles" --verbose --store "${{ runner.temp }}/store-repeat"
 
+        jq '.settings.tile_format = "mlt"' resources/config-openmaptiles.json > "${{ runner.temp }}/config-openmaptiles-mlt.json"
+        run_tilemaker "${{ env.AREA }}-mlt.pmtiles" "${tilemaker}" "${{ env.AREA }}.osm.pbf" --config="${{ runner.temp }}/config-openmaptiles-mlt.json" --process=resources/process-openmaptiles.lua --output="${{ env.AREA }}-mlt.pmtiles" --verbose
+
     - name: Upload generated tiles
       uses: actions/upload-artifact@v7
       with:
@@ -459,6 +462,7 @@ jobs:
           ${{ env.AREA }}.pmtiles
           ${{ env.AREA }}-repeat.mbtiles
           ${{ env.AREA }}-repeat.pmtiles
+          ${{ env.AREA }}-mlt.pmtiles
 
     - name: 'Upload compiled executable'
       uses: actions/upload-artifact@v7

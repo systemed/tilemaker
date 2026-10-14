@@ -69,16 +69,63 @@ public:
 		this->attributes = attributes;
 	}
 
+	// memo (MVT only, optional) must belong to the layer_builder that fbuilder writes to
 	void writeAttributes(
 		const AttributeStore& attributeStore,
 		vtzero::feature_builder& fbuilder,
-		char zoom
+		char zoom,
+		class MvtAttributeMemo* memo = nullptr
 	) const;
-		
+#ifdef TILEMAKER_WITH_MLT
+	void writeAttributes(
+		const AttributeStore& attributeStore,
+		class MltFeatureBuilder& fbuilder,
+		char zoom,
+		class MvtAttributeMemo* memo = nullptr // unused
+	) const;
+#endif
+
 	bool compatible(const OutputObject &other);
 
 };
 #pragma pack(pop)
+
+// Remembers, for one vtzero::layer_builder at one zoom, the key/value table
+// indices that each attribute set's properties resolve to, so that features
+// sharing an attribute set don't re-encode and re-find their keys and values.
+// layer_builder::add_key/add_value are find-or-append, so a remembered index
+// is exactly what vtzero would return again: the tile bytes are unchanged.
+// Call reset() whenever a new layer_builder is started.
+class MvtAttributeMemo {
+public:
+	void reset(vtzero::layer_builder& layer, char zoom);
+
+private:
+	friend class OutputObject;
+
+	// Open-addressing uint32_t -> (a, b) map. clear() is O(1): slots carry a generation.
+	struct Table {
+		struct Slot { uint32_t gen, key, a, b; };
+		std::vector<Slot> slots;
+		uint32_t gen = 1, used = 0;
+
+		const Slot* find(uint32_t key) const;
+		void insert(uint32_t key, uint32_t a, uint32_t b); // key must not be present
+		void clear();
+	};
+
+	// Returns the [key, value] index pairs for the set (count pairs)
+	const uint32_t* resolve(const AttributeStore& attributeStore, AttributeIndex index, uint32_t& count);
+	void resolvePair(const AttributeStore& attributeStore, uint32_t pairIndex, uint32_t& key, uint32_t& value);
+
+	vtzero::layer_builder* layer = nullptr;
+	char zoom = 0;
+	uint32_t layerGen = 0;  // validity of keyGen entries
+	Table sets;             // AttributeIndex -> [begin, end) in entries
+	Table pairs;            // pair index -> key, value index (key NO_INDEX: not written at this zoom)
+	std::vector<uint32_t> entries;
+	std::vector<uint32_t> keyGen, keyIdx; // by AttributeKeyStore index
+};
 
 struct OutputObjectID {
 	OutputObject oo;

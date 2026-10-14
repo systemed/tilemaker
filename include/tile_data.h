@@ -378,6 +378,9 @@ public:
 	}
 
 	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
+	// True if the polygon populateMultiPolygon returns for objectID is known to
+	// have passed geom::is_valid on exactly the same coordinates.
+	virtual bool polygonKnownValid(NodeID objectID) const { return false; }
 
 	unsigned int getIndexZoom() const { return indexZoom; }
 	inline size_t getId(NodeID id) const {

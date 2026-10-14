@@ -202,10 +202,8 @@ void SortedWayStore::at(WayID id, std::vector<LatpLon>& rv) const {
 	ThreadStorage& tls = s(this);
 	SortedWayStore::decodeWay(wayPtr->flags, wayPtr->data, tls.decodedWay);
 	const std::vector<NodeID>& nodes = tls.decodedWay;
-	rv.clear();
-	rv.reserve(nodes.size());
-	for (const NodeID& node : nodes)
-		rv.push_back(nodeStore.at(node));
+	rv.resize(nodes.size());
+	nodeStore.at(nodes.data(), nodes.size(), rv.data());
 }
 
 void SortedWayStore::insertLatpLons(std::vector<WayStore::ll_element_t> &newWays) {
