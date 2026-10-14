@@ -1,6 +1,7 @@
 #ifndef _TAG_MAP_H
 #define _TAG_MAP_H
 
+#include <array>
 #include <vector>
 #include <string>
 #include <boost/container/flat_map.hpp>
@@ -61,15 +62,26 @@ public:
 	Iterator end() const;
 
 private:
-	uint32_t ensureString(
-		std::vector<std::vector<const protozero::data_view*>>& vector,
-		const protozero::data_view& value
-	);
+	static constexpr size_t SHARDS = 16;
+	static_assert((SHARDS & (SHARDS - 1)) == 0, "SHARDS must be a power of two");
 
+	// Keys are stored flat (pointer + size inline) with their valueLoc, so a
+	// lookup miss can reject a candidate by size without dereferencing it.
+	struct KeySlot {
+		const char* data;
+		uint32_t size;
+		uint32_t valueLoc;
+	};
 
-	std::vector<std::vector<const protozero::data_view*>> keys;
-	std::vector<std::vector<uint32_t>> key2value;
-	std::vector<std::vector<const protozero::data_view*>> values;
+	uint32_t ensureKey(const protozero::data_view& key);
+	uint32_t ensureValue(const protozero::data_view& value);
+
+	std::array<std::vector<KeySlot>, SHARDS> keys;
+	std::array<std::vector<protozero::data_view>, SHARDS> values;
+
+	// Bit i set => keys[i] (resp. values[i]) may be non-empty.
+	uint16_t usedKeyShards = 0;
+	uint16_t usedValueShards = 0;
 };
 
 #endif //_TAG_MAP_H

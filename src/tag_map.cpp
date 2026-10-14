@@ -1,95 +1,84 @@
 #include "tag_map.h"
 #include <boost/functional/hash.hpp>
 #include <iostream>
+#include <cstring>
 
 TagMap::TagMap() {
-	keys.resize(16);
-	key2value.resize(16);
-	values.resize(16);
 }
 
 void TagMap::reset() {
-	for (int i = 0; i < 16; i++) {
-		keys[i].clear();
-		key2value[i].clear();
-		values[i].clear();
-	}
+	// Only clear shards that were used since the last reset.
+	for (unsigned i = 0, mask = usedKeyShards; mask; i++, mask >>= 1)
+		if (mask & 1)
+			keys[i].clear();
+	for (unsigned i = 0, mask = usedValueShards; mask; i++, mask >>= 1)
+		if (mask & 1)
+			values[i].clear();
+	usedKeyShards = 0;
+	usedValueShards = 0;
 }
 
 bool TagMap::empty() const {
-	for (int i = 0; i < keys.size(); i++)
-		if (keys[i].size() > 0)
-			return false;
-
-	return true;
-}
-const std::size_t hashString(const std::string& str) {
-	// This is a pretty crappy hash function in terms of bit
-	// avalanching and distribution of output values.
-	//
-	// But it's very good in terms of speed, which turns out
-	// to be the important measure.
-	std::size_t hash = str.size();
-	if (hash >= 4)
-		hash ^= *(uint32_t*)str.data();
-
-	return hash;
+	return usedKeyShards == 0;
 }
 
-const std::size_t hashString(const char* str, size_t size) {
+static inline std::size_t hashString(const char* str, size_t size) {
 	// This is a pretty crappy hash function in terms of bit
 	// avalanching and distribution of output values.
 	//
 	// But it's very good in terms of speed, which turns out
 	// to be the important measure.
 	std::size_t hash = size;
-	if (hash >= 4)
-		hash ^= *(uint32_t*)str;
+	if (hash >= 4) {
+		uint32_t word;
+		memcpy(&word, str, sizeof(word));
+		hash ^= word;
+	}
 
 	return hash;
 }
 
-uint32_t TagMap::ensureString(
-	std::vector<std::vector<const protozero::data_view*>>& vector,
-	const protozero::data_view& value
-) {
-	std::size_t hash = hashString(value.data(), value.size());
-
-	const uint16_t shard = hash % vector.size();
-	for (int i = 0; i < vector[shard].size(); i++)
-		if (*(vector[shard][i]) == value)
+uint32_t TagMap::ensureKey(const protozero::data_view& key) {
+	const uint16_t shard = hashString(key.data(), key.size()) & (SHARDS - 1);
+	std::vector<KeySlot>& bucket = keys[shard];
+	const uint32_t size = key.size();
+	for (size_t i = 0; i < bucket.size(); i++)
+		if (bucket[i].size == size && memcmp(bucket[i].data, key.data(), size) == 0)
 			return shard << 16 | i;
 
-	vector[shard].push_back(&value);
-	return shard << 16 | (vector[shard].size() - 1);
+	bucket.push_back(KeySlot{key.data(), size, 0});
+	usedKeyShards |= 1u << shard;
+	return shard << 16 | (bucket.size() - 1);
 }
 
+uint32_t TagMap::ensureValue(const protozero::data_view& value) {
+	const uint16_t shard = hashString(value.data(), value.size()) & (SHARDS - 1);
+	std::vector<protozero::data_view>& bucket = values[shard];
+	for (size_t i = 0; i < bucket.size(); i++)
+		if (bucket[i] == value)
+			return shard << 16 | i;
+
+	bucket.push_back(value);
+	usedValueShards |= 1u << shard;
+	return shard << 16 | (bucket.size() - 1);
+}
 
 void TagMap::addTag(const protozero::data_view& key, const protozero::data_view& value) {
-	uint32_t valueLoc = ensureString(values, value);
-	uint32_t keyLoc = ensureString(keys, key);
+	uint32_t valueLoc = ensureValue(value);
+	uint32_t keyLoc = ensureKey(key);
 
-
-	const uint16_t shard = keyLoc >> 16;
-	const uint16_t pos = keyLoc;
-	if (key2value[shard].size() <= pos) {
-		key2value[shard].resize(pos + 1);
-	}
-
-	key2value[shard][pos] = valueLoc;
+	keys[keyLoc >> 16][keyLoc & 0xFFFF].valueLoc = valueLoc;
 }
 
 int64_t TagMap::getKey(const char* key, size_t size) const {
 	// Return -1 if key not found, else return its keyLoc.
-	std::size_t hash = hashString(key, size);
-
-	const uint16_t shard = hash % keys.size();
-	for (int i = 0; i < keys[shard].size(); i++) {
-		const protozero::data_view& candidate = *keys[shard][i];
-	  if (candidate.size() != size)
+	const uint16_t shard = hashString(key, size) & (SHARDS - 1);
+	const std::vector<KeySlot>& bucket = keys[shard];
+	for (size_t i = 0; i < bucket.size(); i++) {
+		if (bucket[i].size != size)
 			continue;
 
-		if (memcmp(candidate.data(), key, size) == 0)
+		if (memcmp(bucket[i].data, key, size) == 0)
 			return shard << 16 | i;
 	}
 
@@ -98,15 +87,13 @@ int64_t TagMap::getKey(const char* key, size_t size) const {
 
 int64_t TagMap::getValue(const char* value, size_t size) const {
 	// Return -1 if value not found, else return its valueLoc.
-	std::size_t hash = hashString(value, size);
-
-	const uint16_t shard = hash % values.size();
-	for (int i = 0; i < values[shard].size(); i++) {
-		const protozero::data_view& candidate = *values[shard][i];
-	  if (candidate.size() != size)
+	const uint16_t shard = hashString(value, size) & (SHARDS - 1);
+	const std::vector<protozero::data_view>& bucket = values[shard];
+	for (size_t i = 0; i < bucket.size(); i++) {
+		if (bucket[i].size() != size)
 			continue;
 
-		if (memcmp(candidate.data(), value, size) == 0)
+		if (memcmp(bucket[i].data(), value, size) == 0)
 			return shard << 16 | i;
 	}
 
@@ -114,23 +101,22 @@ int64_t TagMap::getValue(const char* value, size_t size) const {
 }
 
 const protozero::data_view* TagMap::getValueFromKey(uint32_t keyLoc) const {
-	const uint32_t valueLoc = key2value[keyLoc >> 16][keyLoc & 0xFFFF];
-	return values[valueLoc >> 16][valueLoc & 0xFFFF];
+	const uint32_t valueLoc = keys[keyLoc >> 16][keyLoc & 0xFFFF].valueLoc;
+	return &values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 
 const protozero::data_view* TagMap::getValue(uint32_t valueLoc) const {
-	return values[valueLoc >> 16][valueLoc & 0xFFFF];
+	return &values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 
 boost::container::flat_map<std::string, std::string> TagMap::exportToBoostMap() const {
 	boost::container::flat_map<std::string, std::string> rv;
 
-	for (int i = 0; i < keys.size(); i++) {
-		for (int j = 0; j < keys[i].size(); j++) {
-			uint32_t valueLoc = key2value[i][j];
-			auto key = *keys[i][j];
-			auto value = *values[valueLoc >> 16][valueLoc & 0xFFFF];
-			rv[std::string(key.data(), key.size())] = std::string(value.data(), value.size());
+	for (size_t i = 0; i < keys.size(); i++) {
+		for (size_t j = 0; j < keys[i].size(); j++) {
+			const KeySlot& key = keys[i][j];
+			const protozero::data_view& value = *getValue(key.valueLoc);
+			rv[std::string(key.data, key.size)] = std::string(value.data(), value.size());
 		}
 	}
 
@@ -165,9 +151,9 @@ void TagMap::Iterator::operator++() {
 }
 
 Tag TagMap::Iterator::operator*() const {
-	const uint32_t valueLoc = map.key2value[shard][offset];
+	const KeySlot& key = map.keys[shard][offset];
 	return Tag{
-		*map.keys[shard][offset],
-		*map.getValue(valueLoc)
+		protozero::data_view(key.data, key.size),
+		*map.getValue(key.valueLoc)
 	};
 }

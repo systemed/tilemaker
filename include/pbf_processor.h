@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <vector>
 #include <mutex>
+#include <condition_variable>
+#include <memory>
 #include <map>
 #include "osm_store.h"
 #include "significant_tags.h"
@@ -121,10 +123,25 @@ private:
 
 	/// Find a string in the dictionary
 	static int findStringPosition(const PbfReader::PrimitiveBlock& pb, const std::string& str);
-	
+
+	// Subdivided blocks (chunks > 1): the first chunk task to arrive decompresses
+	// the block once; the other chunk tasks share the buffer. The entry is erased
+	// when the last chunk releases it, so each pass (shard) re-reads it.
+	struct SharedBlock {
+		std::shared_ptr<const std::string> data;
+		size_t remaining;
+		bool ready;
+		bool failed;
+	};
+	std::shared_ptr<const std::string> acquireSharedBlock(std::istream& infile, const BlockMetadata& blockMetadata);
+	void releaseSharedBlock(const BlockMetadata& blockMetadata);
+
 	OSMStore &osmStore;
 	std::mutex ioMutex;
 	std::atomic<bool> compactWarningIssued;
+	std::mutex sharedBlocksMutex;
+	std::condition_variable sharedBlocksCv;
+	std::map<std::streamoff, SharedBlock> sharedBlocks;
 };
 
 int ReadPbfBoundingBox(const std::string &inputFile, double &minLon, double &maxLon, 

@@ -6,5 +6,6 @@
 Linestring simplifyVis(const Linestring &ls, double max_distance);
 Polygon simplifyVis(const Polygon &p, double max_distance);
 MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance);
+MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance, bool &allValid);
 
 #endif //_VISVALINGAM_H

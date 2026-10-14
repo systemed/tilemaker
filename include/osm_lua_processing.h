@@ -31,6 +31,7 @@ extern "C" {
 }
 
 #include "external/kaguya.hpp"
+#include "lua_pool.h"
 
 // FIXME: why is this global ?
 extern bool verbose;
@@ -166,17 +167,77 @@ public:
 	CentroidAlgorithm defaultCentroidAlgorithm() const { return CentroidAlgorithm::Polylabel; }
 	CentroidAlgorithm parseCentroidAlgorithm(const std::string& algorithm) const;
 	Point calculateCentroid(CentroidAlgorithm algorithm);
+	Point calculateCentroidUncached(CentroidAlgorithm algorithm);
 
-	enum class CorrectGeometryResult: char { Invalid = 0, Valid = 1, Corrected = 2 };
+	// Reversed: the only defect was ring orientation; geom now has every ring reversed
+	// and is valid (make_valid would produce the same rings).
+	enum class CorrectGeometryResult: char { Invalid = 0, Valid = 1, Corrected = 2, Reversed = 3 };
+
+	// Reverse every ring of a multipolygon in place. Only multipolygons are supported.
+	// Returns false (without reversing) if any ring is tiny: make_valid drops rings with
+	// |area| <= 1E-12, so those must take the make_valid path to get the same result.
+	template<class GeometryT>
+	static bool ReverseRings(GeometryT &geom) { return false; }
+	static bool ReverseRings(MultiPolygon &geom) {
+		for (const auto &p : geom) {
+			if (std::abs(boost::geometry::area(p.outer())) <= 1E-12) return false;
+			for (const auto &inner : p.inners())
+				if (std::abs(boost::geometry::area(inner)) <= 1E-12) return false;
+		}
+		for (auto &p : geom) {
+			std::reverse(p.outer().begin(), p.outer().end());
+			for (auto &inner : p.inners())
+				std::reverse(inner.begin(), inner.end());
+		}
+		return true;
+	}
+
+	// Cheap conservative "certainly valid" test before geom::is_valid; only areal
+	// geometries have one (false = unsure, run is_valid).
+	template<class GeometryT>
+	static bool PrecheckValid(const GeometryT &, int) { return false; }
+	static bool PrecheckValid(const MultiPolygon &geom, int site) {
+		const bool hit = multiPolygonDefinitelyValid(geom);
+#ifdef TMOPT_VERIFY
+		precheckVerify(geom, hit, site);
+#else
+		(void)site;
+#endif
+		return hit;
+	}
+
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 	template<class GeometryT>
-	CorrectGeometryResult CorrectGeometry(GeometryT &geom)
+	CorrectGeometryResult CorrectGeometry(GeometryT &geom, bool allowReverse = false)
+	{
+		return CorrectGeometryAfterCheck(geom, CheckGeometry(geom), allowReverse);
+	}
+
+	// Validity check part of CorrectGeometry (reports the failure if verbose)
+	template<class GeometryT>
+	geom::validity_failure_type CheckGeometry(const GeometryT &geom)
 	{
 		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-		if (isRelation && !geom::is_valid(geom,failure)) {
+		// When the precheck proves validity, failure stays no_failure: Boost's result.
+		const bool pre = (isRelation || isWay) && PrecheckValid(geom, isRelation ? PRECHECK_CHECK_RELATION : PRECHECK_CHECK_WAY);
+		if (isRelation && !pre && !geom::is_valid(geom,failure)) {
 			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-		} else if (isWay && !geom::is_valid(geom,failure)) {
+		} else if (isWay && !pre && !geom::is_valid(geom,failure)) {
 			if (verbose && failure!=22) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
+		}
+		return failure;
+	}
+
+	// Correction part of CorrectGeometry, given the result of CheckGeometry(geom)
+	template<class GeometryT>
+	CorrectGeometryResult CorrectGeometryAfterCheck(GeometryT &geom, geom::validity_failure_type failure, bool allowReverse = false)
+	{
+		// Fast path: orientation-only defect. Reversing the rings is what make_valid
+		// produces in this case; fall back to make_valid if it isn't enough.
+		if (allowReverse && failure == boost::geometry::failure_wrong_orientation && ReverseRings(geom)) {
+			if (PrecheckValid(geom, PRECHECK_REVERSED) || geom::is_valid(geom))
+				return CorrectGeometryResult::Reversed;
+			ReverseRings(geom);
 		}
 		
 		if (failure==boost::geometry::failure_spikes)
@@ -204,6 +265,8 @@ public:
 	void AttributeNumeric(const std::string &key, const double val, const char minzoom);
 	void AttributeBoolean(const std::string &key, const bool val, const char minzoom);
 	void AttributeInteger(const std::string &key, const int val, const char minzoom);
+	// Fast path for the native Lua bindings: key given as a Lua string buffer
+	template<typename T> void attributeFast(const char *key, size_t keyLen, T val, char minzoom, uint type);
 	void MinZoom(const double z);
 	void ZOrder(const double z);
 	void Score(const double score);
@@ -265,6 +328,7 @@ private:
 		multiLinestringInited = false;
 		polygonInited = false;
 		multiPolygonInited = false;
+		centroidMemoValid[0] = centroidMemoValid[1] = false;
 		relationAccepted = false;
 		relationList.clear();
 		relationSubscript = -1;
@@ -275,7 +339,10 @@ private:
 		isPostScanRelation = false;
 	}
 
-	void removeAttributeIfNeeded(const std::string& key);
+	void removeAttributeIfNeeded(uint16_t keyIndex);
+
+	// Call a global Lua function with no arguments; false if it isn't a function
+	bool callLuaGlobal(const char *name, bool keepGlobals);
 
 	void noteIfDecluttered(LatpLon point);
 
@@ -287,6 +354,19 @@ private:
 	
 	OSMStore &osmStore;	// global OSM store
 
+	// Owns the lua_State that luaState wraps (non-owning). Declared in this order so the
+	// pool is constructed first and freed last, after lua_close().
+	struct LuaStateHolder {
+		lua_State *L;
+		explicit LuaStateHolder(lua_State *L) : L(L) { }
+		~LuaStateHolder() { if (L) lua_close(L); }
+	private:
+		LuaStateHolder(const LuaStateHolder&);
+		LuaStateHolder& operator=(const LuaStateHolder&);
+	};
+	static lua_State *newLuaState(LuaPool &pool);
+	LuaPool luaPool;
+	LuaStateHolder luaStateHolder;
 	kaguya::State luaState;
 	bool supportsRemappingShapefiles;
 	bool supportsReadingRelations;
@@ -321,6 +401,14 @@ private:
 	bool multiPolygonInited;
 	geom::model::polygon<DegPoint> areaPolygonCache;
 
+	// Scratch geometries reused across objects (allocation reuse only)
+	Polygon centroidScratchPolygon;
+	MultiPolygon layerScratchMultiPolygon;
+
+	// calculateCentroid() result for the current object, per CentroidAlgorithm
+	Point centroidMemo[2];
+	bool centroidMemoValid[2] = { false, false };
+
 	NodeID lastStoredGeometryId;
 	OutputGeometryType lastStoredGeometryType;
 
@@ -333,12 +421,13 @@ private:
 	// plus the score from Score(). Sparse - most objects add nothing here.
 	struct PendingDeclutter { uint32_t outputIndex; LatpLon point; int32_t score; };
 	std::vector<PendingDeclutter> declutterOutputs;
-	std::vector<std::string> outputKeys;
+	std::vector<uint16_t> outputKeys;
 	const PbfReader::Relation* currentRelation;
 	const boost::container::flat_map<std::string, std::string>* currentPostScanTags; // for postScan only
 	const std::vector<protozero::data_view>* stringTable;
 
-	std::vector<OutputObject> finalizeOutputs();
+	std::vector<OutputObject> finalizedOutputs;		// reused by finalizeOutputs()
+	std::vector<OutputObject> &finalizeOutputs();
 
 	bool materializeGeometries;
 	bool wayEmitted;
