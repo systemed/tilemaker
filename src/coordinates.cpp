@@ -65,3 +65,32 @@ void fillCoveredTiles(std::unordered_set<TileCoordinates>& tileSet) {
 		prevX = tileX, prevY = tileY;
 	}
 }
+
+void sortUniqueTiles(std::vector<TileCoordinates> &tiles, size_t start) {
+	if (tiles.size() - start > 1) {
+		std::sort(tiles.begin() + start, tiles.end(), TileCoordinatesCompare());
+		tiles.erase(std::unique(tiles.begin() + start, tiles.end()), tiles.end());
+	}
+}
+
+void fillCoveredTiles(std::vector<TileCoordinates> &tiles) {
+	// Fast exit when no column has a y gap (the common case)
+	size_t n = tiles.size(), i = 1;
+	while (i < n && !(tiles[i].x == tiles[i-1].x && tiles[i].y > tiles[i-1].y + 1)) i++;
+	if (i >= n) return;
+
+	// Rebuild in order: copy the prefix, then each tile preceded by the y-gap tiles of its column
+	thread_local std::vector<TileCoordinates> filled;
+	filled.clear();
+	filled.insert(filled.end(), tiles.begin(), tiles.begin() + i);
+	for (; i < n; i++) {
+		const TileCoordinates prev = tiles[i-1], cur = tiles[i];
+		if (cur.x == prev.x) {
+			for (TileCoordinate fillY = prev.y+1; fillY < cur.y; fillY++)
+				filled.push_back(TileCoordinates(cur.x, fillY));
+		}
+		filled.push_back(cur);
+	}
+	tiles.swap(filled);
+	if (filled.capacity() > (1u << 16)) std::vector<TileCoordinates>().swap(filled);
+}

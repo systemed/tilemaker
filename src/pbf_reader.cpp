@@ -63,6 +63,12 @@ PbfReader::BlobHeader PbfReader::PbfReader::readBlobHeader(std::istream& input) 
 }
 
 protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istream& input) {
+	return readBlob(datasize, input, blobStorage2, false);
+}
+
+// Like readBlob, but the decompressed data is stored in `output`, which the caller
+// owns; with copyRaw, uncompressed blobs are copied there too.
+protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istream& input, std::string& output, bool copyRaw) {
 	blobStorage.resize(datasize);
 	input.read(&blobStorage[0], datasize);
 	if (input.eof())
@@ -99,15 +105,19 @@ protozero::data_view PbfReader::PbfReader::readBlob(int32_t datasize, std::istre
 	if (dataType == BlobDataType::None)
 		throw std::runtime_error("Blob: missing data");
 
-	if (dataType == BlobDataType::Raw)
-		return view;
+	if (dataType == BlobDataType::Raw) {
+		if (!copyRaw)
+			return view;
+		output.assign(view.data(), view.size());
+		return { output.data(), output.size() };
+	}
 
 	if (rawSize != -1)
-		blobStorage2.resize(rawSize);
+		output.resize(rawSize);
 	else
-		blobStorage2.clear();
-	decompress_string(blobStorage2, view.data(), view.size(), false);
-	return { blobStorage2.data(), blobStorage2.size() };
+		output.clear();
+	decompress_string(output, view.data(), view.size(), false);
+	return { output.data(), output.size() };
 }
 
 PbfReader::HeaderBBox PbfReader::PbfReader::readHeaderBBox(protozero::data_view data) {

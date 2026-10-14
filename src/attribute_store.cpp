@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cstdlib>
 
 // AttributeKeyStore
 thread_local std::map<const std::string*, uint16_t, string_ptr_less_than> tlsKeys2Index;
@@ -100,66 +101,175 @@ const AttributePair& AttributePairStore::getPairUnsafe(uint32_t i) const {
 thread_local uint64_t tlsPairLookups = 0;
 thread_local uint64_t tlsPairLookupsUncached = 0;
 
-thread_local std::vector<const AttributePair*> cachedAttributePairPointers(256);
-thread_local std::vector<uint32_t> cachedAttributePairIndexes(256);
-uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
-	if (isHot) {
-		{
-			// First, check our thread-local map.
-			const auto& index = tlsHotShard.find(pair);
-			if (index != -1)
-				return index;
-		}
+// Thread-local open-addressing index of pairs we have already looked up or
+// added: maps (pair, isHot) to the index the global store returned. Entries
+// point at elements of pairs[shard], which a deque never moves, and each
+// pointer was taken under the shard lock, so it can be dereferenced without
+// a lock. The index for a given (pair, isHot) never changes (the hot shard
+// only grows, and once full it stays full), so cached results are exact.
+namespace {
+struct PairIndexEntry {
+	const AttributePair* pair;
+	uint32_t tag;
+	uint32_t index;
+};
 
-		// Not found, ensure our local map is up-to-date for future calls,
-		// and fall through to the main map.
-		if (!tlsHotShard.full()) {
-			std::lock_guard<std::mutex> lock(pairsMutex[0]);
-			tlsHotShard = pairs[0];
-		}
+const uint32_t PAIR_INDEX_MIN_SLOTS = 1 << 14;
+const uint32_t PAIR_INDEX_MAX_SLOTS = 1 << 16;
+const uint32_t PAIR_INDEX_PROBES = 8;
 
-		// This might be a popular pair, worth re-using.
-		// Have we already assigned it a hot ID?
-		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		const auto& index = pairs[0].find(pair);
-		if (index != -1)
-			return index;
+// Bumped by AttributeStore::reset() to invalidate every thread's table.
+std::atomic<uint64_t> pairIndexGeneration(0);
 
-		if (!pairs[0].full()) {
-			pair.ensureStringIsOwned();
-			uint32_t offset = pairs[0].add(pair);
-			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
-			return rv;
-		}
+struct PairIndexTable {
+	std::vector<PairIndexEntry> slots;
+	uint32_t mask = 0;
+	uint32_t count = 0;
+	uint32_t victim = 0;
+	uint64_t generation = 0;
+	const void* owner = nullptr;
+
+	static uint32_t home(uint32_t tag, uint32_t mask) {
+		return (tag * 0x9E3779B1u) >> 16 & mask;
 	}
 
-	// This is either not a hot key, or there's no room for in the hot shard.
-	// Throw it on the pile with the rest of the pairs.
-	size_t hash = pair.hash();
-
-	const size_t candidateIndex = hash % cachedAttributePairPointers.size();
-	// Before taking a lock, see if we've seen this attribute pair recently.
-
-	tlsPairLookups++;
-	if (tlsPairLookups % 1024 == 0) {
-		lookups += 1024;
+	void ensure(const void* store) {
+		const uint64_t gen = pairIndexGeneration.load(std::memory_order_acquire);
+		if (owner == store && generation == gen && !slots.empty())
+			return;
+		slots.assign(PAIR_INDEX_MIN_SLOTS, PairIndexEntry{nullptr, 0, 0});
+		mask = PAIR_INDEX_MIN_SLOTS - 1;
+		count = 0;
+		owner = store;
+		generation = gen;
 	}
 
-
-	{
-		const AttributePair* candidate = cachedAttributePairPointers[candidateIndex];
-
-		if (candidate != nullptr && *candidate == pair)
-			return cachedAttributePairIndexes[candidateIndex];
+	bool find(const AttributePair& pair, uint32_t tag, uint32_t& index) const {
+		uint32_t slot = home(tag, mask);
+		for (uint32_t i = 0; i < PAIR_INDEX_PROBES; i++) {
+			const PairIndexEntry& e = slots[(slot + i) & mask];
+			if (e.pair == nullptr)
+				return false;
+			if (e.tag == tag && *e.pair == pair) {
+				index = e.index;
+				return true;
+			}
+		}
+		return false;
 	}
 
+	void place(const PairIndexEntry& entry) {
+		uint32_t slot = home(entry.tag, mask);
+		for (uint32_t i = 0; i < PAIR_INDEX_PROBES; i++) {
+			PairIndexEntry& e = slots[(slot + i) & mask];
+			if (e.pair == nullptr) {
+				e = entry;
+				count++;
+				return;
+			}
+		}
+		// Window full: overwrite an entry (never creates an empty slot, so
+		// lookups that stop at an empty slot stay correct).
+		slots[(slot + (victim++ % PAIR_INDEX_PROBES)) & mask] = entry;
+	}
 
+	void insert(const AttributePair* pair, uint32_t tag, uint32_t index) {
+		if (slots.size() < PAIR_INDEX_MAX_SLOTS && (count + 1) * 2 > slots.size()) {
+			std::vector<PairIndexEntry> old;
+			old.swap(slots);
+			slots.assign(old.size() * 2, PairIndexEntry{nullptr, 0, 0});
+			mask = slots.size() - 1;
+			count = 0;
+			for (const auto& e : old)
+				if (e.pair != nullptr)
+					place(e);
+		}
+		place(PairIndexEntry{pair, tag, index});
+	}
+};
+
+thread_local PairIndexTable tlsPairIndex;
+
+inline size_t coldShardForHash(size_t hash) {
 	size_t shard = hash % ATTRIBUTE_SHARDS;
 	// Shard 0 is for hot pairs -- pick another shard if it gets selected.
 	if (shard == 0) shard = (hash >> 8) % ATTRIBUTE_SHARDS;
 	if (shard == 0) shard = (hash >> 16) % ATTRIBUTE_SHARDS;
 	if (shard == 0) shard = (hash >> 24) % ATTRIBUTE_SHARDS;
 	if (shard == 0) shard = 1;
+	return shard;
+}
+}
+
+uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
+	const size_t hash = pair.hash();
+	// The low bit of the tag records which path (hot/cold) produced the index.
+	const uint32_t tag = ((uint32_t)((uint64_t)hash ^ ((uint64_t)hash >> 32)) & ~1u) | (isHot ? 1u : 0u);
+
+	PairIndexTable& table = tlsPairIndex;
+	table.ensure(this);
+	{
+		uint32_t cached;
+		if (table.find(pair, tag, cached)) {
+			if (cached >> (32 - SHARD_BITS) != 0) {
+				tlsPairLookups++;
+				if (tlsPairLookups % 1024 == 0)
+					lookups += 1024;
+			}
+#ifdef TMOPT_VERIFY
+			{
+				int64_t slow = -1;
+				bool done = false;
+				if (isHot) {
+					std::lock_guard<std::mutex> lock(pairsMutex[0]);
+					const auto index = pairs[0].find(pair);
+					if (index != -1) { slow = index; done = true; }
+					else if (!pairs[0].full()) { slow = -2; done = true; }
+				}
+				if (!done) {
+					const size_t shard = coldShardForHash(hash);
+					std::lock_guard<std::mutex> lock(pairsMutex[shard]);
+					const auto index = pairs[shard].find(pair);
+					if (index != -1)
+						slow = (shard << (32 - SHARD_BITS)) + index;
+				}
+				if (slow != (int64_t)cached) {
+					std::cerr << "TMOPT_VERIFY: AttributePairStore::addPair mismatch " << cached << " vs " << slow << std::endl;
+					std::abort();
+				}
+			}
+#endif
+			return cached;
+		}
+	}
+
+	if (isHot) {
+		// This might be a popular pair, worth re-using.
+		// Have we already assigned it a hot ID?
+		std::lock_guard<std::mutex> lock(pairsMutex[0]);
+		const auto& index = pairs[0].find(pair);
+		if (index != -1) {
+			table.insert(&pairs[0][index], tag, index);
+			return index;
+		}
+
+		if (!pairs[0].full()) {
+			pair.ensureStringIsOwned();
+			uint32_t offset = pairs[0].add(pair);
+			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
+			table.insert(&pairs[0][offset], tag, rv);
+			return rv;
+		}
+	}
+
+	// This is either not a hot key, or there's no room for in the hot shard.
+	// Throw it on the pile with the rest of the pairs.
+	tlsPairLookups++;
+	if (tlsPairLookups % 1024 == 0) {
+		lookups += 1024;
+	}
+
+	const size_t shard = coldShardForHash(hash);
 
 	std::lock_guard<std::mutex> lock(pairsMutex[shard]);
 
@@ -170,9 +280,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	const auto& index = pairs[shard].find(pair);
 	if (index != -1) {
 		const uint32_t rv = (shard << (32 - SHARD_BITS)) + index;
-		cachedAttributePairPointers[candidateIndex] = &pairs[shard][index];
-		cachedAttributePairIndexes[candidateIndex] = rv;
-
+		table.insert(&pairs[shard][index], tag, rv);
 		return rv;
 	}
 
@@ -183,6 +291,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 		throw std::out_of_range("pair shard overflow");
 
 	uint32_t rv = (shard << (32 - SHARD_BITS)) + offset;
+	table.insert(&pairs[shard][offset], tag, rv);
 	return rv;
 };
 
@@ -256,6 +365,27 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 }
 void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const &key, int v, char minzoom) {
 	AttributePair kv(keyStore.key2index(key),v,minzoom);
+	bool isHot = v >= 0 && v <= 25;
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
+	PooledString ps(&v);
+	AttributePair kv(keyIndex, ps, minzoom);
+	bool isHot = AttributePair::isHot(key, v);
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom) {
+	AttributePair kv(keyIndex,v,minzoom);
+	bool isHot = true; // All bools are eligible to be hot pairs
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom) {
+	AttributePair kv(keyIndex,v,minzoom);
+	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
+	attributeSet.addPair(pairStore.addPair(kv, isHot));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom) {
+	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = v >= 0 && v <= 25;
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
@@ -447,8 +577,7 @@ void AttributeStore::reset() {
 	for (int i = 0; i < cachedAttributeSetPointers.size(); i++)
 		cachedAttributeSetPointers[i] = nullptr;
 
-	for (int i = 0; i < cachedAttributePairPointers.size(); i++)
-		cachedAttributePairPointers[i] = nullptr;
+	pairIndexGeneration++;
 }
 
 void AttributeStore::finalize() {

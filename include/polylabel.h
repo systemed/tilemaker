@@ -25,6 +25,20 @@
 #include <cmath>
 #include <iostream>
 #include <queue>
+#include <vector>
+#include <cstdint>
+#include <limits>
+// 2-wide SSE2 distance kernel. Only where the compiler cannot contract mul+add into FMA (that
+// would round differently from the scalar original); elsewhere the original scalar loop is used.
+#if (defined(__x86_64__) || defined(_M_X64)) && !defined(__FMA__) && !defined(__FMA4__) && !defined(__AVX2__) && (!defined(__FLT_EVAL_METHOD__) || __FLT_EVAL_METHOD__ == 0)
+#include <emmintrin.h>
+#define POLYLABEL_SSE2 1
+#endif
+#ifdef TMOPT_VERIFY
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+#endif
 
 namespace mapbox {
 
@@ -92,14 +106,224 @@ auto pointToPolygonDist(const Point& point, const Polygon& polygon) {
     return (inside ? 1 : -1) * std::sqrt(minDistSq);
 }
 
+// as pointToPolygonDist (bit-identical result), also reports the nearest edge:
+// ring kr (-1 = outer, else inner index) and edge (ring[ki], ring[ki == 0 ? len - 1 : ki - 1])
+double pointToPolygonDistKOrig(const Point& point, const Polygon& polygon, int& kr, std::size_t& ki) {
+    bool inside = false;
+    auto minDistSq = std::numeric_limits<double>::infinity();
+    kr = -1;
+    ki = 0;
+
+    {
+        const auto& ring = polygon.outer();
+        for (std::size_t i = 0, len = ring.size(), j = len - 1; i < len; j = i++) {
+            const auto& a = ring[i];
+            const auto& b = ring[j];
+
+            if ((a.get<1>() > point.get<1>()) != (b.get<1>() > point.get<1>()) &&
+                (point.get<0>() < (b.get<0>() - a.get<0>()) * (point.get<1>() - a.get<1>()) / (b.get<1>() - a.get<1>()) + a.get<0>())) inside = !inside;
+
+            // same selection as std::min(minDistSq, dd), including NaN handling
+            const double dd = getSegDistSq(point, a, b);
+            if (dd < minDistSq) { minDistSq = dd; ki = i; }
+        }
+    }
+
+    int r = 0;
+    for (const auto& ring : polygon.inners()) {
+        for (std::size_t i = 0, len = ring.size(), j = len - 1; i < len; j = i++) {
+            const auto& a = ring[i];
+            const auto& b = ring[j];
+
+            if ((a.get<1>() > point.get<1>()) != (b.get<1>() > point.get<1>()) &&
+                (point.get<0>() < (b.get<0>() - a.get<0>()) * (point.get<1>() - a.get<1>()) / (b.get<1>() - a.get<1>()) + a.get<0>())) inside = !inside;
+
+            const double dd = getSegDistSq(point, a, b);
+            if (dd < minDistSq) { minDistSq = dd; kr = r; ki = i; }
+        }
+        r++;
+    }
+
+    return (inside ? 1 : -1) * std::sqrt(minDistSq);
+}
+
+#ifdef POLYLABEL_SSE2
+// The edges of the polygon being labelled, one entry per (a = ring[i], b = ring[j]) exactly as
+// pointToPolygonDistKOrig iterates them (outer ring first, then inners in order), in blocks of two.
+// An odd count is padded with a NaN entry: its distance is NaN (never selected by the min) and its
+// crossing test compares false, so it changes neither the distance nor the parity.
+struct EdgePair {
+    double ax[2], ay[2], bx[2], by[2], dx[2], dy[2], den[2];
+};
+
+struct PolygonEdges {
+    const Polygon* polygon = nullptr; // polygon the arrays describe
+    std::vector<EdgePair> pairs;
+    std::vector<int> ring;            // per entry: -1 = outer, else inner index
+    std::vector<std::size_t> edge;    // per entry: index i of a within its ring
+
+    void build(const Polygon& p) {
+        std::size_t n = p.outer().size();
+        for (const auto& inner : p.inners()) n += inner.size();
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        pairs.assign((n + 1) / 2, EdgePair { {nan, nan}, {nan, nan}, {nan, nan}, {nan, nan}, {nan, nan}, {nan, nan}, {nan, nan} });
+        ring.resize(n);
+        edge.resize(n);
+        std::size_t k = 0;
+        auto add = [&](const Ring& rg, int r) {
+            for (std::size_t i = 0, len = rg.size(), j = len - 1; i < len; j = i++, k++) {
+                EdgePair& q = pairs[k >> 1];
+                const std::size_t l = k & 1;
+                q.ax[l] = rg[i].get<0>();
+                q.ay[l] = rg[i].get<1>();
+                q.bx[l] = rg[j].get<0>();
+                q.by[l] = rg[j].get<1>();
+                q.dx[l] = q.bx[l] - q.ax[l];
+                q.dy[l] = q.by[l] - q.ay[l];
+                q.den[l] = q.dx[l] * q.dx[l] + q.dy[l] * q.dy[l];
+                ring[k] = r;
+                edge[k] = i;
+            }
+        };
+        add(p.outer(), -1);
+        int r = 0;
+        for (const auto& inner : p.inners()) add(inner, r++);
+        polygon = &p;
+    }
+
+    // don't keep huge buffers alive after an exceptionally large polygon
+    void release() {
+        polygon = nullptr;
+        if (pairs.capacity() > (1u << 12)) {
+            std::vector<EdgePair>().swap(pairs);
+            std::vector<int>().swap(ring);
+            std::vector<std::size_t>().swap(edge);
+        }
+    }
+};
+
+// edges of the polygon currently inside polylabel() on this thread (nullptr otherwise)
+static thread_local const PolygonEdges* activeEdges = nullptr;
+
+// pointToPolygonDistKOrig over the edge arrays, two edges per step and without branches.
+// Every lane evaluates the same IEEE operations in the same operand order as getSegDistSq and the
+// crossing test: t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy), then
+// x = t > 1 ? b.x : (t > 0 ? a.x + dx * t : a.x) (a degenerate edge gives t = NaN, so x = a.x as
+// in the original's dx == dy == 0 branch). The minimum of the same set of values is exact in any
+// order, MINPD keeps the accumulator for a NaN distance like 'dd < minDistSq', and the crossing
+// parity is an XOR (order-independent).
+inline double pointToPolygonDistKSoA(const Point& point, const PolygonEdges& e, int& kr, std::size_t& ki) {
+    const __m128d px = _mm_set1_pd(point.get<0>());
+    const __m128d py = _mm_set1_pd(point.get<1>());
+    const __m128d one = _mm_set1_pd(1.0);
+    const __m128d zero = _mm_setzero_pd();
+    __m128d mn = _mm_set1_pd(std::numeric_limits<double>::infinity());
+    __m128d par = _mm_setzero_pd();
+    __m128i idx = _mm_set_epi64x(1, 0);
+    __m128i best = _mm_setzero_si128();
+    const __m128i two = _mm_set_epi64x(2, 2);
+
+    const EdgePair* q = e.pairs.data();
+    for (const EdgePair* end = q + e.pairs.size(); q != end; q++) {
+        const __m128d ax = _mm_loadu_pd(q->ax);
+        const __m128d ay = _mm_loadu_pd(q->ay);
+        const __m128d bx = _mm_loadu_pd(q->bx);
+        const __m128d by = _mm_loadu_pd(q->by);
+        const __m128d dx = _mm_loadu_pd(q->dx);
+        const __m128d dy = _mm_loadu_pd(q->dy);
+        const __m128d pxa = _mm_sub_pd(px, ax);
+        const __m128d pya = _mm_sub_pd(py, ay);
+
+        // (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x
+        const __m128d straddle = _mm_xor_pd(_mm_cmpgt_pd(ay, py), _mm_cmpgt_pd(by, py));
+        const __m128d xi = _mm_add_pd(_mm_div_pd(_mm_mul_pd(dx, pya), dy), ax);
+        par = _mm_xor_pd(par, _mm_and_pd(straddle, _mm_cmplt_pd(px, xi)));
+
+        // getSegDistSq
+        const __m128d t = _mm_div_pd(_mm_add_pd(_mm_mul_pd(pxa, dx), _mm_mul_pd(pya, dy)), _mm_loadu_pd(q->den));
+        const __m128d gt1 = _mm_cmpgt_pd(t, one);
+        const __m128d gt0 = _mm_cmpgt_pd(t, zero);
+        __m128d x = _mm_or_pd(_mm_and_pd(gt0, _mm_add_pd(ax, _mm_mul_pd(dx, t))), _mm_andnot_pd(gt0, ax));
+        __m128d y = _mm_or_pd(_mm_and_pd(gt0, _mm_add_pd(ay, _mm_mul_pd(dy, t))), _mm_andnot_pd(gt0, ay));
+        x = _mm_or_pd(_mm_and_pd(gt1, bx), _mm_andnot_pd(gt1, x));
+        y = _mm_or_pd(_mm_and_pd(gt1, by), _mm_andnot_pd(gt1, y));
+        const __m128d ex = _mm_sub_pd(px, x);
+        const __m128d ey = _mm_sub_pd(py, y);
+        const __m128d dd = _mm_add_pd(_mm_mul_pd(ex, ex), _mm_mul_pd(ey, ey));
+
+        // per lane: if (dd < mn) { mn = dd; best = idx; }
+        const __m128i lt = _mm_castpd_si128(_mm_cmplt_pd(dd, mn));
+        mn = _mm_min_pd(dd, mn);
+        best = _mm_or_si128(_mm_and_si128(lt, idx), _mm_andnot_si128(lt, best));
+        idx = _mm_add_epi64(idx, two);
+    }
+
+    double m2[2];
+    _mm_storeu_pd(m2, mn);
+    std::int64_t b2[2];
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(b2), best);
+    const int pm = _mm_movemask_pd(par);
+    const bool inside = ((pm ^ (pm >> 1)) & 1) != 0;
+
+    // both lanes are non-NaN (they start at +inf); either lane achieving the minimum is a nearest edge
+    const int lane = m2[1] < m2[0] ? 1 : 0;
+    const double minDistSq = m2[lane];
+    if (e.ring.empty()) {
+        kr = -1;
+        ki = 0;
+    } else {
+        kr = e.ring[b2[lane]];
+        ki = e.edge[b2[lane]];
+    }
+
+    return (inside ? 1 : -1) * std::sqrt(minDistSq);
+}
+#endif
+
+// pointToPolygonDistKOrig, via the edge arrays when polylabel() has built them for this polygon
+double pointToPolygonDistK(const Point& point, const Polygon& polygon, int& kr, std::size_t& ki) {
+#ifdef POLYLABEL_SSE2
+    const PolygonEdges* e = activeEdges;
+    if (e && e->polygon == &polygon) {
+        const double d = pointToPolygonDistKSoA(point, *e, kr, ki);
+#ifdef TMOPT_VERIFY
+        int okr;
+        std::size_t oki;
+        const double od = pointToPolygonDistKOrig(point, polygon, okr, oki);
+        bool bad = std::memcmp(&d, &od, sizeof(d)) != 0;
+        if (!bad && std::isfinite(d)) {
+            // the reported edge must achieve the minimum (edgeDistBound relies on it being an edge)
+            const auto& ring = kr < 0 ? polygon.outer() : polygon.inners()[kr];
+            const double ed = std::sqrt(getSegDistSq(point, ring[ki], ring[ki == 0 ? ring.size() - 1 : ki - 1]));
+            bad = ed != std::fabs(d);
+        }
+        if (bad) {
+            std::cerr << "TMOPT_VERIFY polylabel: SSE2 distance differs from original" << std::endl;
+            std::abort();
+        }
+        static struct EvalCount {
+            std::atomic<long> n{0};
+            ~EvalCount() { std::cerr << "TMOPT_VERIFY polylabel SSE2 distance evals: " << n.load() << std::endl; }
+        } evalCount;
+        evalCount.n++;
+#endif
+        return d;
+    }
+#endif
+    return pointToPolygonDistKOrig(point, polygon, kr, ki);
+}
+
 struct Cell {
     Cell(const Point& c_, double h_, const Polygon& polygon)
         : c(c_),
           h(h_),
-          d(pointToPolygonDist(c, polygon)),
+          d(pointToPolygonDistK(c, polygon, kr, ki)),
           max(d + h * std::sqrt(2))
         {}
 
+    // nearest edge of the polygon outline to c (declared first: written while d is computed)
+    std::size_t ki;
+    int kr;
     Point c; // cell center
     double h; // half the cell size
     double d; // distance from cell center to polygon
@@ -131,6 +355,62 @@ Cell getCentroidCell(const Polygon& polygon) {
     return Cell(area == 0 ? ring.at(0) : Point { ox + cx / area, oy + cy / area }, 0, polygon);
 }
 
+// Upper bound on pointToPolygonDist(p, polygon), from the edge nearest to `near.c`. The full scan
+// computes min over all edges of getSegDistSq(p, a, b) with the same arguments, so its result is
+// <= this edge's value; the margin covers FP contraction differences between call sites.
+inline double edgeDistBound(const Point& p, const Cell& near, const Polygon& polygon) {
+    const auto& ring = near.kr < 0 ? polygon.outer() : polygon.inners()[near.kr];
+    const Point& a = ring[near.ki];
+    const Point& b = ring[near.ki == 0 ? ring.size() - 1 : near.ki - 1];
+    return std::sqrt(getSegDistSq(p, a, b)) * (1 + 1e-12) + 1e-11;
+}
+
+#ifdef TMOPT_VERIFY
+// unmodified original algorithm, for cross-checking
+Point polylabelOrig(const Polygon& polygon, double precision) {
+    Box envelope;
+    geom::envelope(polygon.outer(), envelope);
+    const Point size {
+        envelope.max_corner().get<0>() - envelope.min_corner().get<0>(),
+        envelope.max_corner().get<1>() - envelope.min_corner().get<1>()
+    };
+    const double cellSize = std::min(size.get<0>(), size.get<1>());
+    double h = cellSize / 2;
+    auto compareMax = [] (const Cell& a, const Cell& b) {
+        if (a.max != b.max) return a.max < b.max;
+        if (a.d != b.d) return a.d < b.d;
+        if (a.h != b.h) return a.h > b.h;
+        if (a.c.get<0>() != b.c.get<0>()) return a.c.get<0>() > b.c.get<0>();
+        return a.c.get<1>() > b.c.get<1>();
+    };
+    using Queue = std::priority_queue<Cell, std::vector<Cell>, decltype(compareMax)>;
+    Queue cellQueue(compareMax);
+    if (cellSize == 0) return envelope.min_corner();
+    for (double x = envelope.min_corner().get<0>(); x < envelope.max_corner().get<0>(); x += cellSize)
+        for (double y = envelope.min_corner().get<1>(); y < envelope.max_corner().get<1>(); y += cellSize)
+            cellQueue.push(Cell({x + h, y + h}, h, polygon));
+    auto bestCell = getCentroidCell(polygon);
+    Cell bboxCell(
+        Point {
+            envelope.min_corner().get<0>() + size.get<0>() / 2.0,
+            envelope.min_corner().get<1>() + size.get<1>() / 2.0
+        }, 0, polygon);
+    if (bboxCell.d > bestCell.d) bestCell = bboxCell;
+    while (!cellQueue.empty()) {
+        auto cell = cellQueue.top();
+        cellQueue.pop();
+        if (cell.d > bestCell.d) bestCell = cell;
+        if (cell.max - bestCell.d <= precision) continue;
+        h = cell.h / 2;
+        cellQueue.push(Cell({cell.c.get<0>() - h, cell.c.get<1>() - h}, h, polygon));
+        cellQueue.push(Cell({cell.c.get<0>() + h, cell.c.get<1>() - h}, h, polygon));
+        cellQueue.push(Cell({cell.c.get<0>() - h, cell.c.get<1>() + h}, h, polygon));
+        cellQueue.push(Cell({cell.c.get<0>() + h, cell.c.get<1>() + h}, h, polygon));
+    }
+    return bestCell.c;
+}
+#endif
+
 } // namespace detail
 
 Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug = false) {
@@ -156,23 +436,25 @@ Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug =
         if (a.c.get<0>() != b.c.get<0>()) return a.c.get<0>() > b.c.get<0>();
         return a.c.get<1>() > b.c.get<1>();
     };
-    using Queue = std::priority_queue<Cell, std::vector<Cell>, decltype(compareMax)>;
-    Queue cellQueue(compareMax);
 
     if (cellSize == 0) {
         return envelope.min_corner();
     }
 
-    // cover polygon with initial cells
-
-    for (double x = envelope.min_corner().get<0>(); x < envelope.max_corner().get<0>(); x += cellSize) {
-        for (double y = envelope.min_corner().get<1>(); y < envelope.max_corner().get<1>(); y += cellSize) {
-            cellQueue.push(Cell({x + h, y + h}, h, polygon));
-        }
-    }
+#ifdef POLYLABEL_SSE2
+    // flatten the polygon's edges once for all distance evaluations of this call
+    thread_local PolygonEdges edges;
+    edges.build(polygon);
+    activeEdges = &edges;
+    struct EdgesGuard {
+        ~EdgesGuard() { activeEdges = nullptr; edges.release(); }
+    } edgesGuard;
+#endif
 
     // take centroid as the first best guess
-    auto bestCell = getCentroidCell(polygon);
+    // (computed before the initial grid so that grid cells can be pruned; Cell construction is pure)
+    const Cell centroidCell = getCentroidCell(polygon);
+    auto bestCell = centroidCell;
 
     // second guess: bounding box centroid
     Cell bboxCell(
@@ -184,11 +466,56 @@ Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug =
         bestCell = bboxCell;
     }
 
-    auto numProbes = cellQueue.size();
+    // max-heap of cells, same algorithms as std::priority_queue (identical pop sequence);
+    // reused per thread to avoid reallocation (polylabel does not recurse)
+    thread_local std::vector<Cell> cellQueue;
+    cellQueue.clear();
+    auto pushCell = [&](const Point& p, double hc) {
+        cellQueue.push_back(Cell(p, hc, polygon));
+        std::push_heap(cellQueue.begin(), cellQueue.end(), compareMax);
+    };
+
+    // A cell whose distance is bounded by ub can neither replace bestCell (needs d > bestCell.d)
+    // nor be subdivided when popped (cell.max - bestCell.d <= precision), as bestCell.d only grows.
+    // Such a cell is a no-op; dropping it leaves the pop order of the others unchanged.
+    const double sqrt2 = std::sqrt(2);
+    auto provablyNoOp = [&](const Point& p, double ub, double hc) {
+        if (!(ub <= bestCell.d && (ub + hc * sqrt2) - bestCell.d <= precision)) return false;
+#ifdef TMOPT_VERIFY
+        Cell full(p, hc, polygon);
+        if (full.d > bestCell.d || full.max - bestCell.d > precision || full.d > ub) {
+            std::cerr << "TMOPT_VERIFY polylabel: pruned cell is not a no-op" << std::endl;
+            std::abort();
+        }
+        static struct PruneCount {
+            std::atomic<long> n{0};
+            ~PruneCount() { std::cerr << "TMOPT_VERIFY polylabel pruned cells: " << n.load() << std::endl; }
+        } pruneCount;
+        pruneCount.n++;
+#else
+        (void)p;
+#endif
+        return true;
+    };
+
+    // cover polygon with initial cells
+
+    std::size_t numProbes = 0;
+    for (double x = envelope.min_corner().get<0>(); x < envelope.max_corner().get<0>(); x += cellSize) {
+        for (double y = envelope.min_corner().get<1>(); y < envelope.max_corner().get<1>(); y += cellSize) {
+            numProbes++;
+            const Point p {x + h, y + h};
+            const double ub = std::min(edgeDistBound(p, bboxCell, polygon), edgeDistBound(p, centroidCell, polygon));
+            if (provablyNoOp(p, ub, h)) continue;
+            pushCell(p, h);
+        }
+    }
+
     while (!cellQueue.empty()) {
         // pick the most promising cell from the queue
-        auto cell = cellQueue.top();
-        cellQueue.pop();
+        std::pop_heap(cellQueue.begin(), cellQueue.end(), compareMax);
+        auto cell = cellQueue.back();
+        cellQueue.pop_back();
 
         // update the best cell if we found a better one
         if (cell.d > bestCell.d) {
@@ -200,11 +527,18 @@ Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug =
         if (cell.max - bestCell.d <= precision) continue;
 
         // split the cell into four cells
+        // (children whose distance is bounded by the parent's nearest edge may be provable no-ops)
         h = cell.h / 2;
-        cellQueue.push(Cell({cell.c.get<0>() - h, cell.c.get<1>() - h}, h, polygon));
-        cellQueue.push(Cell({cell.c.get<0>() + h, cell.c.get<1>() - h}, h, polygon));
-        cellQueue.push(Cell({cell.c.get<0>() - h, cell.c.get<1>() + h}, h, polygon));
-        cellQueue.push(Cell({cell.c.get<0>() + h, cell.c.get<1>() + h}, h, polygon));
+        const Point children[4] = {
+            {cell.c.get<0>() - h, cell.c.get<1>() - h},
+            {cell.c.get<0>() + h, cell.c.get<1>() - h},
+            {cell.c.get<0>() - h, cell.c.get<1>() + h},
+            {cell.c.get<0>() + h, cell.c.get<1>() + h}
+        };
+        for (const Point& p : children) {
+            if (provablyNoOp(p, edgeDistBound(p, cell, polygon), h)) continue;
+            pushCell(p, h);
+        }
         numProbes += 4;
     }
 
@@ -212,6 +546,24 @@ Point polylabel(const Polygon& polygon, double precision = 0.00001, bool debug =
         std::cout << "num probes: " << numProbes << std::endl;
         std::cout << "best distance: " << bestCell.d << std::endl;
     }
+
+    // don't keep a huge buffer alive after an exceptionally large polygon
+    if (cellQueue.capacity() > (1u << 12)) std::vector<Cell>().swap(cellQueue);
+
+#ifdef TMOPT_VERIFY
+    {
+#ifdef POLYLABEL_SSE2
+        activeEdges = nullptr; // polylabelOrig must use pointToPolygonDistKOrig
+#endif
+        const Point ref = polylabelOrig(polygon, precision);
+        const double r[2] = { ref.get<0>(), ref.get<1>() };
+        const double g[2] = { bestCell.c.get<0>(), bestCell.c.get<1>() };
+        if (std::memcmp(r, g, sizeof(r)) != 0) {
+            std::cerr << "TMOPT_VERIFY polylabel: result differs from original" << std::endl;
+            std::abort();
+        }
+    }
+#endif
 
     return bestCell.c;
 }

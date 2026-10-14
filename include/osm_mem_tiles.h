@@ -14,6 +14,10 @@
 #define IS_NODE(x) (((x) >> TILE_DATA_ID_SIZE) == (USE_NODE_STORE >> TILE_DATA_ID_SIZE))
 #define USE_WAY_STORE (1ull << TILE_DATA_ID_SIZE)
 #define IS_WAY(x) (((x) >> TILE_DATA_ID_SIZE) == (USE_WAY_STORE >> TILE_DATA_ID_SIZE))
+// Way-store polygon whose ring must be reversed (only defect was orientation).
+// Only created for POLYGON_ outputs.
+#define USE_WAY_STORE_REVERSED (3ull << TILE_DATA_ID_SIZE)
+#define IS_WAY_REV(x) (((x) >> TILE_DATA_ID_SIZE) == (USE_WAY_STORE_REVERSED >> TILE_DATA_ID_SIZE))
 #define OSM_ID(x) ((x) & 0b1111111111111111111111111111111111)
 
 class NodeStore;
@@ -53,6 +57,12 @@ private:
 	void populateLinestring(Linestring& ls, NodeID objectID) const;
 	Linestring& getOrBuildLinestring(NodeID objectID) const;
 	void populateMultiPolygon(MultiPolygon& dst, NodeID objectID) override;
+	// Way-store polygons are only emitted by OsmLuaProcessing::Layer when
+	// CorrectGeometry found them Valid (or Reversed: valid after reversing the ring)
+	// on the same lon/latp coordinates.
+	bool polygonKnownValid(NodeID objectID) const override {
+		return objectID >= OSM_THRESHOLD && (IS_WAY(objectID) || IS_WAY_REV(objectID));
+	}
 
 	const NodeStore& nodeStore;
 	const WayStore& wayStore;

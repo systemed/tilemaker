@@ -128,7 +128,8 @@ void writeMultiLinestring(
 	unsigned zoom,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
-	const MultiLinestring& mls
+	const MultiLinestring& mls,
+	MvtAttributeMemo* attrMemo
 ) {
 	typename Backend::LinestringFeature fbuilder{vtLayer};
 
@@ -192,7 +193,7 @@ void writeMultiLinestring(
 
 	if (hadLine) {
 		// add the properties
-		oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+		oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
 		// call commit() when you are done
 		fbuilder.commit();
 	}
@@ -248,30 +249,65 @@ void writeMultiPolygon(
 	unsigned zoom,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
-	const MultiPolygon& mp
+	const MultiPolygon& mp,
+	MvtAttributeMemo* attrMemo
 ) {
 	bbox.scaleGeometry(scaledMultiPolygon, mp);
 	MultiPolygon &current = scaledMultiPolygon;
+	// Set when every polygon of `current` is individually valid after the
+	// Visvalingam repair and remove_spikes changed nothing. Then the validity
+	// check/repair below is a no-op: repair_multi_polygon keeps individually valid
+	// polygons of a multipolygon as they are, and a single valid polygon is valid.
+	bool knownPolygonsValid = false;
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
-			current = simplifyVis(current, simplifyLevel/bbox.xscale);
-		} else if (simplifyAlgo == LayerDef::BUILDINGS) {
-			if (current.size() > 1 || boost::geometry::num_points(current)>5) {
-				geom::correct(current); // self-intersections can break simplification
-				simplifyBuildings(current, simplifyLevel/bbox.xscale);
-			}
+			bool allValid = false;
+			current = simplifyVis(current, simplifyLevel/bbox.xscale, allValid);
+			const std::size_t numPoints = boost::geometry::num_points(current);
+			geom::remove_spikes(current);
+			knownPolygonsValid = allValid && !verbose && boost::geometry::num_points(current) == numPoints;
 		} else {
-			current = simplify(current, simplifyLevel/bbox.xscale);
+			if (simplifyAlgo == LayerDef::BUILDINGS) {
+				if (current.size() > 1 || boost::geometry::num_points(current)>5) {
+					geom::correct(current); // self-intersections can break simplification
+					simplifyBuildings(current, simplifyLevel/bbox.xscale);
+				}
+			} else {
+				current = simplify(current, simplifyLevel/bbox.xscale);
+			}
+			geom::remove_spikes(current);
 		}
-		geom::remove_spikes(current);
 	}
 	if (geom::is_empty(current))
 		return;
 
 	geom::correct(current);
 
+#ifdef TMOPT_VERIFY
+	if (knownPolygonsValid) {
+		MultiPolygon check = current;
+		if (!geom::is_valid(check)) repair_multi_polygon(check, true);
+		bool same = check.size() == current.size();
+		for (std::size_t i = 0; same && i < check.size(); ++i) {
+			const Polygon &a = check[i], &b = current[i];
+			same = a.inners().size() == b.inners().size() && a.outer().size() == b.outer().size();
+			for (std::size_t j = 0; same && j < a.outer().size(); ++j)
+				same = a.outer()[j].x() == b.outer()[j].x() && a.outer()[j].y() == b.outer()[j].y();
+			for (std::size_t r = 0; same && r < a.inners().size(); ++r) {
+				same = a.inners()[r].size() == b.inners()[r].size();
+				for (std::size_t j = 0; same && j < a.inners()[r].size(); ++j)
+					same = a.inners()[r][j].x() == b.inners()[r][j].x() && a.inners()[r][j].y() == b.inners()[r][j].y();
+			}
+		}
+		if (!same) {
+			cerr << "TMOPT_VERIFY writeMultiPolygon skip mismatch" << endl;
+			abort();
+		}
+	}
+#endif
+
 	geom::validity_failure_type failure;
-	if (!geom::is_valid(current, failure)) {
+	if (!knownPolygonsValid && (simplifyLevel > 0 || verbose) && !geom::is_valid(current, failure)) {
 		if (verbose) {
 			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
@@ -285,7 +321,7 @@ void writeMultiPolygon(
 			// Simplification can turn a valid input into a self-intersecting/spiky
 			// one; such polygons are silently dropped by many renderers (missing
 			// features). Repair (dissolve, then zero-width buffer) before writing.
-			bool repaired = repair_multi_polygon(current);
+			bool repaired = repair_multi_polygon(current, true); // already known invalid
 
 			if (geom::is_empty(current))
 				return;
@@ -321,7 +357,7 @@ void writeMultiPolygon(
 
 	if (hadPoly) {
 		// add the properties
-		oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+		oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
 		// call commit() when you are done
 		fbuilder.commit();
 	}
@@ -342,7 +378,8 @@ void ProcessObjects(
 	bool combinePolygons,
 	unsigned zoom,
 	const TileBbox &bbox,
-	typename Backend::LayerBuilder& vtLayer
+	typename Backend::LayerBuilder& vtLayer,
+	MvtAttributeMemo* attrMemo
 ) {
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectID oo = *jt;
@@ -392,7 +429,7 @@ void ProcessObjects(
 			for (const auto &point : multipoint)
 				fbuilder.set_point(point.first, point.second);
 
-			oo.oo.writeAttributes(attributeStore, fbuilder, zoom);
+			oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
 			fbuilder.commit();
 
 			oo = *jt;
@@ -438,9 +475,9 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
-				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g));
+				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g), attrMemo);
 			else if (oo.oo.geomType == POLYGON_)
-				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g));
+				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g), attrMemo);
 		}
 	}
 }
@@ -492,7 +529,8 @@ void ProcessLayer(
 	typename Backend::LayerBuilder& vtLayer,
 	const TileBbox& bbox,
 	const std::vector<uint>& ltx,
-	SharedData& sharedData
+	SharedData& sharedData,
+	MvtAttributeMemo* attrMemo = nullptr
 ) {
 	const std::string& layerName = sharedData.layers.layers[ltx.at(0)].name;
 
@@ -528,7 +566,7 @@ void ProcessLayer(
 			ProcessObjects<Backend>(sources[i], attributeStore,
 				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, ld.simplifyAlgo,
-				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer);
+				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, attrMemo);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {
@@ -594,14 +632,35 @@ void outputProc(
 		}
 		vtzero::vector_tile existingTile{rawExistingTile};
 
+		thread_local MvtAttributeMemo attrMemo;
 		for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
 			if (signalStop) break;
 			const std::string& layerName = sharedData.layers.layers[lt->at(0)].name;
 			vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, extent};
+			attrMemo.reset(vtLayer, zoom);
 			CopyExistingLayer(existingTile, layerName, vtLayer);
-			ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData);
+			ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData, &attrMemo);
 		}
 		tile.serialize(outputdata);
+#ifdef TMOPT_VERIFY
+		{
+			// Encode the tile again without the attribute memo: the bytes must be identical
+			vtzero::tile_builder verifyTile;
+			for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
+				if (signalStop) break;
+				const std::string& layerName = sharedData.layers.layers[lt->at(0)].name;
+				vtzero::layer_builder vtLayer{verifyTile, layerName, sharedData.config.mvtVersion, extent};
+				CopyExistingLayer(existingTile, layerName, vtLayer);
+				ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData, nullptr);
+			}
+			std::string verifyData;
+			verifyTile.serialize(verifyData);
+			if (verifyData != outputdata) {
+				cerr << "TMOPT_VERIFY attribute memo tile mismatch at " << zoom << "/" << bbox.index.x << "/" << bbox.index.y << endl;
+				abort();
+			}
+		}
+#endif
 	}
 
 	// Write to file or sqlite
