@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS src
+FROM debian:trixie-slim AS src
 ARG TILEMAKER_VERSION=unknown
 ARG TILEMAKER_BUILD_VERSION=
 LABEL Description="Tilemaker" Version="${TILEMAKER_VERSION}"
@@ -48,7 +48,7 @@ RUN mkdir build && \
 
 ENV PATH="/usr/src/app/build:$PATH"
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ARG BUILD_DEBUG=
 ARG TILEMAKER_VERSION=unknown
@@ -59,11 +59,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     shapelib \
     libsqlite3-0 \
     lua-sql-sqlite3 \
-    libboost-filesystem1.74.0 \
-    libboost-program-options1.74.0 && \
-    if [ -n "$BUILD_DEBUG" ]; then \
-        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb; \
-    fi; \
+    libboost-filesystem1.83.0 \
+    libboost-program-options1.83.0 \
+    $( [ -n "$BUILD_DEBUG" ] && echo gdb ) && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
