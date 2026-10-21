@@ -25,6 +25,8 @@ struct TileOffset {
 #define TINY_LENGTH 100
 // Expire the tiny cache when it reaches this size
 #define TINY_MAX_SIZE 10000
+// PMTiles v3 tile type for MapLibre Tiles (not yet in external/pmtiles.hpp)
+#define TILETYPE_MLT 0x6
 
 class PMTiles { 
 
@@ -34,6 +36,7 @@ public:
 
 	pmtiles::headerv3 header;
 	bool isSparse = true;
+	uint8_t tileType = pmtiles::TILETYPE_MVT;
 
 	void open(std::string &filename);
 	void saveTile(int zoom, int x, int y, std::string &data);

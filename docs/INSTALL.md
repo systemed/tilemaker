@@ -52,6 +52,12 @@ You can optionally use cmake to build:
     make
     sudo make install
 
+To be able to write [MapLibre Tiles](https://maplibre.org/maplibre-tile-spec/) (MLT), configure with `-DTILEMAKER_WITH_MLT=ON`. This needs cmake 3.25 or later and a C++20 compiler, and downloads the MLT encoder from GitHub during configuration (set `FETCHCONTENT_SOURCE_DIR_MLT` to use a local checkout of maplibre-tile-spec instead):
+
+    cmake -DTILEMAKER_WITH_MLT=ON ..
+
+The Makefile build doesn't include MLT support.
+
 ### Docker
 
 **The Dockerfile is not formally supported by project maintainers and you are encouraged to send pull requests to fix any issues you encounter.**

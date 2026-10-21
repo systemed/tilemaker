@@ -38,6 +38,7 @@ It also includes these global settings:
 * `bounding_box` (optional) - the bounding box to output, in [minlon, minlat, maxlon, maxlat] order
 * `default_view` (optional) - the default location for the client to view, in [lon, lat, zoom] order (MBTiles only)
 * `mvt_version` (optional) - the version of the [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) spec to use; defaults to 2
+* `tile_format` (optional) - `"mvt"` (default) for Mapbox Vector Tiles, or `"mlt"` for [MapLibre Tiles](https://maplibre.org/maplibre-tile-spec/). MLT output needs tilemaker to be built with MLT support (see below and INSTALL.md)
 * `combine_below` (deprecated) - whether to merge all linestrings in the tile with the same attributes: will be done at zoom levels below that specified here (e.g. `"combine_below": 14` to merge at z1-13). Please use the layer-specific parameter `combine_lines_below` instead.
 
 A typical config file would look like this:
@@ -67,6 +68,14 @@ Layers with `write_to` set must appear after the layers they're writing into. An
 All options are compulsory unless stated otherwise. If tilemaker baulks at the JSON file, check everything's included, and run it through an online JSON validator to check for syntax errors.
 
 By default tilemaker expects to find this file at config.json, but you can specify another filename with the `--config` command-line option.
+
+### MapLibre Tiles (MLT)
+
+With `"tile_format": "mlt"`, tilemaker writes [MapLibre Tiles](https://maplibre.org/maplibre-tile-spec/) instead of Mapbox Vector Tiles. Your Lua profile and layer configuration stay the same. MLT tiles are typically smaller than MVT tiles, and are supported by MapLibre GL JS and MapLibre Native. In your style, add `"encoding": "mlt"` to the vector source.
+
+* .pmtiles output is marked with the MapLibre Tile type, .mbtiles output has `format` set to `mlt`, and tiles written to a directory get the `.mlt` extension.
+* MLT stores each attribute as a typed column per layer. If the same attribute is written as an integer for some features and as a number with decimals for others in one layer, the integers are stored as doubles. Other mixed types (e.g. a number for some features and a string for others) are stored as strings.
+* `--merge` isn't supported with MLT output.
 
 ### Advanced layer configuration
 

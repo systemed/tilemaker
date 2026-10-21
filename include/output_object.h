@@ -74,7 +74,14 @@ public:
 		vtzero::feature_builder& fbuilder,
 		char zoom
 	) const;
-		
+#ifdef TILEMAKER_WITH_MLT
+	void writeAttributes(
+		const AttributeStore& attributeStore,
+		class MltFeatureBuilder& fbuilder,
+		char zoom
+	) const;
+#endif
+
 	bool compatible(const OutputObject &other);
 
 };

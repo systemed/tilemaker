@@ -10,6 +10,7 @@ string(STRIP "${tilemaker_version}" tilemaker_version)
 project(tilemaker VERSION ${tilemaker_version})
 
 OPTION(TILEMAKER_BUILD_STATIC "Attempt to link dependencies static" OFF)
+OPTION(TILEMAKER_WITH_MLT "Support writing MapLibre Tiles (MLT); needs CMake 3.25+" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -69,7 +70,25 @@ else()
 	include_directories(${LUAJIT_INCLUDE_DIR})
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+# tilemaker doesn't use coroutines, and Boost.Asio's C++20 coroutine support
+# doesn't compile with some Boost versions (e.g. 1.74 in Debian bookworm)
+add_compile_definitions(BOOST_ASIO_DISABLE_CO_AWAIT)
+
+if(TILEMAKER_WITH_MLT)
+	# The C++ MLT encoder from the MapLibre Tile spec repository. Only the submodules
+	# the encoder needs are fetched; set FETCHCONTENT_SOURCE_DIR_MLT to use a local checkout.
+	include(FetchContent)
+	set(MLT_WITH_JSON OFF CACHE BOOL "" FORCE)
+	set(MLT_WITH_TESTS OFF CACHE BOOL "" FORCE)
+	set(MLT_WITH_TOOLS OFF CACHE BOOL "" FORCE)
+	FetchContent_Declare(mlt
+		GIT_REPOSITORY https://github.com/maplibre/maplibre-tile-spec.git
+		GIT_TAG a9fa488f54ba5e7edf0151cf61f7b297d76dffe2
+		GIT_SUBMODULES cpp/vendor/fsst cpp/vendor/earcut
+		SOURCE_SUBDIR cpp)
+	FetchContent_MakeAvailable(mlt)
+endif()
 
 if(NOT TM_VERSION)
 	set(TM_VERSION v${PROJECT_VERSION})
@@ -185,8 +204,15 @@ file(GLOB tilemaker_src_files
 	src/visvalingam.cpp
 	src/way_stores.cpp
   )
+if(TILEMAKER_WITH_MLT)
+	list(APPEND tilemaker_src_files src/mlt_writer.cpp)
+endif()
 add_executable(tilemaker ${tilemaker_src_files})
 target_include_directories(tilemaker PRIVATE include)
+if(TILEMAKER_WITH_MLT)
+	target_compile_definitions(tilemaker PRIVATE TILEMAKER_WITH_MLT)
+	target_link_libraries(tilemaker mlt-cpp-encoder)
+endif()
 target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
 target_link_libraries(tilemaker
 		${THREAD_LIB} ${CMAKE_DL_LIBS}
