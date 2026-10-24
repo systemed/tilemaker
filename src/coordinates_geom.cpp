@@ -38,6 +38,13 @@ void TileBbox::scaleRing(Ring &points, Ring const &src) const {
 	points.reserve(src.size());
 	for(auto const &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
+		// The same as the point before: skipped, the first point too (the
+		// look back below never reaches the first point). Kept, a repeated
+		// first point is taken for a loop when the ring closes on it, and a
+		// ring of four corners, as clipping a large polygon to the tile can
+		// leave, is cut down to two points and dropped.
+		if (!points.empty() && points.back().x()==scaled.first && points.back().y()==scaled.second)
+			continue;
 		bool found = false;
 		for (size_t j=1; j<5; j++) {
 			if (points.size() < 1+j) break;
