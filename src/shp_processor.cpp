@@ -2,6 +2,8 @@
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <cstdint>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <type_traits>
@@ -126,6 +128,42 @@ AttributeIndex ShpProcessor::readShapefileAttributes(
 	return attributeStore.add(attributes);
 }
 
+// A little-endian number at p, as a shapefile's records hold them
+static double readLittleEndianDouble(const unsigned char *p) {
+	uint64_t bits = 0;
+	for (int b = 7; b >= 0; b--) bits = (bits << 8) | p[b];
+	double value;
+	memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+// The box of record i of a shapefile, from the start of the record alone: a
+// point is its own box, and a multipoint, polyline or polygon record begins
+// with its box. Reading this much of each record, where reading every
+// record whole costs a large shapefile (the coastline's is over a gigabyte)
+// seconds for a small area, finds those near the clipping box for little.
+// False if the record has no box (a null shape, or a type without one) or
+// can't be read, when it must be read whole to tell.
+static bool readRecordBox(SHPHandle shp, int i, double box[4]) {
+	if (i < 0 || i >= shp->nRecords) return false;
+	// After the record's 8-byte header: its type, then the box or point
+	unsigned char buf[36];
+	if (shp->sHooks.FSeek(shp->fpSHP, (SAOffset)shp->panRecOffset[i] + 8, SEEK_SET) != 0) return false;
+	if (shp->sHooks.FRead(buf, 1, sizeof(buf), shp->fpSHP) != sizeof(buf)) return false;
+	int type = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+	switch (type) {
+		case 1: case 11: case 21:		// point: x, y
+			box[0] = box[2] = readLittleEndianDouble(buf + 4);
+			box[1] = box[3] = readLittleEndianDouble(buf + 12);
+			return true;
+		case 3: case 5: case 8: case 13: case 15: case 18: case 23: case 25: case 28:	// xmin, ymin, xmax, ymax
+			for (int k = 0; k < 4; k++) box[k] = readLittleEndianDouble(buf + 4 + 8 * k);
+			return true;
+		default:
+			return false;
+	}
+}
+
 // Read shapefile, and create OutputObjects for all objects within the specified bounding box
 void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 {
@@ -163,20 +201,28 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 	int indexField=-1;
 	if (indexName!="") { indexField = DBFGetFieldIndex(dbf.get(),indexName.c_str()); }
 
+	auto outsideClippingBox = [&](double xmin, double ymin, double xmax, double ymax) {
+		return xmin > clippingBox.max_corner().get<0>() || xmax < clippingBox.min_corner().get<0>() ||
+			lat2latp(ymin) > clippingBox.max_corner().get<1>() || lat2latp(ymax) < clippingBox.min_corner().get<1>();
+	};
+
 	std::exception_ptr error;
 	std::mutex errorMutex;
 	boost::asio::thread_pool pool(threadNum);
 	for (int i=0; i<numEntities; i++) {
+		// Records whose box misses are passed over without being read
+		double recordBox[4];
+		if (readRecordBox(shp.get(), i, recordBox) &&
+			outsideClippingBox(recordBox[0], recordBox[1], recordBox[2], recordBox[3])) {
+			continue;
+		}
+
 		SHPObject* rawShape = SHPReadObject(shp.get(), i);
 		if(rawShape == nullptr) { cerr << "Error loading shape from shapefile" << endl; continue; }
 		std::shared_ptr<SHPObject> shape(rawShape, SHPDestroyObject);
 
-		// Check shape is in clippingBox
-		Box shapeBox(Point(shape->dfXMin, lat2latp(shape->dfYMin)), Point(shape->dfXMax, lat2latp(shape->dfYMax)));
-		if (shapeBox.min_corner().get<0>() > clippingBox.max_corner().get<0>() ||
-		    shapeBox.max_corner().get<0>() < clippingBox.min_corner().get<0>() ||
-		    shapeBox.min_corner().get<1>() > clippingBox.max_corner().get<1>() ||
-		    shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>()) {
+		// Check shape is in clippingBox (for a record whose box couldn't be read first)
+		if (outsideClippingBox(shape->dfXMin, shape->dfYMin, shape->dfXMax, shape->dfYMax)) {
 			continue;
 		}
 
@@ -252,34 +298,50 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 
 		// To avoid expensive computations, we assume the shapefile has been pre-processed
 		// such that each polygon's exterior ring is immediately followed by its interior rings.
+		//
+		// Only the rings that reach the clipping box are kept: a ring wholly
+		// outside it can't change what is inside it, and a large polygon, as
+		// the coastline's water around a coast full of islands is (one has
+		// over 4,000 holes and 200,000 points), would otherwise be checked,
+		// made valid and clipped whole, taking seconds. An exterior ring
+		// outside the box takes its interior rings with it.
+		auto reaches = [&](const vector<Point> &pts) {
+			if (pts.empty()) return false;
+			double xmin = pts[0].x(), xmax = xmin, ymin = pts[0].y(), ymax = ymin;
+			for (const Point &pt : pts) {
+				xmin = std::min(xmin, pt.x()); xmax = std::max(xmax, pt.x());
+				ymin = std::min(ymin, pt.y()); ymax = std::max(ymax, pt.y());
+			}
+			return !(xmin > clippingBox.max_corner().get<0>() || xmax < clippingBox.min_corner().get<0>() ||
+				ymin > clippingBox.max_corner().get<1>() || ymax < clippingBox.min_corner().get<1>());
+		};
+		bool keeping = false;	// whether the current polygon reaches the box
 		for (int j=0; j<shape->nParts; j++) {
 			fillPointArrayFromShapefile(&points, shape, j);
 			// Read points into a ring
 			ring.clear();
 			geom::append(ring, points);
 
-			if (j == 0) {
-				// We assume the first part is an exterior ring of the first polygon.
-				geom::append(poly, ring);
-			}
-			else if (geom::area(ring) > 0.0) {
-				// This part has clockwise orientation - an exterior ring.
-				// Start a new polygon.
-				multi.push_back(poly);
+			// We assume the first part is an exterior ring of the first polygon;
+			// after it, clockwise orientation marks an exterior ring
+			if (j == 0 || geom::area(ring) > 0.0) {
+				// Start a new polygon, after keeping the last if it reaches the box
+				if (keeping) multi.push_back(poly);
 				poly.clear();
 				nInteriorRings = 0;
-				geom::append(poly, ring);
-			} else {
-				// This part has anti-clockwise orientation.
-				// Add another interior ring to the current polygon.
+				keeping = reaches(points);
+				if (keeping) geom::append(poly, ring);
+			} else if (keeping && reaches(points)) {
+				// An interior ring, of a polygon that is kept, reaching the box
 				nInteriorRings++;
 				geom::interior_rings(poly).resize(nInteriorRings);
 				geom::append(poly, ring, nInteriorRings - 1);
 			}
 		}
 
-		// All parts read. Add the last polygon.
-		multi.push_back(poly);
+		// All parts read. Add the last polygon, if it reaches the box.
+		if (keeping) multi.push_back(poly);
+		if (multi.empty()) return;
 		geom::remove_spikes(multi);
 
 		// Make valid if needs be
