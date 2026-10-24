@@ -155,6 +155,7 @@ poiTags         = { aerialway = Set { "station" },
 					sport = Set { "american_football", "archery", "athletics", "australian_football", "badminton", "baseball", "basketball", "beachvolleyball", "billiards", "bmx", "boules", "bowls", "boxing", "canadian_football", "canoe", "chess", "climbing", "climbing_adventure", "cricket", "cricket_nets", "croquet", "curling", "cycling", "disc_golf", "diving", "dog_racing", "equestrian", "fatsal", "field_hockey", "free_flying", "gaelic_games", "golf", "gymnastics", "handball", "hockey", "horse_racing", "horseshoes", "ice_hockey", "ice_stock", "judo", "karting", "korfball", "long_jump", "model_aerodrome", "motocross", "motor", "multi", "netball", "orienteering", "paddle_tennis", "paintball", "paragliding", "pelota", "racquet", "rc_car", "rowing", "rugby", "rugby_league", "rugby_union", "running", "sailing", "scuba_diving", "shooting", "shooting_range", "skateboard", "skating", "skiing", "soccer", "surfing", "swimming", "table_soccer", "table_tennis", "team_handball", "tennis", "toboggan", "volleyball", "water_ski", "yoga" },
 					tourism = Set { "alpine_hut", "aquarium", "artwork", "attraction", "bed_and_breakfast", "camp_site", "caravan_site", "chalet", "gallery", "guest_house", "hostel", "hotel", "information", "motel", "museum", "picnic_site", "theme_park", "viewpoint", "zoo" },
 					waterway = Set { "dock" } }
+poiTagKeys      = { "aerialway", "amenity", "barrier", "building", "highway", "historic", "landuse", "leisure", "railway", "shop", "sport", "tourism", "waterway" }
 
 -- POI "class" values: based on https://github.com/openmaptiles/openmaptiles/blob/master/layers/poi/poi.yaml
 poiClasses      = { townhall="town_hall", public_building="town_hall", courthouse="town_hall", community_centre="town_hall",
@@ -502,16 +503,21 @@ end
 -- returns rank, class, subclass
 function GetPOIRank(obj)
 	local k,list,v,class,rank
+	local bestRank,bestClass,bestSubclass
 
 	-- Can we find the tag?
-	for k,list in pairs(poiTags) do
+	for _,k in ipairs(poiTagKeys) do
+		list = poiTags[k]
 		if list[Find(k)] then
 			v = Find(k)	-- k/v are the OSM tag pair
 			class = poiClasses[v] or v
 			rank  = poiClassRanks[class] or 25
-			return rank, class, v
+			if not bestRank or rank<bestRank then
+				bestRank,bestClass,bestSubclass = rank,class,v
+			end
 		end
 	end
+	if bestRank then return bestRank,bestClass,bestSubclass end
 
 	-- Catch-all for shops
 	local shop = Find("shop")
@@ -535,4 +541,3 @@ function split(inputstr, sep) -- https://stackoverflow.com/a/7615129/4288232
 	end
 	return t
 end
-
