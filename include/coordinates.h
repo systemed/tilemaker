@@ -7,6 +7,7 @@
 //
 // Things that pull in boost::geometry should go in coordinates_geom.h
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -130,7 +131,7 @@ void fillCoveredTiles(std::unordered_set<TileCoordinates> &tileSet);
 // Same for a vector sorted by TileCoordinatesCompare without duplicates; the result stays sorted and unique.
 void fillCoveredTiles(std::vector<TileCoordinates> &tiles);
 // Sort (TileCoordinatesCompare) and dedupe tiles[start, end).
-void sortUniqueTiles(std::vector<TileCoordinates> &tiles, size_t start = 0);
+void sortUniqueTiles(std::vector<TileCoordinates> &tiles, std::size_t start = 0);
 
 #endif //_COORDINATES_H
 
