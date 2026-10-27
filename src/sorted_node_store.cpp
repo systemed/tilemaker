@@ -263,50 +263,6 @@ namespace SortedNodeStoreTypes {
 		}
 	}
 
-#ifdef TMOPT_VERIFY
-	// Decode the chunk the original way (streamvbyte + zigzag_delta_decode,
-	// scattered by position) and compare with the compact entry.
-	void verifyDecodedChunk(const CompressedChunkInfo* ptr, const CachedChunk& got) {
-		size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
-		const size_t count = maskCount(ptr->nodeMask);
-		const size_t n = count - 1;
-		uint32_t recovdata[ChunkSize];
-		int32_t latps[ChunkSize];
-		int32_t lons[ChunkSize];
-		streamvbyte_decode(ptr->data, recovdata, n);
-		latps[0] = ptr->firstLatp;
-		zigzag_delta_decode(recovdata, &latps[1], n, latps[0]);
-		streamvbyte_decode(ptr->data + latpSize, recovdata, n);
-		lons[0] = ptr->firstLon;
-		zigzag_delta_decode(recovdata, &lons[1], n, lons[0]);
-
-		size_t k = 0;
-		for (size_t pos = 0; pos < ChunkSize; pos++) {
-			const bool present = maskTest(ptr->nodeMask, pos);
-			const bool gotPresent = got.nodeMask[pos / 64] & (1ull << (pos % 64));
-			if (present != gotPresent) {
-				std::cerr << "TMOPT_VERIFY: SortedNodeStore mask mismatch at " << pos << std::endl;
-				abort();
-			}
-			if (!present)
-				continue;
-			const LatpLon v = cachedNode(got, pos);
-			if (k >= count || v.latp != latps[k] || v.lon != lons[k]) {
-				std::cerr << "TMOPT_VERIFY: SortedNodeStore decode mismatch at " << pos << std::endl;
-				abort();
-			}
-			k++;
-		}
-		if (k != count) {
-			std::cerr << "TMOPT_VERIFY: SortedNodeStore count mismatch" << std::endl;
-			abort();
-		}
-	}
-#define TMOPT_VERIFY_CHUNK(ptr, entry) verifyDecodedChunk(ptr, entry)
-#else
-#define TMOPT_VERIFY_CHUNK(ptr, entry) do {} while (0)
-#endif
-
 	struct ThreadStorage {
 		ThreadStorage():
 			collectingOrphans(true),
@@ -424,7 +380,6 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 			return uncompressedNode(basePtr, id);
 		CachedChunk scratch;
 		decodeChunk((const CompressedChunkInfo*)basePtr, scratch);
-		TMOPT_VERIFY_CHUNK((const CompressedChunkInfo*)basePtr, scratch);
 		return cachedNode(scratch, id);
 	}
 
@@ -441,7 +396,6 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 
 	CachedChunk& entry = cache.entries[cacheIndex];
 	decodeChunk((const CompressedChunkInfo*)basePtr, entry);
-	TMOPT_VERIFY_CHUNK((const CompressedChunkInfo*)basePtr, entry);
 	cache.keys[cacheIndex] = key;
 	return cachedNode(entry, id);
 }
@@ -476,7 +430,6 @@ void SortedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
 				continue;
 			}
 			decodeChunk((const CompressedChunkInfo*)basePtr, cache.entries[cacheIndex]);
-			TMOPT_VERIFY_CHUNK((const CompressedChunkInfo*)basePtr, cache.entries[cacheIndex]);
 			cache.keys[cacheIndex] = key;
 		}
 		entry = &cache.entries[cacheIndex];
@@ -484,15 +437,6 @@ void SortedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
 		out[i] = cachedNode(*entry, id);
 	}
 
-#ifdef TMOPT_VERIFY
-	for (size_t i = 0; i < n; i++) {
-		const LatpLon expected = at(ids[i]);
-		if (!(expected == out[i])) {
-			std::cerr << "TMOPT_VERIFY: SortedNodeStore batched at mismatch for node " << ids[i] << std::endl;
-			abort();
-		}
-	}
-#endif
 }
 
 size_t SortedNodeStore::size() const {

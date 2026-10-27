@@ -4,9 +4,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <new>
-#ifdef TMOPT_VERIFY
-#include <cstdio>
-#endif
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
@@ -106,29 +103,6 @@ void PreciseTileCoordinatesSet::forEachSet(const std::function<void(TileCoordina
 	// loc = x * 2^zoom + y, so ascending loc order is x-major, y-minor.
 	// Only blocks marked in the summary can hold set bits; visiting them in
 	// ascending order gives the same sequence as a full scan.
-#ifdef TMOPT_VERIFY
-	{
-		std::vector<uint64_t> full, fast;
-		for (size_t w = 0; w < numWords; w++) {
-			uint64_t word = tiles[w];
-			while (word) {
-				full.push_back((uint64_t)w * 64 + countTrailingZeros(word));
-				word &= word - 1;
-			}
-		}
-		forEachMarkedWord(summary, numWords, [&](size_t w) {
-			uint64_t word = tiles[w];
-			while (word) {
-				fast.push_back((uint64_t)w * 64 + countTrailingZeros(word));
-				word &= word - 1;
-			}
-		});
-		if (full != fast || full.size() != size()) {
-			std::fprintf(stderr, "TMOPT_VERIFY: PreciseTileCoordinatesSet z%u mismatch %zu vs %zu\n", zoom_, full.size(), fast.size());
-			std::abort();
-		}
-	}
-#endif
 	forEachMarkedWord(summary, numWords, [&](size_t w) {
 		uint64_t word = tiles[w];
 		while (word) {

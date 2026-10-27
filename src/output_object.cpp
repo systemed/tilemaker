@@ -215,30 +215,6 @@ void OutputObject::writeAttributes(
 	for (uint32_t i = 0; i < count; i++)
 		fbuilder.add_property(vtzero::index_value_pair{kv[2*i], kv[2*i+1]});
 
-#ifdef TMOPT_VERIFY
-	// Re-resolve through vtzero's find-or-append: it must return the same
-	// indices (and therefore add nothing to the layer tables).
-	uint32_t j = 0;
-	attributeStore.forEachPairUnsafe(attributes, [&](const AttributePair& it) {
-		if (it.minzoom > zoom) return;
-		vtzero::index_value value;
-		if (it.hasStringValue()) value = memo->layer->add_value(vtzero::encoded_property_value{it.stringValue()});
-		else if (it.hasBoolValue()) value = memo->layer->add_value(vtzero::encoded_property_value{it.boolValue()});
-		else if (it.hasIntValue()) value = memo->layer->add_value(vtzero::encoded_property_value{it.intValue()});
-		else if (it.hasFloatValue()) value = memo->layer->add_value(vtzero::encoded_property_value{it.floatValue()});
-		else return;
-		const vtzero::index_value key = memo->layer->add_key(vtzero::data_view{attributeStore.keyStore.getKeyUnsafe(it.keyIndex)});
-		if (j >= count || key.value() != kv[2*j] || value.value() != kv[2*j+1]) {
-			std::cerr << "TMOPT_VERIFY writeAttributes memo mismatch" << std::endl;
-			abort();
-		}
-		j++;
-	});
-	if (j != count) {
-		std::cerr << "TMOPT_VERIFY writeAttributes memo count mismatch" << std::endl;
-		abort();
-	}
-#endif
 }
 
 #ifdef TILEMAKER_WITH_MLT

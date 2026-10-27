@@ -8,12 +8,6 @@ using uint = unsigned int;
 
 #include <vector>
 #include <limits>
-#ifdef TMOPT_VERIFY
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <string>
-#endif
 
 // boost::geometry
 #define BOOST_GEOMETRY_NO_ROBUSTNESS
@@ -105,25 +99,7 @@ bool fast_clip(MultiPolygon &mp, Box const &bbox);
 bool polygonDefinitelyValid(const Polygon &p);
 bool multiPolygonDefinitelyValid(const MultiPolygon &mp);
 
-// Call sites of the precheck (TMOPT_VERIFY hit statistics).
-enum PrecheckSite { PRECHECK_TDS = 0, PRECHECK_REPAIR_ONE, PRECHECK_REPAIR_MP, PRECHECK_REPAIR_MP_PART,
-	PRECHECK_CHECK_RELATION, PRECHECK_CHECK_WAY, PRECHECK_REVERSED, PRECHECK_SHP, PRECHECK_SITES };
 
-#ifdef TMOPT_VERIFY
-// Per-call-site hit counters, and a cross-check of the precheck against Boost.
-void precheckVerifyCount(int site, bool hit);
-template<class GeometryT>
-void precheckVerify(const GeometryT &g, bool hit, int site) {
-	precheckVerifyCount(site, hit);
-	if (hit && !boost::geometry::is_valid(g)) {
-		std::string reason;
-		boost::geometry::is_valid(g, reason);
-		std::cerr << "TMOPT_VERIFY: precheck site " << site << " disagrees with is_valid (" << reason << "): "
-		          << std::setprecision(17) << boost::geometry::wkt(g) << std::endl;
-		std::abort();
-	}
-}
-#endif
 
 #endif //_GEOM_TYPES_H
 

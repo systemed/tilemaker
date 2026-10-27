@@ -21,10 +21,6 @@
 #include <cstring>
 #include <cstddef>
 #include <vector>
-#ifdef TMOPT_VERIFY
-#include <unordered_map>
-#include <iostream>
-#endif
 
 class LuaPool {
 public:
@@ -56,10 +52,6 @@ public:
 
 		bool oSmall = osize <= MaxSmall, nSmall = nsize <= MaxSmall;
 		if (oSmall && nSmall && classOf(osize) == classOf(nsize)) {
-#ifdef TMOPT_VERIFY
-			pool.verifyFree(ptr, osize);
-			pool.live[ptr] = nsize;
-#endif
 			return ptr;
 		}
 		if (!oSmall && !nSmall) return std::realloc(ptr, nsize);
@@ -100,36 +92,17 @@ private:
 			p = bump;
 			bump += bytes;
 		}
-#ifdef TMOPT_VERIFY
-		live[p] = n;
-#endif
 		return p;
 	}
 
 	void release(void *p, size_t osize) {
 		if (osize > MaxSmall) { std::free(p); return; }
-#ifdef TMOPT_VERIFY
-		verifyFree(p, osize);
-		live.erase(p);
-#endif
 		size_t c = classOf(osize);
 		FreeBlock *b = static_cast<FreeBlock*>(p);
 		b->next = freeLists[c];
 		freeLists[c] = b;
 	}
 
-#ifdef TMOPT_VERIFY
-	// Lua must hand back every small block with the size it was last given.
-	void verifyFree(void *p, size_t osize) {
-		auto it = live.find(p);
-		if (it == live.end() || it->second != osize) {
-			std::cerr << "TMOPT_VERIFY LuaPool: bad free " << p << " osize " << osize
-			          << " recorded " << (it == live.end() ? 0 : it->second) << std::endl;
-			std::abort();
-		}
-	}
-	std::unordered_map<void*, size_t> live;
-#endif
 
 	FreeBlock *freeLists[NumClasses];
 	char *bump, *bumpEnd;

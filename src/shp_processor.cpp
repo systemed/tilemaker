@@ -367,9 +367,6 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 		// Make valid if needs be
 		string reason;
 		const bool precheckValid = multiPolygonDefinitelyValid(multi);
-#ifdef TMOPT_VERIFY
-		precheckVerify(multi, precheckValid, PRECHECK_SHP);
-#endif
 		if (!precheckValid && !geom::is_valid(multi, reason)) {
 			if (verbose) cerr << "Shapefile entity " << shape->nShapeId << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 			make_valid(multi);

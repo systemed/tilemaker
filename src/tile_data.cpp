@@ -87,9 +87,6 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
 thread_local uint64_t clipCacheBatchId = 0;
 thread_local bool clipCacheNoStore = false;
-#ifdef TMOPT_VERIFY
-static std::atomic<bool> anySourceFinalized(false);
-#endif
 
 void TileDataSource::finalize(size_t threadNum) {
 	uint64_t finalized = 0;
@@ -105,9 +102,6 @@ void TileDataSource::finalize(size_t threadNum) {
 	// TLS pointers of other (finished) threads now dangle; they are never used again.
 	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>>().swap(pendingSmallIndexObjects);
 	tlsPendingSmallIndexObjects = nullptr;
-#ifdef TMOPT_VERIFY
-	anySourceFinalized = true;
-#endif
 
 	std::cout << "indexed " << finalized << " contended objects" << std::endl;
 
@@ -128,12 +122,6 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
 	auto& mutex = objectsMutex[z6index % objectsMutex.size()];
 
-#ifdef TMOPT_VERIFY
-	if (anySourceFinalized) {
-		std::cerr << "TMOPT_VERIFY: addObjectToSmallIndex called after finalize" << std::endl;
-		abort();
-	}
-#endif
 
 	if (mutex.try_lock()) {
 		addObjectToSmallIndexUnsafe(index, oo, id);
@@ -410,9 +398,6 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 			bool valid = multiPolygonDefinitelyValid(mp);
-#ifdef TMOPT_VERIFY
-			precheckVerify(mp, valid, PRECHECK_TDS);
-#endif
 			if (!valid)
 				valid = geom::is_valid(mp,failure);
 			if (!valid) {
@@ -535,18 +520,6 @@ inline void releaseIfHuge(std::vector<TileCoordinates>& v) {
 	if (v.capacity() > (1u << 16)) std::vector<TileCoordinates>().swap(v);
 }
 
-#ifdef TMOPT_VERIFY
-void verifyIndexTiles(const unordered_set<TileCoordinates>& expected, const std::vector<TileCoordinates>& got, const char* where) {
-	bool ok = expected.size() == got.size() &&
-		std::is_sorted(got.begin(), got.end(), TileCoordinatesCompare()) &&
-		std::adjacent_find(got.begin(), got.end()) == got.end();
-	for (const auto& t : got) if (!ok || !expected.count(t)) { ok = false; break; }
-	if (!ok) {
-		std::cerr << "TMOPT_VERIFY: tile list mismatch in " << where << " (expected " << expected.size() << ", got " << got.size() << ")" << std::endl;
-		abort();
-	}
-}
-#endif
 }
 
 void TileDataSource::addGeometryToIndex(
@@ -558,11 +531,6 @@ void TileDataSource::addGeometryToIndex(
 	tiles.clear();
 	try {
 		insertIntermediateTiles(geom, indexZoom, tiles);
-#ifdef TMOPT_VERIFY
-		unordered_set<TileCoordinates> verifySet;
-		insertIntermediateTiles(geom, indexZoom, verifySet);
-		verifyIndexTiles(verifySet, tiles, "Linestring");
-#endif
 
 		bool polygonExists = false;
 		TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
@@ -595,10 +563,6 @@ void TileDataSource::addGeometryToIndex(
 					// Smaller objects - add to each individual tile index
 					if (!tilesetFilled) {
 						fillCoveredTiles(tiles); tilesetFilled = true;
-#ifdef TMOPT_VERIFY
-						fillCoveredTiles(verifySet);
-						verifyIndexTiles(verifySet, tiles, "Linestring fill");
-#endif
 					}
 					for (const TileCoordinates& index : tiles) {
 						addObjectToSmallIndex(index, output, id);
@@ -621,11 +585,6 @@ void TileDataSource::addGeometryToIndex(
 	for (const auto& ls : geom) {
 		tiles.clear();
 		insertIntermediateTiles(ls, indexZoom, tiles);
-#ifdef TMOPT_VERIFY
-		unordered_set<TileCoordinates> verifySet;
-		insertIntermediateTiles(ls, indexZoom, verifySet);
-		verifyIndexTiles(verifySet, tiles, "MultiLinestring");
-#endif
 		for (const TileCoordinates& index : tiles) {
 			for (const auto& output : outputs) {
 				addObjectToSmallIndex(index, output, id);
@@ -652,18 +611,6 @@ void TileDataSource::addGeometryToIndex(
 	}
 	if (geom.size() > 1) sortUniqueTiles(tiles);
 	releaseIfHuge(tilesTmp);
-#ifdef TMOPT_VERIFY
-	{
-		unordered_set<TileCoordinates> verifySet;
-		for (const auto& poly : geom) {
-			unordered_set<TileCoordinates> tileSetTmp;
-			insertIntermediateTiles(poly.outer(), indexZoom, tileSetTmp);
-			fillCoveredTiles(tileSetTmp);
-			verifySet.insert(tileSetTmp.begin(), tileSetTmp.end());
-		}
-		verifyIndexTiles(verifySet, tiles, "MultiPolygon");
-	}
-#endif
 	
 	TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
 	for (const TileCoordinates& index : tiles) {

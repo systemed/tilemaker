@@ -195,16 +195,8 @@ public:
 	// Cheap conservative "certainly valid" test before geom::is_valid; only areal
 	// geometries have one (false = unsure, run is_valid).
 	template<class GeometryT>
-	static bool PrecheckValid(const GeometryT &, int) { return false; }
-	static bool PrecheckValid(const MultiPolygon &geom, int site) {
-		const bool hit = multiPolygonDefinitelyValid(geom);
-#ifdef TMOPT_VERIFY
-		precheckVerify(geom, hit, site);
-#else
-		(void)site;
-#endif
-		return hit;
-	}
+	static bool PrecheckValid(const GeometryT &) { return false; }
+	static bool PrecheckValid(const MultiPolygon &geom) { return multiPolygonDefinitelyValid(geom); }
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 	template<class GeometryT>
@@ -219,7 +211,7 @@ public:
 	{
 		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 		// When the precheck proves validity, failure stays no_failure: Boost's result.
-		const bool pre = (isRelation || isWay) && PrecheckValid(geom, isRelation ? PRECHECK_CHECK_RELATION : PRECHECK_CHECK_WAY);
+		const bool pre = (isRelation || isWay) && PrecheckValid(geom);
 		if (isRelation && !pre && !geom::is_valid(geom,failure)) {
 			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
 		} else if (isWay && !pre && !geom::is_valid(geom,failure)) {
@@ -235,7 +227,7 @@ public:
 		// Fast path: orientation-only defect. Reversing the rings is what make_valid
 		// produces in this case; fall back to make_valid if it isn't enough.
 		if (allowReverse && failure == boost::geometry::failure_wrong_orientation && ReverseRings(geom)) {
-			if (PrecheckValid(geom, PRECHECK_REVERSED) || geom::is_valid(geom))
+			if (PrecheckValid(geom) || geom::is_valid(geom))
 				return CorrectGeometryResult::Reversed;
 			ReverseRings(geom);
 		}

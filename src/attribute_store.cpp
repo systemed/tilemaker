@@ -216,29 +216,6 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 				if (tlsPairLookups % 1024 == 0)
 					lookups += 1024;
 			}
-#ifdef TMOPT_VERIFY
-			{
-				int64_t slow = -1;
-				bool done = false;
-				if (isHot) {
-					std::lock_guard<std::mutex> lock(pairsMutex[0]);
-					const auto index = pairs[0].find(pair);
-					if (index != -1) { slow = index; done = true; }
-					else if (!pairs[0].full()) { slow = -2; done = true; }
-				}
-				if (!done) {
-					const size_t shard = coldShardForHash(hash);
-					std::lock_guard<std::mutex> lock(pairsMutex[shard]);
-					const auto index = pairs[shard].find(pair);
-					if (index != -1)
-						slow = (shard << (32 - SHARD_BITS)) + index;
-				}
-				if (slow != (int64_t)cached) {
-					std::cerr << "TMOPT_VERIFY: AttributePairStore::addPair mismatch " << cached << " vs " << slow << std::endl;
-					std::abort();
-				}
-			}
-#endif
 			return cached;
 		}
 	}

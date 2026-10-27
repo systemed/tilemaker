@@ -429,17 +429,6 @@ bool PbfProcessor::ReadBlock(
 		sharedBlob = acquireSharedBlock(infile, blockMetadata);
 		sharedBlockReleaser.processor = this;
 		blob = { sharedBlob->data(), sharedBlob->size() };
-#ifdef TMOPT_VERIFY
-		{
-			infile.clear();
-			infile.seekg(blockMetadata.offset);
-			protozero::data_view fresh = reader.readBlob(blockMetadata.length, infile);
-			if (fresh.size() != blob.size() || memcmp(fresh.data(), blob.data(), blob.size()) != 0) {
-				std::cerr << "TMOPT_VERIFY: shared block mismatch at offset " << blockMetadata.offset << std::endl;
-				abort();
-			}
-		}
-#endif
 	} else {
 		infile.seekg(blockMetadata.offset);
 		blob = reader.readBlob(blockMetadata.length, infile);

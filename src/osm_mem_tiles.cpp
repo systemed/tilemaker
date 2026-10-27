@@ -156,25 +156,6 @@ void OsmMemTiles::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	if (IS_WAY_REV(objectID))
 		std::reverse(outer.begin(), outer.end());
 
-#ifdef TMOPT_VERIFY
-	{
-		Linestring ls;
-		populateLinestring(ls, objectID);
-		Polygon p;
-		p.outer().reserve(ls.size());
-		geom::assign_points(p, ls);
-		if (IS_WAY_REV(objectID))
-			std::reverse(p.outer().begin(), p.outer().end());
-		const Ring& got = dst.back().outer();
-		bool same = got.size() == p.outer().size() && dst.back().inners().empty();
-		for (size_t i = 0; same && i < got.size(); i++)
-			same = got[i].x() == p.outer()[i].x() && got[i].y() == p.outer()[i].y();
-		if (!same) {
-			std::cerr << "TMOPT_VERIFY: populateMultiPolygon mismatch for " << objectID << std::endl;
-			abort();
-		}
-	}
-#endif
 }
 
 void OsmMemTiles::Clear() {

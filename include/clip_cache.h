@@ -6,10 +6,6 @@
 #include "geom.h"
 #include <mutex>
 #include <unordered_map>
-#ifdef TMOPT_VERIFY
-#include <iostream>
-#include <map>
-#endif
 
 class TileBbox;
 
@@ -57,27 +53,6 @@ public:
 				break;
 			}
 		}
-#ifdef TMOPT_VERIFY
-		{
-			Entry old;
-			uint vz = zoom;
-			TileCoordinate vx = x, vy = y;
-			while (vz > 0) {
-				vz--;
-				vx /= 2;
-				vy /= 2;
-				const auto& it = s.shadow.find(std::make_tuple((uint16_t)vz, (const void*)this, TileCoordinates(vx, vy), objectID));
-				if (it != s.shadow.end()) {
-					old = it->second;
-					break;
-				}
-			}
-			if (old.geom != rv.geom || old.valid != rv.valid) {
-				std::cerr << "TMOPT_VERIFY: ClipCache mismatch z" << zoom << " " << x << "/" << y << " id " << objectID << std::endl;
-				abort();
-			}
-		}
-#endif
 		return rv;
 	}
 
@@ -100,11 +75,6 @@ public:
 		// the result stays deterministic.
 		if (s.total > (1 << 18))
 			s.clearFrom(0);
-#ifdef TMOPT_VERIFY
-		if (s.shadow.size() > (1 << 18))
-			s.shadow.clear();
-		s.shadow[std::make_tuple((uint16_t)bbox.zoom, (const void*)this, bbox.index, objectID)] = Entry{copy, valid};
-#endif
 
 		Level& level = s.levels[bbox.zoom];
 		if ((s.usedMask & (1u << bbox.zoom)) && !(level.index == bbox.index)) {
@@ -159,9 +129,6 @@ private:
 		uint32_t usedMask = 0;
 		size_t total = 0;
 		Level levels[MAX_LEVELS];
-#ifdef TMOPT_VERIFY
-		std::map<std::tuple<uint16_t, const void*, TileCoordinates, NodeID>, Entry> shadow;
-#endif
 
 		// Drop every level >= zoom.
 		void clearFrom(uint zoom) {
@@ -178,9 +145,6 @@ private:
 		static thread_local LocalStore s;
 		if (s.gen != clipCacheBatchId) {
 			s.clearFrom(0);
-#ifdef TMOPT_VERIFY
-			s.shadow.clear();
-#endif
 			s.gen = clipCacheBatchId;
 		} else if (s.zoom == zoom && s.index == index) {
 			return s;
@@ -188,9 +152,6 @@ private:
 		s.zoom = zoom;
 		s.index = index;
 		s.clearFrom(zoom);
-#ifdef TMOPT_VERIFY
-		s.shadow.erase(s.shadow.lower_bound(std::make_tuple((uint16_t)zoom, (const void*)nullptr, TileCoordinates(0, 0), (NodeID)0)), s.shadow.end());
-#endif
 		return s;
 	}
 

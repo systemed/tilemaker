@@ -783,15 +783,6 @@ double OsmLuaProcessing::Length() {
 }
 
 // Cached geometries creation
-#ifdef TMOPT_VERIFY
-template<class A, class B>
-static bool tmVerifySamePoints(const A &a, const B &b) {
-	if (a.size() != b.size()) return false;
-	for (size_t i = 0; i < a.size(); i++)
-		if (!(a[i].x() == b[i].x() && a[i].y() == b[i].y())) return false;
-	return true;
-}
-#endif
 
 const Linestring &OsmLuaProcessing::linestringCached() {
 	if (!linestringInited) {
@@ -801,12 +792,6 @@ const Linestring &OsmLuaProcessing::linestringCached() {
 		linestringCache.reserve(llVecPtr->size());
 		for (const LatpLon &ll : *llVecPtr)
 			linestringCache.push_back(geom::make<Point>(ll.lon/10000000.0, ll.latp/10000000.0));
-#ifdef TMOPT_VERIFY
-		if (!tmVerifySamePoints(linestringCache, osmStore.llListLinestring(llVecPtr->cbegin(),llVecPtr->cend()))) {
-			std::cerr << "TMOPT_VERIFY linestringCached mismatch on way " << originalOsmID << std::endl;
-			std::abort();
-		}
-#endif
 	}
 	return linestringCache;
 }
@@ -896,19 +881,6 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				mp.resize(1);
 				mp[0].outer().assign(ls.begin(), ls.end());
 				mp[0].inners().clear();
-#ifdef TMOPT_VERIFY
-				{
-					Polygon p;
-					p.outer().reserve(ls.size());
-					geom::assign_points(p, ls);
-					MultiPolygon old;
-					old.push_back(std::move(p));
-					if (!(old.size() == mp.size() && tmVerifySamePoints(old[0].outer(), mp[0].outer()) && old[0].inners().empty() && mp[0].inners().empty())) {
-						std::cerr << "TMOPT_VERIFY Layer polygon scratch mismatch on way " << originalOsmID << std::endl;
-						std::abort();
-					}
-				}
-#endif
 
 				auto correctionResult = CorrectGeometry(mp, /*allowReverse=*/isWay);
 				if(correctionResult == CorrectGeometryResult::Invalid) return;
@@ -956,16 +928,6 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 				correctionResult = CorrectGeometryAfterCheck(correctedLs, failure);
 			}
 			const Linestring &ls = failure != geom::validity_failure_type::no_failure ? correctedLs : cachedLs;
-#ifdef TMOPT_VERIFY
-			{
-				Linestring old = linestringCached();
-				auto oldResult = CorrectGeometry(old);
-				if (oldResult != correctionResult || (oldResult != CorrectGeometryResult::Invalid && !tmVerifySamePoints(old, ls))) {
-					std::cerr << "TMOPT_VERIFY Layer linestring mismatch on way " << originalOsmID << std::endl;
-					std::abort();
-				}
-			}
-#endif
 			if(correctionResult == CorrectGeometryResult::Invalid) return;
 
 			if (isWay && !isRelation) {
@@ -1121,13 +1083,6 @@ Point OsmLuaProcessing::calculateCentroid(CentroidAlgorithm algorithm) {
 	// (e.g. housenumber and POI on the same building). Exceptions are not memoized.
 	const int a = static_cast<int>(algorithm);
 	if (centroidMemoValid[a]) {
-#ifdef TMOPT_VERIFY
-		Point check = calculateCentroidUncached(algorithm);
-		if (memcmp(&check, &centroidMemo[a], sizeof(Point)) != 0) {
-			std::cerr << "TMOPT_VERIFY centroid memo mismatch on " << originalOsmID << std::endl;
-			std::abort();
-		}
-#endif
 		return centroidMemo[a];
 	}
 	centroidMemo[a] = calculateCentroidUncached(algorithm);
@@ -1384,9 +1339,6 @@ AttrKeyCacheEntry& lookupAttrKey(AttributeKeyStore& keyStore, const char* key, s
 	const uintptr_t p = reinterpret_cast<uintptr_t>(key);
 	AttrKeyCacheEntry& e = attrKeyCache[((p >> 4) ^ (p >> 13)) & (ATTR_KEY_CACHE_SIZE - 1)];
 	if (e.ptr == key && e.len == keyLen && e.key.size() == keyLen && memcmp(e.key.data(), key, keyLen) == 0) {
-#ifdef TMOPT_VERIFY
-		if (keyStore.key2index(e.key) != e.keyIndex) { std::cerr << "TMOPT_VERIFY: keyIndex mismatch for " << e.key << std::endl; abort(); }
-#endif
 		return e;
 	}
 	// resolve the index first: key2index may throw (too many keys), and a pcall in Lua could continue
@@ -1421,9 +1373,6 @@ void OsmLuaProcessing::attributeFast(const char *key, size_t keyLen, T val, char
 	const size_t word = layer / 64;
 	const uint64_t bit = uint64_t(1) << (layer % 64);
 	if (e.seenLayers.size() > word && (e.seenLayers[word] & bit)) {
-#ifdef TMOPT_VERIFY
-		if (alreadySeen.size() <= layer || !alreadySeen[layer].count(e.key)) { std::cerr << "TMOPT_VERIFY: seen-bit mismatch for " << e.key << std::endl; abort(); }
-#endif
 		return;
 	}
 	setVectorLayerMetadata(layer, e.key, type);

@@ -283,28 +283,6 @@ void writeMultiPolygon(
 
 	geom::correct(current);
 
-#ifdef TMOPT_VERIFY
-	if (knownPolygonsValid) {
-		MultiPolygon check = current;
-		if (!geom::is_valid(check)) repair_multi_polygon(check, true);
-		bool same = check.size() == current.size();
-		for (std::size_t i = 0; same && i < check.size(); ++i) {
-			const Polygon &a = check[i], &b = current[i];
-			same = a.inners().size() == b.inners().size() && a.outer().size() == b.outer().size();
-			for (std::size_t j = 0; same && j < a.outer().size(); ++j)
-				same = a.outer()[j].x() == b.outer()[j].x() && a.outer()[j].y() == b.outer()[j].y();
-			for (std::size_t r = 0; same && r < a.inners().size(); ++r) {
-				same = a.inners()[r].size() == b.inners()[r].size();
-				for (std::size_t j = 0; same && j < a.inners()[r].size(); ++j)
-					same = a.inners()[r][j].x() == b.inners()[r][j].x() && a.inners()[r][j].y() == b.inners()[r][j].y();
-			}
-		}
-		if (!same) {
-			cerr << "TMOPT_VERIFY writeMultiPolygon skip mismatch" << endl;
-			abort();
-		}
-	}
-#endif
 
 	geom::validity_failure_type failure;
 	if (!knownPolygonsValid && (simplifyLevel > 0 || verbose) && !geom::is_valid(current, failure)) {
@@ -642,25 +620,6 @@ void outputProc(
 			ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData, &attrMemo);
 		}
 		tile.serialize(outputdata);
-#ifdef TMOPT_VERIFY
-		{
-			// Encode the tile again without the attribute memo: the bytes must be identical
-			vtzero::tile_builder verifyTile;
-			for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
-				if (signalStop) break;
-				const std::string& layerName = sharedData.layers.layers[lt->at(0)].name;
-				vtzero::layer_builder vtLayer{verifyTile, layerName, sharedData.config.mvtVersion, extent};
-				CopyExistingLayer(existingTile, layerName, vtLayer);
-				ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData, nullptr);
-			}
-			std::string verifyData;
-			verifyTile.serialize(verifyData);
-			if (verifyData != outputdata) {
-				cerr << "TMOPT_VERIFY attribute memo tile mismatch at " << zoom << "/" << bbox.index.x << "/" << bbox.index.y << endl;
-				abort();
-			}
-		}
-#endif
 	}
 
 	// Write to file or sqlite

@@ -11,11 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#ifdef TMOPT_VERIFY
-#include <atomic>
-#include <iostream>
-#include <string>
-#endif
 
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/range/irange.hpp>
@@ -431,31 +426,6 @@ bool multiPolygonDefinitelyValid(const MultiPolygon &mp) {
 	return ok;
 }
 
-#ifdef TMOPT_VERIFY
-static std::atomic<uint64_t> precheckHits[PRECHECK_SITES], precheckCalls[PRECHECK_SITES];
-static const char *precheckSiteName(int site) {
-	static const char *names[PRECHECK_SITES] = { "tds_buildWayGeometry", "repair_one_polygon", "repair_multi_polygon",
-		"repair_multi_polygon_part", "CheckGeometry_relation", "CheckGeometry_way", "CorrectGeometry_reversed", "shp" };
-	return names[site];
-}
-static void precheckReport(int site) {
-	std::cerr << ("TMOPT_VERIFY: precheck " + std::string(precheckSiteName(site)) + " hits " + std::to_string(precheckHits[site].load()) +
-	              " of " + std::to_string(precheckCalls[site].load()) + "\n");
-}
-namespace {
-struct PrecheckFinalReport {
-	~PrecheckFinalReport() {
-		for (int s = 0; s < PRECHECK_SITES; s++)
-			if (precheckCalls[s].load()) precheckReport(s);
-	}
-} precheckFinalReport;
-}
-void precheckVerifyCount(int site, bool hit) {
-	if (hit) precheckHits[site]++;
-	const uint64_t c = ++precheckCalls[site];
-	if (c >= 1024 && (c & (c - 1)) == 0) precheckReport(site);
-}
-#endif
 
 // Repair a single (possibly invalid) polygon in an area-preserving way and
 // append the resulting valid polygon(s) to `out`. Returns true on success.
@@ -472,26 +442,9 @@ static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &o
 		bool revValid = false;
 		if (revArea > 1E-12 && revArea >= minArea) {
 			const bool pre = polygonDefinitelyValid(rev);
-#ifdef TMOPT_VERIFY
-			precheckVerify(rev, pre, PRECHECK_REPAIR_ONE);
-#endif
 			revValid = pre || geom::is_valid(rev);
 		}
 		if (revValid) {
-#ifdef TMOPT_VERIFY
-			MultiPolygon fixed;
-			geometry::correct(p, fixed, 1E-12);
-			bool same = fixed.size() == 1 && fixed[0].inners().empty() &&
-				fixed[0].outer().size() == rev.outer().size();
-			for (std::size_t i = 0; same && i < rev.outer().size(); ++i)
-				same = fixed[0].outer()[i].x() == rev.outer()[i].x() &&
-				       fixed[0].outer()[i].y() == rev.outer()[i].y();
-			if (!same) {
-				std::cerr << "TMOPT_VERIFY repair_one_polygon mismatch: fast " << boost::geometry::wkt(rev)
-				          << " dissolve " << boost::geometry::wkt(fixed) << std::endl;
-				abort();
-			}
-#endif
 			out.push_back(std::move(rev));
 			return true;
 		}
@@ -535,9 +488,6 @@ bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid)
 {
 	if (!knownInvalid) {
 		const bool pre = multiPolygonDefinitelyValid(mp);
-#ifdef TMOPT_VERIFY
-		precheckVerify(mp, pre, PRECHECK_REPAIR_MP);
-#endif
 		if (pre || geom::is_valid(mp)) return true;
 	}
 
@@ -559,9 +509,6 @@ bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid)
 		// established it is invalid.
 		if (mp.size() > 1) {
 			const bool pre = polygonDefinitelyValid(p);
-#ifdef TMOPT_VERIFY
-			precheckVerify(p, pre, PRECHECK_REPAIR_MP_PART);
-#endif
 			if (pre || geom::is_valid(p)) {
 				out.push_back(p);
 				continue;
