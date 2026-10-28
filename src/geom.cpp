@@ -532,69 +532,100 @@ bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid)
 
 // ---------------
 // Union multipolygons
-// Groups polygons into connected components by bbox intersection (via R-tree +
-// union-find), then runs the binary reduction only within each component.
-// Disjoint polygons are concatenated directly, skipping the expensive union_()
-// call that Boost still runs even for non-overlapping geometry.
-void union_many(std::vector<MultiPolygon> &to_unify) {
-	if (to_unify.size() < 2) return;
 
+// Union of two multipolygons whose own polygons don't overlap (each is an input
+// polygon or an earlier union result). Only the polygons whose bbox intersects
+// a bbox on the other side are passed to union_(); the rest can't overlap
+// anything and are copied through. union_() tests every ring that has no
+// intersections against the whole other geometry, so passing it two large
+// multipolygons that only meet along a seam is quadratic.
+static void union_near(MultiPolygon &a, MultiPolygon &b, MultiPolygon &out) {
 	namespace bgi = boost::geometry::index;
 	typedef std::pair<Box, size_t> BoxIdx;
 
-	std::vector<Box> boxes(to_unify.size());
-	for (size_t i = 0; i < to_unify.size(); i++)
-		boost::geometry::envelope(to_unify[i], boxes[i]);
+	std::vector<BoxIdx> bBoxes(b.size());
+	for (size_t j = 0; j < b.size(); j++) {
+		boost::geometry::envelope(b[j], bBoxes[j].first);
+		bBoxes[j].second = j;
+	}
+	bgi::rtree<BoxIdx, bgi::quadratic<16>> rtree(bBoxes);
 
-	// Union-find with path compression
-	std::vector<size_t> parent(to_unify.size());
-	for (size_t i = 0; i < to_unify.size(); i++) parent[i] = i;
-	std::function<size_t(size_t)> find = [&](size_t x) -> size_t {
-		return parent[x] == x ? x : (parent[x] = find(parent[x]));
+	MultiPolygon aNear, bNear;
+	std::vector<bool> bIsNear(b.size(), false);
+	for (auto &p : a) {
+		Box box;
+		boost::geometry::envelope(p, box);
+		bool isNear = false;
+		for (auto const &v : rtree | bgi::adaptors::queried(bgi::intersects(box))) {
+			bIsNear[v.second] = true;
+			isNear = true;
+		}
+		(isNear ? aNear : out).push_back(std::move(p));
+	}
+	for (size_t j = 0; j < b.size(); j++)
+		(bIsNear[j] ? bNear : out).push_back(std::move(b[j]));
+
+	if (aNear.empty()) return;
+	MultiPolygon unified;
+	boost::geometry::union_(aNear, bNear, unified);
+	for (auto &p : unified) out.push_back(std::move(p));
+}
+
+// Splits the multipolygons into their polygons, sorts those along a Z-order
+// curve and runs a binary reduction with union_near(). Thanks to the sort, each
+// step unions two neighbouring regions, so only polygons along their seam go
+// through union_(), and polygons that touch nothing are never passed to it.
+void union_many(std::vector<MultiPolygon> &to_unify) {
+	if (to_unify.size() < 2) return;
+
+	std::vector<Polygon> polys;
+	for (auto &mp : to_unify)
+		for (auto &p : mp)
+			if (!p.outer().empty()) polys.push_back(std::move(p));
+	if (polys.empty()) { to_unify[0].clear(); return; }
+
+	// Z-order (Morton) key of each polygon's bbox centre within the overall bbox
+	std::vector<Point> centres(polys.size());
+	Box all;
+	boost::geometry::assign_inverse(all);
+	for (size_t i = 0; i < polys.size(); i++) {
+		Box box;
+		boost::geometry::envelope(polys[i], box);
+		boost::geometry::centroid(box, centres[i]);
+		boost::geometry::expand(all, box);
+	}
+	const double minX = all.min_corner().x(), minY = all.min_corner().y();
+	const double w = std::max(all.max_corner().x() - minX, 1e-300), h = std::max(all.max_corner().y() - minY, 1e-300);
+	auto spread = [](uint32_t v) -> uint32_t {
+		v &= 0xFFFF;
+		v = (v | (v << 8)) & 0x00FF00FF;
+		v = (v | (v << 4)) & 0x0F0F0F0F;
+		v = (v | (v << 2)) & 0x33333333;
+		v = (v | (v << 1)) & 0x55555555;
+		return v;
 	};
-
-	// Incrementally build an R-tree; unite each polygon with all prior ones
-	// whose bboxes intersect (transitivity is handled by union-find)
-	bgi::rtree<BoxIdx, bgi::quadratic<16>> rtree;
-	for (size_t i = 0; i < to_unify.size(); i++) {
-		if (boost::geometry::is_empty(to_unify[i])) continue;
-		for (auto const &v : rtree | bgi::adaptors::queried(bgi::intersects(boxes[i]))) {
-			size_t ri = find(i), rj = find(v.second);
-			if (ri != rj) parent[ri] = rj;
-		}
-		rtree.insert({boxes[i], i});
+	std::vector<std::pair<uint32_t, size_t>> order(polys.size());
+	for (size_t i = 0; i < polys.size(); i++) {
+		uint32_t x = static_cast<uint32_t>((centres[i].x() - minX) / w * 65535.0);
+		uint32_t y = static_cast<uint32_t>((centres[i].y() - minY) / h * 65535.0);
+		order[i] = { spread(x) | (spread(y) << 1), i };
 	}
+	std::sort(order.begin(), order.end());
 
-	// Bucket indices by component root (roots are in 0..n-1)
-	std::vector<std::vector<size_t>> components(to_unify.size());
-	for (size_t i = 0; i < to_unify.size(); i++)
-		components[find(i)].push_back(i);
+	std::vector<MultiPolygon> sub(polys.size());
+	for (size_t i = 0; i < order.size(); i++) sub[i].push_back(std::move(polys[order[i].second]));
 
-	// Union within each component; concatenate all results into to_unify[0]
-	MultiPolygon result;
-	for (auto &comp : components) {
-		if (comp.empty()) continue;
-		if (comp.size() == 1) {
-			for (auto &p : to_unify[comp[0]]) result.push_back(std::move(p));
-			continue;
+	size_t step = 1, half_step;
+	do {
+		half_step = step; step *= 2;
+		for (size_t i = 0; i + half_step < sub.size(); i += step) {
+			MultiPolygon unified;
+			union_near(sub[i], sub[i + half_step], unified);
+			sub[i] = std::move(unified);
 		}
-		std::vector<MultiPolygon> sub;
-		sub.reserve(comp.size());
-		for (size_t idx : comp) sub.push_back(std::move(to_unify[idx]));
+	} while (step < sub.size());
 
-		size_t step = 1, half_step;
-		do {
-			half_step = step; step *= 2;
-			for (size_t i = 0; i + half_step < sub.size(); i += step) {
-				MultiPolygon unified;
-				boost::geometry::union_(sub[i], sub[i + half_step], unified);
-				sub[i] = std::move(unified);
-			}
-		} while (step < sub.size());
-
-		for (auto &p : sub[0]) result.push_back(std::move(p));
-	}
-	to_unify[0] = std::move(result);
+	to_unify[0] = std::move(sub[0]);
 }
 
 // ---------------
