@@ -289,6 +289,17 @@ bool PbfProcessor::ReadRelations(
 	TagMap tags;
 	std::vector<RelationStore::element_t> relations;
 
+	// Passes skip shards with no ways, so the first pass is for the first non-empty shard
+	uint firstWayShard = 0;
+	while (firstWayShard + 1 < effectiveShards && osmStore.ways.shard(firstWayShard).size() == 0)
+		firstWayShard++;
+	auto wayInOtherShard = [&](WayID wayId, uint thisShard) {
+		for (uint s = 0; s < effectiveShards; s++)
+			if (s != thisShard && osmStore.ways.contains(s, wayId))
+				return true;
+		return false;
+	};
+
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 	int boundaryKey = findStringPosition(pb, "boundary");
@@ -309,7 +320,11 @@ bool PbfProcessor::ReadRelations(
 			WayVec outerWayVec, innerWayVec;
 			bool isInnerOuter = isBoundary || isMultiPolygon;
 			bool skipToNext = false;
-			bool firstWay = true;
+			// With shards, a relation is read in the pass for the shard of its first member way
+			// that is in the store. Member ways missing from the extract don't decide the shard,
+			// so relations crossing the extract boundary aren't dropped; a relation with no stored
+			// member ways is read in the first pass.
+			bool shardDecided = effectiveShards <= 1;
 			for (int n = 0; n < pbfRelation.memids.size(); n++) {
 				uint64_t lastID = pbfRelation.memids[n];
 				if (pbfRelation.types[n] != PbfReader::Relation::MemberType::WAY) { continue; }
@@ -317,16 +332,18 @@ bool PbfProcessor::ReadRelations(
 				if (role==innerKey || role==outerKey) isInnerOuter=true;
 				WayID wayId = static_cast<WayID>(lastID);
 
-				if (firstWay && effectiveShards > 1 && !osmStore.ways.contains(shard, wayId)) {
-					skipToNext = true;
-					break;
+				if (!shardDecided) {
+					if (osmStore.ways.contains(shard, wayId)) {
+						shardDecided = true;
+					} else if (wayInOtherShard(wayId, shard)) {
+						skipToNext = true;
+						break;
+					}
 				}
-				if (firstWay)
-					firstWay = false;
 				(role == innerKey ? innerWayVec : outerWayVec).push_back(wayId);
 			}
 
-			if (skipToNext)
+			if (skipToNext || (!shardDecided && shard != firstWayShard))
 				continue;
 
 			try {
