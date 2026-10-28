@@ -191,8 +191,15 @@ int main(const int argc, const char* argv[]) {
 		rapidjson::FileReadStream is(fp.get(), readBuffer, sizeof(readBuffer));
 		jsonConfig.ParseStream(is);
 		if (jsonConfig.HasParseError()) {
+			// Translate the byte offset into line/column (re-read in the same text mode as openFile)
+			size_t line = 1, column = 1;
+			ifstream jsonFile(options.jsonFile);
+			char c;
+			for (size_t i = 0; i < jsonConfig.GetErrorOffset() && jsonFile.get(c); i++) {
+				if (c == '\n') { line++; column = 1; } else column++;
+			}
 			cerr << "Invalid JSON file: " << rapidjson::GetParseError_En(jsonConfig.GetParseError())
-			     << " at offset " << jsonConfig.GetErrorOffset() << "." << endl;
+			     << " at line " << line << ", column " << column << "." << endl;
 			return -1;
 		}
 
