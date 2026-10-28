@@ -140,9 +140,10 @@ template<typename OO> void sortOutputObjects(
         return;
     }
 
-    // Parallel counting sort on the key: each chunk copies its objects
-    // into a contiguous buffer and counts its keys, then scatters them
-    // back into their final positions.
+    // Parallel counting sort on the key: each chunk counts its keys, then
+    // scatters its objects into their final positions in a buffer, which is
+    // copied back in order. Writing the objects (which can live in the
+    // --store files) sequentially means each page is dirtied only once.
     const size_t chunks = std::max<size_t>(1, std::min<size_t>(threadNum, n / countingSortMinSize));
     const size_t chunkSize = (n + chunks - 1) / chunks;
     // OO has no default constructor, so use raw storage for the copies.
@@ -165,10 +166,8 @@ template<typename OO> void sortOutputObjects(
     runChunks([&](size_t c, size_t from, size_t to) {
         size_t* counts = &offsets[c * keyValues];
         auto it = begin + from;
-        for (size_t i = from; i < to; i++, ++it) {
-            new (&buffer[i]) OO(*it);
-            counts[key(buffer[i])]++;
-        }
+        for (size_t i = from; i < to; i++, ++it)
+            counts[key(*it)]++;
     });
 
     // Turn counts into starting positions: by key, then by chunk.
@@ -183,8 +182,15 @@ template<typename OO> void sortOutputObjects(
 
     runChunks([&](size_t c, size_t from, size_t to) {
         size_t* next = &offsets[c * keyValues];
-        for (size_t i = from; i < to; i++)
-            begin[next[key(buffer[i])]++] = buffer[i];
+        auto it = begin + from;
+        for (size_t i = from; i < to; i++, ++it)
+            new (&buffer[next[key(*it)]++]) OO(*it);
+    });
+
+    runChunks([&](size_t c, size_t from, size_t to) {
+        auto it = begin + from;
+        for (size_t i = from; i < to; i++, ++it)
+            *it = buffer[i];
     });
 }
 
