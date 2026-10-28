@@ -4,6 +4,7 @@
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <exception>
 #include <unordered_set>
 
 #include "node_store.h"
@@ -152,7 +153,11 @@ bool PbfProcessor::ReadWays(
 					llVec.push_back(osmStore.nodes.at(static_cast<NodeID>(nodeId)));
 					nodeVec.push_back(nodeId);
 				} catch (std::out_of_range &err) {
-					if (osmStore.integrity_enforced()) throw err;
+					if (osmStore.integrity_enforced())
+						throw std::runtime_error("Way " + std::to_string(pbfWay.id) + " references node " + std::to_string(nodeId) +
+							", which is not in the input file.\n"
+							"The .osm.pbf was probably clipped without keeping complete ways: rerun with --skip-integrity,\n"
+							"or clip it with osmium extract --strategy=smart.");
 				}
 			}
 
@@ -716,6 +721,9 @@ int PbfProcessor::ReadPbfFile(
 			// Launch the pool with threadNum threads
 			boost::asio::thread_pool pool(threadNum);
 			std::mutex block_mutex;
+			// First exception thrown by a worker; rethrown here after pool.join()
+			// (an exception escaping a pool thread would call std::terminate)
+			std::exception_ptr workerError;
 
 			// If we're in ReadPhase::Relations and there aren't many blocks left
 			// to read, increase parallelism by letting each thread only process
@@ -777,27 +785,37 @@ int PbfProcessor::ReadPbfFile(
 
 			{
 				for(const std::vector<IndexedBlockMetadata>& blockRange: blockRanges) {
-					boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &nodeKeys, &wayKeys]() {
+					boost::asio::post(pool, [=, &blockRange, &blocks, &block_mutex, &workerError, &nodeKeys, &wayKeys]() {
 						if (phase == ReadPhase::Nodes)
 							osmStore.nodes.batchStart();
 						if (phase == ReadPhase::Ways)
 							osmStore.ways.batchStart();
 
-						for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
-							auto infile = generate_stream();
-							auto output = generate_output();
+						try {
+							for (const IndexedBlockMetadata& indexedBlockMetadata: blockRange) {
+								{
+									const std::lock_guard<std::mutex> lock(block_mutex);
+									if (workerError) return;
+								}
+								auto infile = generate_stream();
+								auto output = generate_output();
 
-							if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, wayKeys, locationsOnWays, phase, shard, effectiveShards)) {
-								const std::lock_guard<std::mutex> lock(block_mutex);
-								blocks.erase(indexedBlockMetadata.index);	
+								if(ReadBlock(*infile, *output, indexedBlockMetadata, nodeKeys, wayKeys, locationsOnWays, phase, shard, effectiveShards)) {
+									const std::lock_guard<std::mutex> lock(block_mutex);
+									blocks.erase(indexedBlockMetadata.index);
+								}
+								blocksProcessed++;
 							}
-							blocksProcessed++;
+						} catch (...) {
+							const std::lock_guard<std::mutex> lock(block_mutex);
+							if (!workerError) workerError = std::current_exception();
 						}
 					});
 				}
 			}
-		
+
 			pool.join();
+			if (workerError) std::rethrow_exception(workerError);
 			{
 				// drop any shared-block entries left over (e.g. re-subdivided blocks) so none outlive this pass/file
 				std::lock_guard<std::mutex> l(sharedBlocksMutex);
