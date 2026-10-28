@@ -49,7 +49,7 @@ Geometry OsmMemTiles::buildWayGeometry(
 	const NodeID objectID,
 	const TileBbox &bbox
 ) {
-	if (objectID < OSM_THRESHOLD || (geomType == POLYGON_ && IS_WAY(objectID))) {
+	if (objectID < OSM_THRESHOLD || (geomType == POLYGON_ && (IS_WAY(objectID) || IS_WAY_REV(objectID)))) {
 		return TileDataSource::buildWayGeometry(geomType, objectID, bbox);
 	}
 
@@ -115,6 +115,14 @@ Linestring& OsmMemTiles::getOrBuildLinestring(NodeID objectID) const {
 	// This is safe, because this function is the only thing that can
 	// create/destroy entries in the cache, and the cache is thread-local.
 
+	// The cache is a pure memo of the way store; empty it whenever this thread
+	// starts a new tile batch so its linestrings don't pin heap between batches.
+	thread_local uint64_t lastBatch = 0;
+	if (lastBatch != clipCacheBatchId) {
+		lastBatch = clipCacheBatchId;
+		linestringCache.clear();
+	}
+
 	Linestring* cachedEntry = linestringCache.get(objectID);
 	if (cachedEntry != nullptr)
 		return *cachedEntry;
@@ -138,13 +146,16 @@ void OsmMemTiles::populateMultiPolygon(MultiPolygon& dst, NodeID objectID) {
 	//
 	// There are some exceptions, but some rough measurements showed caching
 	// hurt overall throughput.
-	Linestring ls;
-	populateLinestring(ls, objectID);
-	Polygon p;
-	p.outer().reserve(ls.size());
-	geom::assign_points(p, ls);
+	wayStore.at(OSM_ID(objectID), wayNodes);
 	dst.reserve(dst.size() + 1);
-	dst.push_back(std::move(p));
+	dst.emplace_back();
+	Ring& outer = dst.back().outer();
+	outer.reserve(wayNodes.size());
+	for (const LatpLon& node : wayNodes)
+		outer.push_back(boost::geometry::make<Point>(node.lon/10000000.0, node.latp/10000000.0));
+	if (IS_WAY_REV(objectID))
+		std::reverse(outer.begin(), outer.end());
+
 }
 
 void OsmMemTiles::Clear() {

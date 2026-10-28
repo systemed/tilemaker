@@ -199,3 +199,99 @@ void insertIntermediateTiles(Ring const &points, uint baseZoom, std::unordered_s
 {
 	impl_insertIntermediateTiles(points, baseZoom, tileSet);
 }
+
+// Vector variant: same tiles as above, without hashing. Each vertex tile is computed once
+// (the previous vertex tile is carried over), and lon2tilexf/latp2tileyf are inlined:
+// multiplying by the exact power of two 2^z gives the same bits as scalbn(v, z).
+static inline void pushTile(std::vector<TileCoordinates> &tiles, TileCoordinate x, TileCoordinate y) {
+	if (tiles.empty() || tiles.back().x != x || tiles.back().y != y)
+		tiles.push_back(TileCoordinates(x, y));
+}
+
+template<typename T>
+void impl_insertIntermediateTilesVec(T const &points, uint baseZoom, std::vector<TileCoordinates> &tiles) {
+	const size_t start = tiles.size();
+	const double scale = scalbn(1.0, (int)(uint8_t)baseZoom);
+	TileCoordinate tileX1 = 0, tileY1 = 0;
+	for (auto it = points.begin(); it != points.end(); ++it) {
+		// Calculate p2 tile (same arithmetic as lon2tilexf/latp2tileyf)
+		double p2y = std::min(MaxLatp, std::max(MinLatp, it->y()));
+		double tileXf2 = ((it->x()+180.0) * (1/360.0)) * scale, tileYf2 = ((180.0-p2y) * (1/360.0)) * scale;
+		TileCoordinate tileX2 = static_cast<TileCoordinate>(tileXf2), tileY2 = static_cast<TileCoordinate>(tileYf2);
+		if (it == points.begin()) {	// first point, so no line
+			pushTile(tiles, tileX2, tileY2);
+			tileX1 = tileX2; tileY1 = tileY2;
+			continue;
+		}
+
+		// Supercover line algorithm from http://eugen.dedu.free.fr/projects/bresenham/
+		int i;                       // loop counter
+		int ystep, xstep;            // the step on y and x axis
+		int error;                   // the error accumulated during the increment
+		int errorprev;               // *vision the previous value of the error variable
+		int y = tileY1, x = tileX1;  // the line points
+		int ddy, ddx;                // compulsory variables: the double values of dy and dx
+		int dx = tileX2 - tileX1;
+		int dy = tileY2 - tileY1;
+
+		if (dy < 0) { ystep = -1; dy = -dy; } else { ystep = 1; }
+		if (dx < 0) { xstep = -1; dx = -dx; } else { xstep = 1; }
+
+		ddy = 2 * dy;  // work with double values for full precision
+		ddx = 2 * dx;
+		if (ddx >= ddy) {  // first octant (0 <= slope <= 1)
+			errorprev = error = dx;  // start in the middle of the square
+			for (i=0 ; i < dx ; i++) {  // do not use the first point (already done)
+				x += xstep;
+				error += ddy;
+				if (error > ddx){  // increment y if AFTER the middle ( > )
+					y += ystep;
+					error -= ddx;
+					if (error + errorprev < ddx)  // bottom square also
+						pushTile(tiles, x, y-ystep);
+					else if (error + errorprev > ddx)  // left square also
+						pushTile(tiles, x-xstep, y);
+					else {  // corner: bottom and left squares also
+						pushTile(tiles, x, y-ystep);
+						pushTile(tiles, x-xstep, y);
+					}
+				}
+				pushTile(tiles, x, y);
+				errorprev = error;
+			}
+		} else {  // the same as above
+			errorprev = error = dy;
+			for (i=0 ; i < dy ; i++){
+				y += ystep;
+				error += ddx;
+				if (error > ddy){
+					x += xstep;
+					error -= ddy;
+					if (error + errorprev < ddy)
+						pushTile(tiles, x-xstep, y);
+					else if (error + errorprev > ddy)
+						pushTile(tiles, x, y-ystep);
+					else{
+						pushTile(tiles, x-xstep, y);
+						pushTile(tiles, x, y-ystep);
+					}
+				}
+				pushTile(tiles, x, y);
+				errorprev = error;
+			}
+		}
+		pushTile(tiles, tileX2, tileY2);
+		tileX1 = tileX2; tileY1 = tileY2;
+	}
+	sortUniqueTiles(tiles, start);
+}
+
+void insertIntermediateTiles(Linestring const &points, uint baseZoom, std::vector<TileCoordinates> &tiles)
+{
+	impl_insertIntermediateTilesVec(points, baseZoom, tiles);
+}
+
+void insertIntermediateTiles(Ring const &points, uint baseZoom, std::vector<TileCoordinates> &tiles)
+{
+	impl_insertIntermediateTilesVec(points, baseZoom, tiles);
+}

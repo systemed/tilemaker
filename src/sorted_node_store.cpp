@@ -9,21 +9,259 @@
 #include "external/libpopcnt.h"
 #include "external/streamvbyte.h"
 #include "external/streamvbyte_zigzag.h"
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 namespace SortedNodeStoreTypes {
 	const uint16_t GroupSize = 256;
 	const uint16_t ChunkSize = 256;
 	const uint16_t ChunkAlignment = 16;
 	const uint32_t ChunkCompressed = 1 << 31;
-	const uint8_t ChunkCacheSize = 4;
+
+	// Direct-mapped, per-thread cache of decoded compressed chunks.
+	// Decoded values are stored compactly in rank order (the order of the set
+	// bits of the chunk's node mask), together with the mask and the rank at
+	// the start of each mask word, so a hit is a bit test, a popcount and a load.
+	const size_t ChunkCacheBits = 8;
+	const size_t ChunkCacheSize = 1 << ChunkCacheBits;
+	const uint64_t ChunkCacheEmpty = ~0ull;
 
 	struct CachedChunk {
-		CachedChunk(): id(-1) {}
-
-		int64_t id;
-		std::array<int32_t, ChunkSize> lons;
-		std::array<int32_t, ChunkSize> latps;
+		uint64_t nodeMask[4];
+		uint32_t rankBase[4];
+		LatpLon nodes[ChunkSize];
 	};
+
+	struct ChunkCache {
+		ChunkCache() {
+			for (size_t i = 0; i < ChunkCacheSize; i++)
+				keys[i] = ChunkCacheEmpty;
+		}
+
+		// Keys are kept apart from the (large) entries so that untouched
+		// entries are never paged in.
+		uint64_t keys[ChunkCacheSize];
+		CachedChunk entries[ChunkCacheSize];
+	};
+
+	thread_local ChunkCache* chunkCache = nullptr;
+	thread_local std::unique_ptr<ChunkCache> chunkCacheOwner;
+
+	ChunkCache& getChunkCache() {
+		if (chunkCache == nullptr) {
+			chunkCacheOwner.reset(new ChunkCache());
+			chunkCache = chunkCacheOwner.get();
+		}
+		return *chunkCache;
+	}
+
+	inline size_t chunkCacheIndex(uint64_t key) {
+		return (size_t)((key * 0x9E3779B97F4A7C15ull) >> (64 - ChunkCacheBits));
+	}
+
+	std::atomic<uint64_t> nextGeneration(1);
+
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__) && !defined(__POPCNT__) && \
+	defined(HAVE_ASM_POPCNT) && defined(HAVE_CPUID)
+	// Without -mpopcnt, __builtin_popcountll is a call into libgcc. Use the
+	// POPCNT instruction (libpopcnt's popcnt64) when the CPU has it.
+	const bool cpuHasPopcnt = (get_cpuid() & bit_POPCNT) != 0;
+#define SORTED_NODE_STORE_RUNTIME_POPCNT
+#endif
+
+	inline uint64_t popcount64(uint64_t x) {
+#if defined(SORTED_NODE_STORE_RUNTIME_POPCNT)
+		if (cpuHasPopcnt)
+			return popcnt64(x);
+		return ::popcount64(x);
+#elif defined(__GNUC__) || defined(__clang__)
+		return __builtin_popcountll(x);
+#elif defined(_MSC_VER) && defined(_M_X64)
+		return __popcnt64(x);
+#else
+		x = x - ((x >> 1) & 0x5555555555555555ull);
+		x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+		x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0Full;
+		return (x * 0x0101010101010101ull) >> 56;
+#endif
+	}
+
+	inline unsigned countTrailingZeros64(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+		return __builtin_ctzll(x);
+#elif defined(_MSC_VER) && defined(_M_X64)
+		unsigned long index;
+		_BitScanForward64(&index, x);
+		return index;
+#else
+		return popcount64((x & (0 - x)) - 1);
+#endif
+	}
+
+	// Load 8 mask bytes as a word whose bit j is bit (j % 8) of byte (j / 8),
+	// matching how the masks are addressed bytewise. Compiles to a plain load
+	// on little-endian targets.
+	inline uint64_t loadMaskWord(const uint8_t* p) {
+		return (uint64_t)p[0] | ((uint64_t)p[1] << 8) | ((uint64_t)p[2] << 16) | ((uint64_t)p[3] << 24) |
+			((uint64_t)p[4] << 32) | ((uint64_t)p[5] << 40) | ((uint64_t)p[6] << 48) | ((uint64_t)p[7] << 56);
+	}
+
+	// Number of set bits in the 256-bit mask below position `bit`.
+	inline size_t maskRank(const uint8_t* mask, size_t bit) {
+		const size_t word = bit / 64;
+		size_t rv = 0;
+		for (size_t i = 0; i < word; i++)
+			rv += popcount64(loadMaskWord(mask + i * 8));
+		rv += popcount64(loadMaskWord(mask + word * 8) & ((1ull << (bit % 64)) - 1));
+		return rv;
+	}
+
+	inline size_t maskCount(const uint8_t* mask) {
+		return popcount64(loadMaskWord(mask)) + popcount64(loadMaskWord(mask + 8)) +
+			popcount64(loadMaskWord(mask + 16)) + popcount64(loadMaskWord(mask + 24));
+	}
+
+	inline bool maskTest(const uint8_t* mask, size_t bit) {
+		return mask[bit / 8] & (1 << (bit % 8));
+	}
+
+	// Locate the chunk holding `id`; throws std::out_of_range if its group or
+	// chunk is missing.
+	inline const ChunkInfoBase* findChunk(GroupInfo* const* groups, NodeID id) {
+		const size_t groupIndex = id / (GroupSize * ChunkSize);
+		const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
+
+		const GroupInfo* groupPtr = groups[groupIndex];
+
+		if (groupPtr == nullptr) {
+			throw std::out_of_range("SortedNodeStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
+		}
+
+		if (!maskTest(groupPtr->chunkMask, chunk))
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no chunk");
+		const size_t chunkOffset = maskRank(groupPtr->chunkMask, chunk);
+
+		uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
+		return (const ChunkInfoBase*)(((const char *)(groupPtr->chunkOffsets + maskCount(groupPtr->chunkMask))) + (scaledOffset * ChunkAlignment));
+	}
+
+	inline LatpLon uncompressedNode(const ChunkInfoBase* basePtr, NodeID id) {
+		const UncompressedChunkInfo* ptr = (const UncompressedChunkInfo*)basePtr;
+		const size_t nodeIndex = id % ChunkSize;
+		if (!maskTest(ptr->nodeMask, nodeIndex))
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
+		const size_t nodeOffset = maskRank(ptr->nodeMask, nodeIndex);
+
+		return ptr->nodes[nodeOffset];
+	}
+
+	inline LatpLon cachedNode(const CachedChunk& cached, NodeID id) {
+		const size_t nodeIndex = id % ChunkSize;
+		const size_t w = nodeIndex / 64;
+		const uint64_t bit = 1ull << (nodeIndex % 64);
+		const uint64_t word = cached.nodeMask[w];
+		if (!(word & bit))
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
+		return cached.nodes[cached.rankBase[w] + popcount64(word & (bit - 1))];
+	}
+
+	// Same as svb_zigzag_decode_32 in streamvbyte_zigzag.c.
+	inline int32_t zigzagDecode(uint32_t val) {
+		return (val >> 1) ^ (0-(val & 1));
+	}
+
+	// prev + delta with wrap-around, as zigzag_delta_decode computes it.
+	inline int32_t addDelta(int32_t prev, uint32_t zigzagged) {
+		return (int32_t)((uint32_t)prev + (uint32_t)zigzagDecode(zigzagged));
+	}
+
+	const uint32_t svbLengthMask[4] = { 0xFFu, 0xFFFFu, 0xFFFFFFu, 0xFFFFFFFFu };
+
+	// Read a streamvbyte value of (code + 1) bytes at p; p + 4 must not be
+	// beyond the end of the stream. Assumes little endian, as streamvbyte does.
+	inline uint32_t svbLoadUnchecked(const uint8_t* p, uint32_t code) {
+		uint32_t val;
+		memcpy(&val, p, 4);
+		return val & svbLengthMask[code];
+	}
+
+	// Read a streamvbyte value of (code + 1) bytes at p, never reading at or
+	// beyond `end`.
+	inline uint32_t svbLoad(const uint8_t* p, const uint8_t* end, uint32_t code) {
+		if (end - p >= 4)
+			return svbLoadUnchecked(p, code);
+		uint32_t val = 0;
+		for (uint32_t b = 0; b <= code; b++)
+			val |= (uint32_t)p[b] << (8 * b);
+		return val;
+	}
+
+	// Decode a compressed chunk into `out`, in rank order.
+	void decodeChunk(const CompressedChunkInfo* ptr, CachedChunk& out) {
+		const size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
+		const size_t lonSize = ptr->flags & ((1 << 10) - 1);
+
+		uint32_t count = 0;
+		for (size_t w = 0; w < 4; w++) {
+			const uint64_t word = loadMaskWord(ptr->nodeMask + w * 8);
+			out.nodeMask[w] = word;
+			out.rankBase[w] = count;
+			count += popcount64(word);
+		}
+		const size_t n = count - 1;
+
+		const uint8_t* latpData = ptr->data;
+		const uint8_t* lonData = ptr->data + latpSize;
+		int32_t latp = ptr->firstLatp;
+		int32_t lon = ptr->firstLon;
+		out.nodes[0] = { latp, lon };
+		LatpLon* dst = out.nodes + 1;
+
+		if (n < 64) {
+			// Fused scalar streamvbyte + zigzag delta decode of both streams.
+			const size_t keyLen = (n + 3) / 4;
+			const uint8_t* latpEnd = latpData + latpSize;
+			const uint8_t* lonEnd = lonData + lonSize;
+			const uint8_t* latpPtr = latpData + keyLen;
+			const uint8_t* lonPtr = lonData + keyLen;
+			// Each value takes at least one byte, so a value followed by at
+			// least 3 more lies at least 4 bytes before the end of its stream.
+			const size_t unchecked = n > 3 ? n - 3 : 0;
+			size_t k = 0;
+			for (; k < unchecked; k++) {
+				const unsigned shift = (k & 3) * 2;
+				const uint32_t latpCode = (latpData[k >> 2] >> shift) & 3;
+				const uint32_t lonCode = (lonData[k >> 2] >> shift) & 3;
+				latp = addDelta(latp, svbLoadUnchecked(latpPtr, latpCode));
+				lon = addDelta(lon, svbLoadUnchecked(lonPtr, lonCode));
+				latpPtr += latpCode + 1;
+				lonPtr += lonCode + 1;
+				dst[k] = { latp, lon };
+			}
+			for (; k < n; k++) {
+				const unsigned shift = (k & 3) * 2;
+				const uint32_t latpCode = (latpData[k >> 2] >> shift) & 3;
+				const uint32_t lonCode = (lonData[k >> 2] >> shift) & 3;
+				latp = addDelta(latp, svbLoad(latpPtr, latpEnd, latpCode));
+				lon = addDelta(lon, svbLoad(lonPtr, lonEnd, lonCode));
+				latpPtr += latpCode + 1;
+				lonPtr += lonCode + 1;
+				dst[k] = { latp, lon };
+			}
+			return;
+		}
+
+		uint32_t latpDeltas[ChunkSize];
+		uint32_t lonDeltas[ChunkSize];
+		streamvbyte_decode(latpData, latpDeltas, n);
+		streamvbyte_decode(lonData, lonDeltas, n);
+		for (size_t k = 0; k < n; k++) {
+			latp = addDelta(latp, latpDeltas[k]);
+			lon = addDelta(lon, lonDeltas[k]);
+			dst[k] = { latp, lon };
+		}
+	}
 
 	struct ThreadStorage {
 		ThreadStorage():
@@ -31,10 +269,7 @@ namespace SortedNodeStoreTypes {
 			groupStart(-1),
 			localNodes(nullptr),
 			arenaSpace(0),
-			arenaPtr(nullptr) {
-				for (uint8_t i = 0; i < ChunkCacheSize; ++i)
-					cacheOrder[i] = i;
-			}
+			arenaPtr(nullptr) {}
 		// When SortedNodeStore first starts, it's not confident that it has seen an
 		// entire segment, so it's in "collecting orphans" mode. Once it crosses a
 		// threshold of 64K elements, it ceases to be in this mode.
@@ -44,9 +279,6 @@ namespace SortedNodeStoreTypes {
 		bool collectingOrphans = true;
 		uint64_t groupStart = -1;
 		std::vector<NodeStore::element_t>* localNodes = nullptr;
-
-		std::array<CachedChunk, ChunkCacheSize> cacheChunks;
-		std::array<uint8_t, ChunkCacheSize> cacheOrder;
 
 		uint32_t arenaSpace = 0;
 		char* arenaPtr = nullptr;
@@ -64,13 +296,6 @@ namespace SortedNodeStoreTypes {
 		auto& rv = threadStorage.back();
 		return rv.second;
 	}
-
-	void promoteCacheSlot(ThreadStorage& tls, size_t orderIndex) {
-		const uint8_t slot = tls.cacheOrder[orderIndex];
-		for (size_t i = orderIndex; i > 0; --i)
-			tls.cacheOrder[i] = tls.cacheOrder[i - 1];
-		tls.cacheOrder[0] = slot;
-	}
 }
 
 using namespace SortedNodeStoreTypes;
@@ -83,6 +308,7 @@ SortedNodeStore::SortedNodeStore(bool compressNodes): compressNodes(compressNode
 void SortedNodeStore::reopen()
 {
 	allocatedMemory.clear();
+	generation = nextGeneration++;
 
 	totalNodes = 0;
 	totalGroups = 0;
@@ -146,102 +372,71 @@ bool SortedNodeStore::contains(size_t shard, NodeID id) const {
 }
 
 LatpLon SortedNodeStore::at(const NodeID id) const {
-	const size_t groupIndex = id / (GroupSize * ChunkSize);
-	const size_t chunk = (id % (GroupSize * ChunkSize)) / ChunkSize;
-	const uint64_t chunkMaskByte = chunk / 8;
-	const uint64_t chunkMaskBit = chunk % 8;
-
-	const uint64_t nodeMaskByte = (id % ChunkSize) / 8;
-	const uint64_t nodeMaskBit = id % 8;
-
-	GroupInfo* groupPtr = groups[groupIndex];
-
-	if (groupPtr == nullptr) {
-		throw std::out_of_range("SortedNodeStore::at(" + std::to_string(id) + ") uses non-existent group " + std::to_string(groupIndex));
+	const uint64_t chunkId = id / ChunkSize;
+	if ((chunkId >> 32) != 0) {
+		// Not cacheable (chunk ids >= 2^32): decode into scratch space.
+		const ChunkInfoBase* basePtr = findChunk(groups.data(), id);
+		if (!(basePtr->flags & ChunkCompressed))
+			return uncompressedNode(basePtr, id);
+		CachedChunk scratch;
+		decodeChunk((const CompressedChunkInfo*)basePtr, scratch);
+		return cachedNode(scratch, id);
 	}
 
-	size_t chunkOffset = 0;
-	{
-		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
-		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
-		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
-		chunkOffset += popcnt(&maskByte, 1);
+	// Fast path: the chunk was decoded recently on this thread.
+	const uint64_t key = (generation << 32) | chunkId;
+	ChunkCache& cache = getChunkCache();
+	const size_t cacheIndex = chunkCacheIndex(key);
+	if (cache.keys[cacheIndex] == key)
+		return cachedNode(cache.entries[cacheIndex], id);
 
-		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
-			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no chunk");
-	}
+	const ChunkInfoBase* basePtr = findChunk(groups.data(), id);
+	if (!(basePtr->flags & ChunkCompressed))
+		return uncompressedNode(basePtr, id);
 
-	uint16_t scaledOffset = groupPtr->chunkOffsets[chunkOffset];
-	ChunkInfoBase* basePtr = (ChunkInfoBase*)(((char *)(groupPtr->chunkOffsets + popcnt(groupPtr->chunkMask, 32))) + (scaledOffset * ChunkAlignment));
+	CachedChunk& entry = cache.entries[cacheIndex];
+	decodeChunk((const CompressedChunkInfo*)basePtr, entry);
+	cache.keys[cacheIndex] = key;
+	return cachedNode(entry, id);
+}
 
-	if (basePtr->flags & ChunkCompressed) {
-		CompressedChunkInfo* ptr = (CompressedChunkInfo*)basePtr;
-		size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
-		// TODO: we don't actually need the lonSize to decompress the data.
-		//       May as well store it as a sanity check for now.
-		// size_t lonSize = ptr->flags & ((1 << 10) - 1);
-		size_t n = popcnt(ptr->nodeMask, 32) - 1;
+void SortedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
+	ChunkCache& cache = getChunkCache();
+	// Consecutive ids usually share a chunk: reuse its cache entry directly.
+	uint64_t lastChunkId = ~0ull;
+	const CachedChunk* entry = nullptr;
 
-		const size_t neededChunk = groupIndex * ChunkSize + chunk;
+	for (size_t i = 0; i < n; i++) {
+		const NodeID id = ids[i];
+		const uint64_t chunkId = id / ChunkSize;
+		if (chunkId == lastChunkId) {
+			out[i] = cachedNode(*entry, id);
+			continue;
+		}
 
-		// Keep a few recently decoded chunks per worker. Way geometry tends to
-		// revisit adjacent chunks, but not always the immediately preceding one.
-		ThreadStorage& tls = s(this);
-		size_t orderIndex = ChunkCacheSize;
-		for (size_t i = 0; i < ChunkCacheSize; ++i) {
-			if (tls.cacheChunks[tls.cacheOrder[i]].id == neededChunk) {
-				orderIndex = i;
-				break;
+		if ((chunkId >> 32) != 0) {
+			lastChunkId = ~0ull;
+			out[i] = at(id);
+			continue;
+		}
+
+		const uint64_t key = (generation << 32) | chunkId;
+		const size_t cacheIndex = chunkCacheIndex(key);
+		if (cache.keys[cacheIndex] != key) {
+			const ChunkInfoBase* basePtr = findChunk(groups.data(), id);
+			if (!(basePtr->flags & ChunkCompressed)) {
+				lastChunkId = ~0ull;
+				out[i] = uncompressedNode(basePtr, id);
+				continue;
 			}
+			decodeChunk((const CompressedChunkInfo*)basePtr, cache.entries[cacheIndex]);
+			cache.keys[cacheIndex] = key;
 		}
-
-		size_t cacheSlot;
-		if (orderIndex == ChunkCacheSize) {
-			cacheSlot = tls.cacheOrder[ChunkCacheSize - 1];
-			CachedChunk& cached = tls.cacheChunks[cacheSlot];
-			cached.id = neededChunk;
-
-			uint8_t* latpData = ptr->data;
-			uint8_t* lonData = ptr->data + latpSize;
-			uint32_t recovdata[256] = {0};
-
-			streamvbyte_decode(latpData, recovdata, n);
-			cached.latps[0] = ptr->firstLatp;
-			zigzag_delta_decode(recovdata, &cached.latps[1], n, cached.latps[0]);
-
-			streamvbyte_decode(lonData, recovdata, n);
-			cached.lons[0] = ptr->firstLon;
-			zigzag_delta_decode(recovdata, &cached.lons[1], n, cached.lons[0]);
-
-			promoteCacheSlot(tls, ChunkCacheSize - 1);
-		} else {
-			cacheSlot = tls.cacheOrder[orderIndex];
-			if (orderIndex != 0)
-				promoteCacheSlot(tls, orderIndex);
-		}
-
-		size_t nodeOffset = 0;
-		nodeOffset = popcnt(ptr->nodeMask, nodeMaskByte);
-		uint8_t maskByte = ptr->nodeMask[nodeMaskByte];
-		maskByte = maskByte & ((1 << nodeMaskBit) - 1);
-		nodeOffset += popcnt(&maskByte, 1);
-		if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
-			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
-
-		const CachedChunk& cached = tls.cacheChunks[cacheSlot];
-		return { cached.latps[nodeOffset], cached.lons[nodeOffset] };
+		entry = &cache.entries[cacheIndex];
+		lastChunkId = chunkId;
+		out[i] = cachedNode(*entry, id);
 	}
 
-	UncompressedChunkInfo* ptr = (UncompressedChunkInfo*)basePtr;
-	size_t nodeOffset = 0;
-	nodeOffset = popcnt(ptr->nodeMask, nodeMaskByte);
-	uint8_t maskByte = ptr->nodeMask[nodeMaskByte];
-	maskByte = maskByte & ((1 << nodeMaskBit) - 1);
-	nodeOffset += popcnt(&maskByte, 1);
-	if (!(ptr->nodeMask[nodeMaskByte] & (1 << nodeMaskBit)))
-		throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
-
-	return ptr->nodes[nodeOffset];
 }
 
 size_t SortedNodeStore::size() const {

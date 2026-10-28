@@ -12,6 +12,12 @@
 
 #include <boost/filesystem.hpp>
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/mman.h>
+#else
+#include <cstdlib>
+#endif
+
 
 struct mmap_file
 {
@@ -52,15 +58,30 @@ public:
 
 thread_local mmap_file_ptr mmap_file_thread_ptr;
 
+// Anonymous memory that is committed lazily by the OS (pages are zero and only
+// become resident when touched), unlike std::vector which zero-fills eagerly.
+struct lazy_region
+{
+	uint8_t *data;
+	size_t size;
+
+	lazy_region(size_t size);
+	~lazy_region();
+	lazy_region(lazy_region const &) = delete;
+	lazy_region &operator=(lazy_region const &) = delete;
+};
+
 struct mmap_shm 
 {
 	std::mutex mutex;
-	std::vector<uint8_t> region;
+	lazy_region region;
 	boost::interprocess::managed_external_buffer buffer;
 
 	static size_t mmap_file_size;
 
 	mmap_shm(size_t size);
+	mmap_shm(mmap_shm const &) = delete;
+	mmap_shm &operator=(mmap_shm const &) = delete;
 
 	static void open(size_t add_size);
 	static void close();
@@ -158,9 +179,37 @@ bool mmap_dir_t::is_open()
 	}
 }
 
+lazy_region::lazy_region(size_t size)
+	: data(nullptr), size(size)
+{
+#if defined(__unix__) || defined(__APPLE__)
+	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+#ifdef MAP_NORESERVE
+	flags |= MAP_NORESERVE;
+#endif
+	void *p = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+	if(p == MAP_FAILED)
+		throw std::bad_alloc();
+#else
+	void *p = std::calloc(size, 1);
+	if(p == nullptr)
+		throw std::bad_alloc();
+#endif
+	data = static_cast<uint8_t *>(p);
+}
+
+lazy_region::~lazy_region()
+{
+#if defined(__unix__) || defined(__APPLE__)
+	::munmap(data, size);
+#else
+	std::free(data);
+#endif
+}
+
 mmap_shm::mmap_shm(size_t size) 
 	: region(size)
-	, buffer(boost::interprocess::create_only, region.data(), region.size())
+	, buffer(boost::interprocess::create_only, region.data, region.size)
 { }
 
 void mmap_shm::open(size_t add_size)

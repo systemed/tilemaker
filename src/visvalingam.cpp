@@ -1,4 +1,5 @@
 #include "geom.h"
+#include "visvalingam.h"
 #include <iostream>
 
 // Adapted from
@@ -31,41 +32,63 @@
 
 #include <vector>
 #include <cmath>
+#include <cstdint>
+
 
 // Stuff to create the priority queue, or min heap.
 // Rewriting it here, vs using the std lib, resulted in a 50% performance bump!
+//
+// Items are referred to by index; the heap stores (area, item) pairs and
+// heapPos[item] is the item's slot in the heap. The heap operations (and so
+// the tie-breaking between equal areas) are the same as in the original
+// pointer-based version.
 
-struct visItem {
-	double area = 0;     // triangle area
-	int pointIndex = 0;  // index of point in original path
+namespace {
 
-	// to keep a virtual linked list to help rebuild the triangle areas as we remove points.
-	visItem *next = NULL;
-	visItem *previous = NULL;
-
-	int index = 0;	// interal index in heap, for removal and update
+struct visHeapEntry {
+	double area;  // triangle area
+	int item;     // item index
 };
 
-struct minHeap {
-	std::vector<visItem *> h;
+struct visScratch {
+	std::vector<visHeapEntry> h;
+	std::vector<int> heapPos;  // item -> index in h
+	std::vector<int32_t> next; // virtual linked list, -1 = none
+	std::vector<int32_t> prev;
 
-	void Reserve(size_t size) {
-		h.reserve(size);
+	void prepare(size_t numItems) {
+		h.clear();
+		h.reserve(numItems);
+		heapPos.resize(numItems);
+		next.resize(numItems);
+		prev.resize(numItems);
 	}
 
-	void Push(visItem *item) {
-		item->index = h.size();
-		h.push_back(item);
-		up(item->index);
+	// Don't keep huge buffers alive after an unusually large ring.
+	void trim() {
+		const size_t cap = 1 << 16;
+		if (h.capacity() > cap) {
+			std::vector<visHeapEntry>().swap(h);
+			std::vector<int>().swap(heapPos);
+			std::vector<int32_t>().swap(next);
+			std::vector<int32_t>().swap(prev);
+		}
 	}
 
-	visItem *Pop() {
-		visItem *removed = h[0];
-		visItem *lastItem = h[h.size() - 1];
+	void Push(int item, double area) {
+		int i = h.size();
+		heapPos[item] = i;
+		h.push_back(visHeapEntry{area, item});
+		up(i);
+	}
+
+	visHeapEntry Pop() {
+		visHeapEntry removed = h[0];
+		visHeapEntry lastItem = h[h.size() - 1];
 		h.pop_back();
 
 		if (h.size() > 0) {
-			lastItem->index = 0;
+			heapPos[lastItem.item] = 0;
 			h[0] = lastItem;
 			down(0);
 		}
@@ -73,34 +96,35 @@ struct minHeap {
 		return removed;
 	}
 
-	void Update(visItem *item, double area) {
-		if (item->area > area) {
+	void Update(int item, double area) {
+		int i = heapPos[item];
+		if (h[i].area > area) {
 			// area got smaller
-			item->area = area;
-			up(item->index);
+			h[i].area = area;
+			up(i);
 		} else {
 			// area got larger
-			item->area = area;
-			down(item->index);
+			h[i].area = area;
+			down(i);
 		}
 	}
 
 	void up(int i) {
-		visItem *object = h[i];
+		visHeapEntry object = h[i];
 		while (i > 0) {
 			int up = ((i + 1) >> 1) - 1;
-			visItem *parent = h[up];
+			const visHeapEntry parent = h[up];
 
-			if (parent->area <= object->area) {
+			if (parent.area <= object.area) {
 				// parent is smaller so we're done fixing up the heap.
 				break;
 			}
 
 			// swap nodes
-			parent->index = i;
+			heapPos[parent.item] = i;
 			h[i] = parent;
 
-			object->index = up;
+			heapPos[object.item] = up;
 			h[up] = object;
 
 			i = up;
@@ -108,23 +132,24 @@ struct minHeap {
 	}
 
 	void down(int i) {
-		visItem *object = h[i];
+		visHeapEntry object = h[i];
+		const size_t size = h.size();
 		while (1) {
 			size_t right = (i + 1) << 1;
 			size_t left = right - 1;
 
 			int down = i;
-			visItem *child = h[down];
+			double childArea = h[down].area;
 
 			// swap with smallest child
-			if (left < h.size() && h[left]->area < child->area) {
+			if (left < size && h[left].area < childArea) {
 				down = left;
-				child = h[down];
+				childArea = h[down].area;
 			}
 
-			if (right < h.size() && h[right]->area < child->area) {
+			if (right < size && h[right].area < childArea) {
 				down = right;
-				child = h[down];
+				childArea = h[down].area;
 			}
 
 			// non smaller, so quit
@@ -133,16 +158,21 @@ struct minHeap {
 			}
 
 			// swap the nodes
-			child->index = i;
-			h[child->index] = child;
+			const visHeapEntry child = h[down];
+			heapPos[child.item] = i;
+			h[i] = child;
 
-			object->index = down;
+			heapPos[object.item] = down;
 			h[down] = object;
 
 			i = down;
 		}
 	}
 };
+
+thread_local visScratch visTls;
+
+}
 
 template<typename GeometryType>
 static double doubleTriangleArea(GeometryType const &ls, int start, int i1, int i2, int i3) {
@@ -153,96 +183,95 @@ static double doubleTriangleArea(GeometryType const &ls, int start, int i1, int 
 	return std::abs((b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x()));
 }
 
+
 template<typename GeometryType>
 GeometryType visvalingam(const GeometryType &ls, double threshold, size_t retain) {
 	size_t start = 0;
 	size_t end = ls.size(); // - 1;
 	int removed = 0;
 	threshold *= 2;
+	if (ls.empty()) return ls;
+
+	const int n = end - start;
+	// Items 0..n-1 are the path points; item n is the list head, which
+	// (like the original's separate linkedListStart) refers to point 0.
+	const int head = n;
+	auto pointIndex = [head](int item) { return item == head ? 0 : item; };
+
+	visScratch &s = visTls;
+	s.prepare(n + 1);
+	std::vector<int32_t> &next = s.next;
+	std::vector<int32_t> &prev = s.prev;
 
 	// build the initial minheap linked list.
-	minHeap heap;
-	heap.Reserve(end - start);
-
-	visItem linkedListStart;
-	linkedListStart.area = INFINITY;
-	linkedListStart.pointIndex = 0;
-	heap.Push(&linkedListStart);
-
-	// internal path items
-	std::vector<visItem> items;
-	items.resize((end - start));
+	prev[head] = -1;
+	s.Push(head, INFINITY);
 
 	{
-		visItem *previous = &linkedListStart;
-		for (size_t i = 1; i < (end - start) - 1; i++) {
-			visItem *item = &items[i];
-
-			item->area = doubleTriangleArea(ls, start, i - 1, i, i + 1);
-			item->pointIndex = i;
-			item->previous = previous;
-
-			heap.Push(item);
-			previous->next = item;
-			previous = item;
+		int previous = head;
+		for (int i = 1; i < n - 1; i++) {
+			prev[i] = previous;
+			s.Push(i, doubleTriangleArea(ls, start, i - 1, i, i + 1));
+			next[previous] = i;
+			previous = i;
 		}
 
 		// final item
-		visItem *endItem = &items[(end - start) - 1];
-		endItem->area = INFINITY;
-		endItem->pointIndex = (end - start) - 1;
-		endItem->previous = previous;
+		int endItem = n - 1;
+		prev[endItem] = previous;
+		next[endItem] = -1;
 
-		previous->next = endItem;
-		heap.Push(endItem);
+		next[previous] = endItem;
+		s.Push(endItem, INFINITY);
 	}
 
 	// run through the reduction process
-	while (heap.h.size() > 0) {
-		visItem *current = heap.Pop();
-		if (current->area > threshold) {
+	while (s.h.size() > 0) {
+		visHeapEntry current = s.Pop();
+		if (current.area > threshold) {
 			break;
 		} else if ((end - start) - removed <= retain) {
 			break;
 		}
 
-		visItem *next = current->next;
-		visItem *previous = current->previous;
+		int nextItem = next[current.item];
+		int previous = prev[current.item];
 
 		// remove current element from linked list
-		previous->next = current->next;
-		next->previous = current->previous;
+		next[previous] = nextItem;
+		prev[nextItem] = previous;
 		removed++;
 
 		// figure out the new areas
-		if (previous->previous != NULL) {
+		if (prev[previous] != -1) {
 			double area = doubleTriangleArea(ls, start,
-							 previous->previous->pointIndex,
-							 previous->pointIndex,
-							 next->pointIndex);
+							 pointIndex(prev[previous]),
+							 pointIndex(previous),
+							 pointIndex(nextItem));
 
-			area = std::max(area, current->area);
-			heap.Update(previous, area);
+			area = std::max(area, current.area);
+			s.Update(previous, area);
 		}
 
-		if (next->next != NULL) {
+		if (next[nextItem] != -1) {
 			double area = doubleTriangleArea(ls, start,
-							 previous->pointIndex,
-							 next->pointIndex,
-							 next->next->pointIndex);
+							 pointIndex(previous),
+							 pointIndex(nextItem),
+							 pointIndex(next[nextItem]));
 
-			area = std::max(area, current->area);
-			heap.Update(next, area);
+			area = std::max(area, current.area);
+			s.Update(nextItem, area);
 		}
 	}
 
 	GeometryType output;
 	output.reserve(end - start - removed);
-	visItem *item = &linkedListStart;
-	while (item != NULL) {
-		output.emplace_back(ls[item->pointIndex + start]);
-		item = item->next;
+	int item = head;
+	while (item != -1) {
+		output.emplace_back(ls[pointIndex(item) + start]);
+		item = next[item];
 	}
+	s.trim();
 	return output;
 }
 
@@ -263,6 +292,12 @@ Polygon simplifyVis(const Polygon &p, double max_distance) {
 	return output;
 }
 MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance) {
+	bool allValid;
+	return simplifyVis(mp, max_distance, allValid);
+}
+// allValid: set to repair_multi_polygon's result, i.e. true when every polygon
+// of the output is individually valid.
+MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance, bool &allValid) {
 	MultiPolygon output;
 	output.reserve(mp.size());
 	for (const auto &p : mp) {
@@ -274,6 +309,6 @@ MultiPolygon simplifyVis(const MultiPolygon &mp, double max_distance) {
 	// almost all of its area (which showed up as missing lake tiles at low
 	// zoom). repair_multi_polygon keeps the simplified geometry untouched if a
 	// repair would not preserve the covered area.
-	repair_multi_polygon(output);
+	allValid = repair_multi_polygon(output);
 	return output;
 }

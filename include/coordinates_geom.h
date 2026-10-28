@@ -6,6 +6,9 @@
 
 void insertIntermediateTiles(Linestring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
 void insertIntermediateTiles(Ring const &points, uint baseZoom, std::unordered_set<TileCoordinates> &tileSet);
+// Vector variants: append the tiles to `tiles`, then sort and dedupe the appended range [old size, end).
+void insertIntermediateTiles(Linestring const &points, uint baseZoom, std::vector<TileCoordinates> &tiles);
+void insertIntermediateTiles(Ring const &points, uint baseZoom, std::vector<TileCoordinates> &tiles);
 
 // ------------------------------------------------------
 // Helper class for dealing with spherical Mercator tiles

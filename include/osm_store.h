@@ -7,6 +7,8 @@
 #include "mmap_allocator.h"
 #include "relation_roles.h"
 
+#include <algorithm>
+#include <atomic>
 #include <utility>
 #include <vector>
 #include <mutex>
@@ -51,45 +53,88 @@ struct DataViewLessThan {
 class UsedWays {
 
 private:
-	std::vector<bool> usedList;
+	// Sparse list of used way IDs: only member ways of accepted relations
+	// are inserted, which is a tiny fraction of all ways. Appended unsorted
+	// during the relation scan, then sorted/deduplicated by finalize().
+	// If the used set is large relative to the ID range (planet-scale inputs),
+	// finalize() switches to a dense bitmap, which is then smaller and faster.
+	std::vector<WayID> ids;
+	std::vector<bool> dense;
+	bool isDense = false;
+	size_t dedupAt = 1 << 20;
+	std::atomic<bool> sorted{true};
 	mutable std::mutex mutex;
+
+	void dedupLocked() {
+		std::sort(ids.begin(), ids.end());
+		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+	}
+
+	void finalizeLocked() {
+		dedupLocked();
+		if (!ids.empty() && ids.size() * 64 > ids.back()) {
+			dense.resize(ids.back() + 1);
+			for (WayID id : ids) dense[id] = true;
+			isDense = true;
+			ids.clear();
+		}
+		ids.shrink_to_fit();
+		sorted.store(true, std::memory_order_release);
+	}
 
 public:
 	bool inited = false;
 
-	// Size the vector to a reasonable estimate, to avoid resizing on the fly
-	// TODO: it'd be preferable if UsedWays didn't know about compact mode --
-	//   instead, use an efficient data structure if numNodes < 1B, otherwise
-	//   use a large bitvector
 	void reserve(bool compact, size_t numNodes) {
 		std::lock_guard<std::mutex> lock(mutex);
 		if (inited) return;
 		inited = true;
-		if (compact) {
-			// If we're running in compact mode, way count is roughly 1/9th of node count... say 1/8 to be safe
-			usedList.reserve(numNodes/8);
-		} else {
-			// Otherwise, we could have anything up to the current max node ID (approaching 2**30 in summer 2021)
-			// 2**31 is 0.25GB with a vector<bool>
-			usedList.reserve(pow(2,31));
-		}
+		ids.reserve(1 << 16);
 	}
-	
+
 	// Mark a way as used
 	void insert(WayID wayid) {
 		std::lock_guard<std::mutex> lock(mutex);
-		if (wayid>=usedList.size()) usedList.resize(wayid+256);
-		usedList[wayid] = true;
+		if (isDense) {
+			if (wayid >= dense.size()) dense.resize(wayid + 1);
+			dense[wayid] = true;
+			return;
+		}
+		ids.push_back(wayid);
+		sorted.store(false, std::memory_order_relaxed);
+		// Bound memory when ways are members of many relations (e.g. routes)
+		if (ids.size() >= dedupAt) {
+			dedupLocked();
+			dedupAt = std::max(dedupAt, ids.size() * 2);
+		}
 	}
-	
+
+	// Sort and deduplicate; call once all inserts are done, before any at()
+	void finalize() {
+		std::lock_guard<std::mutex> lock(mutex);
+		finalizeLocked();
+	}
+
 	// See if a way is used
-	bool at(WayID wayid) const {
-		return (wayid>=usedList.size()) ? false : usedList[wayid];
+	bool at(WayID wayid) {
+		if (!sorted.load(std::memory_order_acquire)) {
+			std::lock_guard<std::mutex> lock(mutex);
+			if (!sorted.load(std::memory_order_relaxed)) finalizeLocked();
+		}
+		if (isDense)
+			return wayid < dense.size() && dense[wayid];
+		return std::binary_search(ids.begin(), ids.end(), wayid);
 	}
-	
+
 	void clear() {
 		std::lock_guard<std::mutex> lock(mutex);
-		usedList.clear();
+		ids.clear();
+		ids.shrink_to_fit();
+		dense.clear();
+		dense.shrink_to_fit();
+		isDense = false;
+		dedupAt = 1 << 20;
+		sorted.store(true, std::memory_order_release);
 	}
 };
 
@@ -305,6 +350,7 @@ public:
 	bool way_is_used(WayID i) { return used_ways.at(i); }
 
 	void ensureUsedWaysInited();
+	void finalizeUsedWays() { used_ways.finalize(); }
 
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 

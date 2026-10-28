@@ -196,11 +196,14 @@ public:
 		lookupsUncached(0)
 	{
 		// The "hot" shard has a capacity of 64K, the others are unbounded.
-		pairs.push_back(DequeMap<AttributePair>(1 << 16));
+		// reserve + emplace: DequeMap's move constructor is not noexcept, so
+		// vector growth would copy every shard.
+		pairs.reserve(ATTRIBUTE_SHARDS);
+		pairs.emplace_back(1 << 16);
 		// Reserve offset 0 as a sentinel
 		pairs[0].add(AttributePair(0, false, 0));
 		for (size_t i = 1; i < ATTRIBUTE_SHARDS; i++)
-			pairs.push_back(DequeMap<AttributePair>());
+			pairs.emplace_back();
 	}
 
 	void finalize() { finalized = true; }
@@ -345,6 +348,20 @@ struct AttributeSet {
 		return getValueAtIndex(actualIndex);
 	}
 
+	// Calls fn(pairIndex) for every pair, in the same order as getPair(0..numPairs()-1)
+	template<class F>
+	void forEachPair(F&& fn) const {
+		if (useVector) {
+			for (const uint32_t v : intValues)
+				fn(v);
+			return;
+		}
+
+		for (size_t i = 0; i < 8; i++)
+			if (isSet(i))
+				fn(getValueAtIndex(i));
+	}
+
 	AttributeSet(): useVector(false) {
 		for (int i = 0; i < sizeof(shortValues)/sizeof(shortValues[0]); i++)
 			shortValues[i] = 0;
@@ -402,6 +419,26 @@ private:
 struct AttributeStore {
 	AttributeIndex add(AttributeSet &attributes);
 	std::vector<const AttributePair*> getUnsafe(AttributeIndex index) const;
+	// As getUnsafe, but calls fn(const AttributePair&) for each pair in order, without building a vector
+	template<class F>
+	void forEachPairUnsafe(AttributeIndex index, F&& fn) const {
+		forEachPairIndexUnsafe(index, [&](uint32_t pairIndex) {
+			fn(pairStore.getPairUnsafe(pairIndex));
+		});
+	}
+	// As forEachPairUnsafe, but calls fn(pairIndex) (for pairStore.getPairUnsafe)
+	template<class F>
+	void forEachPairIndexUnsafe(AttributeIndex index, F&& fn) const {
+		const AttributeSet* attrSet;
+		try {
+			uint32_t shard = index >> (32 - SHARD_BITS);
+			uint32_t offset = index & (~(~0u << (32 - SHARD_BITS)));
+			attrSet = &sets[shard].at(offset);
+		} catch (std::out_of_range &err) {
+			throw std::runtime_error("Failed to fetch attributes at index "+std::to_string(index));
+		}
+		attrSet->forEachPair(fn);
+	}
 	void reset(); // used for testing
 	size_t size() const;
 	void reportSize() const;
@@ -411,6 +448,11 @@ struct AttributeStore {
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, double v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, int v, char minzoom);
 	void addAttribute(AttributeSet& attributeSet, std::string const &key, bool v, char minzoom);
+	// As above, with the key already resolved by keyStore.key2index(key) (not overloads: kaguya::LuaRef keys convert to anything)
+	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom);
+	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom);
+	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom);
+	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom);
 	
 	AttributeStore():
 		finalized(false),

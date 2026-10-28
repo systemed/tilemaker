@@ -97,7 +97,7 @@ bool PbfProcessor::ReadWays(
 	LatpLonVec llVec;
 	std::vector<NodeID> nodeVec;
 
-	for (PbfReader::Way pbfWay : pg.ways()) {
+	for (const PbfReader::Way& pbfWay : pg.ways()) {
 		tags.reset();
 		readTags(pbfWay, pb, tags);
 
@@ -124,8 +124,23 @@ bool PbfProcessor::ReadWays(
 			nodeVec.reserve(pbfWay.refs.size());
 
 			bool skipToNext = false;
+			bool resolved = false;
 
-			for (int k=0; k<pbfWay.refs.size(); k++) {
+			// Fast path: look up all nodes in one batch. If any node is missing,
+			// fall back to the per-node loop below, which handles that case.
+			const size_t numRefs = pbfWay.refs.size();
+			if (numRefs > 0 && (effectiveShards <= 1 || osmStore.nodes.contains(shard, pbfWay.refs[0]))) {
+				try {
+					llVec.resize(numRefs);
+					osmStore.nodes.at(pbfWay.refs.data(), numRefs, llVec.data());
+					nodeVec.assign(pbfWay.refs.begin(), pbfWay.refs.end());
+					resolved = true;
+				} catch (std::out_of_range &) {
+					llVec.clear();
+				}
+			}
+
+			for (int k=0; !resolved && k<pbfWay.refs.size(); k++) {
 				NodeID nodeId = pbfWay.refs[k];
 
 				if (k == 0 && effectiveShards > 1 && !osmStore.nodes.contains(shard, nodeId)) {
@@ -208,7 +223,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
 
-	for (PbfReader::Relation pbfRelation : pg.relations()) {
+	for (const PbfReader::Relation& pbfRelation : pg.relations()) {
 		bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
 		bool isAccepted = false;
 		WayID relid = static_cast<WayID>(pbfRelation.id);
@@ -281,7 +296,7 @@ bool PbfProcessor::ReadRelations(
 	int outerKey= findStringPosition(pb, "outer");
 	if (typeKey >-1) {
 		int j = -1;
-		for (PbfReader::Relation pbfRelation : pg.relations()) {
+		for (const PbfReader::Relation& pbfRelation : pg.relations()) {
 			j++;
 			if (j % blockMetadata.chunks != blockMetadata.chunk)
 				continue;
@@ -344,6 +359,50 @@ bool PbfProcessor::ReadRelations(
 	return true;
 }
 
+std::shared_ptr<const std::string> PbfProcessor::acquireSharedBlock(std::istream& infile, const BlockMetadata& blockMetadata) {
+	std::unique_lock<std::mutex> lock(sharedBlocksMutex);
+	auto it = sharedBlocks.find(blockMetadata.offset);
+	if (it == sharedBlocks.end()) {
+		// First chunk task to arrive: decompress the block outside the lock.
+		// std::map iterators stay valid while other entries are added/erased,
+		// and this entry can't be erased before we release it.
+		it = sharedBlocks.emplace(blockMetadata.offset, SharedBlock{nullptr, blockMetadata.chunks, false, false}).first;
+		lock.unlock();
+
+		std::shared_ptr<std::string> data;
+		try {
+			data = std::make_shared<std::string>();
+			infile.seekg(blockMetadata.offset);
+			reader.readBlob(blockMetadata.length, infile, *data, true);
+		} catch (...) {
+			lock.lock();
+			it->second.ready = true;
+			it->second.failed = true;
+			sharedBlocksCv.notify_all();
+			throw;
+		}
+
+		lock.lock();
+		it->second.data = data;
+		it->second.ready = true;
+		sharedBlocksCv.notify_all();
+		return it->second.data;
+	}
+
+	SharedBlock& entry = it->second;
+	sharedBlocksCv.wait(lock, [&entry]() { return entry.ready; });
+	if (entry.failed)
+		throw std::runtime_error("failed to read shared PBF block");
+	return entry.data;
+}
+
+void PbfProcessor::releaseSharedBlock(const BlockMetadata& blockMetadata) {
+	std::lock_guard<std::mutex> lock(sharedBlocksMutex);
+	auto it = sharedBlocks.find(blockMetadata.offset);
+	if (it != sharedBlocks.end() && --it->second.remaining == 0)
+		sharedBlocks.erase(it);
+}
+
 // Returns true when block was completely handled, thus could be omited by another phases.
 bool PbfProcessor::ReadBlock(
 	std::istream& infile,
@@ -357,11 +416,25 @@ bool PbfProcessor::ReadBlock(
 	uint effectiveShards
 ) 
 {
-	infile.seekg(blockMetadata.offset);
+	// Subdivided block: decompress once and share the buffer among its chunk tasks.
+	std::shared_ptr<const std::string> sharedBlob;
+	struct SharedBlockReleaser {
+		PbfProcessor* processor;
+		const BlockMetadata* blockMetadata;
+		~SharedBlockReleaser() { if (processor) processor->releaseSharedBlock(*blockMetadata); }
+	} sharedBlockReleaser{nullptr, &blockMetadata};
 
-	protozero::data_view blob = reader.readBlob(blockMetadata.length, infile);
+	protozero::data_view blob;
+	if (blockMetadata.chunks > 1) {
+		sharedBlob = acquireSharedBlock(infile, blockMetadata);
+		sharedBlockReleaser.processor = this;
+		blob = { sharedBlob->data(), sharedBlob->size() };
+	} else {
+		infile.seekg(blockMetadata.offset);
+		blob = reader.readBlob(blockMetadata.length, infile);
+	}
 	PbfReader::PrimitiveBlock& pb = reader.readPrimitiveBlock(blob);
-	if (infile.eof()) {
+	if (!sharedBlob && infile.eof()) {
 		return true;
 	}
 
@@ -725,6 +798,11 @@ int PbfProcessor::ReadPbfFile(
 			}
 		
 			pool.join();
+			{
+				// drop any shared-block entries left over (e.g. re-subdivided blocks) so none outlive this pass/file
+				std::lock_guard<std::mutex> l(sharedBlocksMutex);
+				sharedBlocks.clear();
+			}
 
 #ifdef CLOCK_MONOTONIC
 			clock_gettime(CLOCK_MONOTONIC, &end);
@@ -734,6 +812,7 @@ int PbfProcessor::ReadPbfFile(
 		}
 
 		if(phase == ReadPhase::RelationScan) {
+			osmStore.finalizeUsedWays();
 			auto output = generate_output();
 			output->postScanRelations();
 		}

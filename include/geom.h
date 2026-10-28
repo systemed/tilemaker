@@ -82,14 +82,24 @@ void make_valid(MultiPolygon &mp);
 // make_valid first (preserves area), then a zero-width buffer as a last
 // resort. Returns true if mp is valid afterwards; on failure mp is left as the
 // best-effort input so callers never regress.
-bool repair_multi_polygon(MultiPolygon &mp);
+bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid = false);
 
 void union_many(std::vector<MultiPolygon> &mps);
 
 Point intersect_edge(Point const &a, Point const &b, char edge, Box const &bbox);
 char bit_code(Point const &p, Box const &bbox);
-void fast_clip(Ring &points, Box const &bbox);
-void fast_clip(MultiPolygon &mp, Box const &bbox);
+// fast_clip returns true if the geometry was modified (false means identity).
+bool fast_clip(Ring &points, Box const &bbox);
+bool fast_clip(MultiPolygon &mp, Box const &bbox);
+
+// Cheap conservative validity tests, run before geom::is_valid. They return
+// true only when the geometry is certainly valid (is_valid would return true
+// with no_failure); false means "unsure" and the caller must run is_valid.
+// Tolerances are relative to the coordinate magnitude.
+bool polygonDefinitelyValid(const Polygon &p);
+bool multiPolygonDefinitelyValid(const MultiPolygon &mp);
+
+
 
 #endif //_GEOM_TYPES_H
 

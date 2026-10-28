@@ -63,6 +63,7 @@ public:
 	void reopen() override;
 	void finalize(size_t threadNum) override;
 	LatpLon at(NodeID i) const override;
+	void at(const NodeID* ids, size_t n, LatpLon* out) const override;
 	size_t size() const override;
 	void batchStart() override;
 	void insert(const std::vector<element_t>& elements) override;
@@ -79,6 +80,10 @@ private:
 	// When true, store chunks compressed. Only store compressed if the
 	// chunk is sufficiently large.
 	bool compressNodes;
+
+	// Unique across all stores and reopen() calls; tags the thread-local
+	// decoded-chunk cache so it never serves data from a previous store.
+	uint64_t generation;
 
 	mutable std::mutex orphanageMutex;
 	std::vector<SortedNodeStoreTypes::GroupInfo*> groups;

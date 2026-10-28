@@ -2,6 +2,9 @@
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <type_traits>
@@ -26,6 +29,72 @@ namespace {
 
 	using ShpHandlePtr = std::unique_ptr<std::remove_pointer<SHPHandle>::type, ShpHandleCloser>;
 	using DbfHandlePtr = std::unique_ptr<std::remove_pointer<DBFHandle>::type, DbfHandleCloser>;
+
+	struct FileCloser {
+		void operator()(FILE *f) const {
+			fclose(f);
+		}
+	};
+	using FilePtr = std::unique_ptr<FILE, FileCloser>;
+
+	// Reads record bounding boxes straight from the .shp record header, so that
+	// records outside the clipping box can be skipped without SHPReadObject.
+	// Uses its own read-only file handle; shapelib's handle is not touched.
+	class ShpBoundsReader {
+	public:
+		ShpBoundsReader(const string &filename, SHPHandle shp) : shp(shp) {
+			const uint16_t one = 1;
+			uint8_t firstByte;
+			memcpy(&firstByte, &one, 1);
+			if (firstByte != 1) return; // big-endian host: no prefilter
+			// Same .shp path resolution as SHPOpen: strip extension, try .shp then .SHP
+			string base = filename;
+			size_t slash = base.find_last_of("/\\");
+			size_t dot = base.find_last_of('.');
+			if (dot != string::npos && dot > 0 && (slash == string::npos || dot > slash)) base = base.substr(0, dot);
+			file.reset(fopen((base + ".shp").c_str(), "rb"));
+			if (!file) file.reset(fopen((base + ".SHP").c_str(), "rb"));
+			if (file) setvbuf(file.get(), nullptr, _IONBF, 0);
+		}
+
+		// Returns true and fills the bounds if record i has a header bbox that matches
+		// what SHPReadObject would report as dfXMin/dfYMin/dfXMax/dfYMax.
+		bool bounds(int i, double &xmin, double &ymin, double &xmax, double &ymax) {
+			if (!file || i < 0 || i >= shp->nRecords) return false;
+			uint64_t offset = shp->panRecOffset[i];
+			uint64_t size = shp->panRecSize[i]; // content bytes, excluding the 8-byte record header
+			if (offset < 100 || size < 36) return false;
+#ifdef _MSC_VER
+			if (_fseeki64(file.get(), (__int64)offset, SEEK_SET) != 0) return false;
+#else
+			if (fseeko(file.get(), (off_t)offset, SEEK_SET) != 0) return false;
+#endif
+			uint8_t buf[44];
+			if (fread(buf, 1, 44, file.get()) != 44) return false;
+			// Record header: big-endian content length in 16-bit words
+			uint64_t contentLength = ((uint64_t)buf[4] << 24) | ((uint64_t)buf[5] << 16) | ((uint64_t)buf[6] << 8) | buf[7];
+			if (contentLength * 2 != size) return false;
+			int32_t shapeType = (int32_t)((uint32_t)buf[8] | ((uint32_t)buf[9] << 8) | ((uint32_t)buf[10] << 16) | ((uint32_t)buf[11] << 24));
+			switch (shapeType) {
+				case SHPT_ARC: case SHPT_POLYGON: case SHPT_MULTIPOINT:
+				case SHPT_ARCZ: case SHPT_POLYGONZ: case SHPT_MULTIPOINTZ:
+				case SHPT_ARCM: case SHPT_POLYGONM: case SHPT_MULTIPOINTM:
+				case SHPT_MULTIPATCH:
+					break;
+				default:
+					return false;
+			}
+			memcpy(&xmin, buf + 12, 8);
+			memcpy(&ymin, buf + 20, 8);
+			memcpy(&xmax, buf + 28, 8);
+			memcpy(&ymax, buf + 36, 8);
+			return true;
+		}
+
+	private:
+		SHPHandle shp;
+		FilePtr file;
+	};
 }
 
 /*
@@ -165,18 +234,31 @@ void ShpProcessor::read(class LayerDef &layer, uint layerNum)
 
 	std::exception_ptr error;
 	std::mutex errorMutex;
+	// Check shape bounds are outside clippingBox
+	auto outsideClippingBox = [&](double xmin, double ymin, double xmax, double ymax) {
+		Box shapeBox(Point(xmin, lat2latp(ymin)), Point(xmax, lat2latp(ymax)));
+		return shapeBox.min_corner().get<0>() > clippingBox.max_corner().get<0>() ||
+		       shapeBox.max_corner().get<0>() < clippingBox.min_corner().get<0>() ||
+		       shapeBox.min_corner().get<1>() > clippingBox.max_corner().get<1>() ||
+		       shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>();
+	};
+	ShpBoundsReader boundsReader(filename, shp.get());
+
 	boost::asio::thread_pool pool(threadNum);
 	for (int i=0; i<numEntities; i++) {
+		// Cheap prefilter on the record header bbox (same values SHPReadObject reports)
+		double hxmin, hymin, hxmax, hymax;
+		if (boundsReader.bounds(i, hxmin, hymin, hxmax, hymax) &&
+		    outsideClippingBox(hxmin, hymin, hxmax, hymax)) {
+			continue;
+		}
+
 		SHPObject* rawShape = SHPReadObject(shp.get(), i);
 		if(rawShape == nullptr) { cerr << "Error loading shape from shapefile" << endl; continue; }
 		std::shared_ptr<SHPObject> shape(rawShape, SHPDestroyObject);
 
 		// Check shape is in clippingBox
-		Box shapeBox(Point(shape->dfXMin, lat2latp(shape->dfYMin)), Point(shape->dfXMax, lat2latp(shape->dfYMax)));
-		if (shapeBox.min_corner().get<0>() > clippingBox.max_corner().get<0>() ||
-		    shapeBox.max_corner().get<0>() < clippingBox.min_corner().get<0>() ||
-		    shapeBox.min_corner().get<1>() > clippingBox.max_corner().get<1>() ||
-		    shapeBox.max_corner().get<1>() < clippingBox.min_corner().get<1>()) {
+		if (outsideClippingBox(shape->dfXMin, shape->dfYMin, shape->dfXMax, shape->dfYMax)) {
 			continue;
 		}
 
@@ -284,7 +366,8 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 
 		// Make valid if needs be
 		string reason;
-		if (!geom::is_valid(multi, reason)) {
+		const bool precheckValid = multiPolygonDefinitelyValid(multi);
+		if (!precheckValid && !geom::is_valid(multi, reason)) {
 			if (verbose) cerr << "Shapefile entity " << shape->nShapeId << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 			make_valid(multi);
 			if (verbose) {
