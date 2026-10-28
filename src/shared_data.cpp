@@ -183,25 +183,33 @@ std::vector<bool> LayerDefinition::getSortOrders() {
 
 Value LayerDefinition::serialiseToJSONValue(rapidjson::Document::AllocatorType &allocator) const {
 	Value layerArray(kArrayType);
-	for (auto it = layers.begin(); it != layers.end(); ++it) {
-		if (it->writeTo) {
-			continue;
+	for (auto lt = layerOrder.begin(); lt != layerOrder.end(); ++lt) {
+		// Merge fields and zoom range of all layers written to this one (write_to)
+		const LayerDef &target = layers[lt->at(0)];
+		std::map<std::string, uint> attributeMap;
+		uint minzoom = target.minzoom, maxzoom = target.maxzoom;
+		for (uint layerNum : *lt) {
+			const LayerDef &layer = layers[layerNum];
+			attributeMap.insert(layer.attributeMap.begin(), layer.attributeMap.end());
+			minzoom = std::min(minzoom, layer.minzoom);
+			maxzoom = std::max(maxzoom, layer.maxzoom);
 		}
 		Value fieldObj(kObjectType);
-		for (auto jt = it->attributeMap.begin(); jt != it->attributeMap.end(); ++jt) {
+		for (auto jt = attributeMap.begin(); jt != attributeMap.end(); ++jt) {
 			Value k(jt->first.c_str(), allocator);
 			switch (jt->second) {
 				case 0: fieldObj.AddMember(k, "String" , allocator); break;
 				case 1:	fieldObj.AddMember(k, "Number" , allocator); break;
 				case 2:	fieldObj.AddMember(k, "Boolean", allocator); break;
+				case 3:	fieldObj.AddMember(k, "Number" , allocator); break;
 			}
 		}
 		Value layerObj(kObjectType);
-		Value name(it->name.c_str(), allocator);
-		layerObj.AddMember("id",      name,        allocator);
-		layerObj.AddMember("fields",  fieldObj,    allocator);
-		layerObj.AddMember("minzoom", it->minzoom, allocator);
-		layerObj.AddMember("maxzoom", it->maxzoom, allocator);
+		Value name(target.name.c_str(), allocator);
+		layerObj.AddMember("id",      name,     allocator);
+		layerObj.AddMember("fields",  fieldObj, allocator);
+		layerObj.AddMember("minzoom", minzoom,  allocator);
+		layerObj.AddMember("maxzoom", maxzoom,  allocator);
 		layerArray.PushBack(layerObj, allocator);
 	}
 
