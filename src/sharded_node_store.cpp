@@ -1,4 +1,5 @@
 #include "sharded_node_store.h"
+#include <stdexcept>
 
 thread_local size_t lastNodeShard = 0;
 
@@ -33,6 +34,29 @@ LatpLon ShardedNodeStore::at(NodeID id) const {
 
 	// Superfluous return to silence a compiler warning
 	return stores[shards() - 1]->at(id);
+}
+
+void ShardedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
+	if (n == 0)
+		return;
+
+	// Ways rarely cross shards: look up the whole batch in the shard of its first node,
+	// and only fall back to per-node lookups if one of the nodes is elsewhere.
+	for (int i = 0; i < shards(); i++) {
+		size_t index = (lastNodeShard + i) % shards();
+
+		if (stores[index]->contains(0, ids[0])) {
+			lastNodeShard = index;
+			try {
+				stores[index]->at(ids, n, out);
+				return;
+			} catch (std::out_of_range &) {
+				break;
+			}
+		}
+	}
+
+	NodeStore::at(ids, n, out);
 }
 
 size_t ShardedNodeStore::size() const {
