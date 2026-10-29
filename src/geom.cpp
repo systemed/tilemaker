@@ -163,7 +163,7 @@ void make_valid(MultiPolygon &mp)
 namespace {
 
 const double kPrecheckEps = 1e-9;
-const std::size_t kPrecheckMaxHoles = 256;
+const std::size_t kPrecheckMaxWork = 1 << 26; // ring vertices walked by point-in-ring tests
 const std::size_t kPrecheckRetained = 1 << 16;
 
 struct PrecheckSeg {
@@ -173,13 +173,17 @@ struct PrecheckSeg {
 };
 struct PrecheckBox {
 	double minX, maxX, minY, maxY;
+	uint32_t id; // ring or polygon number
 };
 struct PrecheckScratch {
 	std::vector<PrecheckSeg> segs;
-	std::vector<PrecheckBox> boxes;
+	std::vector<PrecheckBox> boxes, holeBoxes;
+	std::vector<std::pair<uint32_t, uint32_t>> pairs;
 	void trim() {
 		if (segs.capacity() > kPrecheckRetained) std::vector<PrecheckSeg>().swap(segs);
 		if (boxes.capacity() > kPrecheckRetained) std::vector<PrecheckBox>().swap(boxes);
+		if (holeBoxes.capacity() > kPrecheckRetained) std::vector<PrecheckBox>().swap(holeBoxes);
+		if (pairs.capacity() > kPrecheckRetained) std::vector<std::pair<uint32_t, uint32_t>>().swap(pairs);
 	}
 };
 thread_local PrecheckScratch precheckScratch;
@@ -279,6 +283,19 @@ inline bool boxesApart(const PrecheckBox &a, const PrecheckBox &b, double tol) {
 	return a.maxX + tol < b.minX || b.maxX + tol < a.minX || a.maxY + tol < b.minY || b.maxY + tol < a.minY;
 }
 
+// Calls f(idA, idB) for every pair of boxes that are not clearly apart (sweep over
+// boxes sorted by minX); returns false as soon as f does.
+template <class F>
+bool forOverlappingBoxes(std::vector<PrecheckBox> &boxes, double tol, F f) {
+	std::sort(boxes.begin(), boxes.end(), [](const PrecheckBox &a, const PrecheckBox &b) { return a.minX < b.minX; });
+	for (std::size_t i = 0; i < boxes.size(); i++) {
+		const double limit = boxes[i].maxX + tol;
+		for (std::size_t j = i + 1; j < boxes.size() && boxes[j].minX <= limit; j++)
+			if (!boxesApart(boxes[i], boxes[j], tol) && !f(boxes[i].id, boxes[j].id)) return false;
+	}
+	return true;
+}
+
 // Two segments are clearly disjoint (adjacent segments of a ring are handled by the spike test).
 inline bool segsClear(const PrecheckSeg &s, const PrecheckSeg &t, double tol) {
 	if (s.ring == t.ring) {
@@ -345,7 +362,9 @@ int ringClearlyInRing(const Ring &inner, const Ring &r, double tol) {
 bool polygonClear(const Polygon &p, PrecheckScratch &scratch, PrecheckBox &outerBox) {
 	const Ring &outer = p.outer();
 	const auto &inners = p.inners();
-	if (inners.size() > kPrecheckMaxHoles) return false;
+	if (inners.size() >= std::numeric_limits<uint32_t>::max()) return false;
+	// Every hole is located by walking the outer ring
+	if (inners.size() * outer.size() > kPrecheckMaxWork) return false;
 	double maxAbs = 0;
 	if (!ringFinite(outer, maxAbs)) return false;
 	for (const auto &inner : inners)
@@ -354,34 +373,48 @@ bool polygonClear(const Polygon &p, PrecheckScratch &scratch, PrecheckBox &outer
 
 	std::vector<PrecheckSeg> &segs = scratch.segs;
 	segs.clear();
-	PrecheckBox innerBoxes[kPrecheckMaxHoles];
+	std::vector<PrecheckBox> &holeBoxes = scratch.holeBoxes;
+	holeBoxes.resize(inners.size());
 	if (!ringClear(outer, false, tol, 0, segs, outerBox)) return false;
-	for (std::size_t i = 0; i < inners.size(); i++)
-		if (!ringClear(inners[i], true, tol, static_cast<uint32_t>(i + 1), segs, innerBoxes[i])) return false;
+	for (std::size_t i = 0; i < inners.size(); i++) {
+		if (!ringClear(inners[i], true, tol, static_cast<uint32_t>(i + 1), segs, holeBoxes[i])) return false;
+		holeBoxes[i].id = static_cast<uint32_t>(i);
+	}
 
 	// No two rings touch, and no ring touches itself.
 	if (!segmentsClear(segs, tol)) return false;
 
 	// Holes lie inside the outer ring and are not nested in each other.
 	for (std::size_t i = 0; i < inners.size(); i++) {
-		if (boxesApart(innerBoxes[i], outerBox, tol)) return false;
+		if (boxesApart(holeBoxes[i], outerBox, tol)) return false;
 		if (ringClearlyInRing(inners[i], outer, tol) != 1) return false;
 	}
-	for (std::size_t i = 0; i < inners.size(); i++)
-		for (std::size_t j = i + 1; j < inners.size(); j++) {
-			if (boxesApart(innerBoxes[i], innerBoxes[j], tol)) continue;
-			if (ringClearlyInRing(inners[i], inners[j], tol) != -1 ||
-			    ringClearlyInRing(inners[j], inners[i], tol) != -1) return false;
-		}
-	return true;
+	std::size_t work = 0;
+	return forOverlappingBoxes(holeBoxes, tol, [&](uint32_t i, uint32_t j) {
+		work += inners[i].size() + inners[j].size();
+		return work <= kPrecheckMaxWork &&
+		       ringClearlyInRing(inners[i], inners[j], tol) == -1 &&
+		       ringClearlyInRing(inners[j], inners[i], tol) == -1;
+	});
+}
+
+// a's outer ring, known not to touch any ring of b, lies outside b's interior:
+// outside b's outer ring, or inside one of b's holes.
+bool polygonClearlyOutside(const Polygon &a, const Polygon &b, double tol) {
+	const int loc = ringClearlyInRing(a.outer(), b.outer(), tol);
+	if (loc != 1) return loc == -1;
+	for (const auto &hole : b.inners())
+		if (ringClearlyInRing(a.outer(), hole, tol) == 1) return true;
+	return false;
 }
 
 bool multiPolygonClear(const MultiPolygon &mp, PrecheckScratch &scratch) {
 	if (mp.empty()) return false;
 	PrecheckBox box;
 	if (mp.size() == 1) return polygonClear(mp[0], scratch, box);
+	if (mp.size() >= std::numeric_limits<uint32_t>::max()) return false;
 
-	// Polygons must have clearly disjoint bboxes (outer rings; holes lie inside them).
+	// Polygons whose bboxes (outer rings; holes lie inside them) overlap get the pairwise tests below.
 	std::vector<PrecheckBox> &boxes = scratch.boxes;
 	boxes.clear();
 	double maxAbs = 0;
@@ -396,18 +429,41 @@ bool multiPolygonClear(const MultiPolygon &mp, PrecheckScratch &scratch) {
 			box.minY = std::min(box.minY, y); box.maxY = std::max(box.maxY, y);
 		}
 		maxAbs = std::max(maxAbs, max3(std::fabs(box.minX), std::fabs(box.maxX), std::max(std::fabs(box.minY), std::fabs(box.maxY))));
+		box.id = static_cast<uint32_t>(boxes.size());
 		boxes.push_back(box);
 	}
 	const double tol = kPrecheckEps * std::max(1.0, maxAbs);
-	std::sort(boxes.begin(), boxes.end(), [](const PrecheckBox &a, const PrecheckBox &b) { return a.minX < b.minX; });
-	for (std::size_t i = 0; i < boxes.size(); i++) {
-		const double limit = boxes[i].maxX + tol;
-		for (std::size_t j = i + 1; j < boxes.size() && boxes[j].minX <= limit; j++)
-			if (!boxesApart(boxes[i], boxes[j], tol)) return false;
-	}
+	std::vector<std::pair<uint32_t, uint32_t>> &pairs = scratch.pairs;
+	pairs.clear();
+	std::size_t work = 0;
+	if (!forOverlappingBoxes(boxes, tol, [&](uint32_t a, uint32_t b) {
+		pairs.emplace_back(a, b);
+		work += mp[a].outer().size() + mp[b].outer().size();
+		for (const auto &hole : mp[a].inners()) work += hole.size();
+		for (const auto &hole : mp[b].inners()) work += hole.size();
+		return work <= kPrecheckMaxWork;
+	})) return false;
 
 	for (const auto &p : mp)
 		if (!polygonClear(p, scratch, box)) return false;
+	if (pairs.empty()) return true;
+
+	// No ring of one polygon touches a ring of another. (This re-tests the rings
+	// within each polygon too, at the multipolygon's possibly larger tolerance.)
+	std::vector<PrecheckSeg> &segs = scratch.segs;
+	segs.clear();
+	uint32_t ringIdx = 0;
+	for (const auto &p : mp) {
+		if (!ringClear(p.outer(), false, tol, ringIdx++, segs, box)) return false;
+		for (const auto &inner : p.inners())
+			if (!ringClear(inner, true, tol, ringIdx++, segs, box)) return false;
+	}
+	if (!segmentsClear(segs, tol)) return false;
+
+	// Interiors are disjoint: neither polygon of an overlapping pair lies inside the other.
+	for (const auto &pr : pairs)
+		if (!polygonClearlyOutside(mp[pr.first], mp[pr.second], tol) ||
+		    !polygonClearlyOutside(mp[pr.second], mp[pr.first], tol)) return false;
 	return true;
 }
 

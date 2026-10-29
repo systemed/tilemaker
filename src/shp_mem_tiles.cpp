@@ -175,7 +175,9 @@ void ShpMemTiles::StoreGeometry(
 
 		case POLYGON_:
 		{
-			NodeID oid = storeMultiPolygon(boost::get<MultiPolygon>(geometry));
+			// Checked once here, so tiles can clip valid polygons on the fast path
+			const MultiPolygon &mp = boost::get<MultiPolygon>(geometry);
+			NodeID oid = storeMultiPolygon(mp, multiPolygonDefinitelyValid(mp) || geom::is_valid(mp));
 			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
 			std::vector<OutputObject> oolist { *oo };
 			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
