@@ -81,8 +81,10 @@ void make_valid(MultiPolygon &mp);
 // Attempt to repair an invalid areal geometry in place: dissolve-based
 // make_valid first (preserves area), then a zero-width buffer as a last
 // resort. Returns true if mp is valid afterwards; on failure mp is left as the
-// best-effort input so callers never regress.
-bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid = false);
+// best-effort input so callers never regress. If wholeValid is given, it is set
+// to true only if mp as a whole is known to pass geom::is_valid afterwards (a true
+// result alone can leave individually valid polygons that overlap each other).
+bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid = false, bool *wholeValid = nullptr);
 
 void union_many(std::vector<MultiPolygon> &mps);
 
@@ -91,6 +93,10 @@ char bit_code(Point const &p, Box const &bbox);
 // fast_clip returns true if the geometry was modified (false means identity).
 bool fast_clip(Ring &points, Box const &bbox);
 bool fast_clip(MultiPolygon &mp, Box const &bbox);
+// Exact clip of a valid multipolygon to bbox that keeps it valid (fast_clip can
+// leave zero-width bridges along the box edge). Returns false if it could not
+// clip robustly; `out` is then unspecified and the caller must use geom::intersection.
+bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out);
 
 // Cheap conservative validity tests, run before geom::is_valid. They return
 // true only when the geometry is certainly valid (is_valid would return true

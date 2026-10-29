@@ -157,6 +157,7 @@ test: \
 	test_attribute_store \
 	test_config_validator \
 	test_deque_map \
+	test_geom \
 	test_helpers \
 	test_options_parser \
 	test_pbf_reader \
@@ -195,6 +196,11 @@ src/config_validator.o: src/config_schema.h
 test_deque_map: \
 	test/deque_map.test.o
 	$(CXX) $(CXXFLAGS) -o test.deque_map $^ $(INC) $(LIB) $(LDFLAGS) && ./test.deque_map
+
+test_geom: \
+	src/geom.o \
+	test/geom.test.o
+	$(CXX) $(CXXFLAGS) -o test.geom $^ $(INC) $(LIB) $(LDFLAGS) && ./test.geom
 
 test_helpers: \
 	src/helpers.o \
