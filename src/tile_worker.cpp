@@ -99,12 +99,31 @@ void ReorderMultiLinestring(MultiLinestring &input, MultiLinestring &output) {
 	}
 }
 
-void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
+// A small ring is dropped unless it is a slice cut by clipping that is visible in
+// this tile. A ring strictly inside the tile's clipping box was not cut (the actual
+// clip box is never smaller than clippingBox), so its area here is its real area.
+// A ring entirely outside the tile itself only lies in the buffer and is never
+// rendered here; the neighbouring tile judges it on its own.
+static bool CanDropRing(const Ring &ring, const TileBbox &bbox) {
+	Box env = geom::return_envelope<Box>(ring);
+	const Box &clip = bbox.clippingBox;
+	bool insideClippingBox =
+		env.min_corner().x() > clip.min_corner().x() &&
+		env.min_corner().y() > clip.min_corner().y() &&
+		env.max_corner().x() < clip.max_corner().x() &&
+		env.max_corner().y() < clip.max_corner().y();
+	bool outsideTile =
+		env.max_corner().x() <= bbox.minLon  || env.min_corner().x() >= bbox.maxLon ||
+		env.max_corner().y() <= bbox.minLatp || env.min_corner().y() >= bbox.maxLatp;
+	return insideClippingBox || outsideTile;
+}
+
+void RemovePartsBelowSize(MultiPolygon &g, double filterArea, const TileBbox &bbox) {
 	g.erase(std::remove_if(
 		g.begin(),
 		g.end(),
 		[&](const Polygon &poly) -> bool {
-			return std::fabs(geom::area(poly)) < filterArea;
+			return std::fabs(geom::area(poly)) < filterArea && CanDropRing(poly.outer(), bbox);
 		}),
 	g.end());
 	for (auto &outer : g) {
@@ -112,7 +131,7 @@ void RemovePartsBelowSize(MultiPolygon &g, double filterArea) {
 			outer.inners().begin(), 
 			outer.inners().end(), 
 			[&](const Ring &inner) -> bool { 
-				return std::fabs(geom::area(inner)) < filterArea;
+				return std::fabs(geom::area(inner)) < filterArea && CanDropRing(inner, bbox);
 			}),
 		outer.inners().end());
 	}
@@ -448,7 +467,7 @@ void ProcessObjects(
 			}
 
 			if (oo.oo.geomType == POLYGON_ && filterArea > 0.0) {
-				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea);
+				RemovePartsBelowSize(boost::get<MultiPolygon>(g), filterArea, bbox);
 				if (geom::is_empty(g)) continue;
 			}
 
