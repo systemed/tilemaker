@@ -128,9 +128,9 @@ void RemovePartsBelowSize(MultiPolygon &g, double filterArea, const TileBbox &bb
 	g.end());
 	for (auto &outer : g) {
 		outer.inners().erase(std::remove_if(
-			outer.inners().begin(),
-			outer.inners().end(),
-			[&](const Ring &inner) -> bool {
+			outer.inners().begin(), 
+			outer.inners().end(), 
+			[&](const Ring &inner) -> bool { 
 				return std::fabs(geom::area(inner)) < filterArea && CanDropRing(inner, bbox);
 			}),
 		outer.inners().end());
