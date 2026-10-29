@@ -74,7 +74,7 @@ namespace SortedNodeStoreTypes {
 #if defined(SORTED_NODE_STORE_RUNTIME_POPCNT)
 		if (cpuHasPopcnt)
 			return popcnt64(x);
-		return ::popcount64(x);
+		return ::popcnt64_bitwise(x);
 #elif defined(__GNUC__) || defined(__clang__)
 		return __builtin_popcountll(x);
 #elif defined(_MSC_VER) && defined(_M_X64)
