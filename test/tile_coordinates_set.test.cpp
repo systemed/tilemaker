@@ -45,6 +45,22 @@ MU_TEST(test_tile_coordinates_set) {
 		mu_check(z2.test(1, 1) == true);
 		mu_check(z2.test(2, 2) == false);
 	}
+
+	// forEachSet on a wrapped set visits the same tiles as a full scan, in x-major, y-minor order
+	{
+		PreciseTileCoordinatesSet z3(3);
+		z3.set(0, 0); z3.set(0, 5); z3.set(2, 1); z3.set(2, 7); z3.set(7, 3);
+		LossyTileCoordinatesSet z5(5, z3);
+
+		std::vector<std::pair<TileCoordinate, TileCoordinate>> expected, visited;
+		for (TileCoordinate x = 0; x < 32; x++)
+			for (TileCoordinate y = 0; y < 32; y++)
+				if (z5.test(x, y)) expected.push_back({x, y});
+		z5.forEachSet([&](TileCoordinate x, TileCoordinate y) { visited.push_back({x, y}); });
+
+		mu_check(expected.size() == 5 * 16);
+		mu_check(visited == expected);
+	}
 }
 
 MU_TEST_SUITE(test_suite_tile_coordinates_set) {

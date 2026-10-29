@@ -50,6 +50,7 @@ public:
 	size_t size() const override;
 	size_t zoom() const override;
 	void set(TileCoordinate x, TileCoordinate y) override;
+	void forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const override;
 
 private:
 	unsigned int zoom_;
