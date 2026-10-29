@@ -59,11 +59,22 @@ MU_TEST(test_rect_clip_vertex_on_edge) {
 	checkClip(poly, Box(Point(-1, -1), Point(11, 11)), 1, 103);
 }
 
+MU_TEST(test_rect_clip_touch_from_inside) {
+	// A notch from the top comes down to touch the box's bottom edge at (5 0), then
+	// goes back up. The box walk must not run through the touch: two polygons.
+	const char *notch = "MULTIPOLYGON(((-5 -5,-5 8,4 8,5 0,6 8,15 8,15 -5,-5 -5)))";
+	checkClip(notch, Box(Point(0, 0), Point(10, 10)), 2, 72);
+	// The same touching the left edge
+	const char *sideNotch = "MULTIPOLYGON(((-5 -5,-5 15,8 15,8 6,0 5,8 4,8 -5,-5 -5)))";
+	checkClip(sideNotch, Box(Point(0, 0), Point(10, 10)), 2, 72);
+}
+
 MU_TEST_SUITE(test_suite_geom) {
 	MU_RUN_TEST(test_rect_clip_concave);
 	MU_RUN_TEST(test_rect_clip_holes);
 	MU_RUN_TEST(test_rect_clip_trivial);
 	MU_RUN_TEST(test_rect_clip_vertex_on_edge);
+	MU_RUN_TEST(test_rect_clip_touch_from_inside);
 }
 
 int main() {

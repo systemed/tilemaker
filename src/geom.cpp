@@ -731,6 +731,32 @@ struct RectClipper {
 	bool inside(const Point &p) const {
 		return p.x() >= x0 && p.x() <= x1 && p.y() >= y0 && p.y() <= y1;
 	}
+	bool strictlyInside(const Point &p) const {
+		return p.x() > x0 && p.x() < x1 && p.y() > y0 && p.y() < y1;
+	}
+	// Segment a->b, both inside the box, runs through its interior (not along an edge)
+	bool throughInterior(const Point &a, const Point &b) const {
+		return strictlyInside(Point((a.x() + b.x()) / 2, (a.y() + b.y()) / 2));
+	}
+	// Segment b->c, b on the boundary, starts off into the interior
+	bool entersInterior(const Point &b, const Point &c) const {
+		double t0, t1;
+		Point pa, pb;
+		return clipSegment(b, c, t0, t1, pa, pb) && t0 == 0 && t1 > 0 && throughInterior(b, pb);
+	}
+	// A ring p->t->q touches the boundary at t (not a corner) from inside. True if the
+	// polygon interior (right of the ring) covers the boundary on both sides of t,
+	// i.e. the edge direction lies in the clockwise sweep from t->q to t->p.
+	bool pinchAt(const Point &p, const Point &t, const Point &q) const {
+		if ((t.x() == x0 || t.x() == x1) && (t.y() == y0 || t.y() == y1)) return false;
+		const double ex = (t.y() == y0 || t.y() == y1) ? 1 : 0, ey = 1 - ex;
+		const double qx = q.x() - t.x(), qy = q.y() - t.y();
+		auto clockwiseFromQ = [&](double vx, double vy) {
+			const double a = -std::atan2(qx * vy - qy * vx, qx * vx + qy * vy);
+			return a < 0 ? a + 2 * M_PI : a;
+		};
+		return clockwiseFromQ(ex, ey) < clockwiseFromQ(p.x() - t.x(), p.y() - t.y());
+	}
 
 	// Position along the box boundary, clockwise from the top-left corner.
 	// Returns false if p is not exactly on the boundary.
@@ -800,6 +826,7 @@ struct RectChain {
 	std::vector<Point> points;
 	double entry, exit;
 	bool used = false;
+	bool touchExit = false; // ends at a vertex touching the boundary from inside; the next chain starts there
 };
 
 // Cut a closed ring into the chains inside the box. Inside: every vertex is
@@ -840,7 +867,21 @@ RingClip clipRing(const RectClipper &rc, const Ring &ring, std::vector<RectChain
 			building = true;
 		}
 		if (!geom::equals(pb, current.back())) current.push_back(pb);
-		if (t1 < 1 && !finish()) return RingClip::Fail;
+		if (t1 < 1) {
+			if (!finish()) return RingClip::Fail;
+		} else if (current.size() >= 2 && !rc.strictlyInside(b) && rc.throughInterior(current[current.size() - 2], b) &&
+		           rc.entersInterior(b, ring[(start + k + 2) % n]) &&
+		           rc.pinchAt(current[current.size() - 2], b, ring[(start + k + 2) % n])) {
+			// b touches the boundary from inside (reached through the interior, left
+			// into the interior) and the polygon lies along the boundary on both sides
+			// of it. Kept in one chain, the boundary walk would run through b and make
+			// the ring touch itself there: split the chain at b, so b is an exit and
+			// an entry, with the polygon pinched in two there.
+			if (!finish()) return RingClip::Fail;
+			chains.back().touchExit = true;
+			current.push_back(b);
+			building = true;
+		}
 	}
 	// The walk ends at the outside start vertex, so the last chain must have exited
 	if (building) return RingClip::Fail;
@@ -926,13 +967,17 @@ bool clipPolygon(const RectClipper &rc, const Polygon &poly, MultiPolygon &out) 
 				for (const Point &p : chain.points)
 					if (ring.empty() || !geom::equals(p, ring.back())) ring.push_back(p);
 
-				auto it = std::lower_bound(entries.begin(), entries.end(), std::make_pair(chain.exit, std::size_t(0)));
+				// From a touch exit, the entry at the same point is the far side of the
+				// touch: walk on to the next one
+				auto it = chain.touchExit
+					? std::upper_bound(entries.begin(), entries.end(), std::make_pair(chain.exit, std::numeric_limits<std::size_t>::max()))
+					: std::lower_bound(entries.begin(), entries.end(), std::make_pair(chain.exit, std::size_t(0)));
 				if (it == entries.end()) it = entries.begin();
 				const std::size_t next = it->second;
 				if (chains[next].used && next != first) return false;
 
 				double span = chains[next].entry - chain.exit;
-				if (span < 0) span += rc.perimeter;
+				if (span < 0 || (span == 0 && chain.touchExit)) span += rc.perimeter;
 				std::pair<double, int> passed[4];
 				int numPassed = 0;
 				for (int k = 0; k < 4; k++) {
