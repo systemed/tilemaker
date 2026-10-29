@@ -5600,12 +5600,14 @@ namespace kaguya
 		template<typename D, typename T>
 		inline KAGUYA_ENABLE_IF_NOT_LUAREF(bool) operator == (const T& lhs, const LuaBasicTypeFunctions<D>& rhs)
 		{
-			return rhs == lhs;
+			// Call the member explicitly: in C++20, `rhs == lhs` also matches this function
+			// with its arguments reversed, which recurses forever.
+			return rhs.operator==(lhs);
 		}
 		template<typename D, typename T>
 		inline KAGUYA_ENABLE_IF_NOT_LUAREF(bool) operator != (const T& lhs, const LuaBasicTypeFunctions<D>& rhs)
 		{
-			return !(rhs == lhs);
+			return !rhs.operator==(lhs);
 		}
 #undef KAGUYA_ENABLE_IF_NOT_LUAREF
 		//@}
