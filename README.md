@@ -45,7 +45,7 @@ docker run -it --rm --pull always -v $(pwd):/data -w /data \
 
 ## Installing
 
-tilemaker is written in C++14. The chief dependencies are:
+tilemaker is written in C++14. The Makefile builds it as C++14 and the cmake build as C++17; writing MapLibre Tiles (MLT) needs a C++20 compiler. The chief dependencies are:
 
 * Boost (latest version advised, 1.66 minimum)
 * Lua (5.1 or later) or LuaJIT
