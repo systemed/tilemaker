@@ -112,6 +112,15 @@ void MBTiles::readBoundingBox(double &minLon, double &maxLon, double &minLat, do
 	maxLon = stod(b[2]); maxLat = stod(b[3]);
 }
 
+bool MBTiles::readMetadata(const string &key, string &value) {
+	bool found = false;
+	db << "SELECT value FROM metadata WHERE name=?" << key >> [&](string v) {
+		value = v;
+		found = true;
+	};
+	return found;
+}
+
 void MBTiles::readTileList(std::vector<std::tuple<int,int,int>> &tileList) {
 	db << "SELECT zoom_level,tile_column,tile_row FROM tiles" >> [&](int z,int col, int row) {
 		tileList.emplace_back(std::make_tuple(z,col,row));
