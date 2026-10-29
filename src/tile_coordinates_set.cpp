@@ -134,3 +134,24 @@ void LossyTileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
 	throw std::logic_error("LossyTileCoordinatesSet::set() is not implemented; LossyTileCoordinatesSet is read-only");
 }
 
+void LossyTileCoordinatesSet::forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const {
+	// Expand the underlying set instead of testing all 4^zoom tiles (2^34 at z17).
+	// Its tiles arrive x-major, y-minor; one column of them becomes `scale`
+	// columns here, which keeps this set's order x-major, y-minor too.
+	std::vector<TileCoordinate> column;
+	TileCoordinate columnX = 0;
+	auto flush = [&]() {
+		for (TileCoordinate dx = 0; dx < scale; dx++)
+			for (TileCoordinate y : column)
+				for (TileCoordinate dy = 0; dy < scale; dy++)
+					f(columnX * scale + dx, y * scale + dy);
+		column.clear();
+	};
+	tiles.forEachSet([&](TileCoordinate x, TileCoordinate y) {
+		if (!column.empty() && x != columnX) flush();
+		columnX = x;
+		column.push_back(y);
+	});
+	if (!column.empty()) flush();
+}
+
