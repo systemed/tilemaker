@@ -85,7 +85,7 @@ The three main processing functions (`way_function`, `node_function`, `relation_
 
 However, relation hierarchies aren't available in `relation_scan_function`, because not all relations have been read yet.
 
-Instead, you can supply an additional `relation_postscan_function`. This runs immediately after `relation_scan_function`, when all accepted relations are in memory. The concept is that you read the ancestor relations, and then use this to set tags on the child relation. These tags will then be accessible when reading the relation in `way_function` etc.
+Instead, you can supply an additional `relation_postscan_function`. This runs immediately after `relation_scan_function`, when all accepted relations are in memory. It is called only for relations that you accepted in `relation_scan_function` and that are themselves a member of another accepted relation - not for every accepted relation. The concept is that you read the ancestor relations, and then use this to set tags on the child relation. These tags will then be accessible when reading the relation in `way_function` etc.
 
 For example, let's say you have a cycle route relation 8590454 (`type=route, route=bicycle, network=ncn, name=Loire à Vélo 3`). This has a parent relation 3199605 (`type=superroute, route=bicycle, network=ncn, name=Loire à Vélo`). You want to use the name from the latter. Write a relation_postscan_function like this:
 
