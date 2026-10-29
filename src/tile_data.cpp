@@ -34,8 +34,8 @@ static const char* validityFailureName(geom::validity_failure_type failure) {
 
 // Thin wrapper around the shared repair_multi_polygon() that adds per-object
 // verbose diagnostics. See geom.cpp for the dissolve + zero-width buffer logic.
-static bool repairMultiPolygon(MultiPolygon &mp, NodeID objectID) {
-	bool ok = repair_multi_polygon(mp);
+static bool repairMultiPolygon(MultiPolygon &mp, NodeID objectID, bool *wholeValid = nullptr) {
+	bool ok = repair_multi_polygon(mp, false, wholeValid);
 	if (!ok && verbose)
 		std::cerr << ("multipolygon repair failed for object " + std::to_string(objectID) + "\n");
 	return ok;
@@ -60,6 +60,7 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	linestringStores(threadNum),
 	multilinestringStores(threadNum),
 	multipolygonStores(threadNum),
+	multipolygonValid(threadNum),
 	multiPolygonClipCache(ClipCache<MultiPolygon>(threadNum, indexZoom)),
 	multiLinestringClipCache(ClipCache<MultiLinestring>(threadNum, indexZoom))
 {
@@ -398,6 +399,20 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
 			bool valid = multiPolygonDefinitelyValid(mp);
+			if (!valid && inputKnownValid) {
+				// fast_clip leaves zero-width bridges along the box edge where a concave
+				// polygon leaves and re-enters the box. Clip the valid input exactly
+				// instead, which is much cheaper than the is_valid/intersection/repair
+				// path below; rect_clip bails out on anything it can't handle.
+				MultiPolygon original;
+				if (cachedClip == nullptr) populateMultiPolygon(original, objectID);
+				MultiPolygon clipped;
+				if (rect_clip(cachedClip == nullptr ? original : input, box, clipped) &&
+				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
+					multiPolygonClipCache.add(bbox, objectID, clipped, true);
+					return clipped;
+				}
+			}
 			if (!valid)
 				valid = geom::is_valid(mp,failure);
 			if (!valid) {
@@ -432,14 +447,16 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					// The intersection result can itself still be invalid for very complex
 					// multipolygons (e.g. large reservoirs), which previously produced
 					// dropped or holey tiles. Repair it before returning.
-					repairMultiPolygon(output, objectID);
-					multiPolygonClipCache.add(bbox, objectID, output);
+					bool outputValid;
+					repairMultiPolygon(output, objectID, &outputValid);
+					// Children of this tile can then take the fast paths for valid input
+					multiPolygonClipCache.add(bbox, objectID, output, outputValid);
 					return output;
 				} else if (!valid) {
 					// occasionally also wrong_topological_dimension, disconnected_interior:
 					// defects geom::correct cannot mend. Repair mp in place; on failure it
 					// is left unchanged so behaviour never regresses.
-					repairMultiPolygon(mp, objectID);
+					repairMultiPolygon(mp, objectID, &valid);
 				}
 			}
 
@@ -658,7 +675,7 @@ NodeID TileDataSource::storeLinestring(const Linestring& src) {
 	return rv;
 }
 
-NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src) {
+NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src, bool knownValid) {
 	const auto& store = multipolygonStore.get(this);
 
 	multi_polygon_t dst;
@@ -676,6 +693,8 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src) {
 
 	NodeID offset = store.second->size();
 	store.second->emplace_back(std::move(dst));
+	// The store is leased to this thread, so its validity flags are too
+	multipolygonValid[store.first].push_back(knownValid);
 	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
