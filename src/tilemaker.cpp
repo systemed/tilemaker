@@ -503,6 +503,17 @@ int main(const int argc, const char* argv[]) {
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
 	std::atomic<uint64_t> batchCounter(0);
+	// First error from a tile-writing worker; reported after pool.join()
+	// (an exception escaping a pool thread would call std::terminate)
+	std::atomic<bool> tileFailed(false);
+	std::string tileError;
+	std::mutex tileErrorMutex;
+	auto recordTileError = [&](unsigned int zoom, TileCoordinates coords, const std::string& what) {
+		const std::lock_guard<std::mutex> lock(tileErrorMutex);
+		if (tileFailed) return;
+		tileError = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + ": " + what;
+		tileFailed = true;
+	};
 	const uint cutZoom = std::max<uint>(12, config.startZoom);
 	std::size_t batchSize = 0;
 	for(std::size_t startIndex = 0; startIndex < tileCoordinates.size(); startIndex += batchSize) {
@@ -530,13 +541,14 @@ int main(const int argc, const char* argv[]) {
 			batchSize++;
 		}
 
-		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten, &batchCounter]() {
+		boost::asio::post(pool, [=, &tileCoordinates, &pool, &sharedData, &sources, &attributeStore, &io_mutex, &tilesWritten, &lastTilesWritten, &batchCounter, &tileFailed, &recordTileError]() {
 			clipCacheBatchId = ++batchCounter;
 			// A single-tile batch has no descendants to reuse its clips.
 			clipCacheNoStore = batchSize == 1;
 			std::vector<std::string> tileTimings;
 			std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 			for(std::size_t i = startIndex; i < endIndex; ++i) {
+				if (tileFailed) return;
 				unsigned int zoom = tileCoordinates[i].first;
 				TileCoordinates coords = tileCoordinates[i].second;
 
@@ -546,11 +558,19 @@ int main(const int argc, const char* argv[]) {
 					clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 
-				std::vector<std::vector<OutputObjectID>> data;
-				for (auto source : sources) {
-					data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+				try {
+					std::vector<std::vector<OutputObjectID>> data;
+					for (auto source : sources) {
+						data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+					}
+					outputProc(sharedData, sources, attributeStore, data, coords, zoom);
+				} catch (const std::exception& e) {
+					recordTileError(zoom, coords, e.what());
+					return;
+				} catch (...) {
+					recordTileError(zoom, coords, "unknown exception");
+					return;
 				}
-				outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 
 #ifdef CLOCK_MONOTONIC
 				if (options.logTileTimings) {
@@ -593,18 +613,27 @@ int main(const int argc, const char* argv[]) {
 	}
 	// Wait for all tasks in the pool to complete.
 	pool.join();
+	if (tileFailed) {
+		cerr << endl << "Error writing tile " << tileError << endl;
+		return -1;
+	}
 
 	// ----	Close tileset
 
-	if (options.outputMode == OptionsParser::OutputMode::MBTiles) {
-		sharedData.writeMBTilesMetadata(jsonConfig);
-		sharedData.mbtiles.closeForWriting();
-	} else if (options.outputMode == OptionsParser::OutputMode::PMTiles) {
-		sharedData.writePMTilesBounds();
-		std::string metadata = sharedData.pmTilesMetadata(jsonConfig);
-		sharedData.pmtiles.close(metadata);
-	} else {
-		sharedData.writeFileMetadata(jsonConfig);
+	try {
+		if (options.outputMode == OptionsParser::OutputMode::MBTiles) {
+			sharedData.writeMBTilesMetadata(jsonConfig);
+			sharedData.mbtiles.closeForWriting();
+		} else if (options.outputMode == OptionsParser::OutputMode::PMTiles) {
+			sharedData.writePMTilesBounds();
+			std::string metadata = sharedData.pmTilesMetadata(jsonConfig);
+			sharedData.pmtiles.close(metadata);
+		} else {
+			sharedData.writeFileMetadata(jsonConfig);
+		}
+	} catch (const std::exception& e) {
+		cerr << endl << "Error writing " << sharedData.outputFile << ": " << e.what() << endl;
+		return -1;
 	}
 
 #ifndef _MSC_VER
