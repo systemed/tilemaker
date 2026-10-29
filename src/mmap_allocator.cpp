@@ -56,8 +56,6 @@ public:
 	std::vector<mmap_file_ptr> files;
 };
 
-thread_local mmap_file_ptr mmap_file_thread_ptr;
-
 // Anonymous memory that is committed lazily by the OS (pages are zero and only
 // become resident when touched), unlike std::vector which zero-fills eagerly.
 struct lazy_region
@@ -95,9 +93,30 @@ static mmap_dir_t mmap_dir;
      
 std::vector< mmap_shm_ptr > mmap_shm_regions;  
 size_t mmap_shm::mmap_file_size = 0;
-thread_local mmap_shm_ptr mmap_shm_thread_region_ptr;
 
 std::mutex mmap_allocator_mutex;
+
+// Regions of threads that have exited, for reuse by new threads. Every thread
+// pool (one per .shp/GeoJSON layer, per .pbf read phase) starts new threads, and
+// a new region (or 1GB store file) for each of them would never be released.
+std::vector<mmap_file_ptr> free_mmap_files;
+std::vector<mmap_shm_ptr> free_mmap_shm_regions;
+
+// The regions the current thread allocates from
+struct thread_regions_t
+{
+	mmap_file_ptr file;
+	mmap_shm_ptr shm;
+
+	~thread_regions_t()
+	{
+		std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
+		if(file) free_mmap_files.emplace_back(std::move(file));
+		if(shm) free_mmap_shm_regions.emplace_back(std::move(shm));
+	}
+};
+
+thread_local thread_regions_t thread_regions;
 
 mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 	: filename(filename)
@@ -139,9 +158,9 @@ void mmap_dir_t::open_mmap_file(std::string const &dir_filename, size_t file_siz
 		throw std::runtime_error("Failed to open mmap file");
 	boost::filesystem::resize_file(new_filename.c_str(), 0);
 	boost::filesystem::resize_file(new_filename.c_str(), mmap_file_size);
-	mmap_file_thread_ptr = std::make_shared<mmap_file>(new_filename.c_str());
+	thread_regions.file = std::make_shared<mmap_file>(new_filename.c_str());
 
-	mmap_dir.files.emplace_back(mmap_file_thread_ptr);
+	mmap_dir.files.emplace_back(thread_regions.file);
 }
 
 void mmap_dir_t::resize_mmap_file(size_t add_size)
@@ -153,9 +172,9 @@ void mmap_dir_t::resize_mmap_file(size_t add_size)
 	if(std::ofstream(new_filename.c_str()).fail())
 		throw std::runtime_error("Failed to open mmap file");
 	boost::filesystem::resize_file(new_filename.c_str(), size);
-	mmap_file_thread_ptr = std::make_shared<mmap_file>(new_filename.c_str(), 0);
+	thread_regions.file = std::make_shared<mmap_file>(new_filename.c_str(), 0);
 
-	mmap_dir.files.emplace_back(mmap_file_thread_ptr);
+	mmap_dir.files.emplace_back(thread_regions.file);
 	mmap_file_size = offset + size;
 }
 
@@ -218,28 +237,29 @@ void mmap_shm::open(size_t add_size)
 	constexpr std::size_t alignment = 32;
 
 	auto size = increase + (add_size + alignment) - (add_size % alignment);
-	mmap_shm_thread_region_ptr = std::make_shared<mmap_shm>(size);
-	mmap_shm_regions.emplace_back(mmap_shm_thread_region_ptr);
+	thread_regions.shm = std::make_shared<mmap_shm>(size);
+	mmap_shm_regions.emplace_back(thread_regions.shm);
 	mmap_file_size += size;
 }
 
 void mmap_shm::close() 
 {
 	mmap_shm_regions.clear();
-	mmap_shm_thread_region_ptr.reset();
+	free_mmap_shm_regions.clear();
+	thread_regions.shm.reset();
 }
 
 void * void_mmap_allocator::allocate(size_type n, const void *hint)
 {
 	while(true) {
 		try {
-			if(mmap_dir.is_open() && mmap_file_thread_ptr != nullptr) {	
-				auto &i = *mmap_file_thread_ptr;
+			if(mmap_dir.is_open() && thread_regions.file != nullptr) {	
+				auto &i = *thread_regions.file;
 				std::lock_guard<std::mutex> lock(i.mutex);
 				allocator_t allocator(i.buffer.get_segment_manager());
 				return &(*allocator.allocate(n, hint));
-			} else if(mmap_shm_thread_region_ptr != nullptr) {	
-				auto &i = *mmap_shm_thread_region_ptr;
+			} else if(thread_regions.shm != nullptr) {	
+				auto &i = *thread_regions.shm;
 				std::lock_guard<std::mutex> lock(i.mutex);
 				allocator_t allocator(i.buffer.get_segment_manager());
 				return &(*allocator.allocate(n, hint));
@@ -249,10 +269,19 @@ void * void_mmap_allocator::allocate(size_type n, const void *hint)
 		}
 
 		std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
-		if(mmap_dir.is_open()) 
-			mmap_dir.resize_mmap_file(n);
-		else
-			mmap_shm::open(n);
+		if(mmap_dir.is_open()) {
+			if(thread_regions.file == nullptr && !free_mmap_files.empty()) {
+				thread_regions.file = std::move(free_mmap_files.back());
+				free_mmap_files.pop_back();
+			} else
+				mmap_dir.resize_mmap_file(n);
+		} else {
+			if(thread_regions.shm == nullptr && !free_mmap_shm_regions.empty()) {
+				thread_regions.shm = std::move(free_mmap_shm_regions.back());
+				free_mmap_shm_regions.pop_back();
+			} else
+				mmap_shm::open(n);
+		}
 	}
 }
 

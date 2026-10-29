@@ -148,6 +148,13 @@ uint LayerDefinition::addLayer(string name, uint minzoom, uint maxzoom,
 		const std::string &indexName,
 		const std::string &writeTo)  {
 
+	// OutputObject stores the layer number in 8 bits
+	if (layers.size() >= 256) {
+		cerr << "ERROR: addLayer(): too many layers (more than 256, counting each write_to layer). "
+		        "Merge sources instead, e.g. shapefiles with ogrmerge.py -single." << endl;
+		exit (EXIT_FAILURE);
+	}
+
 	bool isWriteTo = !writeTo.empty();
 	LayerDef layer = { name, minzoom, maxzoom, simplifyBelow, simplifyLevel, simplifyLength, simplifyRatio, simplifyAlgo,
 		filterBelow, filterArea, sortZOrderAscending, featureLimit, featureLimitBelow, combinePoints, combineLinesBelow, combinePolygonsBelow,
