@@ -3,6 +3,7 @@
 #define _MBTILES_H
 
 #include <string>
+#include <atomic>
 #include <mutex>
 #include <vector>
 #include "external/sqlite_modern_cpp.h"
@@ -27,6 +28,7 @@ class MBTiles {
 
 	std::shared_ptr<std::vector<PendingStatement>> pendingStatements1, pendingStatements2;
 	std::mutex pendingStatementsMutex;
+	std::atomic<size_t> pendingBytes;
 
 	void insertOrReplace(int zoom, int x, int y, const std::string& data, bool isMerge);
 	void flushPendingStatements();
