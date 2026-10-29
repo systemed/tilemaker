@@ -149,6 +149,10 @@ void writeMultiLinestring(
 				// buildings algorithm not supported for linestrings, so fall back to DP
 				tmp.push_back(simplify(ls, simplifyLevel));
 			}
+			// A small closed way (e.g. a roundabout) can collapse to its start point,
+			// or to an out-and-back spike: keep it unsimplified instead
+			if (tmp.back().size() < 4 && ls.size() >= 4 && boost::geometry::equals(ls.front(), ls.back()))
+				tmp.back() = ls;
 		}
 		toWrite = &tmp;
 	} else {
