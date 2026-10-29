@@ -484,11 +484,15 @@ static bool repair_one_polygon(const Polygon &p, double minArea, MultiPolygon &o
 	return false;
 }
 
-bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid)
+bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid, bool *wholeValid)
 {
+	if (wholeValid) *wholeValid = false;
 	if (!knownInvalid) {
 		const bool pre = multiPolygonDefinitelyValid(mp);
-		if (pre || geom::is_valid(mp)) return true;
+		if (pre || geom::is_valid(mp)) {
+			if (wholeValid) *wholeValid = true;
+			return true;
+		}
 	}
 
 	// Repair PER POLYGON, area-preserving. Running make_valid/buffer on the whole
@@ -527,6 +531,8 @@ bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid)
 	}
 
 	mp = std::move(out);
+	// A single valid polygon is a valid multipolygon
+	if (wholeValid) *wholeValid = allValid && mp.size() == 1;
 	return allValid;
 }
 
@@ -698,4 +704,279 @@ bool fast_clip(MultiPolygon &mp, Box const &bbox) {
 		[](const Polygon &poly) -> bool { return poly.outer().empty(); }),
 		mp.end());
 	return modified || mp.size() != sizeBefore;
+}
+
+// ---------------
+// Exact clipping of a valid polygon to an axis-aligned box.
+//
+// Sutherland-Hodgman (fast_clip) is exact for convex input but leaves zero-width
+// "bridges" along the box edge wherever a concave polygon leaves and re-enters
+// the box; Boost reports those as self-intersections. This clipper instead cuts
+// every ring into the chains that lie inside the box and reconnects them along
+// the box boundary (Weiler-Atherton specialised to a rectangle), so a valid input
+// gives a valid output. Whenever the input does not fit its assumptions (numerical
+// trouble, a hole it cannot place) it gives up and returns false, and the caller
+// falls back to Boost.
+
+namespace {
+
+struct RectClipper {
+	double x0, y0, x1, y1, w, h, perimeter;
+
+	explicit RectClipper(const Box &box) :
+		x0(box.min_corner().x()), y0(box.min_corner().y()),
+		x1(box.max_corner().x()), y1(box.max_corner().y()),
+		w(x1 - x0), h(y1 - y0), perimeter(2 * (x1 - x0) + 2 * (y1 - y0)) {}
+
+	bool inside(const Point &p) const {
+		return p.x() >= x0 && p.x() <= x1 && p.y() >= y0 && p.y() <= y1;
+	}
+
+	// Position along the box boundary, clockwise from the top-left corner.
+	// Returns false if p is not exactly on the boundary.
+	bool boundaryPos(const Point &p, double &s) const {
+		if (p.y() == y1) s = p.x() - x0;
+		else if (p.x() == x1) s = w + (y1 - p.y());
+		else if (p.y() == y0) s = w + h + (x1 - p.x());
+		else if (p.x() == x0) s = 2 * w + h + (p.y() - y0);
+		else return false;
+		return true;
+	}
+
+	// Liang-Barsky: the part [t0,t1] of segment a->b inside the closed box, with
+	// its end points snapped exactly onto the box edge they were clipped against.
+	bool clipSegment(const Point &a, const Point &b, double &t0, double &t1, Point &pa, Point &pb) const {
+		const double dx = b.x() - a.x(), dy = b.y() - a.y();
+		const double p[4] = { -dx, dx, -dy, dy };
+		const double q[4] = { a.x() - x0, x1 - a.x(), a.y() - y0, y1 - a.y() };
+		int e0 = -1, e1 = -1;
+		t0 = 0; t1 = 1;
+		for (int k = 0; k < 4; k++) {
+			if (p[k] == 0) {
+				if (q[k] < 0) return false;
+				continue;
+			}
+			const double r = q[k] / p[k];
+			if (p[k] < 0) { if (r > t0) { t0 = r; e0 = k; } }
+			else          { if (r < t1) { t1 = r; e1 = k; } }
+		}
+		if (t0 > t1) return false;
+		pa = e0 < 0 ? a : onEdge(a, dx, dy, t0, e0);
+		pb = e1 < 0 ? b : onEdge(a, dx, dy, t1, e1);
+		return true;
+	}
+
+	Point onEdge(const Point &a, double dx, double dy, double t, int edge) const {
+		switch (edge) {
+			case 0:  return Point(x0, std::min(std::max(a.y() + t * dy, y0), y1));
+			case 1:  return Point(x1, std::min(std::max(a.y() + t * dy, y0), y1));
+			case 2:  return Point(std::min(std::max(a.x() + t * dx, x0), x1), y0);
+			default: return Point(std::min(std::max(a.x() + t * dx, x0), x1), y1);
+		}
+	}
+
+	// Corners in clockwise boundary order, starting top-left
+	Point corner(int i) const {
+		switch (i) {
+			case 0:  return Point(x0, y1);
+			case 1:  return Point(x1, y1);
+			case 2:  return Point(x1, y0);
+			default: return Point(x0, y0);
+		}
+	}
+	double cornerPos(int i) const {
+		switch (i) {
+			case 0:  return 0;
+			case 1:  return w;
+			case 2:  return w + h;
+			default: return 2 * w + h;
+		}
+	}
+};
+
+enum class RingClip { Inside, Outside, Cut, Fail };
+
+struct RectChain {
+	std::vector<Point> points;
+	double entry, exit;
+	bool used = false;
+};
+
+// Cut a closed ring into the chains inside the box. Inside: every vertex is
+// inside (so is the ring). Outside: no part of the ring enters the box.
+RingClip clipRing(const RectClipper &rc, const Ring &ring, std::vector<RectChain> &chains) {
+	if (ring.size() < 4) return RingClip::Fail;
+	const std::size_t n = ring.size() - 1; // closed: ring[n] == ring[0]
+	std::size_t start = n;
+	for (std::size_t i = 0; i < n; i++)
+		if (!rc.inside(ring[i])) { start = i; break; }
+	if (start == n) return RingClip::Inside;
+
+	// Start at a vertex outside the box, so every chain begins with an entry.
+	std::vector<Point> current;
+	bool building = false, any = false;
+	auto finish = [&]() -> bool {
+		RectChain c;
+		if (current.size() < 2 || !rc.boundaryPos(current.front(), c.entry) || !rc.boundaryPos(current.back(), c.exit)) return false;
+		c.points.swap(current);
+		chains.push_back(std::move(c));
+		current.clear();
+		building = false;
+		any = true;
+		return true;
+	};
+	for (std::size_t k = 0; k < n; k++) {
+		const Point &a = ring[(start + k) % n];
+		const Point &b = ring[(start + k + 1) % n];
+		double t0, t1;
+		Point pa, pb;
+		const bool hit = rc.clipSegment(a, b, t0, t1, pa, pb) && t1 > t0;
+		if (!hit || (building && t0 > 0)) {
+			if (building && !finish()) return RingClip::Fail;
+			if (!hit) continue;
+		}
+		if (!building) {
+			current.push_back(pa);
+			building = true;
+		}
+		if (!geom::equals(pb, current.back())) current.push_back(pb);
+		if (t1 < 1 && !finish()) return RingClip::Fail;
+	}
+	// The walk ends at the outside start vertex, so the last chain must have exited
+	if (building) return RingClip::Fail;
+	return any ? RingClip::Cut : RingClip::Outside;
+}
+
+// Crossing-number test: 1 inside, -1 outside, 0 on the boundary.
+int pointInRing(const Point &p, const Ring &ring) {
+	bool in = false;
+	for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+		const Point &a = ring[i], &b = ring[j];
+		if (geom::equals(a, p)) return 0;
+		if ((a.y() > p.y()) != (b.y() > p.y())) {
+			const double x = a.x() + (p.y() - a.y()) * (b.x() - a.x()) / (b.y() - a.y());
+			if (x == p.x()) return 0;
+			if (x > p.x()) in = !in;
+		}
+	}
+	return in ? 1 : -1;
+}
+
+// Where a ring that does not cross `outer` lies relative to it (0: unsure).
+int ringInRing(const Ring &ring, const Ring &outer) {
+	for (const Point &p : ring) {
+		const int r = pointInRing(p, outer);
+		if (r != 0) return r;
+	}
+	return 0;
+}
+
+bool clipPolygon(const RectClipper &rc, const Polygon &poly, MultiPolygon &out) {
+	std::vector<RectChain> chains;
+	const RingClip outerClip = clipRing(rc, poly.outer(), chains);
+	if (outerClip == RingClip::Fail) return false;
+	if (outerClip == RingClip::Inside) {
+		out.push_back(poly);
+		return true;
+	}
+
+	std::vector<const Ring*> insideHoles, outsideHoles;
+	for (const Ring &inner : poly.inners()) {
+		switch (clipRing(rc, inner, chains)) {
+			case RingClip::Fail:    return false;
+			case RingClip::Inside:  insideHoles.push_back(&inner); break;
+			case RingClip::Outside: outsideHoles.push_back(&inner); break;
+			case RingClip::Cut:     break;
+		}
+	}
+
+	const std::size_t firstOuter = out.size();
+	if (chains.empty()) {
+		// No ring crosses the box: it is either inside the polygon or disjoint from it
+		const Point centre((rc.x0 + rc.x1) / 2, (rc.y0 + rc.y1) / 2);
+		const int inOuter = pointInRing(centre, poly.outer());
+		if (inOuter == 0) return false;
+		bool inside = inOuter > 0;
+		for (const Ring *hole : outsideHoles) {
+			const int inHole = pointInRing(centre, *hole);
+			if (inHole == 0) return false;
+			if (inHole > 0) inside = false;
+		}
+		if (!inside) return insideHoles.empty();
+		Polygon boxPoly;
+		for (int i = 0; i < 4; i++) boxPoly.outer().push_back(rc.corner(i));
+		boxPoly.outer().push_back(rc.corner(0));
+		out.push_back(std::move(boxPoly));
+	} else {
+		// Polygon interiors are on the right of every ring (clockwise outers,
+		// anticlockwise holes), so from each exit the boundary walk goes clockwise
+		// to the next entry.
+		std::vector<std::pair<double, std::size_t>> entries;
+		entries.reserve(chains.size());
+		for (std::size_t i = 0; i < chains.size(); i++) entries.emplace_back(chains[i].entry, i);
+		std::sort(entries.begin(), entries.end());
+
+		for (std::size_t first = 0; first < chains.size(); first++) {
+			if (chains[first].used) continue;
+			Ring ring;
+			std::size_t c = first;
+			while (true) {
+				RectChain &chain = chains[c];
+				chain.used = true;
+				for (const Point &p : chain.points)
+					if (ring.empty() || !geom::equals(p, ring.back())) ring.push_back(p);
+
+				auto it = std::lower_bound(entries.begin(), entries.end(), std::make_pair(chain.exit, std::size_t(0)));
+				if (it == entries.end()) it = entries.begin();
+				const std::size_t next = it->second;
+				if (chains[next].used && next != first) return false;
+
+				double span = chains[next].entry - chain.exit;
+				if (span < 0) span += rc.perimeter;
+				std::pair<double, int> passed[4];
+				int numPassed = 0;
+				for (int k = 0; k < 4; k++) {
+					double d = rc.cornerPos(k) - chain.exit;
+					if (d < 0) d += rc.perimeter;
+					if (d > 0 && d < span) passed[numPassed++] = { d, k };
+				}
+				std::sort(passed, passed + numPassed);
+				for (int k = 0; k < numPassed; k++) ring.push_back(rc.corner(passed[k].second));
+
+				if (next == first) break;
+				c = next;
+			}
+			if (!geom::equals(ring.front(), ring.back())) ring.push_back(ring.front());
+			if (ring.size() < 4 || geom::area(ring) <= 0) return false;
+			Polygon p;
+			p.outer() = std::move(ring);
+			out.push_back(std::move(p));
+		}
+	}
+
+	// Holes wholly inside the box go to whichever new outer contains them
+	for (const Ring *hole : insideHoles) {
+		bool placed = false;
+		for (std::size_t i = firstOuter; i < out.size() && !placed; i++) {
+			const int r = ringInRing(*hole, out[i].outer());
+			if (r == 0) return false;
+			if (r > 0) {
+				out[i].inners().push_back(*hole);
+				placed = true;
+			}
+		}
+		if (!placed) return false;
+	}
+	return true;
+}
+
+} // namespace
+
+bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out) {
+	out.clear();
+	const RectClipper rc(bbox);
+	if (!(rc.w > 0 && rc.h > 0)) return false;
+	for (const Polygon &poly : mp)
+		if (!clipPolygon(rc, poly, out)) return false;
+	return true;
 }
