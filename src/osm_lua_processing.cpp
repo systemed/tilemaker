@@ -1432,9 +1432,11 @@ void OsmLuaProcessing::postScanRelations() {
 	if (!supportsPostScanRelations) return;
 
 	for (const auto &relp : osmStore.scannedRelations.relationsForRelations) {
+		RelationID id = relp.first;
+		// only accepted relations have stored tags; leave the others untouched
+		if (!osmStore.scannedRelations.has_relation_tags(id)) continue;
 		reset();
 		isPostScanRelation = true;
-		RelationID id = relp.first;
 		originalOsmID = id;
 		currentPostScanTags = &(osmStore.scannedRelations.relation_tags(id));
 		relationList = osmStore.scannedRelations.relations_for_relation_with_parents(id);
