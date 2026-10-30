@@ -82,7 +82,15 @@ void make_valid(MultiPolygon &mp);
 // make_valid first (preserves area), then a zero-width buffer as a last
 // resort. Returns true if mp is valid afterwards; on failure mp is left as the
 // best-effort input so callers never regress.
-bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid = false);
+//
+// AreaBound::Strict additionally rejects any repair that GROWS a polygon, i.e.
+// that filled a hole. Use it for geometry that was not simplified: such geometry
+// is only invalid because of the integer quantisation onto the tile grid, so a
+// correct repair must not change its area. Simplified geometry legitimately
+// changes area and must keep the lenient bound. A scoped enum rather than a bool,
+// so that neither a bool nor a pointer argument can be passed for it by mistake.
+enum class AreaBound { Lenient, Strict };
+bool repair_multi_polygon(MultiPolygon &mp, bool knownInvalid = false, AreaBound areaBound = AreaBound::Lenient);
 
 void union_many(std::vector<MultiPolygon> &mps);
 

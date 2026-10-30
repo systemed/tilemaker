@@ -249,6 +249,7 @@ void writeMultiPolygon(
 	unsigned zoom,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
+	unsigned repairScope,
 	const MultiPolygon& mp,
 	MvtAttributeMemo* attrMemo
 ) {
@@ -284,8 +285,18 @@ void writeMultiPolygon(
 	geom::correct(current);
 
 
+	// Simplification can turn a valid input into a self-intersecting/spiky one;
+	// such polygons are silently dropped by many renderers (missing features), so
+	// those are always repaired. Geometry that was NOT simplified is only invalid
+	// because of the integer quantisation onto the tile grid; repairing that as
+	// well is opt-in per layer ("invalid_polygon_repair_scope": "all"), and uses
+	// the strict area guard so a repair can never fill a hole and hide an island.
+	// The validity check below is only worth its cost when a repair can follow,
+	// so it must include the opt-in - otherwise the option would never trigger.
+	const bool mayRepair = (simplifyLevel > 0 || repairScope == LayerDef::REPAIR_ALL);
+
 	geom::validity_failure_type failure;
-	if (!knownPolygonsValid && (simplifyLevel > 0 || verbose) && !geom::is_valid(current, failure)) {
+	if (!knownPolygonsValid && (mayRepair || verbose) && !geom::is_valid(current, failure)) {
 		if (verbose) {
 			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
@@ -294,12 +305,10 @@ void writeMultiPolygon(
 			else
 				cout << "input multipolygon valid" << endl;
 		}
-		
-		if (simplifyLevel > 0) {
-			// Simplification can turn a valid input into a self-intersecting/spiky
-			// one; such polygons are silently dropped by many renderers (missing
-			// features). Repair (dissolve, then zero-width buffer) before writing.
-			bool repaired = repair_multi_polygon(current, true); // already known invalid
+
+		if (mayRepair) {
+			bool repaired = repair_multi_polygon(current, /*knownInvalid=*/ true,
+				simplifyLevel == 0 ? AreaBound::Strict : AreaBound::Lenient);
 
 			if (geom::is_empty(current))
 				return;
@@ -350,6 +359,7 @@ void ProcessObjects(
 	class SharedData& sharedData,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
+	unsigned repairScope,
 	double filterArea,
 	bool combinePoints,
 	bool combineLines,
@@ -455,7 +465,7 @@ void ProcessObjects(
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
 				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g), attrMemo);
 			else if (oo.oo.geomType == POLYGON_)
-				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiPolygon>(g), attrMemo);
+				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, repairScope, boost::get<MultiPolygon>(g), attrMemo);
 		}
 	}
 }
@@ -543,7 +553,7 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects<Backend>(sources[i], attributeStore,
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, ld.simplifyAlgo,
+				simplifyLevel, ld.simplifyAlgo, ld.repairScope,
 				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, attrMemo);
 		}
 	}
