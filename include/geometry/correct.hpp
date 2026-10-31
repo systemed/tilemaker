@@ -10,6 +10,8 @@
  * ----------------------------------------------------------------------------
  */
 
+#include <functional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <boost/geometry.hpp>
@@ -199,26 +201,39 @@ static inline std::vector<ring_t> dissolve_generate_rings(
 
 	// Generate all polygons by tracing all the intersections
 	// Perform union to combine all polygons into single polygon again
-    while(!start_keys.empty()) {    
+	// Position of each point in the ring being traced. Its points are distinct until
+	// it closes, so a point already seen closes it: looking that up here instead of
+	// scanning the whole ring for every new point keeps tracing linear, not quadratic.
+	struct point_hash {
+		std::size_t operator()(std::pair<double, double> const &p) const {
+			return std::hash<double>()(p.first) * 31 + std::hash<double>()(p.second);
+		}
+	};
+	std::unordered_map<std::pair<double, double>, std::size_t, point_hash> seen;
+
+    while(!start_keys.empty()) {
 		ring_t new_ring;
-        
-		// Store point in generated polygon
-		auto push_point = [&new_ring](auto const &p) { 
-            if(new_ring.empty() || boost::geometry::comparable_distance(new_ring.back(), p) > 0)
-                new_ring.push_back(p);
-		};
+		seen.clear();
+		bool closed = false;
 
-		auto is_closed = [](ring_t &ring) {
-			if(ring.size() < 2) return false;
-			for(std::size_t i = 0; i < ring.size() - 1; ++i) {
-				if(boost::geometry::comparable_distance(ring[i], ring.back()) == 0) {
-					ring.erase(ring.begin(), ring.begin() + i);
-					return true;
-				}
+		// Store point in generated polygon; when it repeats an earlier point, the
+		// ring is closed and the points before that one are dropped
+		auto push_point = [&new_ring, &seen, &closed](auto const &p) {
+            if(!new_ring.empty() && !(boost::geometry::comparable_distance(new_ring.back(), p) > 0))
+                return;
+			new_ring.push_back(p);
+			// + 0.0 turns -0.0 into 0.0, which compares equal to it
+			std::pair<double, double> key(boost::geometry::get<0>(p) + 0.0, boost::geometry::get<1>(p) + 0.0);
+			auto found = seen.find(key);
+			if(found == seen.end()) {
+				seen.emplace(key, new_ring.size() - 1);
+			} else {
+				new_ring.erase(new_ring.begin(), new_ring.begin() + found->second);
+				closed = true;
 			}
-
-			return false;
 		};
+
+		auto is_closed = [&closed](ring_t &) { return closed; };
 
         auto start_iter = pseudo_vertices.find(*start_keys.begin());
         auto i = start_iter;
