@@ -245,7 +245,7 @@ template<typename OO> void collectObjectsForTileTemplate(
 class TileDataSource {
 public:
 	// Store for generated geometries
-	using point_store_t = std::vector<Point>;
+	using point_store_t = AppendVectorNS::AppendVector<Point>;
 
 	using linestring_t = boost::geometry::model::linestring<Point, std::vector, mmap_allocator>;
 	using linestring_store_t = std::vector<linestring_t>;
@@ -398,8 +398,8 @@ public:
 		const auto& shardId = getShard(id);
 		const auto& shard = pointStores[shardId];
 		const auto offset = getId(id);
-		if (offset > shard.size()) throw std::out_of_range("Could not find generated node with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
-		return shard.at(offset);
+		if (offset >= shard.size()) throw std::out_of_range("Could not find generated node with id " + std::to_string(id) + ", shard " + std::to_string(shardId) + ", offset=" + std::to_string(offset));
+		return shard[offset];
 	}
 	
 	NodeID storeLinestring(const Linestring& src);

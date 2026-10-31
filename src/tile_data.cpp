@@ -660,7 +660,7 @@ NodeID TileDataSource::storePoint(const Point& input) {
 	const auto& store = pointStore.get(this);
 
 	NodeID offset = store.second->size();
-	store.second->emplace_back(input);
+	store.second->push_back(input);
 	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
 }
