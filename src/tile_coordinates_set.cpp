@@ -40,6 +40,12 @@ void TileCoordinatesSet::forEachSet(const std::function<void(TileCoordinate x, T
 				f(x, y);
 }
 
+void TileCoordinatesSet::setBox(TileCoordinate minX, TileCoordinate maxX, TileCoordinate minY, TileCoordinate maxY) {
+	for (TileCoordinate x = minX; x <= maxX; x++)
+		for (TileCoordinate y = minY; y <= maxY; y++)
+			set(x, y);
+}
+
 PreciseTileCoordinatesSet::PreciseTileCoordinatesSet(unsigned int zoom):
 	zoom_(zoom),
 	numBits((uint64_t)(1 << zoom) * (1 << zoom)),
@@ -97,6 +103,35 @@ void PreciseTileCoordinatesSet::set(TileCoordinate x, TileCoordinate y) {
 	tiles[w] |= (uint64_t)1 << (loc & 63);
 	// 1 summary bit per block of 64 words
 	summary[w >> 12] |= (uint64_t)1 << ((w >> 6) & 63);
+}
+
+// Fills each row of the box word by word, rather than tile by tile.
+void PreciseTileCoordinatesSet::setBox(TileCoordinate minX, TileCoordinate maxX, TileCoordinate minY, TileCoordinate maxY) {
+	const uint64_t dim = 1ull << zoom_;
+	if (minX > maxX || minY > maxY || minX >= dim || minY >= dim)
+		return;
+	maxX = std::min<uint64_t>(maxX, dim - 1);
+	maxY = std::min<uint64_t>(maxY, dim - 1);
+	for (uint64_t x = minX; x <= maxX; x++) {
+		const uint64_t first = x * dim + minY, last = x * dim + maxY;
+		const uint64_t w0 = first >> 6, w1 = last >> 6;
+		for (uint64_t w = w0; w <= w1; w++) {
+			uint64_t mask = ~0ull;
+			if (w == w0) mask &= ~0ull << (first & 63);
+			if (w == w1) mask &= ~0ull >> (63 - (last & 63));
+			tiles[w] |= mask;
+		}
+		for (uint64_t block = w0 >> 6; block <= (w1 >> 6); block++)
+			summary[block >> 6] |= (uint64_t)1 << (block & 63);
+	}
+}
+
+void PreciseTileCoordinatesSet::merge(const PreciseTileCoordinatesSet& other) {
+	if (other.zoom_ != zoom_)
+		throw std::invalid_argument("PreciseTileCoordinatesSet::merge: zooms differ");
+	forEachMarkedWord(other.summary, numWords, [&](size_t w) { tiles[w] |= other.tiles[w]; });
+	for (size_t s = 0; s < summary.size(); s++)
+		summary[s] |= other.summary[s];
 }
 
 void PreciseTileCoordinatesSet::forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const {
