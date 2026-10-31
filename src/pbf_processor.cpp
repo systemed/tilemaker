@@ -25,6 +25,13 @@ uint64_t phaseProgress = 0;
 // Thread-local so that we can re-use buffers during parsing.
 thread_local PbfReader::PbfReader reader;
 
+// The node stores and usedNodes index directly by node ID, so IDs must be below 2^34
+static void checkNodeID(uint64_t nodeId) {
+	if (nodeId >= (1ULL << 34))
+		throw std::runtime_error("Node ID negative or too large: " + std::to_string(static_cast<int64_t>(nodeId))
+			+ " (renumber the file first, e.g. osmium renumber your-file.osm.pbf -o renumbered.osm.pbf)");
+}
+
 PbfProcessor::PbfProcessor(OSMStore &osmStore)
 	: osmStore(osmStore), compactWarningIssued(false)
 { }
@@ -40,6 +47,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 	NodeID lastNodeId = 0;
 	for (auto& node : pg.nodes()) {
 		NodeID nodeId = node.id;
+		checkNodeID(nodeId);
 		if (isCompactStore && lastNodeId != 0 && nodeId != lastNodeId + 1 && !compactWarningIssued.exchange(true)) {
 			std::lock_guard<std::mutex> lock(ioMutex);
 			std::cout << "warning: --compact mode enabled, but PBF has gaps in IDs" << std::endl;
@@ -205,6 +213,7 @@ bool PbfProcessor::ScanWays(OsmLuaProcessing& output, PbfReader::PrimitiveGroup&
 
 		if (osmStore.way_is_used(way.id) || wayKeys.filter(tags)) {
 			for (const auto id : way.refs) {
+				checkNodeID(id);
 				osmStore.usedNodes.set(id);
 			}
 		}
@@ -246,6 +255,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 
 			if (pbfRelation.types[n] == PbfReader::Relation::MemberType::NODE) {
 				if (isAccepted) {
+					checkNodeID(lastID);
 					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
 					std::string role(roleView.data(), roleView.size());
 					osmStore.scannedRelations.relation_contains_node(relid, lastID, role);
