@@ -864,8 +864,13 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 			if (isRelation) {
 				try {
 					MultiPolygon mp = multiPolygonCached();
-					if(CorrectGeometry(mp) == CorrectGeometryResult::Invalid) return;
-					NodeID id = osmMemTiles.storeMultiPolygon(mp);
+					auto correctionResult = CorrectGeometry(mp);
+					if(correctionResult == CorrectGeometryResult::Invalid) return;
+					// make_valid usually succeeds; checking that once here saves
+					// re-validating the relation in every tile it is clipped to.
+					const bool knownValid = correctionResult == CorrectGeometryResult::Valid ||
+						PrecheckValid(mp) || geom::is_valid(mp);
+					NodeID id = osmMemTiles.storeMultiPolygon(mp, knownValid);
 					OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 					outputs.push_back(std::make_pair(std::move(oo), attributes));
 				} catch(std::out_of_range &err) {
@@ -893,7 +898,7 @@ void OsmLuaProcessing::Layer(const string &layerName, bool area) {
 					id = USE_WAY_STORE_REVERSED | originalOsmID;
 					wayEmitted = true;
 				} else 
-					id = osmMemTiles.storeMultiPolygon(mp);
+					id = osmMemTiles.storeMultiPolygon(mp, correctionResult != CorrectGeometryResult::Corrected);
 				OutputObject oo(geomType, layers.layerMap[layerName], id, 0, layerMinZoom);
 				outputs.push_back(std::make_pair(std::move(oo), attributes));
 			}

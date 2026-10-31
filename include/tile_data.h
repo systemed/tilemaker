@@ -298,6 +298,8 @@ protected:
 	std::vector<linestring_store_t> linestringStores;
 	std::vector<multi_linestring_store_t> multilinestringStores;
 	std::vector<multi_polygon_store_t> multipolygonStores;
+	// Per multipolygonStores entry: stored geometry is known to pass geom::is_valid
+	std::vector<std::vector<bool>> multipolygonValid;
 	
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
@@ -359,6 +361,7 @@ public:
 		pointStores[0].push_back(Point(0,0));
 		linestringStores[0].push_back(linestring_t());
 		multipolygonStores[0].push_back(multi_polygon_t());
+		multipolygonValid[0].push_back(false);
 		multilinestringStores[0].push_back(multi_linestring_t());
 	}
 	void reportSize() const;
@@ -380,7 +383,11 @@ public:
 	virtual void populateMultiPolygon(MultiPolygon& dst, NodeID objectID);
 	// True if the polygon populateMultiPolygon returns for objectID is known to
 	// have passed geom::is_valid on exactly the same coordinates.
-	virtual bool polygonKnownValid(NodeID objectID) const { return false; }
+	virtual bool polygonKnownValid(NodeID objectID) const {
+		const auto& valid = multipolygonValid[getShard(objectID)];
+		const auto offset = getId(objectID);
+		return offset < valid.size() && valid[offset];
+	}
 
 	unsigned int getIndexZoom() const { return indexZoom; }
 	inline size_t getId(NodeID id) const {
@@ -415,7 +422,8 @@ public:
 		return shard.at(offset);
 	}
 
-	NodeID storeMultiPolygon(const MultiPolygon& src);
+	// knownValid: src has passed geom::is_valid (see polygonKnownValid)
+	NodeID storeMultiPolygon(const MultiPolygon& src, bool knownValid = false);
 
 	multi_polygon_t const &retrieveMultiPolygon(NodeID id) const {
 		const auto& shardId = getShard(id);

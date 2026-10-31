@@ -61,7 +61,8 @@ private:
 	// CorrectGeometry found them Valid (or Reversed: valid after reversing the ring)
 	// on the same lon/latp coordinates.
 	bool polygonKnownValid(NodeID objectID) const override {
-		return objectID >= OSM_THRESHOLD && (IS_WAY(objectID) || IS_WAY_REV(objectID));
+		if (objectID < OSM_THRESHOLD) return TileDataSource::polygonKnownValid(objectID);
+		return IS_WAY(objectID) || IS_WAY_REV(objectID);
 	}
 
 	const NodeStore& nodeStore;
