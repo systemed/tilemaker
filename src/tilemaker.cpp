@@ -446,7 +446,7 @@ int main(const int argc, const char* argv[]) {
 		clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 		std::cout << "collecting tiles" << std::flush;
-		populateTilesAtZoom(sources, zoomResults);
+		populateTilesAtZoom(sources, zoomResults, options.threadNum);
 #ifdef CLOCK_MONOTONIC
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		uint64_t tileNs = 1e9 * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
