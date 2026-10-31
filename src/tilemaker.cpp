@@ -97,11 +97,14 @@ int main(const int argc, const char* argv[]) {
 #ifdef __GLIBC__
 	// glibc raises its mmap threshold dynamically (up to 32/64 MB) once a large
 	// mmapped chunk is freed; multi-MB buffers then land in per-thread arenas
-	// that are never trimmed, inflating peak RSS. Setting the trim threshold
-	// explicitly also disables that dynamic adjustment (the mmap threshold
-	// stays at its 128 KB default), unless the user tunes malloc via the environment.
-	if (!getenv("MALLOC_TRIM_THRESHOLD_") && !getenv("MALLOC_MMAP_THRESHOLD_") && !getenv("GLIBC_TUNABLES")) {
-		mallopt(M_TRIM_THRESHOLD, 4 << 20);
+	// that are never trimmed, inflating peak RSS. Setting the top pad explicitly
+	// also disables that dynamic adjustment (the mmap threshold stays at its
+	// 128 KB default). The 16 MB pad makes the heap grow and shrink in large
+	// steps: with many threads allocating, the default 128 KB steps cost many
+	// brk() calls and page faults (planet: -3.6% wall time, +0.26 GB peak memory).
+	// Users who tune malloc via the environment keep their settings.
+	if (!getenv("MALLOC_TRIM_THRESHOLD_") && !getenv("MALLOC_MMAP_THRESHOLD_") && !getenv("MALLOC_TOP_PAD_") && !getenv("GLIBC_TUNABLES")) {
+		mallopt(M_TOP_PAD, 16 << 20);
 	}
 #endif
 
