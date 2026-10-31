@@ -1,9 +1,13 @@
 #include "mmap_allocator.h"
+#include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <system_error>
+#include <thread>
 #include <vector>
 
 #include <boost/interprocess/mapped_region.hpp>
@@ -168,6 +172,25 @@ bool mmap_dir_t::is_open()
 {
 	if(!mmap_dir_filename.empty()) {
 		try {
+			// Unmapping and deleting a big store (planet: ~140 GB in ~300 files)
+			// takes half a minute on one thread, so release the files from several.
+			const size_t threads = std::min<size_t>(files.size(), std::min(16u, std::max(1u, std::thread::hardware_concurrency())));
+			if (threads > 1) {
+				std::atomic<size_t> next(0);
+				std::vector<std::thread> workers;
+				for (size_t t = 0; t < threads; t++) {
+					try {
+						workers.emplace_back([this, &next]() {
+							for (size_t i; (i = next++) < files.size(); )
+								files[i].reset();
+						});
+					} catch (const std::system_error &) {
+						break; // fewer threads; files.clear() below releases the rest
+					}
+				}
+				for (auto &worker : workers)
+					worker.join();
+			}
 			files.clear();
 
 			if(mmap_dir_created) {
