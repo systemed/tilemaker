@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include <ciso646>
+#include <boost/geometry/index/rtree.hpp>
 #include "node_store.h"
 #include "way_store.h"
 
@@ -15,6 +16,42 @@ namespace bg = boost::geometry;
 static inline bool isClosed(const std::vector<LatpLon>& way) {
 	return !way.empty() && way.front() == way.back();
 }
+
+// geom::within(inner, outer) for many inner rings against one big outer ring.
+// Boost analyses the outer ring afresh on every call (a reservoir with 2500
+// islands and a 600,000-point shore takes 47 s); here its segments are indexed
+// once. An inner ring that shares no point with the outer ring lies wholly
+// inside or wholly outside it, so one of its vertices decides; when the rings
+// touch or cross, Boost decides as before.
+class RingWithinIndex {
+	using Segment = bg::model::segment<Point>;
+	using Value = std::pair<Box, std::size_t>;
+	const Ring &outer;
+	bg::index::rtree<Value, bg::index::rstar<16>> segments;
+
+	static std::vector<Value> segmentBoxes(const Ring &ring) {
+		std::vector<Value> values;
+		for (std::size_t i = 0; i + 1 < ring.size(); i++)
+			values.emplace_back(bg::return_envelope<Box>(Segment(ring[i], ring[i + 1])), i);
+		return values;
+	}
+
+public:
+	RingWithinIndex(const Ring &outer) : outer(outer), segments(segmentBoxes(outer)) { }
+
+	bool within(const Ring &inner) const {
+		if (inner.size() < 4) return geom::within(inner, outer);
+		for (std::size_t j = 0; j + 1 < inner.size(); j++) {
+			const Segment s(inner[j], inner[j + 1]);
+			for (auto it = segments.qbegin(bg::index::intersects(bg::return_envelope<Box>(s))); it != segments.qend(); ++it) {
+				const std::size_t i = it->second;
+				if (bg::intersects(s, Segment(outer[i], outer[i + 1])))
+					return geom::within(inner, outer);
+			}
+		}
+		return geom::within(inner.front(), outer);
+	}
+};
 
 UsedObjects::UsedObjects(Status status): status(status), mutex(256), ids(256 * 1024) {
 }
@@ -76,17 +113,31 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 
 	// add all inners and outers to the multipolygon
 	std::vector<Ring> filledInners;
+	std::vector<Box> innerBoxes;
 	for (auto it = inners.begin(); it != inners.end(); ++it) {
 		Ring inner;
 		fillPoints(inner, it->begin(), it->end());
+		innerBoxes.emplace_back(geom::return_envelope<Box>(inner));
 		filledInners.emplace_back(inner);
 	}
 	bool onlyOneOuter = outers.size()==1;
 	for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 		Polygon poly;
 		fillPoints(poly.outer(), ot->begin(), ot->end());
-		for (auto it = filledInners.begin(); it != filledInners.end(); ++it) {
-			if (onlyOneOuter || geom::within(*it, poly.outer())) { poly.inners().emplace_back(*it); }
+		const Box outerBox = geom::return_envelope<Box>(poly.outer());
+		// Index big outer rings that many inner rings must be tested against
+		std::unique_ptr<RingWithinIndex> index;
+		if (!onlyOneOuter && filledInners.size() >= 16 && poly.outer().size() >= 4096)
+			index.reset(new RingWithinIndex(poly.outer()));
+		for (std::size_t i = 0; i < filledInners.size(); i++) {
+			const Ring &inner = filledInners[i];
+			// A ring within the outer has its bounding box within the outer's,
+			// so the (costly) within test is only needed when it does
+			if (onlyOneOuter ||
+			    ((inner.empty() || geom::covered_by(innerBoxes[i], outerBox)) &&
+			     (index ? index->within(inner) : geom::within(inner, poly.outer())))) {
+				poly.inners().emplace_back(inner);
+			}
 		}
 		mp.emplace_back(move(poly));
 	}
