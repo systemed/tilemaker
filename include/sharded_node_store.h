@@ -12,6 +12,7 @@ public:
 	void reopen() override;
 	void finalize(size_t threadNum) override;
 	LatpLon at(NodeID i) const override;
+	void at(const NodeID* ids, size_t n, LatpLon* out) const override;
 	size_t size() const override;
 	void batchStart() override;
 	void insert(const std::vector<element_t>& elements) override;

@@ -104,7 +104,11 @@ mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 	, mapping(filename.c_str(), boost::interprocess::read_write)
 	, region(mapping, boost::interprocess::read_write)
 	, buffer(boost::interprocess::create_only, reinterpret_cast<uint8_t *>(region.get_address()) + offset, region.get_size() - offset)
-{ }
+{
+	// The mapped region stays valid without the file handle. Release it, so large --store runs
+	// with many threads (one ~1 GB file each, more as they fill) don't exhaust the open-files limit.
+	mapping = boost::interprocess::file_mapping();
+}
 
 mmap_file::~mmap_file()
 {
