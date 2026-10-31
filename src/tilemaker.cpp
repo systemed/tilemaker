@@ -338,29 +338,35 @@ int main(const int argc, const char* argv[]) {
 		if (!infile) { cerr << "Couldn't open .pbf file " << inputFile << endl; return -1; }
 		
 		const bool hasSortTypeThenID = PbfHasOptionalFeature(inputFile, OptionSortTypeThenID);
-		int ret = pbfProcessor.ReadPbfFile(
-			nodeStore->shards(),
-			hasSortTypeThenID,
-			significantNodeTags,
-			significantWayTags,
-			options.threadNum,
-			[&]() {
-				thread_local std::pair<std::string, std::shared_ptr<ifstream>> pbfStream;
-				if (pbfStream.first != inputFile) {
-					pbfStream = std::make_pair(inputFile, std::make_shared<ifstream>(inputFile, ios::in | ios::binary));
-				}
-				return pbfStream.second;
-			},
-			[&]() {
-				thread_local std::pair<std::string, std::shared_ptr<OsmLuaProcessing>> osmLuaProcessing;
-				if (osmLuaProcessing.first != inputFile) {
-					osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, declutter, options.osm.materializeGeometries, false));
-				}
-				return osmLuaProcessing.second;
-			},
-			*nodeStore,
-			*wayStore
-		);
+		int ret;
+		try {
+			ret = pbfProcessor.ReadPbfFile(
+				nodeStore->shards(),
+				hasSortTypeThenID,
+				significantNodeTags,
+				significantWayTags,
+				options.threadNum,
+				[&]() {
+					thread_local std::pair<std::string, std::shared_ptr<ifstream>> pbfStream;
+					if (pbfStream.first != inputFile) {
+						pbfStream = std::make_pair(inputFile, std::make_shared<ifstream>(inputFile, ios::in | ios::binary));
+					}
+					return pbfStream.second;
+				},
+				[&]() {
+					thread_local std::pair<std::string, std::shared_ptr<OsmLuaProcessing>> osmLuaProcessing;
+					if (osmLuaProcessing.first != inputFile) {
+						osmLuaProcessing = std::make_pair(inputFile, std::make_shared<OsmLuaProcessing>(osmStore, config, layers, options.luaFile, shpMemTiles, osmMemTiles, attributeStore, declutter, options.osm.materializeGeometries, false));
+					}
+					return osmLuaProcessing.second;
+				},
+				*nodeStore,
+				*wayStore
+			);
+		} catch (const std::exception& e) {
+			cerr << endl << "Error reading " << inputFile << ": " << e.what() << endl;
+			return -1;
+		}
 		if (ret != 0) return ret;
 	} 
 	attributeStore.finalize();
