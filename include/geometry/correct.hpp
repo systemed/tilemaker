@@ -23,13 +23,18 @@ namespace geometry {
 
 namespace impl {
 
-template<typename C, typename T>
-static inline void result_combine(C &result, T &&new_element)
+// boxes[i] is the envelope of result[i]. Polygons whose envelopes are disjoint
+// cannot intersect, so the box test skips most of the costly intersects() calls
+// (otherwise quadratic in the number of rings, e.g. a lake with 14000 islands).
+template<typename C, typename B, typename T>
+static inline void result_combine(C &result, std::vector<B> &boxes, T &&new_element)
 {
     result.push_back(std::forward<T>(new_element));
+    boxes.push_back(boost::geometry::return_envelope<B>(result.back()));
 
    	for(std::size_t i = 0; i < result.size() - 1; ) {
-        if(!boost::geometry::intersects(result[i], result.back())) {
+        if(boost::geometry::disjoint(boxes[i], boxes.back()) ||
+           !boost::geometry::intersects(result[i], result.back())) {
             ++i;
             continue;
         }
@@ -43,8 +48,10 @@ static inline void result_combine(C &result, T &&new_element)
 		}
 
        	result.back() = std::move(union_result[0]);
+       	boxes.back() = boost::geometry::return_envelope<B>(result.back());
        	result.erase(result.begin() + i);
-    } 
+       	boxes.erase(boxes.begin() + i);
+    }
 }
 
 struct pseudo_vertice_key
@@ -302,13 +309,15 @@ template<
 	>
 struct combine_non_zero_winding
 {
-	inline void operator()(multi_polygon_t &combined_outers, multi_polygon_t &combined_inners, polygon_t &poly) 
+	using box_t = boost::geometry::model::box<point_t>;
+
+	inline void operator()(multi_polygon_t &combined_outers, std::vector<box_t> &outer_boxes, multi_polygon_t &combined_inners, std::vector<box_t> &inner_boxes, polygon_t &poly)
 	{
 		if(boost::geometry::area(poly) > 0)
-			result_combine(combined_outers, std::move(poly));
+			result_combine(combined_outers, outer_boxes, std::move(poly));
 		else {
 			std::reverse(poly.outer().begin(), poly.outer().end());
-			result_combine(combined_inners, std::move(poly));
+			result_combine(combined_inners, inner_boxes, std::move(poly));
 		}
 	}
 };
@@ -320,7 +329,9 @@ template<
 	>
 struct combine_odd_even
 {
-	inline void operator()(multi_polygon_t &combined_outers, multi_polygon_t &combined_inners, polygon_t &poly) 
+	using box_t = boost::geometry::model::box<point_t>;
+
+	inline void operator()(multi_polygon_t &combined_outers, std::vector<box_t> &, multi_polygon_t &combined_inners, std::vector<box_t> &, polygon_t &poly)
 	{
 		if(boost::geometry::area(poly) < 0)
 			std::reverse(poly.outer().begin(), poly.outer().end());
@@ -346,11 +357,12 @@ static inline void correct(polygon_t const &input, multi_polygon_t &output, doub
 	// Calculate all outers and combine them if possible
 	multi_polygon_t combined_outers;
 	multi_polygon_t combined_inners;
+	std::vector<boost::geometry::model::box<point_t>> outer_boxes, inner_boxes;
 
 	for(auto &ring: outer_rings) {
 		polygon_t poly;
 		poly.outer() = std::move(ring);
-		combine(combined_outers, combined_inners, poly);
+		combine(combined_outers, outer_boxes, combined_inners, inner_boxes, poly);
 	}
 
 	// Calculate all inners and combine them if possible
@@ -362,8 +374,8 @@ static inline void correct(polygon_t const &input, multi_polygon_t &output, doub
 		correct(poly, new_inners, remove_spike_min_area, combine);
 
 		for(auto &poly: new_inners) {
-			result_combine(combined_inners, std::move(poly));
-		} 
+			result_combine(combined_inners, inner_boxes, std::move(poly));
+		}
 	}
 
 	// Cut out all inners from all the outers
@@ -379,13 +391,18 @@ template<
 	>
 static inline void correct(multi_polygon_t const &input, multi_polygon_t &output, double remove_spike_min_area, combine_function_t combine)
 {
+	using box_t = boost::geometry::model::box<point_t>;
+	std::vector<box_t> output_boxes;
+	for(auto const &polygon: output)
+		output_boxes.push_back(boost::geometry::return_envelope<box_t>(polygon));
+
 	for(auto const &polygon: input)
 	{
 		multi_polygon_t new_polygons;
 		correct(polygon, new_polygons, remove_spike_min_area, combine);
 
-		for(auto &new_polygon: new_polygons) 
-			result_combine(output, std::move(new_polygon));
+		for(auto &new_polygon: new_polygons)
+			result_combine(output, output_boxes, std::move(new_polygon));
 	}
 }
 
