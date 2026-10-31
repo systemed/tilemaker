@@ -70,7 +70,12 @@ else()
 	include_directories(${LUAJIT_INCLUDE_DIR})
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+# The MLT encoder needs C++20; otherwise C++17 is enough, so older compilers still work
+if(TILEMAKER_WITH_MLT)
+	set(CMAKE_CXX_STANDARD 20)
+else()
+	set(CMAKE_CXX_STANDARD 17)
+endif()
 # tilemaker doesn't use coroutines, and Boost.Asio's C++20 coroutine support
 # doesn't compile with some Boost versions (e.g. 1.74 in Debian bookworm)
 add_compile_definitions(BOOST_ASIO_DISABLE_CO_AWAIT)
