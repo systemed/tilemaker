@@ -762,6 +762,11 @@ struct RectClipper {
 	bool inside(const Point &p) const {
 		return p.x() >= x0 && p.x() <= x1 && p.y() >= y0 && p.y() <= y1;
 	}
+	// Both end points beyond the same edge: the segment can't reach the box
+	bool beyondOneEdge(const Point &a, const Point &b) const {
+		return (a.x() < x0 && b.x() < x0) || (a.x() > x1 && b.x() > x1) ||
+		       (a.y() < y0 && b.y() < y0) || (a.y() > y1 && b.y() > y1);
+	}
 	bool strictlyInside(const Point &p) const {
 		return p.x() > x0 && p.x() < x1 && p.y() > y0 && p.y() < y1;
 	}
@@ -888,7 +893,9 @@ RingClip clipRing(const RectClipper &rc, const Ring &ring, std::vector<RectChain
 		const Point &b = ring[(start + k + 1) % n];
 		double t0, t1;
 		Point pa, pb;
-		const bool hit = rc.clipSegment(a, b, t0, t1, pa, pb) && t1 > t0;
+		// Most segments of a large polygon lie far from a small tile's box: reject
+		// those with four comparisons before the clip computation
+		const bool hit = !rc.beyondOneEdge(a, b) && rc.clipSegment(a, b, t0, t1, pa, pb) && t1 > t0;
 		if (!hit || (building && t0 > 0)) {
 			if (building && !finish()) return RingClip::Fail;
 			if (!hit) continue;
