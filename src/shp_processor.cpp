@@ -366,8 +366,8 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 
 		// Make valid if needs be
 		string reason;
-		const bool precheckValid = multiPolygonDefinitelyValid(multi);
-		if (!precheckValid && !geom::is_valid(multi, reason)) {
+		const bool valid = multiPolygonDefinitelyValid(multi) || geom::is_valid(multi, reason);
+		if (!valid) {
 			if (verbose) cerr << "Shapefile entity " << shape->nShapeId << " type " << shapeType << " is invalid. Parts:" << shape->nParts << ". Reason:" << reason;
 			make_valid(multi);
 			if (verbose) {
@@ -376,11 +376,17 @@ void ShpProcessor::processShapeGeometry(SHPObject* shape, AttributeIndex attrIdx
 				cerr << endl;
 			}
 		}
-		// clip to bounding box
-		MultiPolygon out;
-		geom::intersection(multi, clippingBox, out);
-		if (boost::size(out)>0) {
-			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
+		// clip to bounding box (a valid polygon wholly inside it is stored as it is)
+		Box envelope;
+		geom::envelope(multi, envelope);
+		if (valid && geom::covered_by(envelope, clippingBox)) {
+			shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, multi, layer.indexed, hasName, name, minzoom, score, attrIdx, true);
+		} else {
+			MultiPolygon out;
+			geom::intersection(multi, clippingBox, out);
+			if (boost::size(out)>0) {
+				shpMemTiles.StoreGeometry(layerNum, layer.name, POLYGON_, out, layer.indexed, hasName, name, minzoom, score, attrIdx);
+			}
 		}
 
 	} else {
