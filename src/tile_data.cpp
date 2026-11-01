@@ -385,7 +385,13 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			MultiPolygon mp;
-			if (cachedClip == nullptr)
+			// rect_clip below needs the input as it was before fast_clip. For a large valid
+			// polygon, keep it rather than load it from the store again for every tile.
+			std::size_t inputPoints = 0;
+			if (cachedClip == nullptr && inputKnownValid)
+				for (auto const &p : uncached) inputPoints += geom::num_points(p);
+			const bool keepUncached = inputPoints > 1000;
+			if (cachedClip == nullptr && !keepUncached)
 				mp = std::move(uncached);
 			else
 				geom::assign(mp, input);
@@ -405,9 +411,9 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// instead, which is much cheaper than the is_valid/intersection/repair
 				// path below; rect_clip bails out on anything it can't handle.
 				MultiPolygon original;
-				if (cachedClip == nullptr) populateMultiPolygon(original, objectID);
+				if (cachedClip == nullptr && !keepUncached) populateMultiPolygon(original, objectID);
 				MultiPolygon clipped;
-				if (rect_clip(cachedClip == nullptr ? original : input, box, clipped) &&
+				if (rect_clip(cachedClip == nullptr && !keepUncached ? original : input, box, clipped) &&
 				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
 					multiPolygonClipCache.add(bbox, objectID, clipped, true);
 					return clipped;
