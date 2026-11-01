@@ -156,6 +156,7 @@ test: \
 	test_append_vector \
 	test_attribute_store \
 	test_config_validator \
+	test_correct \
 	test_deque_map \
 	test_geom \
 	test_helpers \
@@ -192,6 +193,10 @@ src/config_schema.h: resources/config-schema.json
 	printf '\n)TMCONFIGSCHEMA";\n\n#endif //_CONFIG_SCHEMA_H\n' >> $@
 
 src/config_validator.o: src/config_schema.h
+
+test_correct: \
+	test/correct.test.o
+	$(CXX) $(CXXFLAGS) -o test.correct $^ $(INC) $(LIB) $(LDFLAGS) && ./test.correct
 
 test_deque_map: \
 	test/deque_map.test.o
