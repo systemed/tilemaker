@@ -23,8 +23,14 @@ void SharedData::writeMBTilesProjectData() {
 	mbtiles.writeMetadata("version", config.projectVersion);
 	mbtiles.writeMetadata("description", config.projectDesc);
 	mbtiles.writeMetadata("format", config.tileFormat == TileFormat::MLT ? "mlt" : "pbf");
-	mbtiles.writeMetadata("minzoom", to_string(config.startZoom));
-	mbtiles.writeMetadata("maxzoom", to_string(config.endZoom));
+	uint minzoom = config.startZoom, maxzoom = config.endZoom;
+	if (mergeSqlite) {
+		string existing;
+		if (mbtiles.readMetadata("minzoom", existing)) minzoom = std::min(minzoom, static_cast<uint>(stoul(existing)));
+		if (mbtiles.readMetadata("maxzoom", existing)) maxzoom = std::max(maxzoom, static_cast<uint>(stoul(existing)));
+	}
+	mbtiles.writeMetadata("minzoom", to_string(minzoom));
+	mbtiles.writeMetadata("maxzoom", to_string(maxzoom));
 
 	ostringstream bounds;
 	if (mergeSqlite) {
@@ -47,9 +53,50 @@ void SharedData::writeMBTilesProjectData() {
 	}
 }
 
+// Add the vector_layers of an existing .mbtiles json object to the new one, for --merge:
+// zoom ranges are widened, missing fields and layers are added
+static string mergeVectorLayers(const string &existingJson, const string &newJson) {
+	Document existing, merged;
+	existing.Parse(existingJson.c_str());
+	merged.Parse(newJson.c_str());
+	if (existing.HasParseError() || !existing.IsObject() || !existing.HasMember("vector_layers") || !existing["vector_layers"].IsArray()) return newJson;
+	Document::AllocatorType &allocator = merged.GetAllocator();
+	Value &newLayers = merged["vector_layers"];
+
+	for (auto &oldLayer : existing["vector_layers"].GetArray()) {
+		if (!oldLayer.IsObject() || !oldLayer.HasMember("id") || !oldLayer["id"].IsString()) continue;
+		Value *match = nullptr;
+		for (auto &newLayer : newLayers.GetArray()) {
+			if (newLayer["id"] == oldLayer["id"]) { match = &newLayer; break; }
+		}
+		if (!match) {
+			newLayers.PushBack(Value(oldLayer, allocator), allocator);
+			continue;
+		}
+		if (oldLayer.HasMember("minzoom") && oldLayer["minzoom"].IsUint())
+			(*match)["minzoom"] = std::min((*match)["minzoom"].GetUint(), oldLayer["minzoom"].GetUint());
+		if (oldLayer.HasMember("maxzoom") && oldLayer["maxzoom"].IsUint())
+			(*match)["maxzoom"] = std::max((*match)["maxzoom"].GetUint(), oldLayer["maxzoom"].GetUint());
+		if (oldLayer.HasMember("fields") && oldLayer["fields"].IsObject()) {
+			Value &fields = (*match)["fields"];
+			for (auto &field : oldLayer["fields"].GetObject()) {
+				if (!fields.HasMember(field.name)) fields.AddMember(Value(field.name, allocator), Value(field.value, allocator), allocator);
+			}
+		}
+	}
+
+	StringBuffer buffer;
+	Writer<StringBuffer> writer(buffer);
+	merged.Accept(writer);
+	return string(buffer.GetString(), buffer.GetSize());
+}
+
 void SharedData::writeMBTilesMetadata(rapidjson::Document const &jsonConfig) {
 	// Write mbtiles 1.3+ json object
-	mbtiles.writeMetadata("json", layers.serialiseToJSON());
+	string json = layers.serialiseToJSON();
+	string existingJson;
+	if (mergeSqlite && mbtiles.readMetadata("json", existingJson)) json = mergeVectorLayers(existingJson, json);
+	mbtiles.writeMetadata("json", json);
 
 	// Write user-defined metadata
 	if (jsonConfig["settings"].HasMember("metadata")) {

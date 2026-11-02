@@ -41,6 +41,7 @@ public:
 
 	void openForReading(std::string &filename);
 	void readBoundingBox(double &minLon, double &maxLon, double &minLat, double &maxLat);
+	bool readMetadata(const std::string &key, std::string &value);
 	void readTileList(std::vector<std::tuple<int,int,int>> &tileList);
 	std::vector<char> readTile(int zoom, int col, int row);
 	bool readTileAndUncompress(std::string &data, int zoom, int col, int row, bool isCompressed, bool asGzip);
