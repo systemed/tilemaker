@@ -78,6 +78,10 @@ void SharedData::writeFileMetadata(rapidjson::Document const &jsonConfig) {
 		const rapidjson::Value &md = jsonConfig["settings"]["filemetadata"];
 		document.CopyFrom(md, document.GetAllocator());
 	}
+	// Same attribution as .mbtiles/.pmtiles output, unless filemetadata sets its own
+	if (!document.HasMember("attribution") && jsonConfig["settings"].HasMember("metadata") && jsonConfig["settings"]["metadata"].HasMember("attribution")) {
+		document.AddMember("attribution", rapidjson::Value().SetString(jsonConfig["settings"]["metadata"]["attribution"].GetString(), document.GetAllocator()), document.GetAllocator());
+	}
 
 	rapidjson::Value boundsArray(rapidjson::kArrayType);
 	boundsArray.PushBack(rapidjson::Value(config.minLon), document.GetAllocator());
