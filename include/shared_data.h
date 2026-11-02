@@ -37,7 +37,7 @@ struct LayerDef {
 	bool allSourceColumns;
 	bool indexed;
 	std::string indexName;
-	std::map<std::string, uint> attributeMap; // string 0, number 1, bool 2
+	std::map<std::string, uint> attributeMap; // string 0, number 1, bool 2, integer 3
 	bool writeTo;
 	// Decluttering: set after addLayer(), so these live at the end of the struct
 	uint declutterBelow = 0;			// zoom below which point features are thinned out by Score()
