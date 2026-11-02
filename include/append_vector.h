@@ -162,6 +162,10 @@ namespace AppendVectorNS {
 			return el;
 		}
 
+		const T& operator [](int idx) const {
+			return vecs[idx / APPEND_VECTOR_SIZE][idx % APPEND_VECTOR_SIZE];
+		}
+
 		Iterator begin() {
 			return Iterator(*this, 0, 0);
 		}
