@@ -425,8 +425,12 @@ void ProcessObjects(
 				// Append successive linestrings, then reorder afterwards
 				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
-					MultiLinestring to_merge = boost::get<MultiLinestring>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox));
-					for (auto &ls : to_merge) boost::get<MultiLinestring>(g).emplace_back(ls);
+					try {
+						MultiLinestring to_merge = boost::get<MultiLinestring>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox));
+						for (auto &ls : to_merge) boost::get<MultiLinestring>(g).emplace_back(ls);
+					} catch (std::out_of_range &err) {
+						if (verbose) cerr << "Error while processing geometry " << jt->oo.geomType << "," << static_cast<int>(jt->oo.objectID) <<"," << err.what() << endl;
+					}
 				}
 				MultiLinestring reordered;
 				ReorderMultiLinestring(boost::get<MultiLinestring>(g), reordered);
@@ -438,7 +442,11 @@ void ProcessObjects(
 				std::vector<MultiPolygon> mps;
 				while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo)) {
 					jt++;
-					mps.emplace_back( boost::get<MultiPolygon>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox)) );
+					try {
+						mps.emplace_back( boost::get<MultiPolygon>(source->buildWayGeometry(jt->oo.geomType, jt->oo.objectID, bbox)) );
+					} catch (std::out_of_range &err) {
+						if (verbose) cerr << "Error while processing geometry " << jt->oo.geomType << "," << static_cast<int>(jt->oo.objectID) <<"," << err.what() << endl;
+					}
 				}
 				if (!mps.empty()) { 
 					mps.emplace_back(boost::get<MultiPolygon>(g));
