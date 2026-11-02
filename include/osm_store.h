@@ -227,7 +227,9 @@ public:
 			if (relationsDone.find(rel) != relationsDone.end()) continue;
 			relationsDone.insert(rel);
 			// add all its parents
-			for (auto rp : relationsForRelations[rel]) {
+			auto it = relationsForRelations.find(rel);
+			if (it == relationsForRelations.end()) continue;
+			for (auto rp : it->second) {
 				out.emplace_back(rp);
 				relationsToDo.emplace_back(rp.first);
 			}
