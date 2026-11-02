@@ -249,7 +249,7 @@ void writeMultiPolygon(
 	unsigned zoom,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
-	unsigned repairScope,
+	bool repairPolygons,
 	const MultiPolygon& mp,
 	MvtAttributeMemo* attrMemo
 ) {
@@ -289,11 +289,11 @@ void writeMultiPolygon(
 	// such polygons are silently dropped by many renderers (missing features), so
 	// those are always repaired. Geometry that was NOT simplified is only invalid
 	// because of the integer quantisation onto the tile grid; repairing that as
-	// well is opt-in per layer ("invalid_polygon_repair_scope": "all"), and uses
+	// well is opt-in per layer ("repair_polygons": true), and uses
 	// the strict area guard so a repair can never fill a hole and hide an island.
 	// The validity check below is only worth its cost when a repair can follow,
 	// so it must include the opt-in - otherwise the option would never trigger.
-	const bool mayRepair = (simplifyLevel > 0 || repairScope == LayerDef::REPAIR_ALL);
+	const bool mayRepair = (simplifyLevel > 0 || repairPolygons);
 
 	geom::validity_failure_type failure;
 	if (!knownPolygonsValid && (mayRepair || verbose) && !geom::is_valid(current, failure)) {
@@ -359,7 +359,7 @@ void ProcessObjects(
 	class SharedData& sharedData,
 	double simplifyLevel,
 	unsigned simplifyAlgo,
-	unsigned repairScope,
+	bool repairPolygons,
 	double filterArea,
 	bool combinePoints,
 	bool combineLines,
@@ -465,7 +465,7 @@ void ProcessObjects(
 			if (oo.oo.geomType == LINESTRING_ || oo.oo.geomType == MULTILINESTRING_)
 				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g), attrMemo);
 			else if (oo.oo.geomType == POLYGON_)
-				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, repairScope, boost::get<MultiPolygon>(g), attrMemo);
+				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, repairPolygons, boost::get<MultiPolygon>(g), attrMemo);
 		}
 	}
 }
@@ -553,7 +553,7 @@ void ProcessLayer(
 			if (ld.featureLimit>0 && end-ooListSameLayer.first>ld.featureLimit && zoom<ld.featureLimitBelow) end = ooListSameLayer.first+ld.featureLimit;
 			ProcessObjects<Backend>(sources[i], attributeStore,
 				ooListSameLayer.first, end, sharedData, 
-				simplifyLevel, ld.simplifyAlgo, ld.repairScope,
+				simplifyLevel, ld.simplifyAlgo, ld.repairPolygons,
 				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, attrMemo);
 		}
 	}
