@@ -85,11 +85,15 @@ Polygon simplify(Polygon const &p, double max_distance)
 {
 	Polygon result;
 
-	simplify_rtree outer_rtree(
-		boost::irange<std::size_t>(0, p.outer().size() - 1)
-		| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&p](std::size_t i) {
-			return simplify_segment(p.outer()[i], p.outer()[i+1]);
-		})));
+	// Only the inner rings are checked against the outer ring, so most polygons,
+	// which have none, needn't index it here (simplify_ring indexes it again).
+	simplify_rtree outer_rtree;
+	if (!p.inners().empty())
+		outer_rtree = simplify_rtree(
+			boost::irange<std::size_t>(0, p.outer().size() - 1)
+			| boost::adaptors::transformed(std::function<simplify_segment(std::size_t)>([&p](std::size_t i) {
+				return simplify_segment(p.outer()[i], p.outer()[i+1]);
+			})));
 
 	for(auto const &inner: p.inners()) {
 		Ring new_inner;

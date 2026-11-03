@@ -203,6 +203,27 @@ MU_TEST(test_multipolygon_index_boxes) {
 		mu_check(b.max_corner().x() - b.min_corner().x() < 1);
 }
 
+MU_TEST(test_simplify_no_holes) {
+	// A near-collinear vertex goes; the corners, on the envelope, stay
+	MultiPolygon mp = fromWkt("MULTIPOLYGON(((0 0,0 100,100 100,100 0,50 1,0 0)))");
+	Polygon p = simplify(mp[0], 5);
+	mu_check(p.outer().size() == 5);
+	mu_check(p.inners().empty());
+	mu_check(geom::is_valid(p));
+}
+
+MU_TEST(test_simplify_hole_near_outer) {
+	// The outer ring has a spike up to (50 8). Dropping the hole's vertex at
+	// (50 12) would take the hole's edge to y=5, across the spike, so the
+	// hole must be checked against the outer ring and keep that vertex.
+	MultiPolygon mp = fromWkt("MULTIPOLYGON(((0 0,0 100,100 100,100 0,55 0,50 8,45 0,0 0),(30 5,50 12,70 5,50 20,30 5)))");
+	mu_check(geom::is_valid(mp));
+	Polygon p = simplify(mp[0], 8);
+	mu_check(p.inners().size() == 1);
+	mu_check(p.inners()[0].size() == 5);
+	mu_check(geom::is_valid(p));
+}
+
 MU_TEST_SUITE(test_suite_geom) {
 	MU_RUN_TEST(test_rect_clip_concave);
 	MU_RUN_TEST(test_rect_clip_holes);
@@ -214,6 +235,8 @@ MU_TEST_SUITE(test_suite_geom) {
 	MU_RUN_TEST(test_precheck_large_polygon);
 	MU_RUN_TEST(test_merge_nearby_boxes);
 	MU_RUN_TEST(test_multipolygon_index_boxes);
+	MU_RUN_TEST(test_simplify_no_holes);
+	MU_RUN_TEST(test_simplify_hole_near_outer);
 }
 
 int main() {
