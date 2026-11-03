@@ -163,6 +163,7 @@ test: \
 	test_pbf_reader \
 	test_pooled_string \
 	test_relation_roles \
+	test_shp_mem_tiles \
 	test_significant_tags \
 	test_sorted_node_store \
 	test_sorted_way_store \
@@ -261,6 +262,22 @@ test_sorted_way_store: \
 	src/sorted_way_store.o \
 	test/sorted_way_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.sorted_way_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.sorted_way_store
+
+test_shp_mem_tiles: \
+	src/attribute_store.o \
+	src/coordinates.o \
+	src/coordinates_geom.o \
+	src/declutter.o \
+	src/geom.o \
+	src/mmap_allocator.o \
+	src/output_object.o \
+	src/pooled_string.o \
+	src/shp_mem_tiles.o \
+	src/tile_coordinates_set.o \
+	src/tile_data.o \
+	src/tile_sorting.o \
+	test/shp_mem_tiles.test.o
+	$(CXX) $(CXXFLAGS) -o test.shp_mem_tiles $^ $(INC) $(LIB) $(LDFLAGS) && ./test.shp_mem_tiles
 
 test_tile_coordinates_set: \
 	src/tile_coordinates_set.o \

@@ -78,14 +78,58 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 	uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
 	uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
 
-	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
-		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
-			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
-			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+	const uint32_t xMin = std::min(x1, x2), xMax = std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2));
+	const uint32_t yMin = std::min(y1, y2), yMax = std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2));
+	const uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+
+	// First pass, without any geometry checks: is a tile in the box already known to
+	// intersect, and how many tiles still need the exact check below?
+	size_t unchecked = 0;
+	for (uint32_t x = xMin; x <= xMax; x++) {
+		for (uint32_t y = yMin; y <= yMax; y++) {
+			uint32_t z6x = x / divisor, z6y = y / divisor;
+			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM_WIDTH + z6y];
+			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
+			if (!bitvec.empty() && bitvec[index]) {
+				if (bitvec[index + 1]) return true;
+				unchecked++;
+			}
+		}
+	}
+	if (unchecked == 0) return false;
+
+	// Each tile's exact check intersects the tile with every candidate geometry, so its
+	// cost grows with the size of those geometries. A large query box that lies inside
+	// the bounding box of a huge geometry without touching it (say, an offshore marine
+	// reserve inside a country's bounding box) would check every one of thousands of
+	// tiles, and find nothing. Instead, check the query box once: if no geometry
+	// intersects it, none intersects any tile in it. Otherwise the caller's exact check
+	// decides.
+	const size_t maxTileChecks = 16;
+	if (unchecked > maxTileChecks) {
+		Box queryBox = box;
+		return !QueryMatchingGeometries(
+			layerName,
+			true,
+			queryBox,
+			[&](const RTree &rtree) { // indexQuery
+				vector<IndexValue> results;
+				rtree.query(geom::index::intersects(queryBox), back_inserter(results));
+				return results;
+			},
+			[&](OutputObject const &oo) { // checkQuery
+				return geom::intersects(queryBox, retrieveMultiPolygon(oo.objectID));
+			}
+		).empty();
+	}
+
+	for (uint32_t x = xMin; x <= xMax; x++) {
+		for (uint32_t y = yMin; y <= yMax; y++) {
+			uint32_t z6x = x / divisor;
+			uint32_t z6y = y / divisor;
 
 			auto& bitvec = sparseLayerVector[z6x * CLUSTER_ZOOM_WIDTH + z6y];
 
-			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
 			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
 
 			if (!bitvec.empty() && bitvec[index]) {
