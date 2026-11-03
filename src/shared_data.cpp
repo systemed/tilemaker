@@ -370,6 +370,11 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 				source, sourceColumns, allSourceColumns, indexed, indexName,
 				writeTo);
 
+		// Also repair clipped-and-quantised geometry such as ocean shapefiles,
+		// which is otherwise written out invalid
+		if (it->value.HasMember("repair_polygons"))
+			layers.layers[layerNum].repairPolygons = it->value["repair_polygons"].GetBool();
+
 		// Decluttering (thinning out point features by the score their profile gives them)
 		if (it->value.HasMember("declutter_below")) {
 			LayerDef &layerDef = layers.layers[layerNum];
