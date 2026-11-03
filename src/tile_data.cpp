@@ -166,6 +166,13 @@ void TileDataSource::collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<T
 	collectTilesWithObjectsAtZoomTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), objectsWithIds.size(), zooms);
 }
 
+void TileDataSource::collectTilesWithObjectsInShard(size_t shard, std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms) {
+	if (shard < objects.size())
+		collectTilesWithObjectsInShardTemplate<OutputObjectXY>(indexZoom, objects[shard], shard, zooms);
+	if (shard < objectsWithIds.size())
+		collectTilesWithObjectsInShardTemplate<OutputObjectXYID>(indexZoom, objectsWithIds[shard], shard, zooms);
+}
+
 void addCoveredTilesToOutput(const uint indexZoom, std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms, const Box& box) {
 	size_t maxZoom = zooms.size() - 1;
 // 	std::cout << "addCoveredTilesToOutput maxZoom=" << maxZoom << ", indexZoom - maxZoom = " << (indexZoom - maxZoom) << std::endl;
@@ -174,16 +181,11 @@ void addCoveredTilesToOutput(const uint indexZoom, std::vector<std::shared_ptr<T
 	TileCoordinate maxx = box.max_corner().x() / scale;
 	TileCoordinate miny = box.min_corner().y() / scale;
 	TileCoordinate maxy = box.max_corner().y() / scale;
-	for (int x=minx; x<=maxx; x++) {
-		for (int y=miny; y<=maxy; y++) {
-			size_t zx = x, zy = y;
-
-			for (int zoom = maxZoom; zoom >= 0; zoom--) {
-				zooms[zoom]->set(zx, zy);
-				zx /= 2;
-				zy /= 2;
-			}
-		}
+	// The parents of the tiles in the box are the tiles in the box scaled down
+	for (int zoom = maxZoom; zoom >= 0; zoom--) {
+		zooms[zoom]->setBox(minx, maxx, miny, maxy);
+		minx /= 2; maxx /= 2;
+		miny /= 2; maxy /= 2;
 	}
 }
 
@@ -498,15 +500,46 @@ void TileDataSource::reportSize() const {
 
 void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms,
+	size_t threadNum
 ) {
 	if (zooms.size() > 15)
 		throw std::out_of_range("populateTilesAtZoom: expected at most z14 zooms (15), but found " + std::to_string(zooms.size()) + " vectors");
 
-	for(size_t i=0; i<sources.size(); i++) {
-		sources[i]->collectTilesWithObjectsAtZoom(zooms);
-		sources[i]->collectTilesWithLargeObjectsAtZoom(zooms);
+	std::vector<PreciseTileCoordinatesSet*> precise;
+	for (const auto& zoom : zooms)
+		precise.push_back(dynamic_cast<PreciseTileCoordinatesSet*>(zoom.get()));
+	const bool allPrecise = std::find(precise.begin(), precise.end(), nullptr) == precise.end();
+
+	if (threadNum <= 1 || !allPrecise) {
+		for (size_t i = 0; i < sources.size(); i++)
+			sources[i]->collectTilesWithObjectsAtZoom(zooms);
+	} else {
+		// Objects are kept per z6 tile. Each worker takes whole columns of z6
+		// tiles (so that it touches only its part of the bitmaps), sets bits in
+		// bitmaps of its own, and these are merged at the end.
+		std::atomic<size_t> nextColumn(0);
+		std::vector<std::vector<std::shared_ptr<TileCoordinatesSet>>> local(threadNum);
+		boost::asio::thread_pool pool(threadNum);
+		for (size_t t = 0; t < threadNum; t++) {
+			boost::asio::post(pool, [&, t]() {
+				auto& mine = local[t];
+				for (size_t zoom = 0; zoom < zooms.size(); zoom++)
+					mine.push_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
+				for (size_t column; (column = nextColumn++) < CLUSTER_ZOOM_WIDTH; )
+					for (size_t row = 0; row < CLUSTER_ZOOM_WIDTH; row++)
+						for (const auto source : sources)
+							source->collectTilesWithObjectsInShard(column * CLUSTER_ZOOM_WIDTH + row, mine);
+			});
+		}
+		pool.join();
+		for (const auto& mine : local)
+			for (size_t zoom = 0; zoom < mine.size(); zoom++)
+				precise[zoom]->merge(static_cast<const PreciseTileCoordinatesSet&>(*mine[zoom]));
 	}
+
+	for (size_t i = 0; i < sources.size(); i++)
+		sources[i]->collectTilesWithLargeObjectsAtZoom(zooms);
 }
 
 void sortOutputObjectIDs(
