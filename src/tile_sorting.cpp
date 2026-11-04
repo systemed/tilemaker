@@ -208,26 +208,75 @@ template void sortOutputObjects<OutputObjectXYID>(
 	typename AppendVectorNS::AppendVector<OutputObjectXYID>::Iterator end
 );
 
+namespace {
+struct AttributeKeyCacheEntry {
+	AttributeIndex index;
+	uint64_t key;
+};
+// Direct-mapped, per thread: neighbouring tiles share most attribute sets
+const size_t ATTRIBUTE_KEY_CACHE_SIZE = 1 << 12;
+thread_local std::vector<AttributeKeyCacheEntry> tlsAttributeKeys;
+thread_local const AttributeStore* tlsAttributeKeysStore = nullptr;
+
+struct KeyedOutputObjectID {
+	uint64_t attributeKey;
+	OutputObjectID o;
+};
+
+uint64_t attributeKey(const AttributeStore& attributeStore, AttributeIndex index) {
+	if (tlsAttributeKeysStore != &attributeStore) {
+		tlsAttributeKeys.assign(ATTRIBUTE_KEY_CACHE_SIZE, AttributeKeyCacheEntry{~0u, 0});
+		tlsAttributeKeysStore = &attributeStore;
+	}
+	uint32_t slot = index;
+	slot ^= slot >> 16; slot *= 0x7feb352dU; slot ^= slot >> 15;
+	AttributeKeyCacheEntry& entry = tlsAttributeKeys[slot & (ATTRIBUTE_KEY_CACHE_SIZE - 1)];
+	if (entry.index != index)
+		entry = AttributeKeyCacheEntry{index, attributeStore.contentHashUnsafe(index)};
+	return entry.key;
+}
+}
+
 void sortOutputObjectIDs(
 	const std::vector<bool>& sortOrders, 
+	const AttributeStore& attributeStore,
 	std::vector<OutputObjectID>& data
 ) {
-	// Lexicographic comparison, with the order of: layer, geomType, attributes, and objectID.
+	// Lexicographic comparison, with the order of: layer, geomType, attributes, id and objectID.
 	// Note that attributes is preferred to objectID.
 	// It is to arrange objects with the identical attributes continuously.
 	// Such objects will be merged into one object, to reduce the size of output.
-	boost::sort::pdqsort(data.begin(), data.end(), [&sortOrders](const OutputObjectID& x, const OutputObjectID& y) -> bool {
-		if (x.oo.layer < y.oo.layer) return true;
-		if (x.oo.layer > y.oo.layer) return false;
-		if (x.oo.z_order < y.oo.z_order) return  sortOrders[x.oo.layer];
-		if (x.oo.z_order > y.oo.z_order) return !sortOrders[x.oo.layer];
-		if (x.oo.geomType < y.oo.geomType) return true;
-		if (x.oo.geomType > y.oo.geomType) return false;
-		if (x.oo.attributes < y.oo.attributes) return true;
-		if (x.oo.attributes > y.oo.attributes) return false;
-		if (x.oo.objectID < y.oo.objectID) return true;
-		return false;
+	//
+	// Attribute sets are compared by content, not by AttributeIndex: the index is
+	// handed out in insertion order, which depends on thread scheduling. The same
+	// goes for the objectID of stored geometries, so the OSM id goes first;
+	// TileDataSource::orderStoredGeometryTies handles the remaining ties.
+	std::vector<KeyedOutputObjectID> keyed;
+	keyed.reserve(data.size());
+	for (const OutputObjectID& o : data)
+		keyed.push_back(KeyedOutputObjectID{attributeKey(attributeStore, o.oo.attributes), o});
+
+	boost::sort::pdqsort(keyed.begin(), keyed.end(), [&sortOrders, &attributeStore](const KeyedOutputObjectID& a, const KeyedOutputObjectID& b) -> bool {
+		const OutputObject& x = a.o.oo;
+		const OutputObject& y = b.o.oo;
+		if (x.layer < y.layer) return true;
+		if (x.layer > y.layer) return false;
+		if (x.z_order < y.z_order) return  sortOrders[x.layer];
+		if (x.z_order > y.z_order) return !sortOrders[x.layer];
+		if (x.geomType < y.geomType) return true;
+		if (x.geomType > y.geomType) return false;
+		if (x.attributes != y.attributes) {
+			if (a.attributeKey != b.attributeKey) return a.attributeKey < b.attributeKey;
+			const int c = attributeStore.compareContentUnsafe(x.attributes, y.attributes);
+			if (c != 0) return c < 0;
+			return x.attributes < y.attributes;
+		}
+		if (a.o.id != b.o.id) return a.o.id < b.o.id;
+		return x.objectID < y.objectID;
 	});
+
+	for (size_t i = 0; i < keyed.size(); i++)
+		data[i] = keyed[i].o;
 }
 
 void sortTileCoordinates(
