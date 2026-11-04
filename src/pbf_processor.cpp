@@ -747,7 +747,12 @@ int PbfProcessor::ReadPbfFile(
 			// If we're in ReadPhase::Relations and there aren't many blocks left
 			// to read, increase parallelism by letting each thread only process
 			// a portion of the block.
-			if (phase == ReadPhase::Relations && blocks.size() < threadNum * 2) {
+			// With sharded stores this runs once per shard. Subdivided blocks are never
+			// erased (see ReadBlock), so subdivide only once: subdividing them again would
+			// read every relation threadNum times.
+			const bool alreadySubdivided = std::any_of(blocks.begin(), blocks.end(),
+				[](const auto& block) { return block.second.chunks > 1; });
+			if (phase == ReadPhase::Relations && !alreadySubdivided && blocks.size() < threadNum * 2) {
 				std::cout << "only " << blocks.size() << " relation blocks; subdividing for better parallelism" << std::endl;
 				std::map<std::size_t, BlockMetadata> moreBlocks;
 				for (const auto& block : blocks) {
