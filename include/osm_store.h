@@ -154,22 +154,31 @@ public:
 
 	RelationScanStore(): relationsForWays(128), relationsForNodes(128), relationTags(128), mutex(128) {}
 
+	// Keep each member's parent relations ordered by relation id: relations are scanned on
+	// several threads, so appending would make the order NextRelation() returns depend on
+	// thread scheduling. Entries of the same relation keep their member order.
+	static void insertByRelation(std::vector<std::pair<RelationID, uint16_t>>& list, RelationID relid, uint16_t roleId) {
+		const auto it = std::upper_bound(list.begin(), list.end(), relid,
+			[](RelationID id, const std::pair<RelationID, uint16_t>& entry) { return id < entry.first; });
+		list.emplace(it, relid, roleId);
+	}
+
 	void relation_contains_way(RelationID relid, WayID wayid, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
 		const size_t shard = wayid % mutex.size();
 		std::lock_guard<std::mutex> lock(mutex[shard]);
-		relationsForWays[shard][wayid].emplace_back(std::make_pair(relid, roleId));
+		insertByRelation(relationsForWays[shard][wayid], relid, roleId);
 	}
 	void relation_contains_node(RelationID relid, NodeID nodeId, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
 		const size_t shard = nodeId % mutex.size();
 		std::lock_guard<std::mutex> lock(mutex[shard]);
-		relationsForNodes[shard][nodeId].emplace_back(std::make_pair(relid, roleId));
+		insertByRelation(relationsForNodes[shard][nodeId], relid, roleId);
 	}
 	void relation_contains_relation(RelationID relid, RelationID relationId, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
 		std::lock_guard<std::mutex> lock(mutex[0]);
-		relationsForRelations[relationId].emplace_back(std::make_pair(relid, roleId));
+		insertByRelation(relationsForRelations[relationId], relid, roleId);
 	}
 	void store_relation_tags(RelationID relid, const tag_map_t &tags) {
 		const size_t shard = relid % mutex.size();
