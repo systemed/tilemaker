@@ -2,6 +2,7 @@
 #include "helpers.h"
 #include <iostream>
 #include <cmath>
+#include <stdexcept>
 
 using namespace sqlite;
 using namespace std;
@@ -9,7 +10,13 @@ using namespace std;
 MBTiles::MBTiles():
   pendingStatements1(std::make_shared<std::vector<PendingStatement>>()),
   pendingStatements2(std::make_shared<std::vector<PendingStatement>>()),
-  pendingBytes(0)
+  pendingBytes(0),
+  batches([this](PendingStatement& stmt) {
+      const std::lock_guard<std::mutex> lock(m);
+      insertOrReplace(stmt.zoom, stmt.x, stmt.y, stmt.data, stmt.isMerge);
+    },
+    [](const PendingStatement& stmt) { return sizeof(PendingStatement) + stmt.data.size(); },
+    1ull << 30)
 {}
 
 // At most this much is buffered while SQLite is busy; beyond it, workers wait
@@ -90,6 +97,11 @@ void MBTiles::flushPendingStatements() {
 }
 	
 void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
+	if (batches.inBatch()) {
+		batches.add({zoom, x, y, *data, isMerge});
+		return;
+	}
+
 	// If the lock is available, write directly to SQLite.
 	if (m.try_lock()) {
 		insertOrReplace(zoom, x, y, *data, isMerge);
@@ -115,6 +127,7 @@ void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
 }
 
 void MBTiles::closeForWriting() {
+	if (!batches.allWritten()) throw std::runtime_error("MBTiles: a batch of tiles was never written - please file an issue");
 	flushPendingStatements();
 	preparedStatements[0].used(true);
 	preparedStatements[1].used(true);

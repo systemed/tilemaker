@@ -160,6 +160,7 @@ test: \
 	test_geom \
 	test_helpers \
 	test_options_parser \
+	test_ordered_batches \
 	test_pbf_reader \
 	test_pooled_string \
 	test_relation_roles \
@@ -222,6 +223,10 @@ test_options_parser: \
 	src/options_parser.o \
 	test/options_parser.test.o
 	$(CXX) $(CXXFLAGS) -o test.options_parser $^ $(INC) $(LIB) $(LDFLAGS) && ./test.options_parser
+
+test_ordered_batches: \
+	test/ordered_batches.test.o
+	$(CXX) $(CXXFLAGS) -o test.ordered_batches $^ $(INC) $(LIB) $(LDFLAGS) && ./test.ordered_batches
 
 test_osm_store: \
 	test/osm_store.test.o

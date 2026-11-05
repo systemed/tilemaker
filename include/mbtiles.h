@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include "external/sqlite_modern_cpp.h"
+#include "ordered_batches.h"
 
 struct PendingStatement {
 	int zoom;
@@ -40,6 +41,9 @@ public:
 	void writeMetadata(std::string key, std::string value);
 	void saveTile(int zoom, int x, int y, std::string *data, bool isMerge);
 	void closeForWriting();
+
+	// Tiles are written in batch order, so the file doesn't depend on thread scheduling
+	OrderedBatches<PendingStatement> batches;
 
 	void openForReading(std::string &filename);
 	void readBoundingBox(double &minLon, double &maxLon, double &minLat, double &maxLat);
