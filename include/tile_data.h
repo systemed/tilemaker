@@ -348,9 +348,11 @@ public:
 
 	std::vector<OutputObjectID> getObjectsForTile(
 		const std::vector<bool>& sortOrders, 
+		const AttributeStore& attributeStore,
 		unsigned int zoom,
 		TileCoordinates coordinates
 	);
+	void orderStoredGeometryTies(std::vector<OutputObjectID>& data) const;
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
 	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;

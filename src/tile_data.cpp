@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <iostream>
@@ -6,6 +7,7 @@
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
+#include "stable_hash.h"
 #include <ciso646>
 
 using namespace std;
@@ -511,20 +513,126 @@ void populateTilesAtZoom(
 
 void sortOutputObjectIDs(
 	const std::vector<bool>& sortOrders, 
+	const AttributeStore& attributeStore,
 	std::vector<OutputObjectID>& data
 );
 
 std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	const std::vector<bool>& sortOrders, 
+	const AttributeStore& attributeStore,
 	unsigned int zoom,
 	TileCoordinates coordinates
 ) {
 	std::vector<OutputObjectID> data;
 	collectObjectsForTile(zoom, coordinates, data);
 	collectLargeObjectsForTile(zoom, coordinates, data);
-	sortOutputObjectIDs(sortOrders, data);
+	sortOutputObjectIDs(sortOrders, attributeStore, data);
 	data.erase(unique(data.begin(), data.end()), data.end());
+	orderStoredGeometryTies(data);
 	return data;
+}
+
+namespace {
+struct GeometryTieKey {
+	double x, y;      // first point
+	uint64_t points;  // number of points
+	uint64_t hash;    // of all points, only computed when the above are equal
+	OutputObjectID o;
+};
+
+// Adds a ring/linestring to the key: first point and point count, or (withHash) the hash of all points
+template<class R>
+void addToTieKey(GeometryTieKey& key, const R& ring, bool withHash) {
+	if (withHash) {
+		key.hash = stableCombine(key.hash, static_cast<uint64_t>(ring.size()));
+		for (const auto& p : ring) {
+			key.hash = stableCombine(key.hash, static_cast<double>(p.x()));
+			key.hash = stableCombine(key.hash, static_cast<double>(p.y()));
+		}
+		return;
+	}
+	if (key.points == 0 && !ring.empty()) {
+		key.x = ring.front().x();
+		key.y = ring.front().y();
+	}
+	key.points += ring.size();
+}
+
+void geometryTieKey(const TileDataSource& source, GeometryTieKey& key, bool withHash) {
+	const NodeID objectID = key.o.oo.objectID;
+	switch (key.o.oo.geomType) {
+		case POINT_: {
+			const Point& p = source.retrievePoint(objectID);
+			addToTieKey(key, std::array<Point, 1>{p}, withHash);
+			break;
+		}
+		case LINESTRING_:
+			addToTieKey(key, source.retrieveLinestring(objectID), withHash);
+			break;
+		case MULTILINESTRING_:
+			for (const auto& ls : source.retrieveMultiLinestring(objectID))
+				addToTieKey(key, ls, withHash);
+			break;
+		case POLYGON_:
+			for (const auto& poly : source.retrieveMultiPolygon(objectID)) {
+				addToTieKey(key, poly.outer(), withHash);
+				for (const auto& inner : poly.inners())
+					addToTieKey(key, inner, withHash);
+			}
+			break;
+	}
+}
+}
+
+// Geometries stored at runtime (relations, shapefiles, ...) have an objectID that
+// depends on which thread stored them, so the sort ties objects that share layer,
+// z_order, type, attributes and id in an arbitrary order. Order such runs by
+// geometry instead. OSM ways and nodes carry their OSM id in the objectID, and
+// sort after stored geometries, so they never need this.
+void TileDataSource::orderStoredGeometryTies(std::vector<OutputObjectID>& data) const {
+	const NodeID storedLimit = 1ull << TILE_DATA_ID_SIZE;
+	auto tied = [](const OutputObjectID& a, const OutputObjectID& b) {
+		return a.oo.layer == b.oo.layer && a.oo.z_order == b.oo.z_order && a.oo.geomType == b.oo.geomType &&
+		       a.oo.attributes == b.oo.attributes && a.id == b.id;
+	};
+
+	std::vector<GeometryTieKey> keys;
+	size_t i = 0;
+	while (i < data.size()) {
+		size_t j = i + 1;
+		if (data[i].oo.objectID < storedLimit)
+			while (j < data.size() && data[j].oo.objectID < storedLimit && tied(data[i], data[j])) j++;
+		if (j - i < 2) { i = j; continue; }
+
+		keys.clear();
+		for (size_t k = i; k < j; k++) {
+			keys.push_back(GeometryTieKey{0, 0, 0, 0, data[k]});
+			geometryTieKey(*this, keys.back(), false);
+		}
+		auto byPoint = [](const GeometryTieKey& a, const GeometryTieKey& b) {
+			if (a.x != b.x) return a.x < b.x;
+			if (a.y != b.y) return a.y < b.y;
+			return a.points < b.points;
+		};
+		std::sort(keys.begin(), keys.end(), byPoint);
+
+		// Still tied: hash all points (identical geometries may stay in any order)
+		for (size_t a = 0; a < keys.size(); ) {
+			size_t b = a + 1;
+			while (b < keys.size() && !byPoint(keys[a], keys[b])) b++;
+			if (b - a > 1) {
+				for (size_t k = a; k < b; k++) geometryTieKey(*this, keys[k], true);
+				std::sort(keys.begin() + a, keys.begin() + b, [](const GeometryTieKey& p, const GeometryTieKey& q) {
+					if (p.hash != q.hash) return p.hash < q.hash;
+					return p.o.oo.objectID < q.o.oo.objectID;
+				});
+			}
+			a = b;
+		}
+
+		for (size_t k = i; k < j; k++) data[k] = keys[k - i].o;
+		i = j;
+	}
 }
 
 // ------------------------------------
