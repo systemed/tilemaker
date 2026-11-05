@@ -8,8 +8,17 @@ using namespace std;
 
 MBTiles::MBTiles():
   pendingStatements1(std::make_shared<std::vector<PendingStatement>>()),
-  pendingStatements2(std::make_shared<std::vector<PendingStatement>>())
+  pendingStatements2(std::make_shared<std::vector<PendingStatement>>()),
+  pendingBytes(0)
 {}
+
+// At most this much is buffered while SQLite is busy; beyond it, workers wait
+// for the writer instead (a planet run otherwise buffered ~15M tiles, over 3 GB).
+static const size_t MAX_PENDING_BYTES = 256 << 20;
+
+static size_t pendingCost(const std::string& data) {
+	return sizeof(PendingStatement) + data.size();
+}
 
 MBTiles::~MBTiles() {
 	if (db && inTransaction) db << "COMMIT;"; // commit all the changes if open
@@ -71,6 +80,7 @@ void MBTiles::flushPendingStatements() {
 		while(!pendingStatements2->empty()) {
 			const PendingStatement& stmt = pendingStatements2->back();
 			insertOrReplace(stmt.zoom, stmt.x, stmt.y, stmt.data, stmt.isMerge);
+			pendingBytes -= pendingCost(stmt.data);
 			pendingStatements2->pop_back();
 		}
 
@@ -85,11 +95,23 @@ void MBTiles::saveTile(int zoom, int x, int y, string *data, bool isMerge) {
 		insertOrReplace(zoom, x, y, *data, isMerge);
 		flushPendingStatements();
 		m.unlock();
-	} else {
+		return;
+	}
+
+	{
 		// Else buffer the write for later, copying its binary blob.
 		const std::lock_guard<std::mutex> lock(pendingStatementsMutex);
-		pendingStatements1->push_back({zoom, x, y, *data, isMerge});
+		if (pendingBytes < MAX_PENDING_BYTES) {
+			pendingBytes += pendingCost(*data);
+			pendingStatements1->push_back({zoom, x, y, *data, isMerge});
+			return;
+		}
 	}
+
+	// The buffer is full: wait for SQLite, then help drain the buffer.
+	const std::lock_guard<std::mutex> lock(m);
+	insertOrReplace(zoom, x, y, *data, isMerge);
+	flushPendingStatements();
 }
 
 void MBTiles::closeForWriting() {
