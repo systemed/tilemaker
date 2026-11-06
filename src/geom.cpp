@@ -649,8 +649,38 @@ static void union_near(MultiPolygon &a, MultiPolygon &b, MultiPolygon &out) {
 		(bIsNear[j] ? bNear : out).push_back(std::move(b[j]));
 
 	if (aNear.empty()) return;
+
+	// Boost.Geometry's union_ can lose area: for two valid polygons that share an
+	// edge along nearly collinear vertices it drops one of them, or returns nothing,
+	// depending on the argument order (boostorg/geometry#1506, still in 1.92). A
+	// union covers both inputs, so check its area and retry with the arguments
+	// swapped. If that loses area too, keep the polygons uncombined: exact when they
+	// don't overlap, which is the common case for adjacent polygons.
+	// The overlap is only computed when the union is smaller than both inputs together.
+	const double sum = boost::geometry::area(aNear) + boost::geometry::area(bNear);
+	double expected = -1.0;
+	auto keepsArea = [&](const MultiPolygon &mp) {
+		const double area = boost::geometry::area(mp);
+		if (area >= sum * (1.0 - 1e-6)) return true;
+		if (expected < 0.0) {
+			MultiPolygon overlap;
+			boost::geometry::intersection(aNear, bNear, overlap);
+			expected = sum - boost::geometry::area(overlap);
+		}
+		return area >= expected * (1.0 - 1e-6);
+	};
+
 	MultiPolygon unified;
 	boost::geometry::union_(aNear, bNear, unified);
+	if (!keepsArea(unified)) {
+		unified.clear();
+		boost::geometry::union_(bNear, aNear, unified);
+		if (!keepsArea(unified)) {
+			for (auto &p : aNear) out.push_back(std::move(p));
+			for (auto &p : bNear) out.push_back(std::move(p));
+			return;
+		}
+	}
 	for (auto &p : unified) out.push_back(std::move(p));
 }
 

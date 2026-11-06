@@ -116,7 +116,33 @@ MU_TEST(test_precheck_many_holes) {
 	checkPrecheck(mp, false);
 }
 
+static double unionArea(std::vector<MultiPolygon> mps, std::size_t &polygons) {
+	union_many(mps);
+	polygons = mps[0].size();
+	return geom::area(mps[0]);
+}
+
+MU_TEST(test_union_many) {
+	std::size_t polygons;
+	// Overlapping squares become one polygon
+	const MultiPolygon s1 = fromWkt("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))"), s2 = fromWkt("MULTIPOLYGON(((1 1,1 3,3 3,3 1,1 1)))");
+	mu_check(std::abs(unionArea({ s1, s2 }, polygons) - 7) < 1e-9 && polygons == 1);
+
+	// Two polygons sharing an edge along nearly collinear vertices: Boost's union_
+	// drops one of them or returns nothing, depending on the argument order
+	// (boostorg/geometry#1506). union_many sorts its input, so this is one fixed order;
+	// with Boost 1.83 both orders lose area, with 1.89 to 1.92 one of them.
+	const MultiPolygon a = fromWkt("MULTIPOLYGON(((7.5766965679702691 55.1955384390566266,7.5769710638206007 55.1955418668735760,"
+		"7.5776907371234223 55.1955508539257096,7.5777041477885838 55.1955510213938609,"
+		"7.5724506758568699 55.1833987553893692,7.5766965679702691 55.1955384390566266)))");
+	const MultiPolygon b = fromWkt("MULTIPOLYGON(((7.5776907371234223 55.1955508539257096,7.5769710638206007 55.1955418668735760,"
+		"7.5786734102424926 55.1979584470965179,7.5776907371234223 55.1955508539257096)))");
+	const double expected = geom::area(a) + geom::area(b);
+	mu_check(std::abs(unionArea({ a, b }, polygons) - expected) < 1e-6 * expected);
+}
+
 MU_TEST_SUITE(test_suite_geom) {
+	MU_RUN_TEST(test_union_many);
 	MU_RUN_TEST(test_rect_clip_concave);
 	MU_RUN_TEST(test_rect_clip_holes);
 	MU_RUN_TEST(test_rect_clip_trivial);
