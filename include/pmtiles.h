@@ -3,7 +3,12 @@
 #define _PMTILES_H
 
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 #include "external/pmtiles.hpp"
+#include "ordered_batches.h"
 
 struct TileOffset {
 	uint64_t offset : 40;
@@ -28,6 +33,14 @@ struct TileOffset {
 // PMTiles v3 tile type for MapLibre Tiles (not yet in external/pmtiles.hpp)
 #define TILETYPE_MLT 0x6
 
+// A tile waiting to be written: tiny tiles keep their raw data, so that a repeat
+// can reuse the earlier copy, and are only compressed if they're written
+struct PendingTile {
+	uint64_t tileId;
+	bool isTiny;
+	std::string data;
+};
+
 class PMTiles { 
 
 public:
@@ -42,10 +55,12 @@ public:
 	void saveTile(int zoom, int x, int y, std::string &data);
 	void close(std::string &metadata);
 
+	// Tiles are written in batch order, so the file doesn't depend on thread scheduling
+	OrderedBatches<PendingTile> batches;
+
 private:
 	std::ofstream outputStream;
-	std::mutex fileMutex;	// guards file writes, numTilesWritten
-	std::mutex indexMutex;	// guards access to sparseIndex, denseIndex, tinyCache, numTilesAddressed
+	std::mutex fileMutex;	// guards leaf directory writes in close()
 	uint64_t leafStart = 0;
 	uint64_t numTilesWritten = 0;
 	uint64_t numTilesAddressed = 0;
@@ -54,6 +69,7 @@ private:
 	std::vector<TileOffset> denseIndex;
 	std::unordered_map<std::string, TileOffset> tinyCache;
 
+	void writeTile(PendingTile &tile);	// with batches.writeMutex() held
 	void appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::entryv3 &entry);
 	void appendTileEntry(uint64_t tileId, TileOffset offset, std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries);
 	void flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries);
