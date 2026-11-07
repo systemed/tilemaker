@@ -544,8 +544,9 @@ int main(const int argc, const char* argv[]) {
 	const bool toPMTiles = options.outputMode == OptionsParser::OutputMode::PMTiles;
 	const bool toMBTiles = options.outputMode == OptionsParser::OutputMode::MBTiles;
 	// While an earlier batch is still being worked on, each thread may run ahead by about
-	// 32 MB of finished tiles: with fewer, threads wait for room more often
-	const uint64_t maxHeldBytes = (32ull << 20) * options.threadNum;
+	// 64 MB of finished tiles. With less, threads often wait for a slow batch (mostly a
+	// dense z12 area), above all when two threads share a core and each runs at half speed.
+	const uint64_t maxHeldBytes = (64ull << 20) * options.threadNum;
 	if (toPMTiles) sharedData.pmtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	if (toMBTiles) sharedData.mbtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	for (unsigned int t = 0; t < options.threadNum; t++) {
