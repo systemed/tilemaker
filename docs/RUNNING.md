@@ -56,6 +56,17 @@ usage but runs faster.
 * `--shard-stores`: Group temporary storage by area. Reduces RAM usage on large files (e.g.
 whole planet) but runs slower.
 
+On Linux, large builds can also run faster with a different memory allocator. tilemaker
+allocates and frees a lot of small objects, and with many threads the jemalloc allocator copes
+with that better than the default one. Install it (on Debian/Ubuntu: `sudo apt install libjemalloc2`)
+and preload it when you run tilemaker:
+
+    LD_PRELOAD=libjemalloc.so.2 tilemaker --input planet.osm.pbf --output planet.pmtiles ...
+
+(If the library isn't found, give its full path, e.g. `/usr/lib/x86_64-linux-gnu/libjemalloc.so.2`.)
+On a 48-core server this made the whole planet 14–17% faster at the default thread count
+and needed 7 GB less memory; a Germany extract at 32 threads was 4% faster.
+
 You can also tell tilemaker to only look at .pbf objects with certain tags. If you're making a 
 thematic map, this allows tilemaker to skip data it won't need. Specify this in your Lua file 
 like one of these three examples:
