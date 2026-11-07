@@ -613,7 +613,7 @@ int main(const int argc, const char* argv[]) {
 					try {
 						std::vector<std::vector<OutputObjectID>> data;
 						for (auto source : sources) {
-							data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+							data.emplace_back(source->getObjectsForTile(sortOrders, attributeStore, zoom, coords));
 						}
 						outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 					} catch (const std::exception& e) {
