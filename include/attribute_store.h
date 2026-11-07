@@ -9,6 +9,8 @@
 #include <atomic>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
+#include <boost/container/small_vector.hpp>
+#include <algorithm>
 #include <vector>
 #include <protozero/data_view.hpp>
 #include "pooled_string.h"
@@ -30,11 +32,16 @@ public:
 	uint16_t key2index(const std::string& key);
 	const std::string& getKey(uint16_t index) const;
 	const std::string& getKeyUnsafe(uint16_t index) const;
-	void finalize() { finalized = true; }
+	// Position of the key in alphabetical order. Unlike the key index, which is
+	// handed out in first-use order (i.e. depends on thread scheduling), it is
+	// the same in every run. Only valid after finalize().
+	uint16_t getRankUnsafe(uint16_t index) const { return ranks[index]; }
+	void finalize();
 	std::atomic<uint32_t> keys2indexSize;
 
 private:
 	bool finalized;
+	std::vector<uint16_t> ranks;
 	mutable std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
@@ -439,6 +446,24 @@ struct AttributeStore {
 		}
 		attrSet->forEachPair(fn);
 	}
+	// As forEachPairIndexUnsafe, but in an order that is the same in every run
+	// (by key name), not by pair index, which depends on thread scheduling.
+	template<class F>
+	void forEachPairIndexCanonicalUnsafe(AttributeIndex index, F&& fn) const {
+		boost::container::small_vector<uint32_t, 16> order;
+		forEachPairIndexUnsafe(index, [&](uint32_t pairIndex) { order.push_back(pairIndex); });
+		if (order.size() > 1)
+			std::sort(order.begin(), order.end(), [this](uint32_t a, uint32_t b) {
+				return comparePairsUnsafe(a, b) < 0;
+			});
+		for (const uint32_t pairIndex : order)
+			fn(pairIndex);
+	}
+	// Order and hash attribute pairs/sets by content (key names and values), not by
+	// index, so that they are the same in every run. Only valid after finalize().
+	int comparePairsUnsafe(uint32_t a, uint32_t b) const;
+	int compareContentUnsafe(AttributeIndex a, AttributeIndex b) const;
+	uint64_t contentHashUnsafe(AttributeIndex index) const;
 	void reset(); // used for testing
 	size_t size() const;
 	void reportSize() const;

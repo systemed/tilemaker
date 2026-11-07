@@ -1,4 +1,5 @@
 #include "attribute_store.h"
+#include "stable_hash.h"
 
 #include <iostream>
 #include <algorithm>
@@ -53,6 +54,15 @@ const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
 	// NB: This is unsafe if called before the PBF has been fully read.
 	// If called during the output phase, it's safe.
 	return keys[index];
+}
+
+void AttributeKeyStore::finalize() {
+	finalized = true;
+	// keys2index is ordered by key string
+	ranks.assign(keys.size(), 0);
+	uint16_t rank = 0;
+	for (const auto& it : keys2index)
+		ranks[it.second] = ++rank;
 }
 
 // AttributePair
@@ -555,6 +565,52 @@ void AttributeStore::reset() {
 		cachedAttributeSetPointers[i] = nullptr;
 
 	pairIndexGeneration++;
+}
+
+int AttributeStore::comparePairsUnsafe(uint32_t a, uint32_t b) const {
+	if (a == b) return 0;
+	const AttributePair& p = pairStore.getPairUnsafe(a);
+	const AttributePair& q = pairStore.getPairUnsafe(b);
+	const uint16_t pRank = keyStore.getRankUnsafe(p.keyIndex), qRank = keyStore.getRankUnsafe(q.keyIndex);
+	if (pRank != qRank) return pRank < qRank ? -1 : 1;
+	if (p.minzoom != q.minzoom) return p.minzoom < q.minzoom ? -1 : 1;
+	if (p.valueType != q.valueType) return p.valueType < q.valueType ? -1 : 1;
+	if (p.hasStringValue()) {
+		if (p.pooledString() < q.pooledString()) return -1;
+		if (q.pooledString() < p.pooledString()) return 1;
+		return 0;
+	}
+	if (p.doubleValue_ < q.doubleValue_) return -1;
+	if (q.doubleValue_ < p.doubleValue_) return 1;
+	return 0;
+}
+
+int AttributeStore::compareContentUnsafe(AttributeIndex a, AttributeIndex b) const {
+	if (a == b) return 0;
+	boost::container::small_vector<uint32_t, 16> x, y;
+	forEachPairIndexCanonicalUnsafe(a, [&](uint32_t pairIndex) { x.push_back(pairIndex); });
+	forEachPairIndexCanonicalUnsafe(b, [&](uint32_t pairIndex) { y.push_back(pairIndex); });
+	for (size_t i = 0; i < x.size() && i < y.size(); i++) {
+		const int c = comparePairsUnsafe(x[i], y[i]);
+		if (c != 0) return c;
+	}
+	if (x.size() != y.size()) return x.size() < y.size() ? -1 : 1;
+	return 0;
+}
+
+uint64_t AttributeStore::contentHashUnsafe(AttributeIndex index) const {
+	// Sum of the pair hashes, so the (index dependent) pair order doesn't matter
+	uint64_t rv = 0;
+	forEachPairUnsafe(index, [&](const AttributePair& p) {
+		uint64_t h = stableCombine(keyStore.getRankUnsafe(p.keyIndex), static_cast<uint64_t>(p.minzoom));
+		h = stableCombine(h, static_cast<uint64_t>(p.valueType));
+		if (p.hasStringValue())
+			h = stableCombine(h, p.pooledString().data(), p.pooledString().size());
+		else
+			h = stableCombine(h, p.doubleValue_);
+		rv += h;
+	});
+	return rv;
 }
 
 void AttributeStore::finalize() {
