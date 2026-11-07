@@ -9,7 +9,7 @@
 
 MU_TEST(test_ordered_batches_single_thread) {
 	std::vector<int> written;
-	OrderedBatches<int> batches([&](int& item) { written.push_back(item); }, [](const int&) { return 1; }, 100);
+	OrderedBatches<int> batches([&](int& item) { written.push_back(item); }, [](const int&) { return 1; });
 
 	// batch 1 finishes first, so it's held until batch 0 is written
 	batches.begin(1);
@@ -42,7 +42,8 @@ MU_TEST(test_ordered_batches_threads) {
 	// may be held, threads also have to wait for room
 	const uint64_t numBatches = 2000, itemsPerBatch = 5;
 	std::vector<uint64_t> written;
-	OrderedBatches<uint64_t> batches([&](uint64_t& item) { written.push_back(item); }, [](const uint64_t&) { return 1; }, 20);
+	OrderedBatches<uint64_t> batches([&](uint64_t& item) { written.push_back(item); }, [](const uint64_t&) { return 1; });
+	batches.setMaxHeldBytes(20);
 
 	std::mutex handOut;
 	uint64_t nextSeq = 0;

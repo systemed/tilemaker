@@ -17,15 +17,20 @@
 // if it's the next one, followed by any batches that were waiting for it; otherwise it
 // holds the batch. Batches must be numbered 0, 1, 2, ... in the order they're handed out,
 // and a thread calls waitForRoom() before it takes its next batch: that keeps what is
-// held below maxHeldBytes. The batch everyone waits for is always being worked on by a
-// thread that isn't waiting, so waitForRoom() always returns.
+// held below the limit set with setMaxHeldBytes(). The batch everyone waits for is always
+// being worked on by a thread that isn't waiting, so waitForRoom() always returns.
 //
 // writeItem is called by one thread at a time, with writeMutex() held, in batch order.
 template <typename T>
 class OrderedBatches {
 public:
-	OrderedBatches(std::function<void(T&)> writeItem, std::function<uint64_t(const T&)> itemBytes, uint64_t maxHeldBytes)
-		: writeItem(writeItem), itemBytes(itemBytes), maxHeldBytes(maxHeldBytes) { }
+	OrderedBatches(std::function<void(T&)> writeItem, std::function<uint64_t(const T&)> itemBytes)
+		: writeItem(writeItem), itemBytes(itemBytes) { }
+
+	void setMaxHeldBytes(uint64_t bytes) {
+		std::lock_guard<std::mutex> lock(m);
+		maxHeldBytes = bytes;
+	}
 
 	bool inBatch() const { return current().active; }
 
@@ -95,7 +100,7 @@ private:
 
 	std::function<void(T&)> writeItem;
 	std::function<uint64_t(const T&)> itemBytes;
-	uint64_t maxHeldBytes;
+	uint64_t maxHeldBytes = 1ull << 30;
 	std::mutex m;	// guards the fields below
 	std::mutex w;	// held while writing
 	std::condition_variable heldShrunk;

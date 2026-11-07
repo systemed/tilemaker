@@ -32,8 +32,6 @@ struct TileOffset {
 #define TINY_MAX_SIZE 10000
 // PMTiles v3 tile type for MapLibre Tiles (not yet in external/pmtiles.hpp)
 #define TILETYPE_MLT 0x6
-// Most tile data held back while an earlier batch is still being worked on
-#define HELD_MAX_BYTES (1ull << 30)
 
 // A tile waiting to be written: tiny tiles keep their raw data, so that a repeat
 // can reuse the earlier copy, and are only compressed if they're written

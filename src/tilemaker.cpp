@@ -543,6 +543,11 @@ int main(const int argc, const char* argv[]) {
 	// .pmtiles and .mbtiles are written in batch order, so the file doesn't depend on thread scheduling
 	const bool toPMTiles = options.outputMode == OptionsParser::OutputMode::PMTiles;
 	const bool toMBTiles = options.outputMode == OptionsParser::OutputMode::MBTiles;
+	// While an earlier batch is still being worked on, each thread may run ahead by about
+	// 32 MB of finished tiles: with fewer, threads wait for room more often
+	const uint64_t maxHeldBytes = (32ull << 20) * options.threadNum;
+	if (toPMTiles) sharedData.pmtiles.batches.setMaxHeldBytes(maxHeldBytes);
+	if (toMBTiles) sharedData.mbtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	for (unsigned int t = 0; t < options.threadNum; t++) {
 		boost::asio::post(pool, [&]() {
 			std::size_t startIndex, batchSize;

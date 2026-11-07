@@ -12,8 +12,7 @@
 TileOffset::TileOffset() { }
 PMTiles::PMTiles() :
 	batches([this](PendingTile &tile) { writeTile(tile); },
-	        [](const PendingTile &tile) { return tile.data.size(); },
-	        HELD_MAX_BYTES) { }
+	        [](const PendingTile &tile) { return tile.data.size(); }) { }
 PMTiles::~PMTiles() { }
 
 void PMTiles::open(std::string &filename) {

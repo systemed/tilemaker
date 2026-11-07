@@ -15,8 +15,7 @@ MBTiles::MBTiles():
       const std::lock_guard<std::mutex> lock(m);
       insertOrReplace(stmt.zoom, stmt.x, stmt.y, stmt.data, stmt.isMerge);
     },
-    [](const PendingStatement& stmt) { return sizeof(PendingStatement) + stmt.data.size(); },
-    1ull << 30)
+    [](const PendingStatement& stmt) { return sizeof(PendingStatement) + stmt.data.size(); })
 {}
 
 // At most this much is buffered while SQLite is busy; beyond it, workers wait
