@@ -29,6 +29,9 @@
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/filewritestream.h"
 #include "rapidjson/error/en.h"
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>	// sysconf
+#endif
 
 #ifndef _MSC_VER
 #include <sys/resource.h>
@@ -93,6 +96,40 @@ void sortTileCoordinates(
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
+// Memory this process may use: physical RAM, or the cgroup (v2/v1) limit if lower; 0 if unknown
+static uint64_t availableMemoryBytes() {
+	uint64_t bytes = 0;
+#if defined(__unix__) || defined(__APPLE__)
+	const long pages = sysconf(_SC_PHYS_PAGES), pageSize = sysconf(_SC_PAGESIZE);
+	if (pages > 0 && pageSize > 0) bytes = (uint64_t)pages * (uint64_t)pageSize;
+#endif
+#ifdef __linux__
+	// The limits of the process's cgroup and the ones above it, from /proc/self/cgroup: "0::/path"
+	// (v2), or "N:...memory...:/path" (v1). Only in a container is the process's cgroup the root
+	// (a systemd service or scope is not).
+	std::ifstream cgroups("/proc/self/cgroup");
+	std::string line;
+	while (std::getline(cgroups, line)) {
+		const size_t a = line.find(':'), b = line.find(':', a + 1);
+		if (a == std::string::npos || b == std::string::npos) continue;
+		const std::string controllers = "," + line.substr(a + 1, b - a - 1) + ",";
+		std::string dir, file;
+		if (line.compare(0, a, "0") == 0 && controllers == ",,") { dir = "/sys/fs/cgroup"; file = "/memory.max"; }
+		else if (controllers.find(",memory,") != std::string::npos) { dir = "/sys/fs/cgroup/memory"; file = "/memory.limit_in_bytes"; }
+		else continue;
+		std::string path = line.substr(b + 1);
+		while (true) {
+			std::ifstream f(dir + path + file);
+			unsigned long long limit = 0;	// ("max": no limit)
+			if (f >> limit && limit > 0 && (bytes == 0 || limit < bytes)) bytes = limit;
+			if (path.empty() || path == "/") break;
+			path.resize(path.find_last_of('/'));
+		}
+	}
+#endif
+	return bytes;
+}
+
 int main(const int argc, const char* argv[]) {
 #ifdef __GLIBC__
 	// glibc raises its mmap threshold dynamically (up to 32/64 MB) once a large
@@ -560,7 +597,10 @@ int main(const int argc, const char* argv[]) {
 	// are written z6 tile by z6 tile, so once the hand-out has moved past a z6 tile and none of its
 	// batches is still running, no tile needs its pieces any more.
 	std::vector<uint32_t> z6Running(CLUSTER_ZOOM_WIDTH * CLUSTER_ZOOM_WIDTH, 0);
-	int64_t z6HandedOut = -1;
+	std::atomic<int64_t> z6HandedOut(-1);	// changed under batchMutex; read without it for the pieces
+	// The pieces are computed ahead of the hand-out while those alive take less than this: all
+	// computed at the start, the planet's took about 5 GB, more than the tile phase's other memory.
+	const uint64_t pieceBudget = std::max<uint64_t>(256ull << 20, availableMemoryBytes() / 32);
 	auto z6Of = [&](std::size_t i) -> int64_t {
 		const unsigned z = tileCoordinates[i].first;
 		if (z < CLUSTER_ZOOM) return -1;
@@ -629,6 +669,8 @@ int main(const int argc, const char* argv[]) {
 				if (toMBTiles) sharedData.mbtiles.batches.waitForRoom();
 				if (tileFailed || writeFailed()) break;
 				if (!nextBatch(startIndex, batchSize, seq)) break;
+				// Shared pieces for the tiles coming up (see TileDataSource::precomputeSharedPieces)
+				for (auto source : sources) source->computeSharedPieces(z6HandedOut.load(), pieceBudget);
 				if (toPMTiles) sharedData.pmtiles.batches.begin(seq);
 				if (toMBTiles) sharedData.mbtiles.batches.begin(seq);
 				clipCacheBatchId = ++batchCounter;

@@ -12,6 +12,8 @@
 #include <tuple>
 #include <memory>
 #include <functional>
+#include <future>
+#include <atomic>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 #include "append_vector.h"
@@ -428,6 +430,10 @@ public:
 	static constexpr unsigned SHARED_PIECE_ZOOM = 8;
 	// present(x, y): whether any tile below SHARED_PIECE_ZOOM tile x/y will be written
 	void precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum);
+	// Compute pieces in the order of their z6 tiles (x * 64 + y, the order the tiles are written in):
+	// those of z6 tiles up to handedOutZ6, and those after it while the pieces alive take less than
+	// budgetBytes. The tile threads call this after taking a batch.
+	void computeSharedPieces(int64_t handedOutZ6, uint64_t budgetBytes);
 	// Drop the shared pieces inside a z6 tile, once no tile in it is still to be written
 	void releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y);
 	// Whether objectID's polygon is kept in the multipolygon store (retrieveMultiPolygon)
@@ -435,11 +441,25 @@ public:
 	struct SharedPiece {
 		std::shared_ptr<MultiPolygon> geom;	// null: no usable piece, clip the whole polygon
 		bool valid = false;
+		uint64_t bytes = 0;	// counted in livePieceBytes while the piece is alive
+		~SharedPiece() { livePieceBytes -= bytes; }
 	};
+	// The points of all pieces alive, of all sources
+	static std::atomic<uint64_t> livePieceBytes;
 	// Filled by precomputeSharedPieces, then only read while the tiles are written (no lock).
 	// releaseSharedPieces resets the pieces of a z6 tile no thread reads any more.
 	std::unordered_set<NodeID> pieceObjects;
-	std::map<std::tuple<NodeID, TileCoordinate, TileCoordinate>, std::shared_ptr<const SharedPiece>> sharedPieces;
+	std::map<std::tuple<NodeID, TileCoordinate, TileCoordinate>, std::shared_future<std::shared_ptr<const SharedPiece>>> sharedPieces;
+	struct PieceJob {
+		std::tuple<NodeID, TileCoordinate, TileCoordinate> key;
+		uint64_t points;
+		std::shared_ptr<std::promise<std::shared_ptr<const SharedPiece>>> promise;
+		int64_t z6;
+	};
+	std::vector<PieceJob> pieceJobs;	// by z6 tile, largest polygon first
+	std::atomic<size_t> nextPieceJob { 0 };
+	// Computes job i
+	void computeSharedPiece(size_t i);
 	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
