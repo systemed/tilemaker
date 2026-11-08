@@ -10,11 +10,19 @@
 #include "helpers.h"
 
 TileOffset::TileOffset() { }
-PMTiles::PMTiles() { }
+// Placing tiles (offset, repeats, index) and writing their bytes are two steps, each in batch order
+// and one thread at a time, but run by different threads side by side: one thread doing both was
+// the bottleneck of the tile phase at 96 threads.
+PMTiles::PMTiles() :
+	batches([this](PendingTile &tile) { writeTile(tile); },
+	        [](const PendingTile &tile) { return tile.data.size(); },
+	        [this](PendingTile &tile) { flushTile(tile); }) { }
 PMTiles::~PMTiles() { }
 
 void PMTiles::open(std::string &filename) {
 	std::cout << "Creating pmtiles at " << filename << std::endl;
+	outputBuffer.resize(4 << 20);
+	outputStream.rdbuf()->pubsetbuf(outputBuffer.data(), outputBuffer.size());
 	outputStream.open(filename, std::ios::out | std::ios::trunc | std::ios::binary);
 	// dummy header/root directory for now - we'll write it all later
 	char header[HEADER_ROOT] = "PMTiles";
@@ -24,6 +32,7 @@ void PMTiles::open(std::string &filename) {
 // Finish writing the .pmtiles file
 void PMTiles::close(std::string &metadata) {
 	std::cout << "\nClosing pmtiles file" << std::flush;
+	if (!batches.allWritten()) { throw std::runtime_error("PMTiles: a batch of tiles was never written - please file an issue"); }
 
 	// add all tiles to directories, writing leaf directories as we go
 	std::vector<pmtiles::entryv3> rootEntries;
@@ -129,45 +138,55 @@ void PMTiles::flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vect
 	rootEntries.emplace_back(rootEntry);
 }
 
-// Write a tile to file and store it in the index
-// - if the tile is small and has already been written, reuse that instead
-// - we're a bit fussy about mutexs because compress_string is expensive
+// Save a tile: compress it here (compress_string is expensive), but leave tiny tiles
+// raw until they're written, since most of them (e.g. sea) repeat an earlier one
 void PMTiles::saveTile(int zoom, int x, int y, std::string &data) {
-	TileOffset offset;
-	bool isNew = false;
-	uint64_t tileId = pmtiles::zxy_to_tileid(zoom,x,y);
-
-	// if it's a tiny tile (e.g. sea), see if we've written it already
-	std::unique_lock<std::mutex> indexLock1(indexMutex);
-	if (data.size()<TINY_LENGTH && tinyCache.find(data) != tinyCache.end()) {
-		offset = tinyCache[data];
-		indexLock1.unlock();
-
-	// otherwise, compress it and write
-	} else {
-		indexLock1.unlock();
-		std::string compressed = compress_string(data, Z_DEFAULT_COMPRESSION, true);
-		std::lock_guard<std::mutex> lock(fileMutex);
-		// write to file
-		offset = TileOffset(static_cast<uint64_t>(outputStream.tellp()) - HEADER_ROOT, compressed.size());
-		outputStream.write(compressed.c_str(), compressed.size());
-		numTilesWritten++;
-		isNew = true;
+	PendingTile tile;
+	tile.tileId = pmtiles::zxy_to_tileid(zoom,x,y);
+	tile.isTiny = data.size()<TINY_LENGTH;
+	tile.data = tile.isTiny ? data : compress_string(data, Z_DEFAULT_COMPRESSION, true);
+	if (batches.inBatch()) {
+		batches.add(std::move(tile));
+		return;
 	}
-	
+	std::lock_guard<std::mutex> lock(batches.writeMutex());
+	writeTile(tile);
+	flushTile(tile);
+}
+
+void PMTiles::flushTile(PendingTile &tile) {
+	if (!tile.data.empty()) outputStream.write(tile.data.c_str(), tile.data.size());
+	tile.data = std::string();
+}
+
+// Write a tile to file and store it in the index
+// - if the tile is tiny and has already been written, reuse that instead
+void PMTiles::writeTile(PendingTile &tile) {
+	TileOffset offset;
+	auto cached = tile.isTiny ? tinyCache.find(tile.data) : tinyCache.end();
+	if (cached != tinyCache.end()) {
+		offset = cached->second;
+		tile.data = std::string();	// already in the file
+	} else {
+		std::string compressed = tile.isTiny ? compress_string(tile.data, Z_DEFAULT_COMPRESSION, true) : std::move(tile.data);
+		offset = TileOffset(tileDataEnd, compressed.size());
+		tileDataEnd += compressed.size();
+		numTilesWritten++;
+		// add to cache if tiny
+		if (tile.isTiny) {
+			if (tinyCache.size()>TINY_MAX_SIZE) tinyCache.clear();
+			tinyCache.insert({ tile.data, offset });
+		}
+		tile.data = std::move(compressed);	// flushTile writes it
+	}
+
 	// store in index
-	std::lock_guard<std::mutex> indexLock2(indexMutex);
+	uint64_t tileId = tile.tileId;
 	numTilesAddressed++;
 	if (isSparse) {
 		sparseIndex[tileId] = offset;
 	} else {
 		if (tileId >= denseIndex.size()) denseIndex.resize(tileId+10000, { 0, 0xffffff });
 		denseIndex[tileId] = offset;
-	}
-
-	// add to cache if tiny
-	if (isNew && data.size()<TINY_LENGTH) {
-		if (tinyCache.size()>TINY_MAX_SIZE) tinyCache.clear();
-		tinyCache.insert({ data, offset });
 	}
 }
