@@ -1133,3 +1133,28 @@ bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out) {
 		if (!clipPolygon(rc, poly, out)) return false;
 	return true;
 }
+
+std::vector<Box> merge_nearby_boxes(std::vector<Box> boxes, double gap) {
+	// A merged box can grow to reach one it passed over, so repeat until a
+	// pass merges nothing.
+	bool merged = true;
+	while (merged) {
+		merged = false;
+		std::vector<Box> out;
+		for (const Box &box : boxes) {
+			const Box grown(
+				Point(box.min_corner().x() - gap, box.min_corner().y() - gap),
+				Point(box.max_corner().x() + gap, box.max_corner().y() + gap));
+			auto near = std::find_if(out.begin(), out.end(),
+				[&](const Box &other) { return geom::intersects(grown, other); });
+			if (near == out.end()) {
+				out.push_back(box);
+			} else {
+				geom::expand(*near, box);
+				merged = true;
+			}
+		}
+		boxes.swap(out);
+	}
+	return boxes;
+}

@@ -537,6 +537,25 @@ inline void releaseIfHuge(std::vector<TileCoordinates>& v) {
 	if (v.capacity() > (1u << 16)) std::vector<TileCoordinates>().swap(v);
 }
 
+// A large multipolygon whose envelope holds more than this many times the
+// tiles its outers cover is indexed by clusters of outers, not one envelope.
+constexpr double SPARSE_ENVELOPE_RATIO = 4;
+// Outers whose tile boxes are within this many tiles share a cluster.
+constexpr double OUTER_CLUSTER_GAP = 4;
+
+// The bounding box, in tile coordinates, of a non-empty list of tiles.
+Box tileEnvelope(const std::vector<TileCoordinates>& tiles) {
+	TileCoordinate minX = std::numeric_limits<TileCoordinate>::max(), maxX = 0;
+	TileCoordinate minY = std::numeric_limits<TileCoordinate>::max(), maxY = 0;
+	for (const TileCoordinates& index : tiles) {
+		minX = std::min(index.x, minX);
+		minY = std::min(index.y, minY);
+		maxX = std::max(index.x, maxX);
+		maxY = std::max(index.y, maxY);
+	}
+	return Box(geom::make<Point>(minX, minY), geom::make<Point>(maxX, maxY));
+}
+
 }
 
 void TileDataSource::addGeometryToIndex(
@@ -619,33 +638,39 @@ void TileDataSource::addGeometryToIndex(
 	// Each outer's tiles are sorted, unique and filled; concatenate them, then sort+unique if there are several outers
 	std::vector<TileCoordinates>& tiles = tlsIndexTiles;
 	std::vector<TileCoordinates>& tilesTmp = tlsIndexTilesTmp;
+	std::vector<Box> outerBoxes;
 	tiles.clear();
 	for (const auto& poly : geom) {
 		tilesTmp.clear();
 		insertIntermediateTiles(poly.outer(), indexZoom, tilesTmp);
 		fillCoveredTiles(tilesTmp);
+		if (!tilesTmp.empty()) outerBoxes.push_back(tileEnvelope(tilesTmp));
 		tiles.insert(tiles.end(), tilesTmp.begin(), tilesTmp.end());
 	}
 	if (geom.size() > 1) sortUniqueTiles(tiles);
 	releaseIfHuge(tilesTmp);
-	
-	TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
-	for (const TileCoordinates& index : tiles) {
-		minTileX = std::min(index.x, minTileX);
-		minTileY = std::min(index.y, minTileY);
-		maxTileX = std::max(index.x, maxTileX);
-		maxTileY = std::max(index.y, maxTileY);
-	}
 
 	const size_t tileSetSize = tiles.size();
+	std::vector<Box> boxes;
+	if (tileSetSize >= 16) {
+		// Larger objects go in the rtree, by bounding box. When the outers are
+		// far apart, e.g. islands on both sides of the antimeridian, one box
+		// around them all is mostly empty, and every tile in it would clip the
+		// object to nothing; so each cluster of nearby outers gets its own box.
+		const Box envelope = tileEnvelope(tiles);
+		const double envelopeTiles =
+			(envelope.max_corner().x() - envelope.min_corner().x() + 1) *
+			(envelope.max_corner().y() - envelope.min_corner().y() + 1);
+		if (outerBoxes.size() > 1 && envelopeTiles > SPARSE_ENVELOPE_RATIO * tileSetSize)
+			boxes = merge_nearby_boxes(std::move(outerBoxes), OUTER_CLUSTER_GAP);
+		else
+			boxes.push_back(envelope);
+	}
+
 	for (auto& output : outputs) {
 		if (tileSetSize >= 16) {
-			// Larger objects - add to rtree
-			// note that the bbox is currently the envelope of the entire multipolygon,
-			// which is suboptimal in shapes like (_) ...... (_) where the outers are significantly disjoint
-			Box box = Box(geom::make<Point>(minTileX, minTileY),
-			              geom::make<Point>(maxTileX, maxTileY));
-			addObjectToLargeIndex(box, output, id);
+			for (const Box& box : boxes)
+				addObjectToLargeIndex(box, output, id);
 		} else {
 			// Smaller objects - add to each individual tile index
 			for (const TileCoordinates& index : tiles) {
