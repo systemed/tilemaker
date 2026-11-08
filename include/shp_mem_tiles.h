@@ -4,6 +4,7 @@
 
 #include "tile_data.h"
 #include "declutter.h"
+#include <unordered_map>
 
 extern bool verbose;
 
@@ -39,6 +40,15 @@ public:
 		std::function<bool(const OutputObject& oo)> checkQuery
 	) const;
 	bool mayIntersect(const std::string& layerName, const Box& box) const;
+
+	// Whether an indexed geometry intersects g, as geom::intersects(g, its
+	// multipolygon), using its IndexedMultiPolygon when it has one.
+	template <typename GeometryT>
+	bool intersects(const OutputObject& oo, const GeometryT& g) const {
+		auto it = indexedMultiPolygons.find(oo.objectID);
+		if (it != indexedMultiPolygons.end()) return it->second->intersects(g);
+		return geom::intersects(g, retrieveMultiPolygon(oo.objectID));
+	}
 	std::vector<std::string> namesOfGeometries(const std::vector<uint>& ids) const;
 
 	template <typename GeometryT>
@@ -74,6 +84,9 @@ private:
 	std::vector<OutputObject> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
+	// Edge indices of the large indexed polygons, by objectID, for intersects().
+	// Filled while loading (under indexMutex), read-only afterwards.
+	std::unordered_map<NodeID, std::unique_ptr<IndexedMultiPolygon>> indexedMultiPolygons;
 	std::mutex indexMutex;
 
 
