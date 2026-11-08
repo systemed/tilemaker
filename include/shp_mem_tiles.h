@@ -4,6 +4,7 @@
 
 #include "tile_data.h"
 #include "declutter.h"
+#include <mutex>
 #include <unordered_map>
 
 extern bool verbose;
@@ -42,12 +43,20 @@ public:
 	bool mayIntersect(const std::string& layerName, const Box& box) const;
 
 	// Whether an indexed geometry intersects g, as geom::intersects(g, its
-	// multipolygon), using its IndexedMultiPolygon when it has one.
+	// multipolygon), using an IndexedMultiPolygon for a large one. That is
+	// built on the polygon's first query, so profiles that never call
+	// Intersects() (and polygons never queried) don't pay for it.
 	template <typename GeometryT>
 	bool intersects(const OutputObject& oo, const GeometryT& g) const {
-		auto it = indexedMultiPolygons.find(oo.objectID);
-		if (it != indexedMultiPolygons.end()) return it->second->intersects(g);
-		return geom::intersects(g, retrieveMultiPolygon(oo.objectID));
+		auto it = lazyIndexes.find(oo.objectID);
+		if (it == lazyIndexes.end()) return geom::intersects(g, retrieveMultiPolygon(oo.objectID));
+		LazyIndex& lazy = *it->second;
+		std::call_once(lazy.built, [&]() {
+			MultiPolygon mp;
+			geom::convert(retrieveMultiPolygon(oo.objectID), mp);
+			lazy.index = std::make_unique<IndexedMultiPolygon>(mp);
+		});
+		return lazy.index->intersects(g);
 	}
 	std::vector<std::string> namesOfGeometries(const std::vector<uint>& ids) const;
 
@@ -84,9 +93,14 @@ private:
 	std::vector<OutputObject> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one
 	std::map<std::string, RTree> indices;			// Spatial indices, boost::geometry::index objects for shapefile indices
-	// Edge indices of the large indexed polygons, by objectID, for intersects().
-	// Filled while loading (under indexMutex), read-only afterwards.
-	std::unordered_map<NodeID, std::unique_ptr<IndexedMultiPolygon>> indexedMultiPolygons;
+	// The large indexed polygons, by objectID, and their edge indices once
+	// built (by intersects()). The map is filled while loading (under
+	// indexMutex) and not changed afterwards; each index is built once.
+	struct LazyIndex {
+		std::once_flag built;
+		std::unique_ptr<IndexedMultiPolygon> index;
+	};
+	std::unordered_map<NodeID, std::unique_ptr<LazyIndex>> lazyIndexes;
 	std::mutex indexMutex;
 
 
