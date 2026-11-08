@@ -180,7 +180,7 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 							return results;
 						},
 						[&](OutputObject const &oo) { // checkQuery
-							return geom::intersects(bbox.clippingBox, retrieveMultiPolygon(oo.objectID));
+							return intersects(oo, bbox.clippingBox);
 						}
 					);
 
@@ -197,6 +197,9 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 
 	return false;
 }
+
+// Polygons with fewer points are cheap enough to test directly.
+static constexpr std::size_t INDEXED_MULTIPOLYGON_MIN_POINTS = 256;
 
 void ShpMemTiles::StoreGeometry(
 	uint_least8_t layerNum,
@@ -217,6 +220,7 @@ void ShpMemTiles::StoreGeometry(
 
 	uint tilex = 0, tiley = 0;
 	std::shared_ptr<OutputObject> oo;
+	std::unique_ptr<IndexedMultiPolygon> indexedMultiPolygon;
 	switch(geomType) {
 		case POINT_:
 		{
@@ -253,6 +257,10 @@ void ShpMemTiles::StoreGeometry(
 			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
 			std::vector<OutputObject> oolist { *oo };
 			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
+			// A large polygon that Lua will query (Intersects etc.) gets an edge
+			// index, built here, outside the lock below.
+			if (isIndexed && geom::num_points(mp) >= INDEXED_MULTIPOLYGON_MIN_POINTS)
+				indexedMultiPolygon = std::make_unique<IndexedMultiPolygon>(mp);
 
 		} break;
 
@@ -276,6 +284,7 @@ void ShpMemTiles::StoreGeometry(
 	uint id = indexedGeometries.size();
 	for (const Box& b : boxes)
 		indices.at(layerName).insert(std::make_pair(b, id));
+	if (indexedMultiPolygon) indexedMultiPolygons[oo->objectID] = std::move(indexedMultiPolygon);
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
 
