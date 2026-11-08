@@ -8,7 +8,10 @@
 #include <mutex>
 #include <set>
 #include <vector>
+#include <unordered_set>
+#include <tuple>
 #include <memory>
+#include <functional>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 #include "append_vector.h"
@@ -419,6 +422,24 @@ public:
 	void orderStoredGeometryTies(std::vector<OutputObjectID>& data) const;
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+
+	// Large polygons are clipped once per SHARED_PIECE_ZOOM tile before the tiles are written,
+	// and deeper tiles clip from that piece instead of the whole polygon (see tile_data.cpp).
+	static constexpr unsigned SHARED_PIECE_ZOOM = 8;
+	// present(x, y): whether any tile below SHARED_PIECE_ZOOM tile x/y will be written
+	void precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum);
+	// Drop the shared pieces inside a z6 tile, once no tile in it is still to be written
+	void releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y);
+	// Whether objectID's polygon is kept in the multipolygon store (retrieveMultiPolygon)
+	virtual bool storesMultiPolygon(NodeID objectID) const { return true; }
+	struct SharedPiece {
+		std::shared_ptr<MultiPolygon> geom;	// null: no usable piece, clip the whole polygon
+		bool valid = false;
+	};
+	// Filled by precomputeSharedPieces, then only read while the tiles are written (no lock).
+	// releaseSharedPieces resets the pieces of a z6 tile no thread reads any more.
+	std::unordered_set<NodeID> pieceObjects;
+	std::map<std::tuple<NodeID, TileCoordinate, TileCoordinate>, std::shared_ptr<const SharedPiece>> sharedPieces;
 	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {

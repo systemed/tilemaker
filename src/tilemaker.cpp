@@ -523,6 +523,19 @@ int main(const int argc, const char* argv[]) {
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
+	// Shared pieces of large polygons, for the SHARED_PIECE_ZOOM tiles below which a tile is written
+	{
+		const unsigned pieceZoom = TileDataSource::SHARED_PIECE_ZOOM;
+		std::vector<bool> piecePresent((size_t)1 << (2 * pieceZoom), false);
+		for (auto const &t : tileCoordinates)
+			if (t.first > pieceZoom)
+				piecePresent[((size_t)(t.second.x >> (t.first - pieceZoom)) << pieceZoom) + (t.second.y >> (t.first - pieceZoom))] = true;
+		auto present = [&](TileCoordinate x, TileCoordinate y) {
+			return x < (1u << pieceZoom) && y < (1u << pieceZoom) && piecePresent[((size_t)x << pieceZoom) + y];
+		};
+		for (auto source : sources) source->precomputeSharedPieces(present, options.threadNum);
+	}
+
 	std::atomic<uint64_t> batchCounter(0);
 	// First error from a tile-writing worker; reported after pool.join()
 	// (an exception escaping a pool thread would call std::terminate)
@@ -543,6 +556,20 @@ int main(const int argc, const char* argv[]) {
 	std::mutex batchMutex;
 	std::size_t nextBatchStart = 0;
 	uint64_t nextBatchSeq = 0;
+	// Shared pieces (TileDataSource::precomputeSharedPieces) lie inside one z6 tile. Tiles from z6 on
+	// are written z6 tile by z6 tile, so once the hand-out has moved past a z6 tile and none of its
+	// batches is still running, no tile needs its pieces any more.
+	std::vector<uint32_t> z6Running(CLUSTER_ZOOM_WIDTH * CLUSTER_ZOOM_WIDTH, 0);
+	int64_t z6HandedOut = -1;
+	auto z6Of = [&](std::size_t i) -> int64_t {
+		const unsigned z = tileCoordinates[i].first;
+		if (z < CLUSTER_ZOOM) return -1;
+		return (int64_t)(tileCoordinates[i].second.x >> (z - CLUSTER_ZOOM)) * CLUSTER_ZOOM_WIDTH + (tileCoordinates[i].second.y >> (z - CLUSTER_ZOOM));
+	};
+	auto releaseZ6 = [&](int64_t b) {
+		for (auto source : sources) source->releaseSharedPieces(b / CLUSTER_ZOOM_WIDTH, b % CLUSTER_ZOOM_WIDTH);
+	};
+	static thread_local std::vector<int64_t> batchZ6;	// z6 tiles of the batch this thread is working on
 	auto nextBatch = [&](std::size_t &startIndex, std::size_t &batchSize, uint64_t &seq) {
 		const std::lock_guard<std::mutex> lock(batchMutex);
 		startIndex = nextBatchStart;
@@ -571,6 +598,16 @@ int main(const int argc, const char* argv[]) {
 			batchSize++;
 		}
 		nextBatchStart += batchSize;
+		batchZ6.clear();
+		for (std::size_t i = startIndex; i < startIndex + batchSize; i++) {
+			const int64_t b = z6Of(i);
+			if (b >= 0 && (batchZ6.empty() || batchZ6.back() != b)) batchZ6.push_back(b);
+		}
+		for (int64_t b : batchZ6) z6Running[b]++;
+		if (!batchZ6.empty() && batchZ6.back() != z6HandedOut) {
+			if (z6HandedOut >= 0 && z6Running[z6HandedOut] == 0) releaseZ6(z6HandedOut);
+			z6HandedOut = batchZ6.back();
+		}
 		return batchSize > 0;
 	};
 
@@ -641,6 +678,11 @@ int main(const int argc, const char* argv[]) {
 						std::cout << output << std::endl;
 				}
 
+				{
+					const std::lock_guard<std::mutex> lock(batchMutex);
+					for (int64_t b : batchZ6)
+						if (--z6Running[b] == 0 && b != z6HandedOut) releaseZ6(b);
+				}
 				// Hand the batch over even if a tile failed, so no thread waits for it
 				if (toPMTiles) sharedData.pmtiles.batches.end();
 				if (toMBTiles) sharedData.mbtiles.batches.end();

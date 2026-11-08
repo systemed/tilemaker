@@ -57,6 +57,8 @@ private:
 	void populateLinestring(Linestring& ls, NodeID objectID) const;
 	Linestring& getOrBuildLinestring(NodeID objectID) const;
 	void populateMultiPolygon(MultiPolygon& dst, NodeID objectID) override;
+	// Polygons from ways are built from the way store, only relations are in the multipolygon store
+	bool storesMultiPolygon(NodeID objectID) const override { return objectID < OSM_THRESHOLD; }
 	// Way-store polygons are only emitted by OsmLuaProcessing::Layer when
 	// CorrectGeometry found them Valid (or Reversed: valid after reversing the ring)
 	// on the same lon/latp coordinates.

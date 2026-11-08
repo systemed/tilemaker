@@ -90,6 +90,118 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
 thread_local uint64_t clipCacheBatchId = 0;
 thread_local bool clipCacheNoStore = false;
+thread_local bool clipCacheBypass = false;
+thread_local bool clipNeededRepair = false;	// set when a POLYGON_ clip went down the repair path
+thread_local bool clipResultValid = false;	// whether the last POLYGON_ clip is known to be valid
+
+// Shared pieces. Every tile batch that needs a large polygon (often 100,000+ points) used to copy
+// it from the store and clip it from scratch, at every zoom. Instead, polygons with at least
+// SHARED_PIECE_MIN_POINTS points are clipped once per SHARED_PIECE_ZOOM tile before the tiles are
+// written, and tiles below clip from that piece. A piece only depends on the polygon and the tile,
+// never on the thread or the order, so the output stays the same for any thread count.
+//
+// The pieces are computed up front, all threads at once and largest polygon first: computed on
+// demand, a slow piece (up to ~15 s on the planet) held up every thread whose tiles needed it,
+// a third of the tile phase on a 96-thread planet run. After that they are only read, so the
+// tile threads look them up without a lock.
+#define SHARED_PIECE_MIN_POINTS 10000
+
+void TileDataSource::precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum) {
+	const unsigned zoom = SHARED_PIECE_ZOOM;
+	if (zoom > indexZoom) return;
+	const unsigned shift = indexZoom - zoom;
+	// Candidates: polygons in the large-object index (those spanning 16+ index tiles), with the
+	// index tiles they cover
+	std::map<NodeID, Box> boxes;
+	auto add = [&](const Box &box, const OutputObject &oo) {
+		if (oo.geomType != POLYGON_ || !storesMultiPolygon(oo.objectID)) return;
+		auto it = boxes.find(oo.objectID);
+		if (it == boxes.end()) boxes.emplace(oo.objectID, box);
+		else boost::geometry::expand(it->second, box);
+	};
+	for (auto const &r : boxRtree) add(r.first, r.second);
+	for (auto const &r : boxRtreeWithIds) add(r.first, r.second.oo);
+	if (boxes.empty()) return;
+	const std::vector<std::pair<NodeID, Box>> candidates(boxes.begin(), boxes.end());
+
+	// The pieces each candidate needs: tiles below which a tile is written, that its envelope reaches
+	struct Job { std::tuple<NodeID, TileCoordinate, TileCoordinate> key; uint64_t points; };
+	std::vector<Job> jobs;
+	std::mutex jobsMutex;
+	std::atomic<size_t> next(0);
+	auto findJobs = [&]() {
+		std::vector<Job> local;
+		for (size_t i = next++; i < candidates.size(); i = next++) {
+			const NodeID objectID = candidates[i].first;
+			uint64_t points = 0;
+			Box envelope;
+			boost::geometry::assign_inverse(envelope);
+			for (auto const &p : retrieveMultiPolygon(objectID)) {
+				points += p.outer().size();
+				for (auto const &inner : p.inners()) points += inner.size();
+				for (auto const &pt : p.outer()) boost::geometry::expand(envelope, pt);
+			}
+			if (points < SHARED_PIECE_MIN_POINTS) continue;
+			const Box &box = candidates[i].second;
+			const TileCoordinate x0 = (TileCoordinate)box.min_corner().x() >> shift, x1 = (TileCoordinate)box.max_corner().x() >> shift;
+			const TileCoordinate y0 = (TileCoordinate)box.min_corner().y() >> shift, y1 = (TileCoordinate)box.max_corner().y() >> shift;
+			for (TileCoordinate x = x0; x <= x1; x++)
+				for (TileCoordinate y = y0; y <= y1; y++)
+					if (present(x, y) && boost::geometry::intersects(envelope, TileBbox(TileCoordinates(x, y), zoom, false, false).clippingBox))
+						local.push_back(Job { std::make_tuple(objectID, x, y), points });
+		}
+		std::lock_guard<std::mutex> lock(jobsMutex);
+		jobs.insert(jobs.end(), local.begin(), local.end());
+	};
+	{
+		boost::asio::thread_pool pool(threadNum);
+		for (unsigned t = 0; t < threadNum; t++) boost::asio::post(pool, findJobs);
+		pool.join();
+	}
+	std::sort(jobs.begin(), jobs.end(), [](const Job &a, const Job &b) { return a.points != b.points ? a.points > b.points : a.key < b.key; });
+	for (const Job &job : jobs) {
+		pieceObjects.insert(std::get<0>(job.key));
+		sharedPieces.emplace(job.key, nullptr);
+	}
+
+	// Compute them, largest polygon first. Each job writes its own map entry; the map itself
+	// doesn't change any more.
+	next = 0;
+	auto compute = [&]() {
+		for (size_t i = next++; i < jobs.size(); i = next++) {
+			const auto &key = jobs[i].key;
+			auto piece = std::make_shared<SharedPiece>();
+			try {
+				clipCacheBypass = true;
+				clipNeededRepair = false;
+				Geometry g = buildWayGeometry(POLYGON_, std::get<0>(key), TileBbox(TileCoordinates(std::get<1>(key), std::get<2>(key)), zoom, false, false));
+				// A piece that needed the repair path can be wrong (once a lake came out empty), and
+				// every tile below it would inherit that: leave those tiles to clip the whole polygon.
+				if (!clipNeededRepair) {
+					piece->geom = std::make_shared<MultiPolygon>(std::move(boost::get<MultiPolygon>(g)));
+					// buildWayGeometry has just checked it (for a huge piece, is_valid takes seconds)
+					piece->valid = clipResultValid;
+				}
+			} catch (std::exception &) {
+				// The tiles clip the whole polygon, and report the problem there
+			}
+			clipCacheBypass = false;
+			sharedPieces.find(key)->second = piece;
+		}
+	};
+	{
+		boost::asio::thread_pool pool(threadNum);
+		for (unsigned t = 0; t < threadNum; t++) boost::asio::post(pool, compute);
+		pool.join();
+	}
+}
+
+void TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
+	const unsigned shift = SHARED_PIECE_ZOOM - CLUSTER_ZOOM;
+	for (auto &e : sharedPieces)
+		if ((std::get<1>(e.first) >> shift) == z6x && (std::get<2>(e.first) >> shift) == z6y)
+			e.second.reset();
+}
 
 void TileDataSource::finalize(size_t threadNum) {
 	uint64_t finalized = 0;
@@ -333,6 +445,15 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			auto cachedEntry = multiPolygonClipCache.getEntry(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
 			std::shared_ptr<MultiPolygon> cachedClip = cachedEntry.geom;
 			bool inputKnownValid = cachedClip == nullptr ? polygonKnownValid(objectID) : cachedEntry.valid;
+			if (cachedClip == nullptr && bbox.zoom > SHARED_PIECE_ZOOM && pieceObjects.count(objectID)) {
+				// A large polygon: clip from its shared piece
+				const unsigned shift = bbox.zoom - SHARED_PIECE_ZOOM;
+				auto it = sharedPieces.find(std::make_tuple(objectID, bbox.index.x >> shift, bbox.index.y >> shift));
+				if (it != sharedPieces.end() && it->second && it->second->geom) {
+					cachedClip = it->second->geom;
+					inputKnownValid = it->second->valid;
+				}
+			}
 
 			MultiPolygon uncached;
 
@@ -404,6 +525,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// fast_clip was the identity on a geometry that already passed
 				// is_valid, so correct() is a no-op and it is still valid.
 				multiPolygonClipCache.add(bbox, objectID, mp, true);
+				clipResultValid = true;
 				return mp;
 			}
 			geom::correct(mp);
@@ -420,12 +542,14 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				if (rect_clip(cachedClip == nullptr && !keepUncached ? original : input, box, clipped) &&
 				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
 					multiPolygonClipCache.add(bbox, objectID, clipped, true);
+					clipResultValid = true;
 					return clipped;
 				}
 			}
 			if (!valid)
 				valid = geom::is_valid(mp,failure);
 			if (!valid) {
+				clipNeededRepair = true;
 				if (verbose) {
 					// Build the whole line first and emit it with a single stream write:
 					// tilemaker runs multi-threaded and chained operator<< calls are not
@@ -461,6 +585,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					repairMultiPolygon(output, objectID, &outputValid);
 					// Children of this tile can then take the fast paths for valid input
 					multiPolygonClipCache.add(bbox, objectID, output, outputValid);
+					clipResultValid = outputValid;
 					return output;
 				} else if (!valid) {
 					// occasionally also wrong_topological_dimension, disconnected_interior:
@@ -471,6 +596,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			multiPolygonClipCache.add(bbox, objectID, mp, valid);
+			clipResultValid = valid;
 			return mp;
 		}
 
