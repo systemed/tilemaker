@@ -220,7 +220,7 @@ void ShpMemTiles::StoreGeometry(
 
 	uint tilex = 0, tiley = 0;
 	std::shared_ptr<OutputObject> oo;
-	std::unique_ptr<IndexedMultiPolygon> indexedMultiPolygon;
+	bool largePolygon = false;
 	switch(geomType) {
 		case POINT_:
 		{
@@ -257,10 +257,9 @@ void ShpMemTiles::StoreGeometry(
 			oo = std::make_shared<OutputObject>(geomType, layerNum, oid, attrIdx, minzoom);
 			std::vector<OutputObject> oolist { *oo };
 			addGeometryToIndex(boost::get<MultiPolygon>(geometry), oolist, 0);
-			// A large polygon that Lua will query (Intersects etc.) gets an edge
-			// index, built here, outside the lock below.
-			if (isIndexed && geom::num_points(mp) >= INDEXED_MULTIPOLYGON_MIN_POINTS)
-				indexedMultiPolygon = std::make_unique<IndexedMultiPolygon>(mp);
+			// A large polygon that Lua may query (Intersects etc.) can have an
+			// edge index, built on its first query (see intersects()).
+			largePolygon = geom::num_points(mp) >= INDEXED_MULTIPOLYGON_MIN_POINTS;
 
 		} break;
 
@@ -284,7 +283,7 @@ void ShpMemTiles::StoreGeometry(
 	uint id = indexedGeometries.size();
 	for (const Box& b : boxes)
 		indices.at(layerName).insert(std::make_pair(b, id));
-	if (indexedMultiPolygon) indexedMultiPolygons[oo->objectID] = std::move(indexedMultiPolygon);
+	if (largePolygon) lazyIndexes[oo->objectID] = std::make_unique<LazyIndex>();
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
 
