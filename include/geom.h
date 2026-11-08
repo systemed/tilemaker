@@ -106,6 +106,10 @@ bool fast_clip(MultiPolygon &mp, Box const &bbox);
 // clip robustly; `out` is then unspecified and the caller must use geom::intersection.
 bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out);
 
+// Merges boxes that overlap, or are within `gap` of each other, until no two
+// remaining boxes are that close.
+std::vector<Box> merge_nearby_boxes(std::vector<Box> boxes, double gap);
+
 // Cheap conservative validity tests, run before geom::is_valid. They return
 // true only when the geometry is certainly valid (is_valid would return true
 // with no_failure); false means "unsure" and the caller must run is_valid.
