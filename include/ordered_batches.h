@@ -68,7 +68,10 @@ public:
 			lock.lock();
 			heldBytes -= batch.first;
 			nextSeq++;
-			heldShrunk.notify_all();
+			// Wake the waiting threads only once there is room. Woken for every batch
+			// written, they all found no room and went back to sleep, again and again:
+			// most of the system time of a 96-thread planet run.
+			if (heldBytes <= maxHeldBytes) heldShrunk.notify_all();
 		}
 		draining = false;
 	}
