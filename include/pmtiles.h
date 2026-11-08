@@ -55,8 +55,6 @@ private:
 	std::unordered_map<std::string, TileOffset> tinyCache;
 
 	void appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::entryv3 &entry);
-	void appendTileEntry(uint64_t tileId, TileOffset offset, std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries);
-	void flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries);
 };
 
 #endif //_PMTILES_H
