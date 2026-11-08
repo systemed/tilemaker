@@ -10,13 +10,19 @@
 #include "helpers.h"
 
 TileOffset::TileOffset() { }
+// Placing tiles (offset, repeats, index) and writing their bytes are two steps, each in batch order
+// and one thread at a time, but run by different threads side by side: one thread doing both was
+// the bottleneck of the tile phase at 96 threads.
 PMTiles::PMTiles() :
 	batches([this](PendingTile &tile) { writeTile(tile); },
-	        [](const PendingTile &tile) { return tile.data.size(); }) { }
+	        [](const PendingTile &tile) { return tile.data.size(); },
+	        [this](PendingTile &tile) { flushTile(tile); }) { }
 PMTiles::~PMTiles() { }
 
 void PMTiles::open(std::string &filename) {
 	std::cout << "Creating pmtiles at " << filename << std::endl;
+	outputBuffer.resize(4 << 20);
+	outputStream.rdbuf()->pubsetbuf(outputBuffer.data(), outputBuffer.size());
 	outputStream.open(filename, std::ios::out | std::ios::trunc | std::ios::binary);
 	// dummy header/root directory for now - we'll write it all later
 	char header[HEADER_ROOT] = "PMTiles";
@@ -145,6 +151,12 @@ void PMTiles::saveTile(int zoom, int x, int y, std::string &data) {
 	}
 	std::lock_guard<std::mutex> lock(batches.writeMutex());
 	writeTile(tile);
+	flushTile(tile);
+}
+
+void PMTiles::flushTile(PendingTile &tile) {
+	if (!tile.data.empty()) outputStream.write(tile.data.c_str(), tile.data.size());
+	tile.data = std::string();
 }
 
 // Write a tile to file and store it in the index
@@ -154,16 +166,18 @@ void PMTiles::writeTile(PendingTile &tile) {
 	auto cached = tile.isTiny ? tinyCache.find(tile.data) : tinyCache.end();
 	if (cached != tinyCache.end()) {
 		offset = cached->second;
+		tile.data = std::string();	// already in the file
 	} else {
 		std::string compressed = tile.isTiny ? compress_string(tile.data, Z_DEFAULT_COMPRESSION, true) : std::move(tile.data);
-		offset = TileOffset(static_cast<uint64_t>(outputStream.tellp()) - HEADER_ROOT, compressed.size());
-		outputStream.write(compressed.c_str(), compressed.size());
+		offset = TileOffset(tileDataEnd, compressed.size());
+		tileDataEnd += compressed.size();
 		numTilesWritten++;
 		// add to cache if tiny
 		if (tile.isTiny) {
 			if (tinyCache.size()>TINY_MAX_SIZE) tinyCache.clear();
 			tinyCache.insert({ tile.data, offset });
 		}
+		tile.data = std::move(compressed);	// flushTile writes it
 	}
 
 	// store in index
