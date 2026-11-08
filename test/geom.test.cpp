@@ -184,6 +184,25 @@ MU_TEST(test_merge_nearby_boxes) {
 	mu_check(sameBox(chain[0], Box(Point(0, 0), Point(40, 10))));
 }
 
+MU_TEST(test_multipolygon_index_boxes) {
+	// One polygon, or outers close together: the envelope
+	MultiPolygon one = fromWkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))");
+	mu_check(multipolygon_index_boxes(one, 0.05).size() == 1);
+	MultiPolygon close = fromWkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)),((1.5 0,1.5 1,2.5 1,2.5 0,1.5 0)))");
+	std::vector<Box> closeBoxes = multipolygon_index_boxes(close, 0.05);
+	mu_check(closeBoxes.size() == 1);
+	mu_check(sameBox(closeBoxes[0], Box(Point(0, 0), Point(2.5, 1))));
+
+	// Islands on both sides of the antimeridian: one box each, not one
+	// spanning every longitude
+	MultiPolygon aleutians = fromWkt("MULTIPOLYGON(((-179.5 52,-179.5 52.5,-179 52.5,-179 52,-179.5 52)),"
+	                                 "((179 52,179 52.5,179.5 52.5,179.5 52,179 52)))");
+	std::vector<Box> boxes = multipolygon_index_boxes(aleutians, 0.05);
+	mu_check(boxes.size() == 2);
+	for (const Box &b : boxes)
+		mu_check(b.max_corner().x() - b.min_corner().x() < 1);
+}
+
 MU_TEST_SUITE(test_suite_geom) {
 	MU_RUN_TEST(test_rect_clip_concave);
 	MU_RUN_TEST(test_rect_clip_holes);
@@ -194,6 +213,7 @@ MU_TEST_SUITE(test_suite_geom) {
 	MU_RUN_TEST(test_precheck_many_holes);
 	MU_RUN_TEST(test_precheck_large_polygon);
 	MU_RUN_TEST(test_merge_nearby_boxes);
+	MU_RUN_TEST(test_multipolygon_index_boxes);
 }
 
 int main() {

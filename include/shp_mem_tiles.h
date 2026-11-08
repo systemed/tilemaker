@@ -53,6 +53,7 @@ public:
 		geom::envelope(g, box);
 		std::vector<IndexValue> results;
 		f->second.query(geom::index::intersects(box), back_inserter(results));
+		removeDuplicateIds(results);
 		MultiPolygon mp, tmp;
 		for (const auto &it : results) {
 			OutputObject oo = indexedGeometries.at(it.second);
@@ -65,6 +66,10 @@ public:
 	}
 
 private:
+	// A geometry indexed under several boxes (see queryIndexBoxes) can be found
+	// more than once; keeps the first of each, in order.
+	static void removeDuplicateIds(std::vector<IndexValue>& results);
+
 	class Declutter& declutter;
 	std::vector<OutputObject> indexedGeometries;				// prepared boost::geometry objects (from shapefiles)
 	std::map<uint, std::string> indexedGeometryNames;			//  | optional names for each one

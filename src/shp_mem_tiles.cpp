@@ -1,4 +1,5 @@
 #include "shp_mem_tiles.h"
+#include <unordered_set>
 #include "coordinates_geom.h"
 #include <iostream>
 #include <mutex>
@@ -12,6 +13,31 @@ ShpMemTiles::ShpMemTiles(size_t threadNum, uint indexZoom, class Declutter& decl
 	declutter(declutter),
 	spatialIndexZoom(15)
 { }
+
+void ShpMemTiles::removeDuplicateIds(std::vector<IndexValue>& results) {
+	if (results.size() < 2) return;
+	std::unordered_set<uint> seen;
+	results.erase(std::remove_if(results.begin(), results.end(),
+		[&](const IndexValue& v) { return !seen.insert(v.second).second; }),
+		results.end());
+}
+
+namespace {
+// Outers whose boxes are within this many degrees (~5 km) share a cluster.
+constexpr double OUTER_CLUSTER_GAP = 0.05;
+
+// The boxes to index a geometry under for Lua's spatial queries (Intersects,
+// FindIntersecting, ...): its envelope, or a box per cluster of a sparse
+// multipolygon's outers (see multipolygon_index_boxes). Islands on both sides
+// of the antimeridian (e.g. OSM's Alaska Maritime National Wildlife Refuge)
+// otherwise make every query in their latitude band a candidate for an exact
+// test against the whole multipolygon.
+std::vector<Box> queryIndexBoxes(const Geometry& geometry, const Box& envelope) {
+	const MultiPolygon* mp = boost::get<MultiPolygon>(&geometry);
+	if (mp == nullptr) return { envelope };
+	return multipolygon_index_boxes(*mp, OUTER_CLUSTER_GAP);
+}
+}
 
 // Look for shapefile objects that fulfil a spatial query (e.g. intersects)
 // Parameters:
@@ -36,6 +62,7 @@ vector<uint> ShpMemTiles::QueryMatchingGeometries(
 	
 	// Run the index query
 	vector<IndexValue> results = indexQuery(f->second);
+	removeDuplicateIds(results);
 	
 	// Run the check query
 	vector<uint> ids;
@@ -244,39 +271,43 @@ void ShpMemTiles::StoreGeometry(
 
 	// Add to index
 	if (!isIndexed) return;
+	const std::vector<Box> boxes = queryIndexBoxes(geometry, box);
 	std::lock_guard<std::mutex> indexLock(indexMutex);
 	uint id = indexedGeometries.size();
-	indices.at(layerName).insert(std::make_pair(box, id));
+	for (const Box& b : boxes)
+		indices.at(layerName).insert(std::make_pair(b, id));
 	if (hasName) { indexedGeometryNames[id] = name; }
 	indexedGeometries.push_back(*oo);
 
 	// Store a bitmap of which tiles at the spatialIndexZoom that might intersect
 	// this shape.
 	auto& sparseLayerVector = bitIndices.at(layerName);
-	double lon1 = box.min_corner().x();
-	double latp1 = box.min_corner().y();
-	double lon2 = box.max_corner().x();
-	double latp2 = box.max_corner().y();
+	for (const Box& box : boxes) {
+		double lon1 = box.min_corner().x();
+		double latp1 = box.min_corner().y();
+		double lon2 = box.max_corner().x();
+		double latp2 = box.max_corner().y();
 
-	uint32_t x1 = lon2tilex(lon1, spatialIndexZoom);
-	uint32_t x2 = lon2tilex(lon2, spatialIndexZoom);
-	uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
-	uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
+		uint32_t x1 = lon2tilex(lon1, spatialIndexZoom);
+		uint32_t x2 = lon2tilex(lon2, spatialIndexZoom);
+		uint32_t y1 = latp2tiley(latp1, spatialIndexZoom);
+		uint32_t y2 = latp2tiley(latp2, spatialIndexZoom);
 
-	for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
-		for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
-			uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
-			uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+		for (int x = std::min(x1, x2); x <= std::min((1u << spatialIndexZoom) - 1u, std::max(x1, x2)); x++) {
+			for (int y = std::min(y1, y2); y <= std::min((1u << spatialIndexZoom) - 1u, std::max(y1, y2)); y++) {
+				uint32_t z6x = x / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
+				uint32_t z6y = y / (1u << (spatialIndexZoom - CLUSTER_ZOOM));
 
-			uint32_t sparseIndex = z6x * CLUSTER_ZOOM_WIDTH + z6y;
-			auto& bitvec = sparseLayerVector[sparseIndex];
+				uint32_t sparseIndex = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+				auto& bitvec = sparseLayerVector[sparseIndex];
 
-			if (bitvec.empty())
-				bitvec.resize(2u * (1u << (spatialIndexZoom - CLUSTER_ZOOM)) * (1u << (spatialIndexZoom - CLUSTER_ZOOM)));
+				if (bitvec.empty())
+					bitvec.resize(2u * (1u << (spatialIndexZoom - CLUSTER_ZOOM)) * (1u << (spatialIndexZoom - CLUSTER_ZOOM)));
 
-			uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
-			uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
-			bitvec[index] = true;
+				uint32_t divisor = 1u << (spatialIndexZoom - CLUSTER_ZOOM);
+				uint64_t index = 2u * ((x - z6x * divisor) * divisor + (y - z6y * divisor));
+				bitvec[index] = true;
+			}
 		}
 	}
 }
