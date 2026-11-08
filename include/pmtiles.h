@@ -38,7 +38,7 @@ struct TileOffset {
 struct PendingTile {
 	uint64_t tileId;
 	bool isTiny;
-	std::string data;
+	std::string data;	// after writeTile: the bytes flushTile appends to the file (empty if a repeat)
 };
 
 class PMTiles { 
@@ -60,6 +60,8 @@ public:
 
 private:
 	std::ofstream outputStream;
+	std::vector<char> outputBuffer;	// a large stream buffer: one thread writes all tiles
+	uint64_t tileDataEnd = 0;	// bytes of tile data written so far (tellp() costs a flush and a seek per tile)
 	uint64_t leafStart = 0;
 	uint64_t numTilesWritten = 0;
 	uint64_t numTilesAddressed = 0;
@@ -68,7 +70,8 @@ private:
 	std::vector<TileOffset> denseIndex;
 	std::unordered_map<std::string, TileOffset> tinyCache;
 
-	void writeTile(PendingTile &tile);	// with batches.writeMutex() held
+	void writeTile(PendingTile &tile);	// with batches.writeMutex() held: places the tile
+	void flushTile(PendingTile &tile);	// in the same order, by one thread at a time: writes its bytes
 	void appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::entryv3 &entry);
 };
 
