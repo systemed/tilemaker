@@ -30,7 +30,7 @@
 #include "rapidjson/filewritestream.h"
 #include "rapidjson/error/en.h"
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <sys/resource.h>
 #endif
 #ifdef __GLIBC__
@@ -607,7 +607,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.writeFileMetadata(jsonConfig);
 	}
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 	if (verbose) {
 		struct rusage r_usage;
 		getrusage(RUSAGE_SELF, &r_usage);
