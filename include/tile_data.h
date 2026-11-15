@@ -24,6 +24,14 @@
 
 typedef std::vector<class TileDataSource *> SourceList;
 
+// The TileDataSources alive, for the store leases a thread keeps until it ends (leased_store.h): the
+// main thread gives its leases back at exit, after the sources are gone. A source is also told apart
+// by its number, as a new source can be at the address of a destroyed one.
+uint64_t registerLeaseSource(const TileDataSource *source);
+void unregisterLeaseSource(const TileDataSource *source);
+std::mutex &leaseSourcesMutex();
+bool leaseSourceAlive(const TileDataSource *source, uint64_t number);	// with leaseSourcesMutex() held
+
 class TileBbox;
 
 template<typename OO> void sortOutputObjects(
@@ -375,6 +383,8 @@ protected:
 
 public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
+	~TileDataSource();
+	const uint64_t leaseNumber = registerLeaseSource(this);	// see registerLeaseSource
 
 	void collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 	// The same for the objects of one z6 tile (0 <= shard < CLUSTER_ZOOM_AREA)

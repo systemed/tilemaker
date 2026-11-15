@@ -7,6 +7,7 @@
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
+#include <unordered_map>
 #include "stable_hash.h"
 #include <ciso646>
 
@@ -47,6 +48,34 @@ thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
 thread_local LeasedStore<TileDataSource::multi_linestring_store_t> multilinestringStore;
 thread_local LeasedStore<TileDataSource::multi_polygon_store_t> multipolygonStore;
+
+// Never destroyed: the thread-locals that use them may be destroyed after the statics (macOS)
+static std::unordered_map<const TileDataSource *, uint64_t> &leaseSources() {
+	static std::unordered_map<const TileDataSource *, uint64_t> &sources = *new std::unordered_map<const TileDataSource *, uint64_t>();
+	return sources;
+}
+std::mutex &leaseSourcesMutex() {
+	static std::mutex &m = *new std::mutex;
+	return m;
+}
+uint64_t registerLeaseSource(const TileDataSource *source) {
+	static uint64_t last = 0;
+	std::lock_guard<std::mutex> lock(leaseSourcesMutex());
+	const uint64_t number = ++last;
+	leaseSources()[source] = number;
+	return number;
+}
+void unregisterLeaseSource(const TileDataSource *source) {
+	std::lock_guard<std::mutex> lock(leaseSourcesMutex());
+	leaseSources().erase(source);
+}
+bool leaseSourceAlive(const TileDataSource *source, uint64_t number) {
+	const auto it = leaseSources().find(source);
+	return it != leaseSources().end() && it->second == number;
+}
+TileDataSource::~TileDataSource() {
+	unregisterLeaseSource(this);
+}
 
 TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID)
 	:
