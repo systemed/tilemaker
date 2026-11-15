@@ -355,26 +355,38 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	bool isHot = v >= 0 && v <= 25;
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
 	PooledString ps(&v);
 	AttributePair kv(keyIndex, ps, minzoom);
 	bool isHot = AttributePair::isHot(key, v);
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, bool v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = true; // All bools are eligible to be hot pairs
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, double v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, int v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = v >= 0 && v <= 25;
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, key, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
 }
 
 void AttributeSet::finalize() {
@@ -421,6 +433,12 @@ thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(256);
 
 thread_local uint64_t tlsSetLookups = 0;
 thread_local uint64_t tlsSetLookupsUncached = 0;
+void AttributeStore::noteLookup() {
+	tlsSetLookups++;
+	if (tlsSetLookups % 1024 == 0) {
+		lookups += 1024;
+	}
+}
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.

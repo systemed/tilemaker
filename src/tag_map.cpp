@@ -7,6 +7,9 @@ TagMap::TagMap() {
 }
 
 void TagMap::reset() {
+	tags.clear();
+	if (!built) return;
+	built = false;
 	// Only clear shards that were used since the last reset.
 	for (unsigned i = 0, mask = usedKeyShards; mask; i++, mask >>= 1)
 		if (mask & 1)
@@ -16,10 +19,6 @@ void TagMap::reset() {
 			values[i].clear();
 	usedKeyShards = 0;
 	usedValueShards = 0;
-}
-
-bool TagMap::empty() const {
-	return usedKeyShards == 0;
 }
 
 static inline std::size_t hashString(const char* str, size_t size) {
@@ -38,7 +37,7 @@ static inline std::size_t hashString(const char* str, size_t size) {
 	return hash;
 }
 
-uint32_t TagMap::ensureKey(const protozero::data_view& key) {
+uint32_t TagMap::ensureKey(const protozero::data_view& key) const {
 	const uint16_t shard = hashString(key.data(), key.size()) & (SHARDS - 1);
 	std::vector<KeySlot>& bucket = keys[shard];
 	const uint32_t size = key.size();
@@ -51,7 +50,7 @@ uint32_t TagMap::ensureKey(const protozero::data_view& key) {
 	return shard << 16 | (bucket.size() - 1);
 }
 
-uint32_t TagMap::ensureValue(const protozero::data_view& value) {
+uint32_t TagMap::ensureValue(const protozero::data_view& value) const {
 	const uint16_t shard = hashString(value.data(), value.size()) & (SHARDS - 1);
 	std::vector<protozero::data_view>& bucket = values[shard];
 	for (size_t i = 0; i < bucket.size(); i++)
@@ -63,7 +62,13 @@ uint32_t TagMap::ensureValue(const protozero::data_view& value) {
 	return shard << 16 | (bucket.size() - 1);
 }
 
-void TagMap::addTag(const protozero::data_view& key, const protozero::data_view& value) {
+void TagMap::build() const {
+	built = true;
+	for (const Tag& tag : tags)
+		insert(tag.key, tag.value);
+}
+
+void TagMap::insert(const protozero::data_view& key, const protozero::data_view& value) const {
 	uint32_t valueLoc = ensureValue(value);
 	uint32_t keyLoc = ensureKey(key);
 
@@ -72,6 +77,7 @@ void TagMap::addTag(const protozero::data_view& key, const protozero::data_view&
 
 int64_t TagMap::getKey(const char* key, size_t size) const {
 	// Return -1 if key not found, else return its keyLoc.
+	ensureBuilt();
 	const uint16_t shard = hashString(key, size) & (SHARDS - 1);
 	const std::vector<KeySlot>& bucket = keys[shard];
 	for (size_t i = 0; i < bucket.size(); i++) {
@@ -87,6 +93,7 @@ int64_t TagMap::getKey(const char* key, size_t size) const {
 
 int64_t TagMap::getValue(const char* value, size_t size) const {
 	// Return -1 if value not found, else return its valueLoc.
+	ensureBuilt();
 	const uint16_t shard = hashString(value, size) & (SHARDS - 1);
 	const std::vector<protozero::data_view>& bucket = values[shard];
 	for (size_t i = 0; i < bucket.size(); i++) {
@@ -101,16 +108,19 @@ int64_t TagMap::getValue(const char* value, size_t size) const {
 }
 
 const protozero::data_view* TagMap::getValueFromKey(uint32_t keyLoc) const {
+	ensureBuilt();
 	const uint32_t valueLoc = keys[keyLoc >> 16][keyLoc & 0xFFFF].valueLoc;
 	return &values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 
 const protozero::data_view* TagMap::getValue(uint32_t valueLoc) const {
+	ensureBuilt();
 	return &values[valueLoc >> 16][valueLoc & 0xFFFF];
 }
 
 boost::container::flat_map<std::string, std::string> TagMap::exportToBoostMap() const {
 	boost::container::flat_map<std::string, std::string> rv;
+	ensureBuilt();
 
 	for (size_t i = 0; i < keys.size(); i++) {
 		for (size_t j = 0; j < keys[i].size(); j++) {
@@ -124,6 +134,7 @@ boost::container::flat_map<std::string, std::string> TagMap::exportToBoostMap() 
 }
 
 TagMap::Iterator TagMap::begin() const {
+	ensureBuilt();
 	size_t shard = 0;
 	while(keys.size() > shard && keys[shard].size() == 0)
 		shard++;

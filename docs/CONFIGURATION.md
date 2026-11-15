@@ -210,6 +210,8 @@ To do that, you use these methods:
 * `MinZoom(zoom)`: set the minimum zoom level (0-15) at which this object will be written. Note that the JSON layer configuration minimum still applies (so `:MinZoom(5)` will have no effect if your layer only starts at z6).
 * `Score(number)`: set how important this point feature is (a whole number; anything else is rounded down), so that tilemaker can decide which zoom level to show it from. Only meaningful for points (i.e. features written with `Layer` for a node, or `LayerAsCentroid`) in a layer with `declutter_below` set - see 'Decluttering point features' below.
 * `Length()` and `Area()`: return the length (metres)/area (square metres) of the current object. Requires Boost 1.67+.
+* `MercatorArea()`: return the area of the current object on the Web Mercator plane, in square metres at the scale of the equator (so it grows towards the poles, as the map does). It is cheap to compute and tells how much of a tile the object covers, which makes it the right measure for minimum zoom rules.
+* `MinZoomByArea(limit, thresholds)`: set the minimum zoom of the current object from its `MercatorArea()`: the first zoom z from `limit` on whose threshold the area exceeds, where `thresholds` lists the thresholds for zoom 1, 2, 3...; if there is none, one more than the number of thresholds. Unlike the same rule written in Lua with `MercatorArea()`, this keeps `way_function` replayable (see `way_memo` above).
 * `Centroid()`: return the lat/lon of the centre of the current object as a two-element Lua table (element 1 is lat, 2 is lon).
 
 The simplest possible function, to include roads/paths and nothing else, might look like this:
@@ -237,6 +239,19 @@ If your Lua file causes an error due to mistaken syntax, you can test it at the 
 `node_keys` is a simple list (or in Lua parlance, a 'table') of OSM tags. If a node has one of those keys, it will be processed by `node_function`; if not, it'll be skipped. For example, if you wanted to show highway crossings and railway stations, it should be `{ "highway", "railway" }`. (This avoids the need to process the vast majority of nodes which contain no important tags at all.)
 
 `way_keys` is similar, but for ways. For ways, you may also wish to express the filter in terms of the tag value, or as an inversion. For example, to exclude buildings: `way_keys = {"~building"}`. To build a map only of major roads: `way_keys = {"highway=motorway", "highway=trunk", "highway=primary", "highway=secondary"}`
+
+`way_memo = true` lets tilemaker replay `way_function` instead of running it, for ways that read the same as an earlier way. This is only allowed if `way_function` is a function of what it reads with `Find`, `Holds`, `IsClosed` and `NextRelation` (no other state, such as global counters), and what it does is call tilemaker's functions (`Layer`, `Attribute`... `MinZoom`): tilemaker records which reads lead to which calls, and replays the calls for a way whose reads give the same results. Anything else (geometry queries such as `Area`, relation tags, `Id`...) makes ways with those reads run through Lua. A tag whose value is only tested for being empty and copied unchanged into some attributes can be declared in `way_memo_values`, e.g. `way_memo_values = { name = { "name:latin" } }`: ways are then replayed with their own value of the tag, instead of being told apart by it. An attribute that is set to the length of the value (in bytes, as Lua's `#value` or `value:len()`) is declared as `attribute = "length"`, e.g. `way_memo_values = { ref = { "ref", ref_length = "length" } }`.
+
+Two more declarations let the memo replay ways that use some of the other functions:
+
+* `way_memo_area = { 1000, 5000 }`: `way_function` uses `MercatorArea()` only to compare it (`<`, `<=`, `>`, `>=`, `==`, `~=`) with these numbers. The memo then tells ways apart by the results of these comparisons, not by the area (e.g. `if MercatorArea() < 1000 then MinZoom(8) else MinZoomByArea(0, thresholds) end`; `MinZoomByArea` needs no declaration, it is worked out for each way).
+* `way_memo_relations = true`: `way_function` uses the relation id `NextRelation()` returns only to test whether there is one (`if not rel then break end`), and reads the relations' tags only with `FindInRelation` (no `RestartRelations`). The memo then tells ways apart by the roles and the relation tags read.
+
+As with `way_memo_values`, tilemaker can't check these promises: if `way_function` does more with the area or the relations, ways are replayed with the wrong calls.
+
+Multipolygon relations, which also run `way_function`, are replayed the same way (with a record of their own, apart from that of the ways): the promises above are about `way_function`, so they hold for them too. For a multipolygon, `NextRelation` and `FindInRelation` are about the relations it is a member of.
+
+`node_memo = true` and `node_memo_values`, `node_memo_area`, `node_memo_relations` do the same for `node_function` (with its own record).
 
 `init_function(name, is_first)` and `exit_function` are called at the start and end of processing (once per thread). You can use this to output statistics or even to read a small amount of external data. `is_first` will be true only the first time `init_function` is called.
 

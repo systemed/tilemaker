@@ -478,6 +478,14 @@ struct AttributeStore {
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom);
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom);
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom);
+	// The pair index that addAttributeWithKeyIndex adds to the set. It is the same for the same
+	// arguments for as long as the store lives, so callers may keep it.
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, double v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, int v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, bool v, char minzoom);
+	// Counts an object whose AttributeIndex the caller knew without add() (for reportSize)
+	void noteLookup();
 	
 	AttributeStore():
 		finalized(false),

@@ -560,6 +560,8 @@ int main(const int argc, const char* argv[]) {
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
+	OsmLuaProcessing::printMemoStats();
+
 	// Shared pieces of large polygons, for the SHARED_PIECE_ZOOM tiles below which a tile is written
 	{
 		const unsigned pieceZoom = TileDataSource::SHARED_PIECE_ZOOM;

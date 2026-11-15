@@ -3,6 +3,7 @@
 #define _OSM_LUA_PROCESSING_H
 
 #include <vector>
+#include <unordered_map>
 #include <string>
 #include <sstream>
 #include <map>
@@ -32,6 +33,7 @@ extern "C" {
 
 #include "external/kaguya.hpp"
 #include "lua_pool.h"
+#include "memo_keys.h"
 
 // FIXME: why is this global ?
 extern bool verbose;
@@ -155,6 +157,10 @@ public:
 
 	// Returns area
 	double Area();
+	// Area in Web Mercator square metres, the unit the zoom levels' pixel sizes are given in
+	double MercatorArea();
+	// MinZoom(z) for the first z = 1, 2... with z >= limit and the area above thresholds[z-1]; else one beyond
+	void MinZoomByArea(double limit, const std::vector<double> &thresholds);
 	double multiPolygonArea(const MultiPolygon &mp) const;
 
 	// Returns length
@@ -307,10 +313,241 @@ public:
 	static std::unordered_map<std::string, std::string> dataStore;
 	static std::mutex dataStoreMutex;
 
+	// ----	Memo of way_function (opt-in: way_memo = true in the profile)
+	// way_function is a function of what it reads (Find, Holds, IsClosed, NextRelation) and what it
+	// writes is a sequence of calls (Layer, Attribute..., MinZoom...). The first time, a way runs
+	// through Lua and both are recorded into a decision tree: each node is a read, branched by its
+	// result, and a leaf holds the calls. A later way that reads the same results reaches the same
+	// leaf, and the calls are replayed without Lua. Anything else the profile asks for (geometry,
+	// relations, Id, SetData...) makes that path run through Lua from then on.
+	struct MemoOp {
+		enum Kind : uint8_t { Layer, Centroid, Attr, AttrNumeric, AttrBoolean, AttrInteger, FastStr, FastNumeric, FastBoolean, FastInteger, MinZoom, ZOrder, Score, ModifyId, MinZoomByArea } kind;
+		bool flag = false;
+		char minzoom = 0;
+		double number = 0;
+		std::string key, str;
+		std::vector<double> numbers;
+		std::string valueKey;	// not empty: str is the current object's value of this tag (see way_memo_values)
+		bool valueLength = false;	// valueKey, numeric ops: the attribute is the value's length in bytes
+		uint32_t valueKeyId = MemoKeyTable::NONE;	// its id in memoKeys
+		// Filled by the replays (on the tree's thread), see memoReplay
+		enum Segment : uint8_t { SegmentKnown = 1, SegmentAttributes = 2, SegmentConstant = 4 };
+		uint8_t segment = 0;	// Layer, Centroid: about the attribute ops up to the next Layer/Centroid op
+		int16_t layerIndex = -1;	// Layer, Centroid: layers.layerMap[key]
+		uint32_t segmentSet = UINT32_MAX;	// Layer, Centroid (constant segment): AttributeIndex of an output with this segment's attributes
+		uint32_t segmentOps = 0;	// Layer, Centroid: the number of ops of its segment (after it)
+		uint32_t segmentId = 0;	// Layer, Centroid: the segment's id in memoSegmentSets
+		int16_t keyIndex = -1;	// attribute ops: attributeStore.keyStore.key2index(key)
+		int16_t seenLayer = -1;	// attribute ops: setVectorLayerMetadata has run for this layer and key
+		uint32_t pairIndex = 0;	// attribute ops without valueKey: the pair added (0: not yet known)
+	};
+	// The tree's nodes are MemoHotNodes (memo_keys.h: kind, key id, the children for the results
+	// "", "0", "1" and "\x01"); a node with children for other results, or a Leaf, has a MemoMore.
+	struct MemoNode {
+		// MercatorArea (way_memo_area): the area compared with each threshold (memoAreaResult);
+		// FindInRelation (way_memo_relations): the current relation's value of the key
+		enum Kind : uint8_t { Unset, Find, Holds, IsClosed, NextRelation, Leaf, Lua, MercatorArea, FindInRelation };
+		static int quickOf(std::string_view r) {
+			if (r.empty()) return 0;
+			if (r.size() != 1) return -1;
+			return r[0] == '0' ? 1 : r[0] == '1' ? 2 : r[0] == '\x01' ? 3 : -1;
+		}
+	};
+	struct MemoMore {
+		std::vector<std::pair<std::string, uint32_t>> children;	// result -> node, results other than the quick ones
+		std::vector<uint32_t> index;	// with many children: open-addressing hash of results -> children position + 1
+		std::vector<MemoOp> ops;	// Leaf
+		uint32_t uses = 0;	// Leaf, Lua: objects that ended here since the last memoCompact
+		static uint64_t hashOf(std::string_view r) {
+			uint64_t h = 1469598103934665603ull;
+			for (unsigned char c : r) { h ^= c; h *= 1099511628211ull; }
+			return h;
+		}
+		uint32_t child(std::string_view r) const {
+			if (index.empty()) {
+				for (const auto &c : children) if (c.first.size() == r.size() && c.first == r) return c.second;
+				return UINT32_MAX;
+			}
+			const size_t mask = index.size() - 1;
+			for (size_t i = hashOf(r) & mask; index[i] != 0; i = (i + 1) & mask) {
+				const auto &c = children[index[i] - 1];
+				if (c.first.size() == r.size() && c.first == r) return c.second;
+			}
+			return UINT32_MAX;
+		}
+		void addChild(std::string_view r, uint32_t node) {
+			children.emplace_back(std::string(r), node);
+			if (children.size() < 8) return;
+			if (children.size() * 4 > index.size()) {
+				// (re)build, at most a quarter full
+				size_t size = 256;
+				while (size < children.size() * 4) size *= 2;
+				index.assign(size, 0);
+				for (size_t k = 0; k + 1 < children.size(); k++) placeChild(k);
+			}
+			placeChild(children.size() - 1);
+		}
+		void placeChild(size_t k) {
+			const size_t mask = index.size() - 1;
+			size_t i = hashOf(children[k].first) & mask;
+			while (index[i] != 0) i = (i + 1) & mask;
+			index[i] = k + 1;
+		}
+	};
+	uint32_t memoChild(uint32_t n, std::string_view r) const {
+		const MemoHotNode &node = memoNodes[n];
+		const int q = MemoNode::quickOf(r);
+		if (q >= 0) return node.quick[q];
+		return node.more == UINT32_MAX ? UINT32_MAX : memoMore[node.more].child(r);
+	}
+	MemoMore &memoMoreOf(uint32_t n) {
+		if (memoNodes[n].more == UINT32_MAX) { memoNodes[n].more = memoMore.size(); memoMore.emplace_back(); }
+		return memoMore[memoNodes[n].more];
+	}
+	void memoAddChild(uint32_t n, std::string_view r, uint32_t child) {
+		memoNodes[n].children++;
+		const int q = MemoNode::quickOf(r);
+		if (q >= 0) memoNodes[n].quick[q] = child;
+		else memoMoreOf(n).addChild(r, child);
+	}
+	struct MemoRead { MemoNode::Kind kind; std::string key, result; bool valueOnly = false; };
+	struct MemoTrace {
+		bool active = false;
+		bool luaOnly = false;	// asked for something that isn't recorded
+		// A string attribute had the value of a memo_values tag it isn't declared for: a copy, or the
+		// same string by chance? Other objects with the same reads can't tell either, so this trace
+		// isn't added to the tree (they may replay a leaf recorded from an object without the doubt)
+		bool ambiguous = false;
+		std::vector<MemoRead> reads;
+		std::vector<MemoOp> ops;
+		std::vector<std::pair<std::string, std::string>> values;	// tags of way_memo_values read, with their values
+		std::vector<std::string> emptyValues;	// tags of way_memo_values read empty
+	};
+	// way_memo_values: tags whose values way_function only tests for being empty and copies unchanged
+	// into the listed attributes; the memo replays such ways with the current values
+	std::unordered_map<std::string, std::vector<std::string>> memoValueTags;
+	bool memoValueTag(const char *key, size_t keyLen) const {
+		return !memoValueTags.empty() && memoValueTags.count(std::string(key, keyLen)) > 0;
+	}
+	// way_memo_values entries `attribute = "length"`: attribute -> tag (the attribute is the length of the tag's value)
+	std::unordered_map<std::string, std::string> memoValueLengths;
+	// way_memo_area: way_function uses MercatorArea() only to compare it with these numbers, so the
+	// memo reads it as the results of those comparisons (memoAreaResult)
+	std::vector<double> memoArea;
+	// way_memo_relations: way_function uses the id NextRelation() returns only to test whether there
+	// is one, and the relations' tags only through FindInRelation: the memo reads the roles and tags
+	bool memoRelations = false;
+	std::string memoAreaResult(double area) const;
+	// NextRelation() has returned a relation, and FindInRelation reads its tags
+	bool relationCurrent() const { return relationSubscript >= 0 && size_t(relationSubscript) < relationList.size(); }
+	// Record a string attribute: a copy of a way_memo_values tag becomes a placeholder
+	void memoStringAttribute(MemoOp &&op);
+	// Record a numeric attribute: the length of a way_memo_values tag, declared so, becomes a placeholder
+	void memoNumberAttribute(MemoOp &&op);
+	bool memoEnabled = false;
+	MemoTrace memoTrace;
+	std::vector<MemoHotNode> memoNodes;
+	std::vector<MemoMore> memoMore;
+	MemoKeyTable memoKeys;	// the keys the tree reads, and those of way_memo_values
+	MemoTagSlots memoSlots;	// the current way's tags with those keys
+	MemoSigCache memoWalkCache { 4096 };	// recent walks (of the tree in memoNodes)
+	// AttributeIndex of outputs of segments with way_memo_values attributes, by segment and values
+	MemoSigCache memoSegmentSets { 1024 };
+	uint32_t memoSegmentIds = 0;	// segment ids given out
+	size_t memoSegmentSig(const MemoOp &layerOp, char *sig) const;
+	protozero::data_view memoOpValue(const MemoOp &op) const;
+	size_t memoJumpsAt = 0;	// memoNodes.size() when the jumps were last computed
+	uint64_t memoHits = 0, memoRecorded = 0, memoLua = 0;
+	// The memo of node_function (opt-in: node_memo = true, node_memo_values as way_memo_values) is
+	// the same, with its own tree; so is that of way_function for multipolygon relations (with
+	// way_memo, a tree of its own: LayerAsCentroid, Layer and the geometry act differently for
+	// them). The members above hold the memo of the objects being processed (memoKind),
+	// memoSaved those of the other kinds; memoSelect swaps them.
+	enum MemoKind : uint8_t { MemoWays, MemoNodes, MemoRelations, MEMO_KINDS };
+	struct MemoState {
+		bool enabled = false;
+		std::unordered_map<std::string, std::vector<std::string>> valueTags;
+		std::unordered_map<std::string, std::string> valueLengths;
+		std::vector<double> area;
+		bool relations = false;
+		std::vector<MemoHotNode> nodes;
+		std::vector<MemoMore> more;
+		MemoKeyTable keys;
+		size_t jumpsAt = 0, fullMisses = 0;
+		uint64_t hits = 0, recorded = 0, lua = 0;
+	};
+	MemoState memoSaved[MEMO_KINDS];	// [memoKind] is unused
+	MemoKind memoKind = MemoWays;
+	bool memoForNodes = false;	// memoKind == MemoNodes
+	bool nodeMemoEnabled = false;	// node_memo = true in the profile
+	void memoSwap(MemoState &o) {
+		std::swap(memoEnabled, o.enabled);
+		std::swap(memoValueTags, o.valueTags);
+		std::swap(memoValueLengths, o.valueLengths);
+		std::swap(memoArea, o.area);
+		std::swap(memoRelations, o.relations);
+		std::swap(memoNodes, o.nodes);
+		std::swap(memoMore, o.more);
+		std::swap(memoKeys, o.keys);
+		std::swap(memoJumpsAt, o.jumpsAt);
+		std::swap(memoHits, o.hits);
+		std::swap(memoRecorded, o.recorded);
+		std::swap(memoLua, o.lua);
+		std::swap(memoFullMisses, o.fullMisses);
+	}
+	void memoSelect(MemoKind kind) {
+		if (kind == memoKind) return;
+		memoSwap(memoSaved[memoKind]);	// the current memo to its place, the unused state here
+		memoSwap(memoSaved[kind]);	// and that to the place of the one selected
+		memoWalkCache.clear();
+		memoKind = kind;
+		memoForNodes = kind == MemoNodes;
+	}
+	void memoSelect(bool nodes) { memoSelect(nodes ? MemoNodes : MemoWays); }
+	// hits, recorded, through Lua, tree nodes of each memo (by MemoKind)
+	void memoCounts(uint64_t counts[MEMO_KINDS][4]) const {
+		for (int k = 0; k < MEMO_KINDS; k++) {
+			uint64_t *c = counts[k];
+			if (k == memoKind) { c[0] += memoHits; c[1] += memoRecorded; c[2] += memoLua; c[3] += memoNodes.size(); }
+			else { const MemoState &o = memoSaved[k]; c[0] += o.hits; c[1] += o.recorded; c[2] += o.lua; c[3] += o.nodes.size(); }
+		}
+	}
+	void memoRead(MemoNode::Kind kind, const char *key, size_t keyLen, const std::string &result) {
+		if (!memoTrace.luaOnly) memoTrace.reads.push_back({ kind, std::string(key, keyLen), result });
+	}
+	// Find() of a way_memo_values tag: the branch is only whether it is empty
+	void memoReadValue(const char *key, size_t keyLen, const std::string &value) {
+		if (memoTrace.luaOnly) return;
+		memoTrace.reads.push_back({ MemoNode::Find, std::string(key, keyLen), value.empty() ? std::string() : std::string(1, '\x01'), true });
+		if (value.empty()) {
+			for (const auto &e : memoTrace.emptyValues) if (e.size() == keyLen && e.compare(0, keyLen, key, keyLen) == 0) return;
+			memoTrace.emptyValues.emplace_back(key, keyLen);
+			return;
+		}
+		for (const auto &v : memoTrace.values) if (v.first.size() == keyLen && v.first.compare(0, keyLen, key, keyLen) == 0) return;	// read before
+		memoTrace.values.emplace_back(std::string(key, keyLen), value);
+	}
+	void memoOp(MemoOp &&op) { memoTrace.ops.push_back(std::move(op)); }
+	void memoLuaOnly() { memoTrace.luaOnly = true; }
+	void runWayFunction();	// way_function (memoForNodes: node_function) through the memo
+	void runWayFunctionInLua(bool record);
+	void memoInsert();
+	size_t memoFullMisses = 0;	// objects since the last memoCompact that weren't recorded as the tree was full
+	void memoCompact();
+	void memoReplay(std::vector<MemoOp> &ops);
+	void memoAttribute(MemoOp &op, const protozero::data_view &str);
+	void memoSegmentAttributes(std::vector<MemoOp> &ops, size_t layerOp);
+	void layerAsCentroid(const std::string &layerName, CentroidAlgorithm algorithm, const std::vector<std::string> &relationRoles);
+	void layerAsCentroidAt(unsigned layerIndex, CentroidAlgorithm algorithm, const std::vector<std::string> &relationRoles);
+	void layerAt(unsigned layerIndex, bool area);
+	static void printMemoStats();
 private:
 	/// Internal: clear current cached state
 	inline void reset() {
 		outputs.clear();
+		outputPreset.clear();
+		outputLearn.clear();
+		outputSegment.clear();
 		currentRelation = nullptr;
 		stringTable = nullptr;
 		llVecPtr = nullptr;
@@ -408,6 +645,12 @@ private:
 	class LayerDefinition &layers;
 
 	std::vector<std::pair<OutputObject, AttributeSet>> outputs;		// All output objects that have been created
+	// Memo replay, per output (may be shorter than outputs): its AttributeIndex if known already
+	// (UINT32_MAX: not), the layer op to tell its AttributeIndex (segmentSet, or memoSegmentSets for
+	// a segment with way_memo_values attributes; or nullptr), the layer op's position
+	std::vector<AttributeIndex> outputPreset;
+	std::vector<MemoOp*> outputLearn;
+	std::vector<uint32_t> outputSegment;
 
 	// Point features in decluttered layers: the exact location we'd have indexed them at,
 	// plus the score from Score(). Sparse - most objects add nothing here.
