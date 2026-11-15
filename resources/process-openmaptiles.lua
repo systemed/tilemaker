@@ -3,6 +3,11 @@
 -- Copyright (c) 2016, KlokanTech.com & OpenMapTiles contributors.
 -- Used under CC-BY 4.0
 
+-- Speed: tilemaker's functions and the standard library as locals (a global is a table lookup per use).
+-- tilemaker registers its functions after loading this file, so they are picked up in init_function.
+local tonumber, ipairs, pairs, math, string, table = tonumber, ipairs, pairs, math, string, table
+local Find, Holds, Layer, LayerAsCentroid, Attribute, AttributeNumeric, AttributeInteger, AttributeBoolean, MinZoom, ZOrder, IsClosed, Area, Centroid, NextRelation, FindInRelation, Accept, MercatorArea, MinZoomByArea
+
 --------
 -- Alter these lines to control which languages are written for place/streetnames
 --
@@ -16,8 +21,22 @@ default_language_attribute = "name_int"
 additional_languages = { }
 --------
 
+-- way_function only reads tags (and IsClosed/NextRelation) and calls tilemaker's functions: tilemaker may replay it
+way_memo = true
+-- Tag values way_function only tests for being empty and copies unchanged into these attributes:
+-- the memo replays such ways with each way's own value
+-- (ref: also its length, into ref_length)
+way_memo_values = { name = { "name:latin" }, ["addr:housenumber"] = { "housenumber" }, ref = { "ref", ref_length = "length" } }
+-- way_function uses NextRelation() only to test for a relation, and the relations' tags only through FindInRelation
+way_memo_relations = true
+-- node_function, likewise (the same tags: node_function only tests them for being empty and copies them unchanged)
+node_memo = true
+node_memo_values = { name = { "name:latin" }, ["addr:housenumber"] = { "housenumber" } }
+
 -- Enter/exit Tilemaker
 function init_function(name,is_first)
+	Find, Holds, Layer, LayerAsCentroid, Attribute, AttributeNumeric, AttributeInteger, AttributeBoolean, MinZoom, ZOrder, IsClosed, Area, Centroid, NextRelation, FindInRelation, Accept, MercatorArea, MinZoomByArea =
+		_G.Find, _G.Holds, _G.Layer, _G.LayerAsCentroid, _G.Attribute, _G.AttributeNumeric, _G.AttributeInteger, _G.AttributeBoolean, _G.MinZoom, _G.ZOrder, _G.IsClosed, _G.Area, _G.Centroid, _G.NextRelation, _G.FindInRelation, _G.Accept, _G.MercatorArea, _G.MinZoomByArea
 end
 function exit_function()
 end
@@ -44,6 +63,25 @@ ZRES10 = 152.9
 ZRES11 = 76.4
 ZRES12 = 38.2
 ZRES13 = 19.1
+-- Their squares, worked out once (same values as ZRESn^2 at each use)
+local ZRES0SQ = ZRES0^2
+local ZRES1SQ = ZRES1^2
+local ZRES2SQ = ZRES2^2
+local ZRES3SQ = ZRES3^2
+local ZRES4SQ = ZRES4^2
+local ZRES5SQ = ZRES5^2
+local ZRES6SQ = ZRES6^2
+local ZRES7SQ = ZRES7^2
+local ZRES8SQ = ZRES8^2
+local ZRES9SQ = ZRES9^2
+local ZRES10SQ = ZRES10^2
+local ZRES11SQ = ZRES11^2
+local ZRES12SQ = ZRES12^2
+local ZRES13SQ = ZRES13^2
+-- Area thresholds for zoom 1, 2... 13 (see SetMinZoomByAreaWithLimit)
+local ZRESSQ = { ZRES0SQ, ZRES1SQ, ZRES2SQ, ZRES3SQ, ZRES4SQ, ZRES5SQ, ZRES6SQ, ZRES7SQ, ZRES8SQ, ZRES9SQ, ZRES10SQ, ZRES11SQ, ZRES12SQ }
+-- way_function compares MercatorArea() only with these (see way_memo)
+way_memo_area = { ZRES8SQ }
 
 -- The height of one floor, in meters
 BUILDING_FLOOR_HEIGHT = 3.66
@@ -746,7 +784,7 @@ function way_function()
 			Layer("landuse", true)
 			Attribute("class", l)
 			if l=="residential" then
-				if MercatorArea()<ZRES8^2 then MinZoom(8)
+				if MercatorArea()<ZRES8SQ then MinZoom(8)
 				else SetMinZoomByArea() end
 			else MinZoom(11) end
 			write_name = true
@@ -874,17 +912,7 @@ function SetBrunnelAttributes()
 	end
 end
 
--- Area of the feature in Web Mercator square metres.
-function MercatorArea()
-	local area = Area()
-	if area == 0 then return 0 end
-	local centre = Centroid("centroid")
-	if centre == nil then return area end
-	-- Clamp to the Web Mercator cutoff: beyond it nothing is rendered anyway
-	local lat = math.min(math.abs(centre[1]), 85.05112878)
-	local coslat = math.cos(math.rad(lat))
-	return area / (coslat * coslat)
-end
+-- MercatorArea() is provided by tilemaker (Web Mercator square metres)
 
 -- Set minimum zoom level by area
 function SetMinZoomByArea()
@@ -893,21 +921,9 @@ end
 
 -- Set minimum zoom level by area but not below given minzoom
 function SetMinZoomByAreaWithLimit(minzoom)
-	local area=MercatorArea()
-	if     minzoom <= 1 and area>ZRES0^2  then MinZoom(1)
-	elseif minzoom <= 2 and area>ZRES1^2  then MinZoom(2)
-	elseif minzoom <= 3 and area>ZRES2^2  then MinZoom(3)
-	elseif minzoom <= 4 and area>ZRES3^2  then MinZoom(4)
-	elseif minzoom <= 5 and area>ZRES4^2  then MinZoom(5)
-	elseif minzoom <= 6 and area>ZRES5^2  then MinZoom(6)
-	elseif minzoom <= 7 and area>ZRES6^2  then MinZoom(7)
-	elseif minzoom <= 8 and area>ZRES7^2  then MinZoom(8)
-	elseif minzoom <= 9 and area>ZRES8^2  then MinZoom(9)
-	elseif minzoom <= 10 and area>ZRES9^2  then MinZoom(10)
-	elseif minzoom <= 11 and area>ZRES10^2 then MinZoom(11)
-	elseif minzoom <= 12 and area>ZRES11^2 then MinZoom(12)
-	elseif minzoom <= 13 and area>ZRES12^2 then MinZoom(13)
-	else                      MinZoom(14) end
+	-- The first zoom z >= minzoom whose pixel area the feature exceeds (ZRESSQ[z]), else 14:
+	-- worked out by tilemaker, so that way_function stays replayable (see way_memo)
+	MinZoomByArea(minzoom, ZRESSQ)
 end
 
 -- Calculate POIs (typically rank 1-4 go to 'poi' z12-14, rank 5+ to 'poi_detail' z14)
@@ -918,8 +934,8 @@ function GetPOIRank()
 	-- Can we find the tag?
 	for _,k in ipairs(poiTagOrder) do
 		list = poiTags[k]
-		if list[Find(k)] then
-			v = Find(k)	-- k/v are the OSM tag pair
+		v = Find(k)	-- k/v are the OSM tag pair
+		if list[v] then
 			class = poiClasses[v] or poiTagsAsClass[k] or v
 			rank  = poiClassRanks[class] or 25
 			subclassKey = poiSubClasses[v]

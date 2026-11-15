@@ -84,7 +84,7 @@ else ifeq ($(TM_GIT_TAG)$(TM_GIT_DIRTY),$(TM_BASE_VERSION))
 else
   TM_VERSION ?= $(TM_BASE_VERSION)+g$(TM_GIT_SHA)$(TM_GIT_DIRTY)
 endif
-CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
+CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++17 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 DEPFLAGS := -MD -MP
 DEPS := $(wildcard src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d)
