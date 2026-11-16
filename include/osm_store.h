@@ -262,6 +262,17 @@ public:
 
 	RelationScanStore(): relationsForWays(128), relationsForNodes(128), relationTags(128), mutex(128) {}
 
+	// Frees what was scanned: only the Lua functions use it, while the .pbf files are read. With the
+	// bundled profile (administrative boundaries) it took ~1.1 GB on a planet, kept to the end.
+	void clear() {
+		for (auto& shard : relationsForWays) shard.clear();
+		for (auto& shard : relationsForNodes) shard.clear();
+		for (auto& shard : relationTags) shard.clear();
+		relationsForRelations.clear();
+		std::vector<std::vector<WayIndexSlot>>().swap(wayIndex);
+		wayIndexStale.store(true, std::memory_order_release);
+	}
+
 	// Keep each member's parent relations ordered by relation id: relations are scanned on
 	// several threads, so appending would make the order NextRelation() returns depend on
 	// thread scheduling. Entries of the same relation keep their member order.
@@ -477,6 +488,9 @@ public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 
 	void clear();
+	// Once all .pbf files are read: frees the relation scan and the set of used ways, which only
+	// reading needs (the node, way and relation stores stay, the tiles are built from them)
+	void releaseReadingState();
 	void reportSize() const;
 
 	// Relation -> MultiPolygon or MultiLinestring

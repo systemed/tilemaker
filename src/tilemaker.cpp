@@ -43,6 +43,7 @@
 #ifdef __GLIBC__
 #include <malloc.h>
 #include <cstdlib>
+#include <cstring>
 #endif
 
 #include "geom.h"
@@ -147,6 +148,98 @@ static inline ListedTile tileFromOrderKey(uint64_t key, unsigned maxZoom) {
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+#include <atomic>
+#include <cstdio>
+namespace {
+// Hand the big anonymous mappings (the stores, malloc arenas) back to the kernel from several
+// threads, then exit. Left to process exit, the kernel frees them on one core: ~10 s for a planet
+// build. Once memory is released it reads as zeros, so nothing may be allocated or freed from
+// then on: all set-up happens first, and the helper threads are never joined.
+struct ReleaseJob {
+	std::pair<char*, size_t> pieces[1 << 16];
+	size_t count = 0;
+	std::atomic<size_t> next{0};
+	std::atomic<bool> go{false};
+	std::atomic<unsigned> running{0};
+};
+ReleaseJob releaseJob;
+
+void releasePieces(ReleaseJob &job) {
+	for (size_t i; (i = job.next++) < job.count; )
+		madvise(job.pieces[i].first, job.pieces[i].second, MADV_DONTNEED);
+}
+
+void *releaseWorker(void *) {
+	while (!releaseJob.go.load()) sched_yield();
+	releasePieces(releaseJob);
+	releaseJob.running--;
+	for (;;) pause();	// returning would make glibc free this thread's resources
+}
+}
+
+// Early exit (the default; --no-early-exit turns it off): a process sharing tilemaker's memory
+// (clone with CLONE_VM) holds on to it, so that tilemaker's own exit doesn't wait for the kernel
+// to free it; the holder closes the files it
+// inherited (pipes see their end now), waits until tilemaker is gone, then exits, and the kernel
+// frees the memory in the background.
+namespace {
+pid_t earlyExitParent = 0;
+int earlyExitHolder(void *) {
+	for (int fd = 0; fd < (1 << 16); fd++) close(fd);
+	while (getppid() == earlyExitParent) usleep(1000);
+	_exit(0);
+}
+}
+
+[[noreturn]] static void releaseMemoryAndExit(unsigned threadNum);
+
+[[noreturn]] static void exitEarly(unsigned threadNum) {
+	earlyExitParent = getpid();
+	const size_t stackSize = 1 << 16;
+	void *stack = mmap(nullptr, stackSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+	if (stack == MAP_FAILED || clone(earlyExitHolder, static_cast<char *>(stack) + stackSize, CLONE_VM | SIGCHLD, nullptr) == -1)
+		releaseMemoryAndExit(threadNum);
+	std::_Exit(EXIT_SUCCESS);
+}
+
+[[noreturn]] static void releaseMemoryAndExit(unsigned threadNum) {
+	ReleaseJob &job = releaseJob;
+	const size_t pieceSize = 256ul << 20;
+	const uintptr_t jobFrom = reinterpret_cast<uintptr_t>(&job), jobTo = jobFrom + sizeof(job);
+	if (FILE *maps = fopen("/proc/self/maps", "r")) {
+		static char line[4096];
+		while (fgets(line, sizeof(line), maps)) {
+			unsigned long from, to, offset, inode;
+			char perms[5], dev[16];
+			if (sscanf(line, "%lx-%lx %4s %lx %15s %lu", &from, &to, perms, &offset, dev, &inode) != 6) continue;
+			// Private writable memory without a file, and not [heap]/[stack]. Thread stacks are
+			// 8 MB, so the size limit keeps them out as well.
+			if (inode != 0 || std::string(perms) != "rw-p" || strchr(line, '[') != nullptr) continue;
+			if (to - from < (64ul << 20) || (from < jobTo && jobFrom < to)) continue;
+			for (unsigned long p = from; p < to && job.count < (1 << 16); p += pieceSize)
+				job.pieces[job.count++] = { reinterpret_cast<char*>(p), std::min<unsigned long>(pieceSize, to - p) };
+		}
+	}
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_attr_setstacksize(&attr, 1 << 16);
+	for (unsigned t = 1; t < std::min(threadNum, 32u); t++) {
+		pthread_t thread;
+		job.running++;
+		if (pthread_create(&thread, &attr, releaseWorker, nullptr) != 0) { job.running--; break; }
+	}
+	job.go = true;
+	releasePieces(job);
+	while (job.running.load()) sched_yield();
+	std::_Exit(EXIT_SUCCESS);
+}
+#endif
+
 // Memory this process may use: physical RAM, or the cgroup (v2/v1) limit if lower; 0 if unknown
 static uint64_t availableMemoryBytes() {
 	uint64_t bytes = 0;
@@ -499,6 +592,13 @@ int main(const int argc, const char* argv[]) {
 	osmMemTiles.reportSize();
 	attributeStore.reportSize();
 	osmLuaProcessing.dataStore.clear(); // no longer needed
+	osmStore.releaseReadingState();
+#ifdef __GLIBC__
+	// glibc keeps what the reading phase freed (Lua memo trees, way buffers: ~0.5 GB on Netherlands
+	// at 8 threads; the relation scan, allocated first, ~1.1 GB on a planet) in its arenas: give the
+	// free pages back before the tiles are made
+	malloc_trim(0);
+#endif
 
 	// ----	Initialise SharedData
 
@@ -1355,6 +1455,11 @@ int main(const int argc, const char* argv[]) {
 	}
 	// Wait for all tasks in the pool to complete.
 	pool.join();
+#ifdef __GLIBC__
+	// The tiles that were held for the ordered writer are freed, but glibc keeps their pages in its
+	// arenas: give them back before close() makes the directories (several GB on a planet)
+	malloc_trim(0);
+#endif
 	if (toPMTiles) sharedData.pmtiles.batches.setFirstUnhanded(nullptr);
 	if (toMBTiles) sharedData.mbtiles.batches.setFirstUnhanded(nullptr);
 	if (tileFailed) {
@@ -1401,4 +1506,18 @@ int main(const int argc, const char* argv[]) {
 #endif
 
 	cout << endl << "Filled the tileset with good things at " << sharedData.outputFile << endl;
+
+	// Everything is written. Freeing the stores one allocation at a time takes a quarter of a minute
+	// on a planet build and nothing needs it, so leave without the destructors - unless they still
+	// have the --store files to delete.
+	if (options.osm.storeFile.empty()) {
+		cout.flush();
+		std::fflush(nullptr);
+#ifdef __linux__
+		if (!options.noEarlyExit) exitEarly(options.threadNum);
+		releaseMemoryAndExit(options.threadNum);
+#else
+		std::_Exit(EXIT_SUCCESS);
+#endif
+	}
 }

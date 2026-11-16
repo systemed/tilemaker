@@ -340,4 +340,9 @@ void OSMStore::clear() {
 	used_ways.clear();
 } 
 
+void OSMStore::releaseReadingState() {
+	scannedRelations.clear();
+	used_ways.clear();
+}
+
 

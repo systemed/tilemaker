@@ -62,7 +62,9 @@ private:
 
 		// ...and index it, growing the table to keep it at most half full
 		if (2 * (objects.size() + 1) > slots.size()) {
-			std::vector<uint32_t> old(std::max<size_t>(16, slots.size() * 2), 0);
+			size_t size = std::max<size_t>(16, slots.size() * 2);
+			while (2 * (objects.size() + 1) > size) size *= 2;	// after releaseIndex
+			std::vector<uint32_t> old(size, 0);
 			slots.swap(old);
 			for (uint32_t i = 0; i < newIndex; i++)
 				insertSlot(hashOf(objects[i]), i);
@@ -77,6 +79,13 @@ public:
 		slots.clear();
 		sorted.clear();
 		sortedValid = false;
+	}
+
+	// Frees the hash index, for a map that is only read by index from now on (operator[], at,
+	// iteration): 8-16 bytes an entry. Adding still works (the index is rebuilt first), and
+	// so does a lookup (comparing with every entry), so nothing breaks if it is used again.
+	void releaseIndex() {
+		std::vector<uint32_t>().swap(slots);
 	}
 
 	// Returns the index of `entry` if present, -1 otherwise.
@@ -131,7 +140,12 @@ private:
 	}
 
 	int32_t lookup(const T& entry, uint64_t h) const {
-		if (slots.empty()) return -1;
+		if (slots.empty()) {
+			// No index: empty, or released (releaseIndex)
+			for (size_t i = 0; i < objects.size(); i++)
+				if (objects[i] == entry) return i;
+			return -1;
+		}
 		const size_t mask = slots.size() - 1;
 		for (size_t i = h & mask; slots[i] != 0; i = (i + 1) & mask)
 			if (objects[slots[i] - 1] == entry)

@@ -229,7 +229,11 @@ public:
 			pairs.emplace_back();
 	}
 
-	void finalize() { finalized = true; }
+	// Nothing is added from now on: the shards' hash indexes go (the tiles read pairs by index)
+	void finalize() {
+		finalized = true;
+		for (auto& shard : pairs) shard.releaseIndex();
+	}
 	const AttributePair& getPair(uint32_t i) const;
 	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(AttributePair& pair, bool isHot);
