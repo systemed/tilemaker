@@ -230,11 +230,18 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 		}
 	}
 
-	if (isHot) {
+	if (isHot && hotFull.load(std::memory_order_acquire)) {
+		// The hot shard is full, and so doesn't change any more: no lock needed
+		const auto& index = pairs[0].findWithHash(pair, hash);
+		if (index != -1) {
+			table.insert(&pairs[0][index], tag, index);
+			return index;
+		}
+	} else if (isHot) {
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		const auto& index = pairs[0].find(pair);
+		const auto& index = pairs[0].findWithHash(pair, hash);
 		if (index != -1) {
 			table.insert(&pairs[0][index], tag, index);
 			return index;
@@ -242,11 +249,13 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 
 		if (!pairs[0].full()) {
 			pair.ensureStringIsOwned();
-			uint32_t offset = pairs[0].add(pair);
+			uint32_t offset = pairs[0].addAbsentWithHash(pair, hash);
 			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
 			table.insert(&pairs[0][offset], tag, rv);
+			if (pairs[0].full()) hotFull.store(true, std::memory_order_release);
 			return rv;
 		}
+		hotFull.store(true, std::memory_order_release);
 	}
 
 	// This is either not a hot key, or there's no room for in the hot shard.
@@ -264,7 +273,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (tlsPairLookupsUncached % 1024 == 0)
 		lookupsUncached += 1024;
 
-	const auto& index = pairs[shard].find(pair);
+	const auto& index = pairs[shard].findWithHash(pair, hash);
 	if (index != -1) {
 		const uint32_t rv = (shard << (32 - SHARD_BITS)) + index;
 		table.insert(&pairs[shard][index], tag, rv);
@@ -272,7 +281,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	}
 
 	pair.ensureStringIsOwned();
-	uint32_t offset = pairs[shard].add(pair);
+	uint32_t offset = pairs[shard].addAbsentWithHash(pair, hash);
 
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("pair shard overflow");
@@ -472,7 +481,7 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	if (tlsSetLookupsUncached % 1024 == 0)
 		lookupsUncached += 1024;
 
-	const uint32_t offset = sets[shard].add(attributes);
+	const uint32_t offset = sets[shard].addWithHash(attributes, hash);
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("set shard overflow");
 

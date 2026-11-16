@@ -379,7 +379,18 @@ protected:
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
 
-	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>> pendingSmallIndexObjects;
+	// Small index adds are staged per thread and moved to their shards in bulk (see flushStaging)
+	template<class OO> struct IndexStaging {
+		std::vector<OO> entries;
+		std::vector<uint16_t> shards;	// z6 index of each entry
+	};
+	struct alignas(64) IndexStagings {	// a cache line of its own: each is written by its thread only
+		IndexStaging<OutputObjectXY> objects;
+		IndexStaging<OutputObjectXYID> objectsWithIds;
+	};
+	std::mutex stagingMutex;
+	std::deque<IndexStagings> stagings;	// one per thread that added objects (guarded by stagingMutex)
+	uint64_t stagingEpoch;	// identifies this source's stagings in threads' caches (renewed by finalize)
 
 public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
@@ -414,6 +425,13 @@ public:
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id, bool needsLock);
 	void addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	// As addObjectToSmallIndex(tile, oo, id) for each tile and the outputs each(tile, add) calls
+	// add(oo) for, taking a z6 tile's lock once per run of tiles in it
+	template<class Each> void addToSmallIndex(const std::vector<TileCoordinates>& tiles, uint64_t id, Each each);
+	IndexStagings& indexStaging();
+	void stageObject(IndexStagings& staging, size_t z6index, const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	void flushStagingIfFull(IndexStagings& staging);
+	template<class OO> void flushStaging(IndexStaging<OO>& staging, std::vector<AppendVectorNS::AppendVector<OO>>& shards);
 
 	void addObjectToLargeIndex(const Box& envelope, const OutputObject& oo, uint64_t id) {
 		std::lock_guard<std::mutex> lock(mutex);

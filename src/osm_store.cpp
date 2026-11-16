@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iterator>
 #include <unordered_map>
+#include <boost/container/small_vector.hpp>
 
 #include <ciso646>
 #include <boost/geometry/index/rtree.hpp>
@@ -103,9 +104,9 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	MultiPolygon mp;
 	if (outerBegin == outerEnd) { return mp; } // no outers so quit
 
-	std::vector<LatpLonDeque> outers;
-	std::vector<LatpLonDeque> inners;
-	std::map<WayID,bool> done; // true=this way has already been added to outers/inners, don't reconsider
+	std::vector<LatpLonChain> outers;
+	std::vector<LatpLonChain> inners;
+	DoneWays done; // the ways already added to outers/inners, not to reconsider
 
 	// merge constituent ways together
 	mergeMultiPolygonWays(outers, done, outerBegin, outerEnd);
@@ -116,13 +117,15 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 	std::vector<Box> innerBoxes;
 	for (auto it = inners.begin(); it != inners.end(); ++it) {
 		Ring inner;
+		inner.reserve(it->size());
 		fillPoints(inner, it->begin(), it->end());
 		innerBoxes.emplace_back(geom::return_envelope<Box>(inner));
-		filledInners.emplace_back(inner);
+		filledInners.emplace_back(std::move(inner));
 	}
 	bool onlyOneOuter = outers.size()==1;
 	for (auto ot = outers.begin(); ot != outers.end(); ot++) {
 		Polygon poly;
+		poly.outer().reserve(ot->size());
 		fillPoints(poly.outer(), ot->begin(), ot->end());
 		const Box outerBox = geom::return_envelope<Box>(poly.outer());
 		// Index big outer rings that many inner rings must be tested against
@@ -133,9 +136,11 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 			const Ring &inner = filledInners[i];
 			// A ring within the outer has its bounding box within the outer's,
 			// so the (costly) within test is only needed when it does
-			if (onlyOneOuter ||
-			    ((inner.empty() || geom::covered_by(innerBoxes[i], outerBox)) &&
-			     (index ? index->within(inner) : geom::within(inner, poly.outer())))) {
+			if (onlyOneOuter) {
+				// (in no other polygon)
+				poly.inners().emplace_back(std::move(filledInners[i]));
+			} else if ((inner.empty() || geom::covered_by(innerBoxes[i], outerBox)) &&
+			     (index ? index->within(inner) : geom::within(inner, poly.outer()))) {
 				poly.inners().emplace_back(inner);
 			}
 		}
@@ -151,13 +156,14 @@ MultiLinestring OSMStore::wayListMultiLinestring(WayVec::const_iterator outerBeg
 	MultiLinestring mls;
 	if (outerBegin == outerEnd) { return mls; }
 
-	std::vector<LatpLonDeque> linestrings;
-	std::map<WayID,bool> done;
+	std::vector<LatpLonChain> linestrings;
+	DoneWays done;
 
 	mergeMultiPolygonWays(linestrings, done, outerBegin, outerEnd);
 
 	for (auto ot = linestrings.begin(); ot != linestrings.end(); ot++) {
 		Linestring ls;
+		ls.reserve(ot->size());
 		fillPoints(ls, ot->begin(), ot->end());
 		mls.emplace_back(move(ls));
 	}
@@ -170,45 +176,73 @@ MultiLinestring OSMStore::wayListMultiLinestring(WayVec::const_iterator outerBeg
 // - Linestrings are joined to existing linestrings with which they share a start/end
 // - If no matches can be found, then one linestring is added (to 'attract' others)
 // - The process is rerun until no ways are left
-// There's quite a lot of copying going on here - could potentially be addressed
-void OSMStore::mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
+// (The ways are read once; the joined rings and lines are grown in place, see LatpLonChain.)
+void OSMStore::mergeMultiPolygonWays(std::vector<LatpLonChain> &results, DoneWays &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const {
 
-	// Create maps of start/end nodes
-	std::unordered_map<LatpLon, std::vector<WayID>> startNodes;
-	std::unordered_map<LatpLon, std::vector<WayID>> endNodes;
+	// Create maps of start/end nodes (the way lists are short: kept in the map's nodes)
+	using WayList = boost::container::small_vector<WayID, 2>;
+	using NodeMap = std::unordered_map<LatpLon, WayList>;
+	NodeMap startNodes;
+	NodeMap endNodes;
+	// The coordinates of the ways in startNodes/endNodes, read once from the way store
+	// (the joining below used to read each of them two or three more times), one after the other in pool
+	std::vector<LatpLon> pool;
+	std::unordered_map<WayID, std::pair<size_t, size_t>> wayCoords;	// offset in pool, size
+	struct Span {
+		const LatpLon *b, *e;
+		const LatpLon *begin() const { return b; }
+		const LatpLon *end() const { return e; }
+		std::reverse_iterator<const LatpLon*> rbegin() const { return std::reverse_iterator<const LatpLon*>(e); }
+		std::reverse_iterator<const LatpLon*> rend() const { return std::reverse_iterator<const LatpLon*>(b); }
+		const LatpLon &front() const { return *b; }
+		const LatpLon &back() const { return e[-1]; }
+	};
+	std::vector<LatpLon> way;
+	auto coords = [&](WayID w) -> Span {
+		auto it = wayCoords.find(w);
+		if (it == wayCoords.end()) {
+			ways.at(w, way);
+			it = wayCoords.emplace(w, std::make_pair(pool.size(), way.size())).first;
+			pool.insert(pool.end(), way.begin(), way.end());
+		}
+		return Span{ pool.data() + it->second.first, pool.data() + it->second.first + it->second.second };
+	};
 	for (auto it = itBegin; it != itEnd; ++it) {
-		if (done[*it]) { continue; }
+		if (done.has(*it)) { continue; }
 		try {
-			auto const &way = ways.at(*it);
+			ways.at(*it, way);
 			if (isClosed(way) || results.empty()) {
 				// if start==end, simply add it to the set
-				results.emplace_back(way.begin(), way.end());
-				done[*it] = true;
+				results.emplace_back(std::move(way));
+				way = std::vector<LatpLon>();
+				done.add(*it);
 			} else {
 				startNodes[way.front()].emplace_back(*it);
 				endNodes[way.back()].emplace_back(*it);
+				wayCoords[*it] = std::make_pair(pool.size(), way.size());
+				pool.insert(pool.end(), way.begin(), way.end());
 			}
 		} catch (std::out_of_range &err) {
 			if (verbose) { cerr << "Missing way in relation: " << err.what() << endl; }
-			done[*it] = true;
+			done.add(*it);
 		}
 	}
+	if (startNodes.empty()) return;	// (no way to join: all were added)
 
-	auto deleteFromWayList = [&](LatpLon n, WayID w, bool which) {
-		auto &nodemap = which ? startNodes : endNodes;
-		std::vector<WayID> &waylist = nodemap.find(n)->second;
+	auto deleteFromWayList = [&](NodeMap::iterator found, WayID w, NodeMap &nodemap) {
+		WayList &waylist = found->second;
 		waylist.erase(std::remove(waylist.begin(), waylist.end(), w), waylist.end());
-		if (waylist.empty()) { nodemap.erase(nodemap.find(n)); }
+		if (waylist.empty()) { nodemap.erase(found); }
 	};
 	auto removeWay = [&](WayID w) {
-		auto const &way = ways.at(w);
+		const Span way = coords(w);
 		LatpLon first = way.front();
 		LatpLon last  = way.back();
-		if (startNodes.find(first) != startNodes.end()) { deleteFromWayList(first, w, true ); }
-		if (startNodes.find(last)  != startNodes.end()) { deleteFromWayList(last,  w, true ); }
-		if (endNodes.find(first)   != endNodes.end()  ) { deleteFromWayList(first, w, false); }
-		if (endNodes.find(last)    != endNodes.end()  ) { deleteFromWayList(last,  w, false); }
-		done[w] = true;
+		auto f = startNodes.find(first); if (f != startNodes.end()) { deleteFromWayList(f, w, startNodes); }
+		f = startNodes.find(last);       if (f != startNodes.end()) { deleteFromWayList(f, w, startNodes); }
+		f = endNodes.find(first);        if (f != endNodes.end()  ) { deleteFromWayList(f, w, endNodes); }
+		f = endNodes.find(last);         if (f != endNodes.end()  ) { deleteFromWayList(f, w, endNodes); }
+		done.add(w);
 	};
 
 	// Loop through, repeatedly adding start/end nodes if we can
@@ -221,58 +255,60 @@ void OSMStore::mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::ma
 				LatpLon rFirst = rt->front();
 				LatpLon rLast  = rt->back();
 				if (rFirst==rLast) break;
-				if (startNodes.find(rLast)!=startNodes.end()) {
+				auto match = startNodes.find(rLast);
+				if (match!=startNodes.end()) {
 					// append to the result
-					auto match = startNodes.find(rLast)->second;
-					auto nodes = ways.at(match.back());
-					rt->insert(rt->end(), nodes.begin(), nodes.end());
-					removeWay(match.back());
+					const WayID w = match->second.back();
+					const Span nodes = coords(w);
+					rt->append(nodes.begin(), nodes.end());
+					removeWay(w);
 					added++;
-
-				} else if (endNodes.find(rLast)!=endNodes.end()) {
+					continue;
+				}
+				match = endNodes.find(rLast);
+				if (match!=endNodes.end()) {
 					// append reversed to the original
-					auto match = endNodes.find(rLast)->second;
-					auto nodes = ways.at(match.back());
-					rt->insert(rt->end(),
-						std::make_reverse_iterator(nodes.end()),
-						std::make_reverse_iterator(nodes.begin()));
-					removeWay(match.back());
+					const WayID w = match->second.back();
+					const Span nodes = coords(w);
+					rt->append(nodes.rbegin(), nodes.rend());
+					removeWay(w);
 					added++;
-
-				} else if (endNodes.find(rFirst)!=endNodes.end()) {
+					continue;
+				}
+				match = endNodes.find(rFirst);
+				if (match!=endNodes.end()) {
 					// prepend to the original
-					auto match = endNodes.find(rFirst)->second;
-					auto nodes = ways.at(match.back());
-					rt->insert(rt->begin(), nodes.begin(), nodes.end());
-					removeWay(match.back());
+					const WayID w = match->second.back();
+					const Span nodes = coords(w);
+					rt->prepend(nodes.begin(), nodes.end());
+					removeWay(w);
 					added++;
-
-				} else if (startNodes.find(rFirst)!=startNodes.end()) {
+					continue;
+				}
+				match = startNodes.find(rFirst);
+				if (match!=startNodes.end()) {
 					// prepend reversed to the original
-					auto match = startNodes.find(rFirst)->second;
-					auto nodes = ways.at(match.back());
-					rt->insert(rt->begin(),
-						std::make_reverse_iterator(nodes.end()),
-						std::make_reverse_iterator(nodes.begin()));
-					removeWay(match.back());
+					const WayID w = match->second.back();
+					const Span nodes = coords(w);
+					rt->prepend(nodes.rbegin(), nodes.rend());
+					removeWay(w);
 					added++;
-
-				} else { working=false; }
-				
+					continue;
+				}
+				working=false;
 			} while (working);
 		}
 
 		// If nothing was added, then 'seed' it with a remaining unallocated way
 		for (int i=0; i<=1; i++) {
 			if (added>0) continue;
-			for (auto nt : (i==0 ? startNodes : endNodes)) {
-				WayID w = nt.second.back();
-				auto const &way = ways.at(w);
-				results.emplace_back(way.begin(), way.end());
-				added++;
-				removeWay(w);
-				break;
-			}
+			auto &nodemap = i==0 ? startNodes : endNodes;
+			if (nodemap.empty()) continue;
+			WayID w = nodemap.begin()->second.back();
+			const Span way = coords(w);
+			results.emplace_back(way.begin(), way.end());
+			added++;
+			removeWay(w);
 		}
 	} while (added>0);
 };
