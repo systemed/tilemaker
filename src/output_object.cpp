@@ -70,6 +70,8 @@ static const uint32_t MEMO_MAX_SETS = 1 << 13;
 static const uint32_t MEMO_MAX_PAIRS = 1 << 14;
 static const size_t MEMO_KEYS = 1 << 9; // AttributePair::keyIndex is 9 bits
 static const uint32_t NO_INDEX = ~0u;
+static const uint32_t MEMO_MAX_CANON_SETS = 1 << 14;
+static const uint32_t MEMO_MAX_CANON_PAIRS = 1 << 18;
 
 static inline uint32_t memoHash(uint32_t x) {
 	// AttributeIndex/pair index is shard << 18 | offset: mix the high bits into the low ones
@@ -179,7 +181,20 @@ const uint32_t* MvtAttributeMemo::resolve(const AttributeStore& attributeStore, 
 	if (pairs.used >= MEMO_MAX_PAIRS)
 		pairs.clear();
 	const uint32_t begin = entries.size();
-	attributeStore.forEachPairIndexCanonicalUnsafe(index, [&](uint32_t pairIndex) {
+	if (canonStore != &attributeStore || canon.used >= MEMO_MAX_CANON_SETS || canonPairs.size() >= MEMO_MAX_CANON_PAIRS) {
+		canon.clear();
+		canonPairs.clear();
+		canonStore = &attributeStore;
+	}
+	const Table::Slot* c = canon.find(index);
+	if (!c) {
+		const uint32_t a = canonPairs.size();
+		attributeStore.forEachPairIndexCanonicalUnsafe(index, [&](uint32_t pairIndex) { canonPairs.push_back(pairIndex); });
+		canon.insert(index, a, canonPairs.size());
+		c = canon.find(index);
+	}
+	for (uint32_t k = c->a; k < c->b; k++) {
+		const uint32_t pairIndex = canonPairs[k];
 		uint32_t key, value;
 		if (const Table::Slot* s = pairs.find(pairIndex)) {
 			key = s->a;
@@ -188,10 +203,10 @@ const uint32_t* MvtAttributeMemo::resolve(const AttributeStore& attributeStore, 
 			resolvePair(attributeStore, pairIndex, key, value);
 			pairs.insert(pairIndex, key, value);
 		}
-		if (key == NO_INDEX) return;
+		if (key == NO_INDEX) continue;
 		entries.push_back(key);
 		entries.push_back(value);
-	});
+	}
 	const uint32_t end = entries.size();
 	sets.insert(index, begin, end);
 

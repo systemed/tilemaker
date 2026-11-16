@@ -221,6 +221,20 @@ template<typename OO> void collectLowZoomObjectsForTile(
 	}
 }
 
+// The order the shards are sorted in (see sortOutputObjects) as a number: x and y (offsets in the
+// z6 tile, below 2^(indexZoom - CLUSTER_ZOOM)) bit-interleaved, x above y at each level.
+inline uint32_t indexSpreadBits(uint32_t v) {
+	v &= 0x0000FFFF;
+	v = (v | (v << 8)) & 0x00FF00FF;
+	v = (v | (v << 4)) & 0x0F0F0F0F;
+	v = (v | (v << 2)) & 0x33333333;
+	v = (v | (v << 1)) & 0x55555555;
+	return v;
+}
+inline uint32_t indexOrderKey(uint32_t x, uint32_t y) {
+	return (indexSpreadBits(x) << 1) | indexSpreadBits(y);
+}
+
 // When non-zero, getObjectsForTile keeps the objects shown up to this zoom rather than the tile's
 // own zoom (see the covered subtrees in tilemaker.cpp)
 extern thread_local unsigned objectsUpToZoom;
@@ -232,7 +246,8 @@ template<typename OO> void collectObjectsForTileTemplate(
 	size_t iEnd,
 	unsigned int zoom,
 	TileCoordinates dstIndex,
-	std::vector<OutputObjectID>& output
+	std::vector<OutputObjectID>& output,
+	bool* nonPolygon = nullptr	// if given: stop at the first object that isn't a polygon, and set it
 ) {
 	if (zoom < CLUSTER_ZOOM)
 		throw std::runtime_error("collectObjectsForTileTemplate should not be called for low zooms");
@@ -265,6 +280,31 @@ template<typename OO> void collectObjectsForTileTemplate(
 		// searching, too.
 		OutputObject dummyOo(POINT_, 0, 0, 0, 0);
 		const size_t bz = indexZoom;
+
+		// (At the index zoom itself, one index tile: the search below is as fast)
+		if (bz >= CLUSTER_ZOOM && bz - CLUSTER_ZOOM <= 8 * sizeof(Z6Offset) && clampedZoom < bz) {
+			// The shard is sorted by (x, y) compared at each zoom from CLUSTER_ZOOM to indexZoom, i.e. by
+			// indexOrderKey (x, y < 2^(indexZoom - CLUSTER_ZOOM)). The index tiles inside the tile are those
+			// with keys [key(needle), key(needle) + 4^(indexZoom - clampedZoom)): one range, found with
+			// binary searches on the key. The same objects, in the same order, as the loop below.
+			const uint32_t first = indexOrderKey(needleX, needleY);
+			const uint32_t last = first + (uint32_t(1) << (2 * (bz - clampedZoom)));
+			auto keyLess = [](const OO& a, uint32_t k) { return indexOrderKey(a.x, a.y) < k; };
+			auto from = std::lower_bound(objects[i].begin(), objects[i].end(), first, keyLess);
+			// Mostly a few objects (deep zooms): look at them one by one first
+			auto to = from;
+			unsigned steps = 0;
+			while (to != objects[i].end() && steps < 32 && keyLess(*to, last)) { ++to; ++steps; }
+			if (steps == 32) to = std::lower_bound(to, objects[i].end(), last, keyLess);
+			const unsigned upTo = objectsUpToZoom ? objectsUpToZoom : zoom;
+			for (; from != to; ++from) {
+				if (from->oo.minZoom <= upTo) {
+					if (nonPolygon && from->oo.geomType != POLYGON_) { *nonPolygon = true; return; }
+					output.push_back(outputObjectWithId(*from));
+				}
+			}
+			continue;
+		}
 
 		const OO targetXY = {dummyOo, needleX, needleY };
 		auto iter = std::lower_bound(
@@ -306,6 +346,7 @@ template<typename OO> void collectObjectsForTileTemplate(
 
 			if (dstIndex.x == x && dstIndex.y == y) {
 				if (iter->oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom)) {
+					if (nonPolygon && iter->oo.geomType != POLYGON_) { *nonPolygon = true; return; }
 					output.push_back(outputObjectWithId(*iter));
 				}
 			} else {
@@ -410,7 +451,11 @@ public:
 
 	void collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
-	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
+	// nonPolygon: see collectObjectsForTileTemplate (z6 and above)
+	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output, bool* nonPolygon = nullptr);
+	// Whether the objects getObjectsForTile(zoom, dstIndex) returns are none (0), all polygons (1),
+	// or not (2), without sorting them: for the covered-subtree check
+	int objectKindsForTile(uint zoom, TileCoordinates dstIndex);
 	void finalize(size_t threadNum);
 
 	void addGeometryToIndex(
