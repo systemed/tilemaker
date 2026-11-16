@@ -375,6 +375,9 @@ protected:
 	std::vector<multi_polygon_store_t> multipolygonStores;
 	// Per multipolygonStores entry: stored geometry is known to pass geom::is_valid
 	std::vector<std::vector<bool>> multipolygonValid;
+	// Validity checks still running (see checkValidityLater)
+	std::mutex deferredValidityMutex;
+	std::vector<std::pair<NodeID, std::future<bool>>> deferredValidity;
 	
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
@@ -559,6 +562,11 @@ public:
 
 	// knownValid: src has passed geom::is_valid (see polygonKnownValid)
 	NodeID storeMultiPolygon(const MultiPolygon& src, bool knownValid = false);
+	// Find out in the background whether a polygon stored with knownValid=false passes
+	// geom::is_valid: on a big lake with thousands of islands that takes ~10 s, which would
+	// otherwise hold up the end of reading. finishDeferredValidity records the results.
+	void checkValidityLater(NodeID objectID, MultiPolygon mp);
+	void finishDeferredValidity();
 
 	multi_polygon_t const &retrieveMultiPolygon(NodeID id) const {
 		const auto& shardId = getShard(id);

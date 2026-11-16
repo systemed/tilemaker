@@ -39,6 +39,7 @@ typedef boost::geometry::ring_type<Polygon>::type Ring;
 typedef boost::geometry::interior_type<Polygon>::type InteriorRing;
 typedef boost::variant<Point,Linestring,MultiLinestring,MultiPolygon> Geometry;
 typedef std::pair<Box, uint> IndexValue;
+#include "ring_point_index.h"
 typedef boost::geometry::index::rtree< IndexValue, boost::geometry::index::quadratic<16> > RTree;
 
 // Perform self-intersection aware simplification of geometry types
@@ -122,6 +123,32 @@ std::vector<Box> multipolygon_index_boxes(const MultiPolygon &mp, double gap);
 // Tolerances are relative to the coordinate magnitude.
 bool polygonDefinitelyValid(const Polygon &p);
 bool multiPolygonDefinitelyValid(const MultiPolygon &mp);
+// As multiPolygonDefinitelyValid, but segments are taken as apart wherever Boost can tell the
+// sides (rounding bound instead of the distance tolerance). Only where the answer just saves a
+// Boost is_valid, not where it chooses between ways to compute something.
+bool multiPolygonDefinitelyValidAfterClip(const MultiPolygon &mp);
+// multiPolygonDefinitelyValid (the same answer) for mp clipped to box by fast_clip: false at
+// once when two segments of a polygon overlap along the box edge (a bridge left by the clip).
+bool multiPolygonDefinitelyValidClipped(const MultiPolygon &mp, Box const &box);
+// As polygonDefinitelyValid / multiPolygonDefinitelyValid (1 exactly when they return true),
+// but also recognises a geometry whose only fault is that every ring has the opposite
+// orientation: -1 = is_valid reports failure_wrong_orientation (the first exterior ring is
+// clean but clearly wrongly oriented, which Boost checks before anything else of the geometry),
+// and the geometry with every ring reversed is certainly valid. 0 = unsure.
+int polygonDefinitelyValidOrReversed(const Polygon &p);
+int multiPolygonDefinitelyValidOrReversed(const MultiPolygon &mp);
+
+// True only when boost::geometry::intersects(a, b) is certainly false: every segment of one is
+// clearly apart from every segment of the other, and the first point of each ring of either is
+// clearly outside the other polygon (outside its outer ring, or in one of its holes).
+bool polygonsDefinitelyApart(const Polygon &a, const Polygon &b);
+
+// The conservative tests make_valid uses to skip Boost overlay work (geometry/correct.hpp)
+namespace geometry { namespace impl { template<typename multi_polygon_t> struct precheck; } }
+template<> struct geometry::impl::precheck<MultiPolygon> {
+	static bool valid(const MultiPolygon &mp) { return multiPolygonDefinitelyValid(mp); }
+	static bool apart(const Polygon &a, const Polygon &b) { return polygonsDefinitelyApart(a, b); }
+};
 
 
 

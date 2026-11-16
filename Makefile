@@ -197,6 +197,7 @@ src/config_schema.h: resources/config-schema.json
 src/config_validator.o: src/config_schema.h
 
 test_correct: \
+	src/geom.o \
 	test/correct.test.o
 	$(CXX) $(CXXFLAGS) -o test.correct $^ $(INC) $(LIB) $(LDFLAGS) && ./test.correct
 
