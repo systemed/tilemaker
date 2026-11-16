@@ -674,6 +674,16 @@ int main(const int argc, const char* argv[]) {
 	const bool reuseCovered = toPMTiles && !sharedData.mergeSqlite && !sharedData.config.clippingBoxFromJSON && config.endZoom > coverZoom;
 	auto coveredByPolygons = [&](TileCoordinates coords) {
 		objectsUpToZoom = config.endZoom;
+		{
+			// Most tiles have some object that isn't a polygon, or none: find out without sorting them
+			bool any = false, other = false;
+			for (auto source : sources) {
+				const int kinds = source->objectKindsForTile(coverZoom, coords);
+				if (kinds == 2) { other = true; break; }
+				if (kinds == 1) any = true;
+			}
+			if (other || !any) { objectsUpToZoom = 0; return false; }
+		}
 		std::vector<std::vector<OutputObjectID>> objects;
 		bool any = false, polygons = true;
 		for (auto source : sources) {

@@ -468,7 +468,8 @@ void TileDataSource::collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_
 void TileDataSource::collectObjectsForTile(
 	uint zoom,
 	TileCoordinates dstIndex,
-	std::vector<OutputObjectID>& output
+	std::vector<OutputObjectID>& output,
+	bool* nonPolygon
 ) {
 	if (zoom < CLUSTER_ZOOM) {
 		collectLowZoomObjectsForTile<OutputObjectXY>(indexZoom, lowZoomObjects, zoom, dstIndex, output);
@@ -491,8 +492,50 @@ void TileDataSource::collectObjectsForTile(
 		iEnd = iStart + 1;
 	}
 
-	collectObjectsForTileTemplate<OutputObjectXY>(indexZoom, objects.begin(), iStart, iEnd, zoom, dstIndex, output);
-	collectObjectsForTileTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), iStart, iEnd, zoom, dstIndex, output);
+	collectObjectsForTileTemplate<OutputObjectXY>(indexZoom, objects.begin(), iStart, iEnd, zoom, dstIndex, output, nonPolygon);
+	if (nonPolygon && *nonPolygon) return;
+	collectObjectsForTileTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), iStart, iEnd, zoom, dstIndex, output, nonPolygon);
+}
+
+int TileDataSource::objectKindsForTile(uint zoom, TileCoordinates dstIndex) {
+	// The objects collected are those getObjectsForTile sorts, deduplicates and orders: the same
+	// kinds, and some object if any
+	thread_local std::vector<OutputObjectID> collected;
+	collected.clear();
+	bool nonPolygon = false;
+	collectObjectsForTile(zoom, dstIndex, collected, &nonPolygon);
+	if (nonPolygon) return 2;
+	collectLargeObjectsForTile(zoom, dstIndex, collected);
+	for (const auto& o : collected)
+		if (o.oo.geomType != POLYGON_) return 2;
+	const bool any = !collected.empty();
+	if (collected.capacity() > (1u << 16)) std::vector<OutputObjectID>().swap(collected);
+	return any ? 1 : 0;
+}
+
+namespace {
+// The large objects of the tiles the thread is working in, from LARGE_OBJECT_CACHE_ZOOM down: the
+// tiles of a LARGE_OBJECT_CACHE_ZOOM tile come one after another, depth first. Per zoom, the objects
+// that intersect the current tile at that zoom (whatever their minZoom), in the order the rtree query
+// for its box returns them.
+const unsigned LARGE_OBJECT_CACHE_ZOOM = 12;
+struct LargeObjectLevel {
+	bool valid = false;
+	TileCoordinates index{0, 0};
+	std::vector<std::pair<Box, OutputObject>> objects;
+	std::vector<std::pair<Box, OutputObjectID>> objectsWithIds;
+};
+struct LargeObjectCache {
+	const TileDataSource* source = nullptr;
+	std::vector<LargeObjectLevel> levels;	// by zoom
+};
+thread_local std::vector<LargeObjectCache> tlsLargeObjects;	// one per source
+
+Box indexBox(TileCoordinates tile, unsigned zoom, unsigned indexZoom) {
+	const int scale = 1 << (indexZoom - zoom);
+	return Box(geom::make<Point>(tile.x * scale, tile.y * scale),
+	           geom::make<Point>((tile.x + 1) * scale - 1, (tile.y + 1) * scale - 1));
+}
 }
 
 // Copy objects from the large index into output
@@ -512,6 +555,71 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
+	const unsigned upToZoom = objectsUpToZoom ? objectsUpToZoom : zoom;
+	if (clampedZoom >= LARGE_OBJECT_CACHE_ZOOM && indexZoom >= LARGE_OBJECT_CACHE_ZOOM) {
+		// The rtree query visits the nodes depth first in a fixed order and returns the values that
+		// intersect the box in that order. A value intersecting a box lies in nodes that intersect it,
+		// and those intersect any larger box too. So the query for a tile returns the values of the
+		// query for an enclosing box that intersect the tile, in the same order: each tile's objects
+		// are filtered from those of its parent (from one query per LARGE_OBJECT_CACHE_ZOOM tile).
+		std::vector<LargeObjectCache>& caches = tlsLargeObjects;
+		size_t c = 0;
+		while (c < caches.size() && caches[c].source != this) c++;
+		if (c == caches.size()) { caches.emplace_back(); caches.back().source = this; }
+		std::vector<LargeObjectLevel>& levels = caches[c].levels;
+		if (levels.size() < clampedZoom + 1) levels.resize(clampedZoom + 1);
+		// Bring the levels above this tile up to date
+		for (unsigned z = LARGE_OBJECT_CACHE_ZOOM; z < clampedZoom; z++) {
+			const TileCoordinates tile(dstIndex.x >> (clampedZoom - z), dstIndex.y >> (clampedZoom - z));
+			LargeObjectLevel& level = levels[z];
+			if (level.valid && level.index.x == tile.x && level.index.y == tile.y) continue;
+			level.valid = true;
+			level.index = tile;
+			level.objects.clear();
+			level.objectsWithIds.clear();
+			const Box levelBox = indexBox(tile, z, indexZoom);
+			if (z == LARGE_OBJECT_CACHE_ZOOM) {
+				for (auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(levelBox)))
+					level.objects.push_back(result);
+				for (auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(levelBox)))
+					level.objectsWithIds.push_back(result);
+			} else {
+				for (auto const& result: levels[z - 1].objects)
+					if (boost::geometry::intersects(result.first, levelBox)) level.objects.push_back(result);
+				for (auto const& result: levels[z - 1].objectsWithIds)
+					if (boost::geometry::intersects(result.first, levelBox)) level.objectsWithIds.push_back(result);
+			}
+			for (unsigned d = z + 1; d < levels.size(); d++) levels[d].valid = false;
+		}
+		if (clampedZoom == LARGE_OBJECT_CACHE_ZOOM) {
+			// The top of the cache: this tile's own objects (its descendants filter them)
+			LargeObjectLevel& level = levels[clampedZoom];
+			if (!level.valid || level.index.x != dstIndex.x || level.index.y != dstIndex.y) {
+				level.valid = true;
+				level.index = dstIndex;
+				level.objects.clear();
+				level.objectsWithIds.clear();
+				for (auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+					level.objects.push_back(result);
+				for (auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+					level.objectsWithIds.push_back(result);
+				for (unsigned d = clampedZoom + 1; d < levels.size(); d++) levels[d].valid = false;
+			}
+			for (auto const& result: level.objects)
+				if (result.second.minZoom <= upToZoom) output.push_back({result.second, 0});
+			for (auto const& result: level.objectsWithIds)
+				if (result.second.oo.minZoom <= upToZoom) output.push_back({result.second.oo, result.second.id});
+			return;
+		}
+		const LargeObjectLevel& parent = levels[clampedZoom - 1];
+		for (auto const& result: parent.objects)
+			if (result.second.minZoom <= upToZoom && boost::geometry::intersects(result.first, box))
+				output.push_back({result.second, 0});
+		for (auto const& result: parent.objectsWithIds)
+			if (result.second.oo.minZoom <= upToZoom && boost::geometry::intersects(result.first, box))
+				output.push_back({result.second.oo, result.second.id});
+		return;
+	}
 	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
 		if (result.second.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom))
 			output.push_back({result.second, 0});
