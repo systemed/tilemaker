@@ -102,10 +102,14 @@ char bit_code(Point const &p, Box const &bbox);
 // fast_clip returns true if the geometry was modified (false means identity).
 bool fast_clip(Ring &points, Box const &bbox);
 bool fast_clip(MultiPolygon &mp, Box const &bbox);
+// Same as geom::assign(out, in) followed by fast_clip(out, bbox); out must be empty
+bool fast_clip_copy(const MultiPolygon &in, Box const &bbox, MultiPolygon &out);
 // Exact clip of a valid multipolygon to bbox that keeps it valid (fast_clip can
 // leave zero-width bridges along the box edge). Returns false if it could not
 // clip robustly; `out` is then unspecified and the caller must use geom::intersection.
 bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out);
+// The polygon clip box at the end zoom (see TileDataSource::buildWayGeometry)
+Box tile_clip_box_end_zoom(const MultiPolygon &mp, Box const &clippingBox, Box const &extBox);
 
 // Merges boxes that overlap, or are within `gap` of each other, until no two
 // remaining boxes are that close.

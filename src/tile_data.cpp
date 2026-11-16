@@ -13,6 +13,9 @@
 #include "leased_store.h"
 #include <unordered_map>
 #include "stable_hash.h"
+#include "clip_line.h"
+
+thread_local unsigned objectsUpToZoom = 0;
 #include <ciso646>
 
 using namespace std;
@@ -510,12 +513,12 @@ void TileDataSource::collectLargeObjectsForTile(
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
 	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
-		if (result.second.minZoom <= zoom)
+		if (result.second.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom))
 			output.push_back({result.second, 0});
 	}
 
 	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
-		if (result.second.oo.minZoom <= zoom)
+		if (result.second.oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom))
 			output.push_back({result.second.oo, result.second.id});
 	}
 }
@@ -529,44 +532,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case LINESTRING_: {
-			auto const &ls = retrieveLinestring(objectID);
-
-			MultiLinestring out;
-			if(ls.empty())
-				return out;
-
-			Box extBox = bbox.getExtendBox();
-			const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
-			const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
-			auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
-				return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
-			};
-			bool needsIntersection = !pointInsideExtBox(ls[0]);
-
-			Linestring current_ls;
-			geom::append(current_ls, ls[0]);
-
-			for(size_t i = 1; i < ls.size(); ++i) {
-				boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
-				if(!geom::intersects(segment, bbox.clippingBox)) {
-					if(current_ls.size() > 1)
-						out.push_back(std::move(current_ls));
-					current_ls.clear();
-				}
-				geom::append(current_ls, ls[i]);
-				if (!needsIntersection)
-					needsIntersection = !pointInsideExtBox(ls[i]);
-			}
-
-			if(current_ls.size() > 1)
-				out.push_back(std::move(current_ls));
-
-			if (!needsIntersection)
-				return out;
-
-			MultiLinestring result;
-			geom::intersection(out, extBox, result);
-			return result;
+			return clip_linestring_for_tile(retrieveLinestring(objectID), bbox.clippingBox, bbox.getExtendBox());
 		}
 
 		case MULTILINESTRING_: {
@@ -616,50 +582,8 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 
 			const auto &input = cachedClip == nullptr ? uncached : *cachedClip;
 
-			Box box = bbox.clippingBox;
-			
-			if (bbox.endZoom) {
-				for(auto const &p: input) {
-					for(auto const &inner: p.inners()) {
-						for(std::size_t i = 0; i < inner.size() - 1; ++i) 
-						{
-							Point p1 = inner[i];
-							Point p2 = inner[i + 1];
-
-							if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
-								box.min_corner() = Point(	
-									std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
-									std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
-								box.max_corner() = Point(	
-									std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
-									std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
-							}
-						}
-					}
-
-					for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
-						Point p1 = p.outer()[i];
-						Point p2 = p.outer()[i + 1];
-
-						if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
-							box.min_corner() = Point(	
-								std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
-								std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
-							box.max_corner() = Point(	
-								std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
-								std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
-						}
-					}
-				}
-
-				Box extBox = bbox.getExtendBox();
-				box.min_corner() = Point(	
-					std::max(box.min_corner().x(), extBox.min_corner().x()), 
-					std::max(box.min_corner().y(), extBox.min_corner().y()));
-				box.max_corner() = Point(	
-					std::min(box.max_corner().x(), extBox.max_corner().x()), 
-					std::min(box.max_corner().y(), extBox.max_corner().y()));
-			}
+			// At the end zoom, the box takes in both ends of every segment crossing its border
+			Box box = bbox.endZoom ? tile_clip_box_end_zoom(input, bbox.clippingBox, bbox.getExtendBox()) : bbox.clippingBox;
 
 			MultiPolygon mp;
 			// rect_clip below needs the input as it was before fast_clip. For a large valid
@@ -668,11 +592,12 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			if (cachedClip == nullptr && inputKnownValid)
 				for (auto const &p : uncached) inputPoints += geom::num_points(p);
 			const bool keepUncached = inputPoints > 1000;
-			if (cachedClip == nullptr && !keepUncached)
+			bool modified;
+			if (cachedClip == nullptr && !keepUncached) {
 				mp = std::move(uncached);
-			else
-				geom::assign(mp, input);
-			bool modified = fast_clip(mp, box);
+				modified = fast_clip(mp, box);
+			} else
+				modified = fast_clip_copy(input, box, mp);
 			if (inputKnownValid && !modified) {
 				// fast_clip was the identity on a geometry that already passed
 				// is_valid, so correct() is a no-op and it is still valid.

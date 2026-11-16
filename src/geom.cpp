@@ -1653,39 +1653,111 @@ char bit_code(Point const &p, Box const &bbox) {
 
 // Sutherland-Hodgeman polygon clipping algorithm
 // Returns true if any clipping was applied (false: points left untouched).
-bool fast_clip(Ring &points, Box const &bbox, Ring &result) {
-	bool modified = false;
-	// clip against each side of the clip rectangle
-	for (char edge = 1; edge <= 8; edge *= 2) {
-		bool needsClip = false;
-		for (auto const &p: points) {
-			if (bit_code(p, bbox) & edge) {
-				needsClip = true;
-				break;
-			}
-		}
-		if (!needsClip) continue;
+//
+// The result is the same as clipping against each edge in turn after scanning all points for
+// one outside that edge: the bit codes of all points are OR-ed in a single pass, and each clip
+// pass ORs the codes of the points it outputs, which decides the later edges.
 
-		modified = true;
-		result.clear();
-		result.reserve(points.size() + 4);
-		Point prev = points[points.size() - 1];
-		bool prevInside = (bit_code(prev, bbox) & edge)==0;
+namespace {
 
-		for (unsigned int i = 0; i<points.size(); i++) {
-			Point p = points[i];
-			bool inside = (bit_code(p, bbox) & edge)==0;
+static_assert(sizeof(Point) == 2 * sizeof(double), "Point must be two packed doubles");
 
-			// if segment goes through the clip window, add an intersection
-			if (inside!=prevInside) result.emplace_back(intersect_edge(prev, p, edge, bbox));
-			if (inside) result.emplace_back(p); // add a point if it's inside
-			prev = p;
-			prevInside = inside;
-		}
-		points.swap(result);
-		if (points.size()==0) break;
+// OR of bit_code() over n points
+inline int bit_codes(const Point *pts, std::size_t n, Box const &bbox) {
+#ifdef __SSE2__
+	const __m128d lo = _mm_set_pd(bbox.min_corner().y(), bbox.min_corner().x());
+	const __m128d hi = _mm_set_pd(bbox.max_corner().y(), bbox.max_corner().x());
+	__m128d below0 = _mm_setzero_pd(), above0 = _mm_setzero_pd();
+	__m128d below1 = _mm_setzero_pd(), above1 = _mm_setzero_pd();
+	const double *d = reinterpret_cast<const double*>(pts);
+	std::size_t i = 0;
+	for (; i + 2 <= n; i += 2) {
+		const __m128d v0 = _mm_loadu_pd(d + 2 * i), v1 = _mm_loadu_pd(d + 2 * i + 2);
+		const __m128d lt0 = _mm_cmplt_pd(v0, lo), lt1 = _mm_cmplt_pd(v1, lo);
+		below0 = _mm_or_pd(below0, lt0); below1 = _mm_or_pd(below1, lt1);
+		// right/top only if not left/bottom (bit_code's else-if)
+		above0 = _mm_or_pd(above0, _mm_andnot_pd(lt0, _mm_cmpgt_pd(v0, hi)));
+		above1 = _mm_or_pd(above1, _mm_andnot_pd(lt1, _mm_cmpgt_pd(v1, hi)));
 	}
-	return modified;
+	if (i < n) {
+		const __m128d v0 = _mm_loadu_pd(d + 2 * i);
+		const __m128d lt0 = _mm_cmplt_pd(v0, lo);
+		below0 = _mm_or_pd(below0, lt0);
+		above0 = _mm_or_pd(above0, _mm_andnot_pd(lt0, _mm_cmpgt_pd(v0, hi)));
+	}
+	const int b = _mm_movemask_pd(_mm_or_pd(below0, below1)), a = _mm_movemask_pd(_mm_or_pd(above0, above1));
+	return (b & 1) | ((a & 1) << 1) | ((b & 2) << 1) | ((a & 2) << 2);
+#else
+	int code = 0;
+	for (std::size_t i = 0; i < n; i++) code |= bit_code(pts[i], bbox);
+	return code;
+#endif
+}
+
+// bit_code(p) & edge for a single edge
+inline bool outside_edge(Point const &p, char edge, Box const &bbox) {
+	switch (edge) {
+		case 1: return p.x() < bbox.min_corner().x();
+		case 2: return !(p.x() < bbox.min_corner().x()) && p.x() > bbox.max_corner().x();
+		case 4: return p.y() < bbox.min_corner().y();
+		default: return !(p.y() < bbox.min_corner().y()) && p.y() > bbox.max_corner().y();
+	}
+}
+
+// One Sutherland-Hodgman pass against `edge`; returns the OR of the output points' bit codes
+template<char edge>
+int clip_pass(const Ring &points, Box const &bbox, Ring &result) {
+	result.clear();
+	result.reserve(points.size() + 4);
+	int codes = 0;
+	Point prev = points[points.size() - 1];
+	bool prevInside = !outside_edge(prev, edge, bbox);
+
+	for (std::size_t i = 0; i < points.size(); i++) {
+		const Point &p = points[i];
+		const bool inside = !outside_edge(p, edge, bbox);
+
+		// if segment goes through the clip window, add an intersection
+		if (inside != prevInside) {
+			result.emplace_back(intersect_edge(prev, p, edge, bbox));
+			codes |= bit_code(result.back(), bbox);
+		}
+		if (inside) { // add a point if it's inside
+			result.emplace_back(p);
+			codes |= bit_code(p, bbox);
+		}
+		prev = p;
+		prevInside = inside;
+	}
+	return codes;
+}
+
+} // namespace
+
+bool fast_clip(Ring &points, Box const &bbox, Ring &result) {
+	int codes = bit_codes(points.data(), points.size(), bbox);
+	if (codes == 0) return false;
+	// clip against each side of the clip rectangle
+	if (codes & 1) {
+		codes = clip_pass<1>(points, bbox, result);
+		points.swap(result);
+		if (points.size() == 0) return true;
+	}
+	if (codes & 2) {
+		codes = clip_pass<2>(points, bbox, result);
+		points.swap(result);
+		if (points.size() == 0) return true;
+	}
+	if (codes & 4) {
+		codes = clip_pass<4>(points, bbox, result);
+		points.swap(result);
+		if (points.size() == 0) return true;
+	}
+	if (codes & 8) {
+		clip_pass<8>(points, bbox, result);
+		points.swap(result);
+	}
+	return true;
 }
 
 bool fast_clip(Ring &points, Box const &bbox) {
@@ -1693,37 +1765,157 @@ bool fast_clip(Ring &points, Box const &bbox) {
 	return fast_clip(points, bbox, result);
 }
 
+namespace {
+// Scratch ring for the clip passes, kept between calls unless it grew large
+struct ClipScratch {
+	Ring ring;
+	~ClipScratch() = default;
+	void trim() { if (ring.capacity() > (1u << 16)) Ring().swap(ring); }
+};
+thread_local ClipScratch clipScratch;
+}
+
 // Wrappers for polygon/multipolygon
-bool fast_clip(Polygon &polygon, Box const &bbox) {
-	Ring result;
+static bool fast_clip(Polygon &polygon, Box const &bbox, Ring &result) {
 	bool modified = fast_clip(polygon.outer(), bbox, result);
 	if (polygon.outer().empty()) {
 		modified = modified || !polygon.inners().empty();
 		polygon.inners().resize(0);
 		return modified;
 	}
+	bool anyEmpty = false;
 	for (auto &inner: polygon.inners()) {
 		if (fast_clip(inner, bbox, result)) modified = true;
+		if (inner.empty()) anyEmpty = true;
 	}
-	size_t innersBefore = polygon.inners().size();
+	if (!anyEmpty) return modified;
 	polygon.inners().erase(std::remove_if(
-		polygon.inners().begin(), polygon.inners().end(), 
+		polygon.inners().begin(), polygon.inners().end(),
 		[](const Ring &inner) -> bool { return inner.empty(); }),
 		polygon.inners().end());
-	return modified || polygon.inners().size() != innersBefore;
+	return true;
+}
+
+bool fast_clip(Polygon &polygon, Box const &bbox) {
+	Ring &result = clipScratch.ring;
+	const bool modified = fast_clip(polygon, bbox, result);
+	clipScratch.trim();
+	return modified;
 }
 
 bool fast_clip(MultiPolygon &mp, Box const &bbox) {
-	bool modified = false;
+	Ring &result = clipScratch.ring;
+	bool modified = false, anyEmpty = false;
 	for (auto &polygon: mp) {
-		if (fast_clip(polygon, bbox)) modified = true;
+		if (fast_clip(polygon, bbox, result)) modified = true;
+		if (polygon.outer().empty()) anyEmpty = true;
 	}
-	size_t sizeBefore = mp.size();
+	clipScratch.trim();
+	if (!anyEmpty) return modified;
 	mp.erase(std::remove_if(
-		mp.begin(), mp.end(), 
+		mp.begin(), mp.end(),
 		[](const Polygon &poly) -> bool { return poly.outer().empty(); }),
 		mp.end());
-	return modified || mp.size() != sizeBefore;
+	return true;
+}
+
+namespace {
+// fast_clip of a copy of src, written to dst: the first clip pass reads src directly
+bool fast_clip_ring_copy(const Ring &src, Box const &bbox, Ring &dst, Ring &scratch) {
+	int codes = bit_codes(src.data(), src.size(), bbox);
+	if (codes == 0) { dst.assign(src.begin(), src.end()); return false; }
+	const Ring *cur = &src;
+	// each pass writes to dst (first pass) or scratch, then the result is swapped into dst
+	auto pass = [&](auto clip) {
+		if (cur == &src) { codes = clip(src, dst); cur = &dst; }
+		else { codes = clip(dst, scratch); dst.swap(scratch); }
+		return !dst.empty();
+	};
+	if ((codes & 1) && !pass([&](const Ring &a, Ring &b) { return clip_pass<1>(a, bbox, b); })) return true;
+	if ((codes & 2) && !pass([&](const Ring &a, Ring &b) { return clip_pass<2>(a, bbox, b); })) return true;
+	if ((codes & 4) && !pass([&](const Ring &a, Ring &b) { return clip_pass<4>(a, bbox, b); })) return true;
+	if (codes & 8) pass([&](const Ring &a, Ring &b) { return clip_pass<8>(a, bbox, b); });
+	return true;
+}
+}
+
+// Same result as `geom::assign(out, in); return fast_clip(out, bbox);`, without copying the points
+// that are clipped away. out must be empty.
+bool fast_clip_copy(const MultiPolygon &in, Box const &bbox, MultiPolygon &out) {
+	Ring &scratch = clipScratch.ring;
+	bool modified = false, anyEmpty = false;
+	out.resize(in.size());
+	for (std::size_t i = 0; i < in.size(); i++) {
+		const Polygon &p = in[i];
+		Polygon &q = out[i];
+		if (fast_clip_ring_copy(p.outer(), bbox, q.outer(), scratch)) modified = true;
+		if (q.outer().empty()) {
+			// the polygon is removed below
+			anyEmpty = true;
+			continue;
+		}
+		q.inners().resize(p.inners().size());
+		bool innerEmpty = false;
+		for (std::size_t j = 0; j < p.inners().size(); j++) {
+			if (fast_clip_ring_copy(p.inners()[j], bbox, q.inners()[j], scratch)) modified = true;
+			if (q.inners()[j].empty()) innerEmpty = true;
+		}
+		if (innerEmpty) {
+			q.inners().erase(std::remove_if(
+				q.inners().begin(), q.inners().end(),
+				[](const Ring &inner) -> bool { return inner.empty(); }),
+				q.inners().end());
+			modified = true;
+		}
+	}
+	clipScratch.trim();
+	if (!anyEmpty) return modified;
+	out.erase(std::remove_if(
+		out.begin(), out.end(),
+		[](const Polygon &poly) -> bool { return poly.outer().empty(); }),
+		out.end());
+	return true;
+}
+
+// The clip box of buildWayGeometry for a polygon at the end zoom: clippingBox, grown to take in
+// both ends of every segment that crosses its border (one end strictly within, the other not),
+// then limited to extBox.
+Box tile_clip_box_end_zoom(const MultiPolygon &mp, Box const &clippingBox, Box const &extBox) {
+	Box box = clippingBox;
+	const double x0 = clippingBox.min_corner().x(), y0 = clippingBox.min_corner().y();
+	const double x1 = clippingBox.max_corner().x(), y1 = clippingBox.max_corner().y();
+	// geom::within(point, box): strictly inside in both dimensions
+	auto within = [x0, y0, x1, y1](const Point &p) {
+		return p.x() > x0 && p.x() < x1 && p.y() > y0 && p.y() < y1;
+	};
+	auto scan = [&](const Ring &r) {
+		if (r.empty()) return;
+		bool w1 = within(r[0]);
+		for (std::size_t i = 0; i + 1 < r.size(); ++i) {
+			const bool w2 = within(r[i + 1]);
+			if (w1 != w2) {
+				const Point p1 = r[i], p2 = r[i + 1];
+				box.min_corner() = Point(
+					std::min(box.min_corner().x(), std::min(p1.x(), p2.x())),
+					std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
+				box.max_corner() = Point(
+					std::max(box.max_corner().x(), std::max(p1.x(), p2.x())),
+					std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
+			}
+			w1 = w2;
+		}
+	};
+	for (auto const &p : mp) {
+		for (auto const &inner : p.inners()) scan(inner);
+		scan(p.outer());
+	}
+	box.min_corner() = Point(
+		std::max(box.min_corner().x(), extBox.min_corner().x()),
+		std::max(box.min_corner().y(), extBox.min_corner().y()));
+	box.max_corner() = Point(
+		std::min(box.max_corner().x(), extBox.max_corner().x()),
+		std::min(box.max_corner().y(), extBox.max_corner().y()));
+	return box;
 }
 
 // ---------------
@@ -1877,9 +2069,12 @@ RingClip clipRing(const RectClipper &rc, const Ring &ring, std::vector<RectChain
 		any = true;
 		return true;
 	};
-	for (std::size_t k = 0; k < n; k++) {
-		const Point &a = ring[(start + k) % n];
-		const Point &b = ring[(start + k + 1) % n];
+	for (std::size_t k = 0, ia = start; k < n; k++) {
+		// ia == (start + k) % n, ib == (start + k + 1) % n
+		const std::size_t ib = ia + 1 == n ? 0 : ia + 1;
+		const Point &a = ring[ia];
+		const Point &b = ring[ib];
+		ia = ib;
 		double t0, t1;
 		Point pa, pb;
 		// Most segments of a large polygon lie far from a small tile's box: reject
@@ -1897,8 +2092,8 @@ RingClip clipRing(const RectClipper &rc, const Ring &ring, std::vector<RectChain
 		if (t1 < 1) {
 			if (!finish()) return RingClip::Fail;
 		} else if (current.size() >= 2 && !rc.strictlyInside(b) && rc.throughInterior(current[current.size() - 2], b) &&
-		           rc.entersInterior(b, ring[(start + k + 2) % n]) &&
-		           rc.pinchAt(current[current.size() - 2], b, ring[(start + k + 2) % n])) {
+		           rc.entersInterior(b, ring[ib + 1 == n ? 0 : ib + 1]) &&
+		           rc.pinchAt(current[current.size() - 2], b, ring[ib + 1 == n ? 0 : ib + 1])) {
 			// b touches the boundary from inside (reached through the interior, left
 			// into the interior) and the polygon lies along the boundary on both sides
 			// of it. Kept in one chain, the boundary walk would run through b and make
@@ -1942,6 +2137,92 @@ int ringInRing(const Ring &ring, const Ring &outer) {
 	}
 	return 0;
 }
+
+// pointInRing() for many points against one large ring: the ring's edges bucketed by y.
+// pointInRing's result doesn't depend on the order of the edges (0 as soon as any vertex equals p
+// or any crossing is at p.x, else the parity of the crossings right of p), so testing only the
+// edges that can cross y == p.y, and the vertices whose y can be within `near` of it, with the
+// very same expressions, gives the same result.
+struct RingYIndex {
+	const Ring *ring = nullptr;
+	double y0 = 0, scale = 0;
+	int nb = 0;
+	std::vector<uint32_t> eStart, edges, vStart, verts;
+
+	int bucket(double y) const {
+		const double f = (y - y0) * scale;
+		if (!(f >= 0)) return 0;
+		if (f >= nb) return nb - 1;
+		return int(f);
+	}
+	bool build(const Ring &r) {
+		ring = &r;
+		const std::size_t n = r.size();
+		if (n < 64 || n > (1u << 30)) return false;
+		double lo = r[0].y(), hi = lo;
+		for (const Point &p : r) {
+			if (!std::isfinite(p.x()) || !std::isfinite(p.y())) return false;
+			lo = std::min(lo, p.y()); hi = std::max(hi, p.y());
+		}
+		if (!(hi > lo)) return false;
+		nb = int(std::min<std::size_t>(std::max<std::size_t>(n / 4, 1), 1u << 16));
+		y0 = lo; scale = nb / (hi - lo);
+		if (!std::isfinite(scale)) return false;
+		eStart.assign(nb + 1, 0); vStart.assign(nb + 1, 0);
+		std::size_t total = 0;
+		for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+			const double a = r[i].y(), b = r[j].y();
+			const int b0 = bucket(std::min(a, b)), b1 = bucket(std::max(a, b));
+			total += b1 - b0 + 1;
+			if (total > 16 * n) return false;
+			for (int k = b0; k <= b1; k++) eStart[k + 1]++;
+			vStart[bucket(a) + 1]++;
+		}
+		for (int k = 0; k < nb; k++) { eStart[k + 1] += eStart[k]; vStart[k + 1] += vStart[k]; }
+		edges.resize(total); verts.resize(n);
+		std::vector<uint32_t> ef(eStart.begin(), eStart.end() - 1), vf(vStart.begin(), vStart.end() - 1);
+		for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+			const double a = r[i].y(), b = r[j].y();
+			const int b0 = bucket(std::min(a, b)), b1 = bucket(std::max(a, b));
+			for (int k = b0; k <= b1; k++) edges[ef[k]++] = uint32_t(i);
+			verts[vf[bucket(a)]++] = uint32_t(i);
+		}
+		return true;
+	}
+	// == pointInRing(p, *ring)
+	int query(const Point &p) const {
+		const Ring &r = *ring;
+		const double py = p.y();
+		if (!std::isfinite(py) || !std::isfinite(p.x())) return pointInRing(p, r);
+		const double near = 1e-9 * std::max(1.0, std::fabs(py));
+		for (int k = bucket(py - 2 * near), k1 = bucket(py + 2 * near); k <= k1; k++)
+			for (uint32_t e = vStart[k]; e < vStart[k + 1]; e++) {
+				const Point &a = r[verts[e]];
+				if (std::fabs(a.y() - py) <= near && geom::equals(a, p)) return 0;
+			}
+		bool in = false;
+		const int k = bucket(py);
+		const std::size_t n = r.size();
+		for (uint32_t e = eStart[k]; e < eStart[k + 1]; e++) {
+			const std::size_t i = edges[e], j = i == 0 ? n - 1 : i - 1;
+			const Point &a = r[i], &b = r[j];
+			if ((a.y() > py) != (b.y() > py)) {
+				const double x = a.x() + (p.y() - a.y()) * (b.x() - a.x()) / (b.y() - a.y());
+				if (x == p.x()) return 0;
+				if (x > p.x()) in = !in;
+			}
+		}
+		return in ? 1 : -1;
+	}
+	// == ringInRing(hole, *ring)
+	int ringIn(const Ring &hole) const {
+		for (const Point &p : hole) {
+			const int res = query(p);
+			if (res != 0) return res;
+		}
+		return 0;
+	}
+};
 
 bool clipPolygon(const RectClipper &rc, const Polygon &poly, MultiPolygon &out) {
 	std::vector<RectChain> chains;
@@ -2030,11 +2311,21 @@ bool clipPolygon(const RectClipper &rc, const Polygon &poly, MultiPolygon &out) 
 		}
 	}
 
-	// Holes wholly inside the box go to whichever new outer contains them
+	// Holes wholly inside the box go to whichever new outer contains them. With many holes,
+	// each new outer is tested through a y index of its edges (same results as ringInRing).
+	const bool useIndex = insideHoles.size() >= 8;
+	std::vector<RingYIndex> index(useIndex ? out.size() - firstOuter : 0);
+	std::vector<char> indexState(index.size(), 0); // 0 not built yet, 1 built, 2 not indexable
 	for (const Ring *hole : insideHoles) {
 		bool placed = false;
 		for (std::size_t i = firstOuter; i < out.size() && !placed; i++) {
-			const int r = ringInRing(*hole, out[i].outer());
+			int r;
+			if (useIndex) {
+				char &state = indexState[i - firstOuter];
+				if (state == 0) state = index[i - firstOuter].build(out[i].outer()) ? 1 : 2;
+				r = state == 1 ? index[i - firstOuter].ringIn(*hole) : ringInRing(*hole, out[i].outer());
+			} else
+				r = ringInRing(*hole, out[i].outer());
 			if (r == 0) return false;
 			if (r > 0) {
 				out[i].inners().push_back(*hole);
