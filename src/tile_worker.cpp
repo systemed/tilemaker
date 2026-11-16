@@ -323,7 +323,9 @@ void writeMultiPolygon(
 	const bool mayRepair = (simplifyLevel > 0 || repairPolygons);
 
 	geom::validity_failure_type failure;
-	if (!knownPolygonsValid && (mayRepair || verbose) && !geom::is_valid(current, failure)) {
+	// The precheck (sound: "definitely valid" means Boost finds it valid too) answers most
+	// polygons without Boost; verbose wants Boost's reason for an invalid one
+	if (!knownPolygonsValid && (mayRepair || verbose) && (verbose || !multiPolygonDefinitelyValid(current)) && !geom::is_valid(current, failure)) {
 		if (verbose) {
 			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 

@@ -990,14 +990,27 @@ void OsmLuaProcessing::layerAt(unsigned layerIndex, bool area) {
 
 			if (isRelation) {
 				try {
-					MultiPolygon mp = multiPolygonCached();
-					auto correctionResult = CorrectGeometry(mp);
+					// Checked in the cache, copied only when it needs correcting (as CorrectGeometry)
+					const MultiPolygon &cached = multiPolygonCached();
+					bool reversedValid = false;
+					const geom::validity_failure_type failure = CheckGeometry(cached, &reversedValid);
+					if (failure == geom::validity_failure_type::no_failure) {
+						NodeID id = osmMemTiles.storeMultiPolygon(cached, true);
+						OutputObject oo(geomType, layerIndex, id, 0, layerMinZoom);
+						outputs.push_back(std::make_pair(std::move(oo), attributes));
+						return;
+					}
+					MultiPolygon mp = cached;
+					auto correctionResult = CorrectGeometryAfterCheck(mp, failure, false, reversedValid);
 					if(correctionResult == CorrectGeometryResult::Invalid) return;
 					// make_valid usually succeeds; checking that once here saves
 					// re-validating the relation in every tile it is clipped to.
-					const bool knownValid = correctionResult == CorrectGeometryResult::Valid ||
-						PrecheckValid(mp) || geom::is_valid(mp);
+					// A big polygon is checked in the background until the tiles are written.
+					const bool checked = correctionResult == CorrectGeometryResult::Valid || PrecheckValid(mp);
+					const bool checkLater = !checked && geom::num_points(mp) >= 100000;
+					const bool knownValid = checked || (!checkLater && IsValidIndexed(mp));
 					NodeID id = osmMemTiles.storeMultiPolygon(mp, knownValid);
+					if (checkLater) osmMemTiles.checkValidityLater(id, std::move(mp));
 					OutputObject oo(geomType, layerIndex, id, 0, layerMinZoom);
 					outputs.push_back(std::make_pair(std::move(oo), attributes));
 				} catch(std::out_of_range &err) {

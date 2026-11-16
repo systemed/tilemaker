@@ -682,7 +682,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-			bool valid = multiPolygonDefinitelyValid(mp);
+			bool valid = modified ? multiPolygonDefinitelyValidClipped(mp, box) : multiPolygonDefinitelyValid(mp);
 			if (!valid && inputKnownValid) {
 				// fast_clip leaves zero-width bridges along the box edge where a concave
 				// polygon leaves and re-enters the box. Clip the valid input exactly
@@ -692,14 +692,16 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				if (cachedClip == nullptr && !keepUncached) populateMultiPolygon(original, objectID);
 				MultiPolygon clipped;
 				if (rect_clip(cachedClip == nullptr && !keepUncached ? original : input, box, clipped) &&
-				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
+				    (multiPolygonDefinitelyValidAfterClip(clipped) || [&] { RingPointIndexScope pointIndex; return geom::is_valid(clipped); }())) {
 					multiPolygonClipCache.add(bbox, objectID, clipped, true);
 					clipResultValid = true;
 					return clipped;
 				}
 			}
-			if (!valid)
+			if (!valid) {
+				RingPointIndexScope pointIndex;
 				valid = geom::is_valid(mp,failure);
+			}
 			if (!valid) {
 				clipNeededRepair = true;
 				if (verbose) {
@@ -1130,14 +1132,12 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src, bool knownVali
 	multi_polygon_t dst;
 	dst.resize(src.size());
 	for(std::size_t i = 0; i < src.size(); ++i) {
-		dst[i].outer().resize(src[i].outer().size());
-		boost::geometry::assign(dst[i].outer(), src[i].outer());
+		// (the same points: a range copy, one allocation per ring)
+		dst[i].outer().assign(src[i].outer().begin(), src[i].outer().end());
 
 		dst[i].inners().resize(src[i].inners().size());
-		for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
-			dst[i].inners()[j].resize(src[i].inners()[j].size());
-			boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
-		}
+		for(std::size_t j = 0; j < src[i].inners().size(); ++j)
+			dst[i].inners()[j].assign(src[i].inners()[j].begin(), src[i].inners()[j].end());
 	}
 
 	NodeID offset = store.second->size();
@@ -1146,6 +1146,22 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src, bool knownVali
 	multipolygonValid[store.first].push_back(knownValid);
 	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
+}
+
+void TileDataSource::checkValidityLater(NodeID objectID, MultiPolygon mp) {
+	auto valid = std::async(std::launch::async, [mp = std::move(mp)]() { RingPointIndexScope pointIndex; return geom::is_valid(mp); });
+	std::lock_guard<std::mutex> lock(deferredValidityMutex);
+	deferredValidity.emplace_back(objectID, std::move(valid));
+}
+
+void TileDataSource::finishDeferredValidity() {
+	for (auto& entry : deferredValidity) {
+		const bool valid = entry.second.get();
+		auto& flags = multipolygonValid[getShard(entry.first)];
+		const auto offset = getId(entry.first);
+		if (offset < flags.size()) flags[offset] = valid;
+	}
+	deferredValidity.clear();
 }
 
 NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {

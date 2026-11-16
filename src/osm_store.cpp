@@ -132,16 +132,21 @@ MultiPolygon OSMStore::wayListMultiPolygon(WayVec::const_iterator outerBegin, Wa
 		std::unique_ptr<RingWithinIndex> index;
 		if (!onlyOneOuter && filledInners.size() >= 16 && poly.outer().size() >= 4096)
 			index.reset(new RingWithinIndex(poly.outer()));
-		for (std::size_t i = 0; i < filledInners.size(); i++) {
-			const Ring &inner = filledInners[i];
-			// A ring within the outer has its bounding box within the outer's,
-			// so the (costly) within test is only needed when it does
-			if (onlyOneOuter) {
-				// (in no other polygon)
-				poly.inners().emplace_back(std::move(filledInners[i]));
-			} else if ((inner.empty() || geom::covered_by(innerBoxes[i], outerBox)) &&
-			     (index ? index->within(inner) : geom::within(inner, poly.outer()))) {
-				poly.inners().emplace_back(inner);
+		{
+			// The point-in-ring tests of the within tests below use ring_point_index's index of a
+			// big ring (the same answers), while the rings don't change
+			RingPointIndexScope pointIndex;
+			for (std::size_t i = 0; i < filledInners.size(); i++) {
+				const Ring &inner = filledInners[i];
+				// A ring within the outer has its bounding box within the outer's,
+				// so the (costly) within test is only needed when it does
+				if (onlyOneOuter) {
+					// (in no other polygon)
+					poly.inners().emplace_back(std::move(filledInners[i]));
+				} else if ((inner.empty() || geom::covered_by(innerBoxes[i], outerBox)) &&
+				     (index ? index->within(inner) : geom::within(inner, poly.outer()))) {
+					poly.inners().emplace_back(inner);
+				}
 			}
 		}
 		mp.emplace_back(move(poly));

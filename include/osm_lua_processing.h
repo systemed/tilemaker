@@ -203,37 +203,89 @@ public:
 	template<class GeometryT>
 	static bool PrecheckValid(const GeometryT &) { return false; }
 	static bool PrecheckValid(const MultiPolygon &geom) { return multiPolygonDefinitelyValid(geom); }
+	// As PrecheckValid, but -1 when the only fault is the orientation of every ring (see geom.h)
+	template<class GeometryT>
+	static int PrecheckValidOrReversed(const GeometryT &) { return 0; }
+	static int PrecheckValidOrReversed(const MultiPolygon &geom) { return multiPolygonDefinitelyValidOrReversed(geom); }
+
+	// geom::is_valid with the point-in-ring index (ring_point_index.h: the same answers). Boost
+	// locates every hole of a polygon in its outer ring, which is quadratic for a big relation
+	// with many holes without the index.
+	template<class GeometryT>
+	static bool IsValidIndexed(const GeometryT &geom, geom::validity_failure_type &failure) {
+		RingPointIndexScope pointIndex;
+		return geom::is_valid(geom, failure);
+	}
+	template<class GeometryT>
+	static bool IsValidIndexed(const GeometryT &geom) {
+		RingPointIndexScope pointIndex;
+		return geom::is_valid(geom);
+	}
 
 	// ----	Requests from Lua to write this way/node to a vector tile's Layer
 	template<class GeometryT>
 	CorrectGeometryResult CorrectGeometry(GeometryT &geom, bool allowReverse = false)
 	{
-		return CorrectGeometryAfterCheck(geom, CheckGeometry(geom), allowReverse);
+		bool reversedValid = false;
+		const geom::validity_failure_type failure = CheckGeometry(geom, &reversedValid);
+		return CorrectGeometryAfterCheck(geom, failure, allowReverse, reversedValid);
 	}
 
-	// Validity check part of CorrectGeometry (reports the failure if verbose)
+	// Validity check part of CorrectGeometry (reports the failure if verbose).
+	// reversedValid (if given) is set when geom is certainly valid once all its rings are reversed.
 	template<class GeometryT>
-	geom::validity_failure_type CheckGeometry(const GeometryT &geom)
+	geom::validity_failure_type CheckGeometry(const GeometryT &geom, bool *reversedValid = nullptr)
 	{
 		geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-		// When the precheck proves validity, failure stays no_failure: Boost's result.
-		const bool pre = (isRelation || isWay) && PrecheckValid(geom);
-		if (isRelation && !pre && !geom::is_valid(geom,failure)) {
+		// When the precheck proves validity, failure stays no_failure: Boost's result. When it
+		// proves that every ring is just reversed, Boost reports failure_wrong_orientation.
+		const int pre = (isRelation || isWay) ? PrecheckValidOrReversed(geom) : 0;
+		if (pre < 0) failure = boost::geometry::failure_wrong_orientation;
+		if (reversedValid) *reversedValid = pre < 0;
+		if (isRelation && pre <= 0 && (pre < 0 || !IsValidIndexed(geom,failure))) {
 			if (verbose) std::cout << "Relation " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
-		} else if (isWay && !pre && !geom::is_valid(geom,failure)) {
+		} else if (isWay && pre <= 0 && (pre < 0 || !IsValidIndexed(geom,failure))) {
 			if (verbose && failure!=22) std::cout << "Way " << originalOsmID << " has " << boost_validity_error(failure) << std::endl;
 		}
 		return failure;
 	}
 
+	// A linestring: Boost's is_valid reports no_failure for any linestring with finite coordinates
+	// and at least two distinct points (spikes are allowed for linear geometries: has_spikes, which
+	// Boost runs last, can only make is_valid return false with failure no_failure). So when that
+	// is certain, the failure is known without is_valid; in verbose mode, is_valid runs (the message).
+	geom::validity_failure_type CheckGeometry(const Linestring &geom, bool *reversedValid = nullptr)
+	{
+		if ((isRelation || isWay) && !verbose && linestringCertainlyValid(geom)) {
+			if (reversedValid) *reversedValid = false;
+			return geom::validity_failure_type::no_failure;
+		}
+		return CheckGeometry<Linestring>(geom, reversedValid);
+	}
+	// Finite coordinates and a point that Boost's equals() certainly tells from the first one
+	// (it takes coordinates within epsilon * max(1, |a|, |b|) as equal)
+	static bool linestringCertainlyValid(const Linestring &ls) {
+		if (ls.size() < 2) return false;
+		bool finite = true, distinct = false;
+		const double x0 = ls.front().x(), y0 = ls.front().y();
+		for (const Point &p : ls) {
+			const double x = p.x(), y = p.y();
+			finite &= std::isfinite(x) && std::isfinite(y);
+			distinct |= std::abs(x - x0) > 1e-12 * std::max({ 1.0, std::abs(x), std::abs(x0) })
+			         || std::abs(y - y0) > 1e-12 * std::max({ 1.0, std::abs(y), std::abs(y0) });
+		}
+		return finite && distinct;
+	}
+
 	// Correction part of CorrectGeometry, given the result of CheckGeometry(geom)
 	template<class GeometryT>
-	CorrectGeometryResult CorrectGeometryAfterCheck(GeometryT &geom, geom::validity_failure_type failure, bool allowReverse = false)
+	// reversedValid: geom is certainly valid once all its rings are reversed (from CheckGeometry)
+	CorrectGeometryResult CorrectGeometryAfterCheck(GeometryT &geom, geom::validity_failure_type failure, bool allowReverse = false, bool reversedValid = false)
 	{
 		// Fast path: orientation-only defect. Reversing the rings is what make_valid
 		// produces in this case; fall back to make_valid if it isn't enough.
 		if (allowReverse && failure == boost::geometry::failure_wrong_orientation && ReverseRings(geom)) {
-			if (PrecheckValid(geom) || geom::is_valid(geom))
+			if (reversedValid || PrecheckValid(geom) || IsValidIndexed(geom))
 				return CorrectGeometryResult::Reversed;
 			ReverseRings(geom);
 		}
