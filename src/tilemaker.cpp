@@ -519,6 +519,7 @@ int main(const int argc, const char* argv[]) {
 		sharedData.writeMBTilesProjectData();
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
 		sharedData.pmtiles.open(sharedData.outputFile);
+		sharedData.pmtiles.compressionLevel = config.compressionLevel;
 		if (config.tileFormat == TileFormat::MLT) sharedData.pmtiles.tileType = TILETYPE_MLT;
 	}
 
