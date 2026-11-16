@@ -535,7 +535,7 @@ void outputProc(
 	// Write to file or sqlite
 	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {
 		// Write to sqlite
-		if (sharedData.config.compress) { compressed = compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip); }
+		if (sharedData.config.compress) { compressed = compress_string(outputdata, sharedData.config.compressionLevel, sharedData.config.gzip); }
 		sharedData.mbtiles.saveTile(zoom, bbox.index.x, bbox.index.y, sharedData.config.compress ? &compressed : &outputdata, sharedData.mergeSqlite);
 
 	} else if (sharedData.outputMode == OptionsParser::OutputMode::PMTiles) {
@@ -551,7 +551,7 @@ void outputProc(
 		boost::filesystem::create_directories(dirname.str());
 		fstream outfile(filename.str(), ios::out | ios::trunc | ios::binary);
 		if (sharedData.config.compress) {
-			outfile << compress_string(outputdata, Z_DEFAULT_COMPRESSION, sharedData.config.gzip);
+			outfile << compress_string(outputdata, sharedData.config.compressionLevel, sharedData.config.gzip);
 		} else {
 			outfile << outputdata;
 		}
