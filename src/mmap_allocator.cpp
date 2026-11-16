@@ -244,6 +244,9 @@ lazy_region::lazy_region(size_t size)
 	void *p = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
 	if(p == MAP_FAILED)
 		throw std::bad_alloc();
+#ifdef MADV_HUGEPAGE
+	if (!getenv("TM_NO_HUGEPAGES")) ::madvise(p, size, MADV_HUGEPAGE);
+#endif
 #else
 	void *p = std::calloc(size, 1);
 	if(p == nullptr)

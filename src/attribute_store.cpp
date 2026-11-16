@@ -644,4 +644,7 @@ void AttributeStore::finalize() {
 	finalized = true;
 	keyStore.finalize();
 	pairStore.finalize();
+	// Nothing is added from now on (the tiles read sets by index): the shards' hash indexes go.
+	// A planet's 46.8M sets are in 4096 shards of ~11,400, each with a table of 32K slots: 512 MB.
+	for (auto& shard : sets) shard.releaseIndex();
 }

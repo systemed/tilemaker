@@ -47,6 +47,7 @@ namespace OptionsParser {
 		bool mergeSqlite = false;
 		OutputMode outputMode = OutputMode::File;
 		bool logTileTimings = false;
+		bool noEarlyExit = false;	// wait for the memory to be freed before returning (by default tilemaker returns once the output is written)
 	};
 
 	Options parse(const int argc, const char* argv[]);

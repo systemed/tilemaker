@@ -65,11 +65,26 @@ and preload it when you run tilemaker:
 
 (If the library isn't found, give its full path, e.g. `/usr/lib/x86_64-linux-gnu/libjemalloc.so.2`.)
 On a 48-core server this made the whole planet 14–17% faster at the default thread count
-and needed 7 GB less memory; a Germany extract at 32 threads was 4% faster.
+and needed 7 GB less memory; a Germany extract at 32 threads was 4% faster. jemalloc is faster
+still with huge pages for its own memory too:
+
+    LD_PRELOAD=libjemalloc.so.2 MALLOC_CONF=thp:always,metadata_thp:always tilemaker ...
+
+On the planet with 96 threads, jemalloc made the run about 6% faster, and these huge-page settings
+another 2%.
 
 On Linux, .pmtiles output is written with direct I/O (`O_DIRECT`), bypassing the page cache, which
 is considerably faster on a fast disk. Where the file system doesn't support it, tilemaker
 falls back to normal writes; setting the environment variable `TM_NO_DIRECT` forces normal writes.
+
+A few more things make large runs faster on Linux:
+
+* Once the output is complete, tilemaker returns at once and leaves freeing its memory to the
+system in the background (after a planet run that takes several seconds). Use `--no-early-exit`
+to make tilemaker wait until its memory is freed.
+* tilemaker asks the kernel for transparent huge pages for its node and way stores, which cuts the
+time spent on page faults. This only has an effect when `/sys/kernel/mm/transparent_hugepage/enabled`
+is `madvise` or `always`. Set the environment variable `TM_NO_HUGEPAGES` to turn it off.
 
 You can also tell tilemaker to only look at .pbf objects with certain tags. If you're making a 
 thematic map, this allows tilemaker to skip data it won't need. Specify this in your Lua file 
