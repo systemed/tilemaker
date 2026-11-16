@@ -290,7 +290,7 @@ void writeMultiPolygon(
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
 			bool allValid = false;
-			current = simplifyVis(current, simplifyLevel/bbox.xscale, allValid);
+			simplifyVisInPlace(current, simplifyLevel/bbox.xscale, allValid);
 			const std::size_t numPoints = boost::geometry::num_points(current);
 			geom::remove_spikes(current);
 			knownPolygonsValid = allValid && !verbose && boost::geometry::num_points(current) == numPoints;
@@ -611,7 +611,8 @@ void outputProc(
 	const AttributeStore& attributeStore,
 	const std::vector<std::vector<OutputObjectID>>& data, 
 	TileCoordinates coordinates,
-	uint zoom
+	uint zoom,
+	std::string* rawTile
 ) {
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (
@@ -668,6 +669,7 @@ void outputProc(
 		}
 		tile.serialize(outputdata);
 	}
+	if (rawTile) *rawTile = outputdata;
 
 	// Write to file or sqlite
 	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {

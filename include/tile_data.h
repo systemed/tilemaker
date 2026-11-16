@@ -221,6 +221,10 @@ template<typename OO> void collectLowZoomObjectsForTile(
 	}
 }
 
+// When non-zero, getObjectsForTile keeps the objects shown up to this zoom rather than the tile's
+// own zoom (see the covered subtrees in tilemaker.cpp)
+extern thread_local unsigned objectsUpToZoom;
+
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& indexZoom,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
@@ -301,7 +305,7 @@ template<typename OO> void collectObjectsForTileTemplate(
 			TileCoordinate y = baseY / (1 << (indexZoom - clampedZoom));
 
 			if (dstIndex.x == x && dstIndex.y == y) {
-				if (iter->oo.minZoom <= zoom) {
+				if (iter->oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom)) {
 					output.push_back(outputObjectWithId(*iter));
 				}
 			} else {

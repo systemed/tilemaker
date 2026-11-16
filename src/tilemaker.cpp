@@ -665,6 +665,48 @@ int main(const int argc, const char* argv[]) {
 	const uint64_t maxHeldBytes = (64ull << 20) * options.threadNum;
 	if (toPMTiles) sharedData.pmtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	if (toMBTiles) sharedData.mbtiles.batches.setMaxHeldBytes(maxHeldBytes);
+
+	// Below a z12 tile whose objects, down to the last zoom, are all polygons covering the whole
+	// tile (open sea, large forests or ice), every tile of a zoom comes out the same: one per zoom
+	// is computed and its bytes are saved for the others. A z12 subtree is in the same batch as its
+	// z12 tile (see nextBatch).
+	const unsigned coverZoom = 12;
+	const bool reuseCovered = toPMTiles && !sharedData.mergeSqlite && !sharedData.config.clippingBoxFromJSON && config.endZoom > coverZoom;
+	auto coveredByPolygons = [&](TileCoordinates coords) {
+		objectsUpToZoom = config.endZoom;
+		std::vector<std::vector<OutputObjectID>> objects;
+		bool any = false, polygons = true;
+		for (auto source : sources) {
+			objects.emplace_back(source->getObjectsForTile(sortOrders, attributeStore, coverZoom, coords));
+			for (const auto &o : objects.back()) {
+				any = true;
+				if (o.oo.geomType != POLYGON_) polygons = false;
+			}
+		}
+		objectsUpToZoom = 0;
+		if (!any || !polygons) return false;
+		// Clipped to the tile, each must be exactly the clipping box. These clips aren't kept in
+		// the clip cache, so the tiles below are built from the same clips as without this check.
+		const TileBbox bbox(coords, coverZoom, false, false);
+		const Box &clip = bbox.clippingBox;
+		const bool noStore = clipCacheNoStore;
+		clipCacheNoStore = true;
+		bool covered = true;
+		for (std::size_t k = 0; k < sources.size() && covered; k++) {
+			for (const auto &o : objects[k]) {
+				const Geometry g = sources[k]->buildWayGeometry(o.oo.geomType, o.oo.objectID, bbox);
+				const MultiPolygon *mp = boost::get<MultiPolygon>(&g);
+				if (!mp || mp->size() != 1 || !(*mp)[0].inners().empty() || (*mp)[0].outer().size() != 5) { covered = false; break; }
+				Box env;
+				geom::envelope(*mp, env);
+				if (env.min_corner().x() != clip.min_corner().x() || env.min_corner().y() != clip.min_corner().y() ||
+				    env.max_corner().x() != clip.max_corner().x() || env.max_corner().y() != clip.max_corner().y()) { covered = false; break; }
+			}
+		}
+		clipCacheNoStore = noStore;
+		return covered;
+	};
+
 	for (unsigned int t = 0; t < options.threadNum; t++) {
 		boost::asio::post(pool, [&]() {
 			std::size_t startIndex, batchSize;
@@ -683,6 +725,11 @@ int main(const int argc, const char* argv[]) {
 				clipCacheNoStore = batchSize == 1;
 				std::vector<std::string> tileTimings;
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
+				// The covered z12 tile of this batch, and the tiles saved for its descendants per zoom
+				bool coverActive = false;
+				TileCoordinates coverRoot(0, 0);
+				std::vector<std::string> coverTiles(config.endZoom + 1);
+				std::vector<bool> coverDone(config.endZoom + 1);
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
 					if (tileFailed || writeFailed()) break;
 					unsigned int zoom = tileCoordinates[i].first;
@@ -694,12 +741,27 @@ int main(const int argc, const char* argv[]) {
 						clock_gettime(CLOCK_MONOTONIC, &start);
 #endif
 
+					const bool inCovered = coverActive && zoom > coverZoom &&
+						(coords.x >> (zoom - coverZoom)) == coverRoot.x && (coords.y >> (zoom - coverZoom)) == coverRoot.y;
 					try {
-						std::vector<std::vector<OutputObjectID>> data;
-						for (auto source : sources) {
-							data.emplace_back(source->getObjectsForTile(sortOrders, attributeStore, zoom, coords));
+						if (inCovered && coverDone[zoom]) {
+							sharedData.pmtiles.saveTile(zoom, coords.x, coords.y, coverTiles[zoom]);
+						} else {
+							std::vector<std::vector<OutputObjectID>> data;
+							for (auto source : sources) {
+								data.emplace_back(source->getObjectsForTile(sortOrders, attributeStore, zoom, coords));
+							}
+							outputProc(sharedData, sources, attributeStore, data, coords, zoom, inCovered ? &coverTiles[zoom] : nullptr);
+							if (inCovered) {
+								coverDone[zoom] = true;
+							} else if (zoom <= coverZoom) {
+								coverActive = reuseCovered && zoom == coverZoom && coveredByPolygons(coords);
+								if (coverActive) {
+									coverRoot = coords;
+									std::fill(coverDone.begin(), coverDone.end(), false);
+								}
+							}
 						}
-						outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 					} catch (const std::exception& e) {
 						recordTileError(zoom, coords, e.what());
 						break;
