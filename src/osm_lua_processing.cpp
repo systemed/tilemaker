@@ -1647,8 +1647,9 @@ bool OsmLuaProcessing::setWay(WayID wayId, LatpLonVec const &llVec, const TagMap
 	linestringInited = polygonInited = multiPolygonInited = false;
 	centroidMemoValid[0] = centroidMemoValid[1] = false;
 
-	if (supportsReadingRelations && osmStore.scannedRelations.way_in_any_relations(wayId)) {
-		relationList = osmStore.scannedRelations.relations_for_way(wayId);
+	if (supportsReadingRelations) {
+		if (const auto *relations = osmStore.scannedRelations.findWayRelations(wayId, wayRelationsCursor))
+			relationList = *relations;
 	}
 
 	try {

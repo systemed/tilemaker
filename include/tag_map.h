@@ -80,6 +80,7 @@ private:
 		const char* data;
 		uint32_t size;
 		uint32_t valueLoc;
+		uint64_t prefix;	// the first (up to) 8 bytes, see keyPrefix
 	};
 
 	uint32_t ensureKey(const protozero::data_view& key) const;

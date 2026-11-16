@@ -9,7 +9,40 @@
 #include "external/streamvbyte.h"
 #include "external/streamvbyte_zigzag.h"
 #include "sorted_way_store.h"
+#include <iterator>
 #include "node_store.h"
+
+namespace {
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__) && !defined(__POPCNT__) && \
+	defined(HAVE_ASM_POPCNT) && defined(HAVE_CPUID)
+	// Without -mpopcnt, __builtin_popcountll is a call into libgcc. Use the
+	// POPCNT instruction (libpopcnt's popcnt64) when the CPU has it.
+	const bool cpuHasPopcnt = (get_cpuid() & bit_POPCNT) != 0;
+	inline uint64_t popcountWord(uint64_t x) { return cpuHasPopcnt ? popcnt64(x) : popcnt64_bitwise(x); }
+#elif defined(__GNUC__) || defined(__clang__)
+	inline uint64_t popcountWord(uint64_t x) { return __builtin_popcountll(x); }
+#else
+	inline uint64_t popcountWord(uint64_t x) { return popcnt64_bitwise(x); }
+#endif
+
+	// Number of set bits in the first `size` bytes (at most 32) of a mask: the same count as
+	// libpopcnt's popcnt(data, size), without its call and dispatch.
+	inline uint64_t maskPopcnt(const void* data, uint64_t size) {
+		const uint8_t* p = (const uint8_t*)data;
+		uint64_t rv = 0;
+		for (; size >= 8; size -= 8, p += 8) {
+			uint64_t word;
+			memcpy(&word, p, 8);
+			rv += popcountWord(word);
+		}
+		if (size > 0) {
+			uint64_t word = 0;
+			memcpy(&word, p, size);
+			rv += popcountWord(word);
+		}
+		return rv;
+	}
+}
 
 namespace SortedWayStoreTypes {
 	const uint16_t GroupSize = 256;
@@ -106,10 +139,10 @@ bool SortedWayStore::contains(size_t shard, WayID id) const {
 
 	size_t chunkOffset = 0;
 	{
-		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		chunkOffset = maskPopcnt(groupPtr->chunkMask, chunkMaskByte);
 		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
 		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
-		chunkOffset += popcnt(&maskByte, 1);
+		chunkOffset += maskPopcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
 			return false;
@@ -119,20 +152,20 @@ bool SortedWayStore::contains(size_t shard, WayID id) const {
 
 	{
 		size_t wayOffset = 0;
-		wayOffset = popcnt(chunkPtr->smallWayMask, wayMaskByte);
+		wayOffset = maskPopcnt(chunkPtr->smallWayMask, wayMaskByte);
 		uint8_t maskByte = chunkPtr->smallWayMask[wayMaskByte];
 		maskByte = maskByte & ((1 << wayMaskBit) - 1);
-		wayOffset += popcnt(&maskByte, 1);
+		wayOffset += maskPopcnt(&maskByte, 1);
 		if (chunkPtr->smallWayMask[wayMaskByte] & (1 << wayMaskBit))
 			return true;
 	}
 
 	size_t wayOffset = 0;
-	wayOffset += popcnt(chunkPtr->smallWayMask, 32);
-	wayOffset += popcnt(chunkPtr->bigWayMask, wayMaskByte);
+	wayOffset += maskPopcnt(chunkPtr->smallWayMask, 32);
+	wayOffset += maskPopcnt(chunkPtr->bigWayMask, wayMaskByte);
 	uint8_t maskByte = chunkPtr->bigWayMask[wayMaskByte];
 	maskByte = maskByte & ((1 << wayMaskBit) - 1);
-	wayOffset += popcnt(&maskByte, 1);
+	wayOffset += maskPopcnt(&maskByte, 1);
 	if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
 		return false;
 
@@ -162,27 +195,27 @@ void SortedWayStore::at(WayID id, std::vector<LatpLon>& rv) const {
 
 	size_t chunkOffset = 0;
 	{
-		chunkOffset = popcnt(groupPtr->chunkMask, chunkMaskByte);
+		chunkOffset = maskPopcnt(groupPtr->chunkMask, chunkMaskByte);
 		uint8_t maskByte = groupPtr->chunkMask[chunkMaskByte];
 		maskByte = maskByte & ((1 << chunkMaskBit) - 1);
-		chunkOffset += popcnt(&maskByte, 1);
+		chunkOffset += maskPopcnt(&maskByte, 1);
 
 		if (!(groupPtr->chunkMask[chunkMaskByte] & (1 << chunkMaskBit)))
 			throw std::out_of_range("SortedWayStore: way " + std::to_string(id) + " missing, no chunk");
 	}
 
 	ChunkInfo* chunkPtr = (ChunkInfo*)((char*)groupPtr + groupPtr->chunkOffsets[chunkOffset]);
-	const size_t numWays = popcnt(chunkPtr->smallWayMask, 32) + popcnt(chunkPtr->bigWayMask, 32);
+	const size_t numWays = maskPopcnt(chunkPtr->smallWayMask, 32) + maskPopcnt(chunkPtr->bigWayMask, 32);
 
 	uint8_t* const endOfWayOffsetPtr = (uint8_t*)(chunkPtr->wayOffsets + numWays);
 	EncodedWay* wayPtr = nullptr;
 
 	{
 		size_t wayOffset = 0;
-		wayOffset = popcnt(chunkPtr->smallWayMask, wayMaskByte);
+		wayOffset = maskPopcnt(chunkPtr->smallWayMask, wayMaskByte);
 		uint8_t maskByte = chunkPtr->smallWayMask[wayMaskByte];
 		maskByte = maskByte & ((1 << wayMaskBit) - 1);
-		wayOffset += popcnt(&maskByte, 1);
+		wayOffset += maskPopcnt(&maskByte, 1);
 		if (chunkPtr->smallWayMask[wayMaskByte] & (1 << wayMaskBit)) {
 			wayPtr = (EncodedWay*)(endOfWayOffsetPtr + chunkPtr->wayOffsets[wayOffset]);
 		}
@@ -191,11 +224,11 @@ void SortedWayStore::at(WayID id, std::vector<LatpLon>& rv) const {
 	// If we didn't find it in small ways, look in big ways.
 	if (wayPtr == nullptr) {
 		size_t wayOffset = 0;
-		wayOffset += popcnt(chunkPtr->smallWayMask, 32);
-		wayOffset += popcnt(chunkPtr->bigWayMask, wayMaskByte);
+		wayOffset += maskPopcnt(chunkPtr->smallWayMask, 32);
+		wayOffset += maskPopcnt(chunkPtr->bigWayMask, wayMaskByte);
 		uint8_t maskByte = chunkPtr->bigWayMask[wayMaskByte];
 		maskByte = maskByte & ((1 << wayMaskBit) - 1);
-		wayOffset += popcnt(&maskByte, 1);
+		wayOffset += maskPopcnt(&maskByte, 1);
 		if (!(chunkPtr->bigWayMask[wayMaskByte] & (1 << wayMaskBit)))
 			throw std::out_of_range("SortedWayStore: way " + std::to_string(id) + " missing, no way");
 
@@ -244,7 +277,6 @@ void SortedWayStore::insertNodes(const std::vector<std::pair<WayID, std::vector<
 			// Calculate new groupStart, rounding to previous boundary.
 			tls.groupStart = el.first / (GroupSize * ChunkSize) * (GroupSize * ChunkSize);
 			collectOrphans(*tls.localWays);
-			tls.localWays->clear();
 		}
 		tls.localWays->push_back(el);
 		i++;
@@ -274,7 +306,7 @@ std::size_t SortedWayStore::size() const {
 }
 
 void SortedWayStore::finalize(unsigned int threadNum) {
-	for (const auto& buffer: workerBuffers) {
+	for (auto& buffer: workerBuffers) {
 		if (buffer.size() > 0) {
 			collectOrphans(buffer);
 		}
@@ -283,23 +315,34 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 
 	// Empty the orphanage into the index. The groups are independent and publishGroup is what the
 	// workers call during the pass anyway, so publish them from all threads: one after the other,
-	// the planet's leftover groups took ~10 s with every other thread idle.
-	std::vector<const std::vector<std::pair<WayID, std::vector<NodeID>>>*> orphanGroups;
-	for (const auto& entry: orphanage)
+	// the planet's leftover groups took ~10 s with every other thread idle. Each group's ways are
+	// moved together, published and freed by the thread that took it (freeing ~70M node lists on
+	// one thread afterwards took seconds on the planet).
+	std::vector<std::vector<std::vector<std::pair<WayID, std::vector<NodeID>>>>*> orphanGroups;
+	for (auto& entry: orphanage)
 		orphanGroups.push_back(&entry.second);
 	std::atomic<size_t> nextGroup(0);
 	auto publishOrphans = [&]() {
-		std::vector<std::pair<WayID, std::vector<NodeID>>> copy;
+		std::vector<std::pair<WayID, std::vector<NodeID>>> ways;
 		for (size_t i = nextGroup++; i < orphanGroups.size(); i = nextGroup++) {
-			copy.assign(orphanGroups[i]->begin(), orphanGroups[i]->end());
-			// Orphans may come from different workers, and thus be unsorted.
+			auto& pieces = *orphanGroups[i];
+			size_t total = 0;
+			for (const auto& piece : pieces) total += piece.size();
+			ways.clear();
+			ways.reserve(total);
+			for (auto& piece : pieces)
+				for (auto& way : piece) ways.emplace_back(way.first, std::move(way.second));
+			std::vector<std::vector<std::pair<WayID, std::vector<NodeID>>>>().swap(pieces);
+			// Orphans may come from different workers, and thus be unsorted. (Way IDs are unique,
+			// so the order doesn't depend on the order of the pieces.)
 			std::sort(
-				copy.begin(),
-				copy.end(),
+				ways.begin(),
+				ways.end(),
 				[](auto const &a, auto const &b) { return a.first < b.first; }
 			);
-			publishGroup(copy);
+			publishGroup(ways);
 		}
+		std::vector<std::pair<WayID, std::vector<NodeID>>>().swap(ways);
 	};
 	{
 		boost::asio::thread_pool pool(std::max<unsigned int>(1, threadNum));
@@ -321,18 +364,21 @@ void SortedWayStore::batchStart() {
 		return;
 
 	collectOrphans(*tls.localWays);
-	tls.localWays->clear();
 }
 
-void SortedWayStore::collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans) {
-	std::lock_guard<std::mutex> lock(orphanageMutex);
+void SortedWayStore::collectOrphans(std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans) {
 	size_t groupIndex = orphans[0].first / (GroupSize * ChunkSize);
-
-	std::vector<std::pair<WayID, std::vector<NodeID>>>& vec = orphanage[groupIndex];
-	const size_t i = vec.size();
-
-	vec.resize(i + orphans.size());
-	std::copy(orphans.begin(), orphans.end(), vec.begin() + i);
+	// The orphanage gets the ways (moved, not copied) in a vector of their size; the thread's
+	// buffer keeps its capacity for the next pieces. Handing over the buffer itself kept its
+	// whole capacity (a group's worth of ways) for every piece until the end of the way phase.
+	std::vector<std::pair<WayID, std::vector<NodeID>>> piece;
+	piece.reserve(orphans.size());
+	std::move(orphans.begin(), orphans.end(), std::back_inserter(piece));
+	orphans.clear();
+	{
+		std::lock_guard<std::mutex> lock(orphanageMutex);
+		orphanage[groupIndex].push_back(std::move(piece));
+	}
 }
 
 std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input) {
@@ -341,13 +387,81 @@ std::vector<NodeID> SortedWayStore::decodeWay(uint16_t flags, const uint8_t* inp
 	return rv;
 };
 
+namespace {
+	// Read a streamvbyte value of (code + 1) bytes at p, never reading at or beyond `end`.
+	inline uint32_t svbValue(const uint8_t* p, const uint8_t* end, uint32_t code) {
+		static const uint32_t lengthMask[4] = { 0xFFu, 0xFFFFu, 0xFFFFFFu, 0xFFFFFFFFu };
+		if (end - p >= 4) {
+			uint32_t val;
+			memcpy(&val, p, 4);
+			return val & lengthMask[code];
+		}
+		uint32_t val = 0;
+		for (uint32_t b = 0; b <= code; b++)
+			val |= (uint32_t)p[b] << (8 * b);
+		return val;
+	}
+}
+
 void SortedWayStore::decodeWay(uint16_t flags, const uint8_t* input, std::vector<NodeID>& rv) {
+	const uint16_t length = flags & 0b0000011111111111;
+	if (length > 0) {
+		// Fast path: write the ids straight into rv, decoding the streamvbyte and zigzag delta
+		// in one pass (the same values as the general code below computes).
+		const bool closed = flags & ClosedWay;
+		rv.resize(length + (closed ? 1 : 0));
+		NodeID* out = rv.data();
+		const uint8_t* highNibbles = nullptr;
+		uint64_t uniformHigh = 0;
+		if (!(flags & UniformUpperBits)) {
+			highNibbles = input;
+			input += (length + 1) / 2;
+		} else {
+			uniformHigh = (uint64_t)*input << 31;
+			input++;
+		}
+		auto high = [&](size_t i) -> uint64_t {
+			if (!highNibbles) return uniformHigh;
+			return (uint64_t)((highNibbles[i / 2] >> (4 * (i & 1))) & 0b00001111) << 31;
+		};
+		if (!(flags & CompressedWay)) {
+			for (size_t i = 0; i < length; i++) {
+				uint32_t low;
+				memcpy(&low, input + 4 * i, 4);
+				out[i] = high(i) | low;
+			}
+		} else {
+			uint16_t compressedSize;
+			memcpy(&compressedSize, input, 2);
+			input += 2;
+			uint32_t firstInt;
+			memcpy(&firstInt, input, 4);
+			input += 4;
+			out[0] = high(0) | firstInt;
+			// length - 1 zigzag deltas, streamvbyte coded: keys, then the data
+			const size_t n = length - 1;
+			const uint8_t* keys = input;
+			const uint8_t* data = input + (n + 3) / 4;
+			const uint8_t* end = input + compressedSize;
+			uint32_t prev = firstInt;
+			for (size_t k = 0; k < n; k++) {
+				const uint32_t code = (keys[k >> 2] >> ((k & 3) * 2)) & 3;
+				const uint32_t z = svbValue(data, end, code);
+				data += code + 1;
+				prev += (z >> 1) ^ (0 - (z & 1));
+				out[k + 1] = high(k + 1) | prev;
+			}
+		}
+		if (closed)
+			out[length] = out[0];
+		return;
+	}
+
 	rv.clear();
 
 	bool isCompressed = flags & CompressedWay;
 	bool isClosed = flags & ClosedWay;
 
-	const uint16_t length = flags & 0b0000011111111111;
 	rv.reserve(length + (isClosed ? 1 : 0));
 
 	if (!(flags & UniformUpperBits)) {

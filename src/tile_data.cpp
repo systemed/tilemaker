@@ -1,9 +1,13 @@
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <sstream>
+#include <type_traits>
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
@@ -13,6 +17,15 @@
 
 using namespace std;
 extern bool verbose;
+
+namespace {
+// Each thread's staging for the source it last added to; epochs are unique across sources
+std::atomic<uint64_t> nextStagingEpoch(1);
+thread_local uint64_t tlsStagingEpoch = 0;
+thread_local void* tlsStaging = nullptr;	// TileDataSource::IndexStagings
+// Entries staged per thread before they are moved to the shards
+const size_t INDEX_STAGING_SIZE = 1024;
+}
 
 // Human-readable name for a Boost.Geometry validity failure, used for diagnostics.
 static const char* validityFailureName(geom::validity_failure_type failure) {
@@ -82,6 +95,7 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	includeID(includeID),
 	z6OffsetDivisor(indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
+	stagingEpoch(0),
 	objects(CLUSTER_ZOOM_AREA),
 	lowZoomObjects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
@@ -101,6 +115,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 		throw std::out_of_range("TileDataSource: indexZoom cannot be higher than 14, but was " + std::to_string(indexZoom));
 
 
+	stagingEpoch = nextStagingEpoch++;
+
 	shardBits = 0;
 	numShards = 1;
 	while(numShards < threadNum) {
@@ -116,7 +132,6 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	}
 }
 
-thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
 thread_local uint64_t clipCacheBatchId = 0;
 thread_local bool clipCacheNoStore = false;
 thread_local bool clipCacheBypass = false;
@@ -249,21 +264,20 @@ void TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y)
 }
 
 void TileDataSource::finalize(size_t threadNum) {
+	// The objects the threads have staged last (at most INDEX_STAGING_SIZE + one object's tiles per
+	// thread). The order within a shard doesn't matter: shards are sorted below.
+	// Nothing adds to the small index after finalize (shapefiles, GeoJSON, Lua and declutter all
+	// run before). Renewing the epoch makes threads' cached staging pointers stale.
 	uint64_t finalized = 0;
-	for (const auto& vec : pendingSmallIndexObjects) {
-		for (const auto& tuple : vec) {
-			finalized++;
-			addObjectToSmallIndexUnsafe(std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple));
-		}
+	for (IndexStagings& staging : stagings) {
+		finalized += staging.objects.entries.size() + staging.objectsWithIds.entries.size();
+		flushStaging(staging.objects, objects);
+		flushStaging(staging.objectsWithIds, objectsWithIds);
 	}
+	std::deque<IndexStagings>().swap(stagings);
+	stagingEpoch = nextStagingEpoch++;
 
-	// Nothing adds to the small index after finalize (shapefiles, GeoJSON,
-	// Lua and declutter all run before), so release the pending storage.
-	// TLS pointers of other (finished) threads now dangle; they are never used again.
-	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>>().swap(pendingSmallIndexObjects);
-	tlsPendingSmallIndexObjects = nullptr;
-
-	std::cout << "indexed " << finalized << " contended objects" << std::endl;
+	std::cout << "indexed " << finalized << " staged objects" << std::endl;
 
 	finalizeObjects<OutputObjectXY>(name(), threadNum, indexZoom, objects.begin(), objects.end(), lowZoomObjects);
 	finalizeObjects<OutputObjectXYID>(name(), threadNum, indexZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
@@ -280,22 +294,112 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	}
 
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
-	auto& mutex = objectsMutex[z6index % objectsMutex.size()];
+	IndexStagings& staging = indexStaging();
+	stageObject(staging, z6index, index, oo, id);
+	flushStagingIfFull(staging);
+}
 
-
-	if (mutex.try_lock()) {
-		addObjectToSmallIndexUnsafe(index, oo, id);
-		mutex.unlock();
-	} else {
-		// add to tlsPendingSmallIndexObjects
-		if (tlsPendingSmallIndexObjects == nullptr) {
-			std::lock_guard<std::mutex> lock(objectsMutex[0]);
-			pendingSmallIndexObjects.push_back(std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>());
-			tlsPendingSmallIndexObjects = &pendingSmallIndexObjects.back();
-		}
-
-		tlsPendingSmallIndexObjects->push_back(std::make_tuple(index, oo, id));
+TileDataSource::IndexStagings& TileDataSource::indexStaging() {
+	if (tlsStagingEpoch != stagingEpoch) {
+		std::lock_guard<std::mutex> lock(stagingMutex);
+		stagings.emplace_back();
+		if (!includeID) stagings.back().objects.entries.reserve(INDEX_STAGING_SIZE + 64);
+		tlsStaging = &stagings.back();
+		tlsStagingEpoch = stagingEpoch;
 	}
+	return *static_cast<IndexStagings*>(tlsStaging);
+}
+
+void TileDataSource::stageObject(IndexStagings& staging, size_t z6index, const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
+	const size_t z6x = z6index / CLUSTER_ZOOM_WIDTH, z6y = z6index % CLUSTER_ZOOM_WIDTH;
+	const Z6Offset x = index.x - (z6x * z6OffsetDivisor), y = index.y - (z6y * z6OffsetDivisor);
+	if (id == 0 || !includeID) {
+		staging.objects.entries.push_back({ oo, x, y });
+		staging.objects.shards.push_back(z6index);
+	} else {
+		staging.objectsWithIds.entries.push_back({ oo, x, y, id });
+		staging.objectsWithIds.shards.push_back(z6index);
+	}
+}
+
+void TileDataSource::flushStagingIfFull(IndexStagings& staging) {
+	if (staging.objects.entries.size() >= INDEX_STAGING_SIZE) flushStaging(staging.objects, objects);
+	if (staging.objectsWithIds.entries.size() >= INDEX_STAGING_SIZE) flushStaging(staging.objectsWithIds, objectsWithIds);
+}
+
+// Moves the staged entries to their shards: grouped by shard (a counting sort), then one lock and
+// one bulk append per shard, instead of a lock per object (and z6 run). Shards whose lock is busy
+// are done after the others, then waiting for the lock: its holder only appends.
+template<class OO>
+void TileDataSource::flushStaging(IndexStaging<OO>& staging, std::vector<AppendVectorNS::AppendVector<OO>>& shards) {
+	const size_t n = staging.entries.size();
+	if (n == 0) return;
+	const uint16_t* z6 = staging.shards.data();
+	size_t same = 1;
+	while (same < n && z6[same] == z6[0]) same++;
+	if (same == n) {
+		std::lock_guard<std::mutex> lock(objectsMutex[z6[0] % objectsMutex.size()]);
+		shards[z6[0]].append(staging.entries.data(), n);
+	} else {
+		static_assert(std::is_trivially_copyable<OO>::value && sizeof(OO) % sizeof(uint64_t) == 0, "staged as raw words");
+		thread_local std::vector<uint32_t> counts(CLUSTER_ZOOM_AREA, 0);
+		thread_local std::vector<uint16_t> touched;
+		thread_local std::vector<uint32_t> begins;
+		thread_local std::vector<size_t> busy;
+		thread_local std::vector<uint64_t> sortedWords;	// OO isn't default constructible
+		touched.clear(); busy.clear();
+		for (size_t k = 0; k < n; k++)
+			if (counts[z6[k]]++ == 0) touched.push_back(z6[k]);
+		begins.resize(touched.size() + 1);
+		uint32_t offset = 0;
+		for (size_t t = 0; t < touched.size(); t++) {
+			begins[t] = offset;
+			const uint32_t c = counts[touched[t]];
+			counts[touched[t]] = offset;
+			offset += c;
+		}
+		begins[touched.size()] = offset;
+		sortedWords.resize(n * sizeof(OO) / sizeof(uint64_t));
+		OO* sorted = reinterpret_cast<OO*>(sortedWords.data());
+		for (size_t k = 0; k < n; k++)
+			std::memcpy(static_cast<void*>(&sorted[counts[z6[k]]++]), &staging.entries[k], sizeof(OO));
+		for (size_t t = 0; t < touched.size(); t++) {
+			counts[touched[t]] = 0;
+			std::unique_lock<std::mutex> lock(objectsMutex[touched[t] % objectsMutex.size()], std::try_to_lock);
+			if (lock.owns_lock()) shards[touched[t]].append(sorted + begins[t], begins[t + 1] - begins[t]);
+			else busy.push_back(t);
+		}
+		for (size_t t : busy) {
+			std::lock_guard<std::mutex> lock(objectsMutex[touched[t] % objectsMutex.size()]);
+			shards[touched[t]].append(sorted + begins[t], begins[t + 1] - begins[t]);
+		}
+		if (sortedWords.capacity() > 16 * INDEX_STAGING_SIZE * sizeof(OO) / sizeof(uint64_t)) std::vector<uint64_t>().swap(sortedWords);
+	}
+	staging.entries.clear();
+	staging.shards.clear();
+	// one huge object (a long line) can leave a big buffer
+	if (staging.entries.capacity() > 16 * INDEX_STAGING_SIZE) {
+		std::vector<OO>().swap(staging.entries);
+		std::vector<uint16_t>().swap(staging.shards);
+		staging.entries.reserve(INDEX_STAGING_SIZE + 64);
+	}
+}
+
+template<class Each>
+void TileDataSource::addToSmallIndex(const std::vector<TileCoordinates>& tiles, uint64_t id, Each each) {
+	IndexStagings& staging = indexStaging();
+	for (const TileCoordinates& tile : tiles) {
+		const size_t z6x = tile.x / z6OffsetDivisor;
+		const size_t z6y = tile.y / z6OffsetDivisor;
+		if (z6x >= 64 || z6y >= 64) {
+			// addObjectToSmallIndex reports and ignores it
+			each(tile, [&](const OutputObject& oo) { addObjectToSmallIndex(tile, oo, id); });
+			continue;
+		}
+		const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+		each(tile, [&](const OutputObject& oo) { stageObject(staging, z6index, tile, oo, id); });
+	}
+	flushStagingIfFull(staging);
 }
 
 void TileDataSource::addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
@@ -889,21 +993,24 @@ void TileDataSource::addGeometryToIndex(
 	try {
 		insertIntermediateTiles(geom, indexZoom, tiles);
 
-		bool polygonExists = false;
+		bool polygonExists = false, otherExists = false;
+		for (const auto& output : outputs) {
+			if (output.geomType == POLYGON_) polygonExists = true;
+			else otherExists = true;
+		}
+		if (tiles.empty()) polygonExists = false;
 		TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
 		for (const TileCoordinates& index : tiles) {
 			minTileX = std::min(index.x, minTileX);
 			minTileY = std::min(index.y, minTileY);
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
-			for (const auto& output : outputs) {
-				if (output.geomType == POLYGON_) {
-					polygonExists = true;
-					continue;
-				}
-				addObjectToSmallIndex(index, output, id); // not a polygon
-			}
 		}
+		if (otherExists)
+			addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+				for (const auto& output : outputs)
+					if (output.geomType != POLYGON_) add(output); // not a polygon
+			});
 
 		// for polygon, fill inner tiles
 		if (polygonExists) {
@@ -921,9 +1028,7 @@ void TileDataSource::addGeometryToIndex(
 					if (!tilesetFilled) {
 						fillCoveredTiles(tiles); tilesetFilled = true;
 					}
-					for (const TileCoordinates& index : tiles) {
-						addObjectToSmallIndex(index, output, id);
-					}
+					addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) { add(output); });
 				}
 			}
 		}
@@ -942,11 +1047,9 @@ void TileDataSource::addGeometryToIndex(
 	for (const auto& ls : geom) {
 		tiles.clear();
 		insertIntermediateTiles(ls, indexZoom, tiles);
-		for (const TileCoordinates& index : tiles) {
-			for (const auto& output : outputs) {
-				addObjectToSmallIndex(index, output, id);
-			}
-		}
+		addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+			for (const auto& output : outputs) add(output);
+		});
 	}
 	releaseIfHuge(tiles);
 }
@@ -988,16 +1091,16 @@ void TileDataSource::addGeometryToIndex(
 			boxes.push_back(envelope);
 	}
 
-	for (auto& output : outputs) {
-		if (tileSetSize >= 16) {
+	if (tileSetSize >= 16) {
+		for (auto& output : outputs) {
 			for (const Box& box : boxes)
 				addObjectToLargeIndex(box, output, id);
-		} else {
-			// Smaller objects - add to each individual tile index
-			for (const TileCoordinates& index : tiles) {
-				addObjectToSmallIndex(index, output, id);
-			}
 		}
+	} else {
+		// Smaller objects - add to each individual tile index
+		addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+			for (const auto& output : outputs) add(output);
+		});
 	}
 	releaseIfHuge(tiles);
 }

@@ -101,6 +101,9 @@ constexpr double MinLatp = -MaxLatp;
 // (if calling with raw coords, remember to divide/multiply by 10000000.0)
 double lat2latp(double lat);
 double latp2lat(double latp);
+// int(lat2latp(lat / 1e7) * 1e7) for a latitude in 1e-7 degrees (as read from .osm.pbf), exactly
+// the same value, fast (see coordinates.cpp)
+int32_t lat2latpE7(int32_t lat);
 
 // Tile conversions
 double lon2tilexf(double lon, uint8_t z);

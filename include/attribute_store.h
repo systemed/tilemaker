@@ -11,6 +11,7 @@
 #include <boost/container/flat_map.hpp>
 #include <boost/container/small_vector.hpp>
 #include <algorithm>
+#include <cstring>
 #include <vector>
 #include <protozero/data_view.hpp>
 #include "pooled_string.h"
@@ -159,14 +160,29 @@ struct AttributePair {
 		return true;
 	}
 
+	// Hashes the string 8 bytes at a time (the hash only picks shards and hash table slots)
+	static uint64_t hashBytes(uint64_t h, const char* p, size_t n) {
+		h ^= n * 0x9E3779B97F4A7C15ULL;
+		while (n >= 8) {
+			uint64_t w; memcpy(&w, p, 8);
+			h = (h ^ w) * 0xff51afd7ed558ccdULL; h ^= h >> 32;
+			p += 8; n -= 8;
+		}
+		if (n > 0) {
+			uint64_t w = 0; memcpy(&w, p, n);
+			h = (h ^ w) * 0xc4ceb9fe1a85ec53ULL; h ^= h >> 29;
+		}
+		h *= 0x94d049bb133111ebULL; h ^= h >> 31;
+		return h;
+	}
+
 	size_t hash() const {
 		std::size_t rv = minzoom;
 		boost::hash_combine(rv, keyIndex);
 		boost::hash_combine(rv, valueType);
 
 		if(hasStringValue()) {
-			const char* data = pooledString().data();
-			boost::hash_range(rv, data, data + pooledString().size());
+			rv = hashBytes(rv, pooledString().data(), pooledString().size());
 		} else if(hasFloatValue())
 			boost::hash_combine(rv, doubleValue_);
 		else if(hasIntValue())
@@ -223,6 +239,9 @@ private:
 	friend class AttributeStore;
 	std::vector<DequeMap<AttributePair>> pairs;
 	bool finalized;
+	// Set (under its lock) once the hot shard is full: from then on it never changes, so it is
+	// looked up without the lock
+	std::atomic<bool> hotFull{false};
 	// We refer to all attribute pairs by index.
 	//
 	// Each shard is responsible for a portion of the key space.

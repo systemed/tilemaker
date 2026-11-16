@@ -613,6 +613,7 @@ private:
 
 	bool relationAccepted;					// in scanRelation, whether we're using a non-MP relation
 	std::vector<std::pair<WayID, uint16_t>> relationList;		// in processNode/processWay, list of relations this entity is in, and its role
+	RelationScanStore::WayCursor wayRelationsCursor;	// setWay's position in the relations of ways
 	int relationSubscript = -1;				// in processWay, position in the relation list
 
 	int32_t lon,latp;						///< Node coordinates
