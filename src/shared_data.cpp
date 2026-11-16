@@ -372,6 +372,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 	// Check config is valid
 	if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; exit (EXIT_FAILURE); }
+	if (endZoom > 29) { cerr << "maxzoom must be 29 or smaller." << endl; exit (EXIT_FAILURE); }
 	if (! compressOpt.empty()) {
 		if      (compressOpt == "gzip"   ) { gzip = true;  }
 		else if (compressOpt == "deflate") { gzip = false; }

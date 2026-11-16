@@ -9,6 +9,7 @@
 #include <sstream>
 #include <type_traits>
 #include "tile_data.h"
+#include <tuple>
 #include "coordinates_geom.h"
 #include "leased_store.h"
 #include <unordered_map>
@@ -16,6 +17,7 @@
 #include "clip_line.h"
 
 thread_local unsigned objectsUpToZoom = 0;
+std::vector<uint32_t> z12ObjectCounts;
 #include <ciso646>
 
 using namespace std;
@@ -151,10 +153,10 @@ thread_local bool clipResultValid = false;	// whether the last POLYGON_ clip is 
 // computed on demand, a slow piece (up to ~15 s on the planet) held up every thread whose tiles
 // needed it, a third of the tile phase on a 96-thread planet run. They are computed in the order
 // of their z6 tiles, the order the tiles are written in, as far ahead as a memory budget allows
-// (all of them at the start on a large machine; all at once, a planet's took about 5 GB). A thread
-// that takes a batch first starts the pieces of the z6 tiles handed out so far, so only a tile that
-// needs a piece still being computed waits for it. The map itself doesn't change, so the tiles look
-// pieces up without a lock.
+// (all of them at the start on a large machine; all at once, a planet's took about 5 GB). Only a
+// tile that needs a piece still being computed waits for it, and one that needs a piece not
+// started yet (a slow group handed out ahead of its place) computes it. The map itself doesn't
+// change, so the tiles look pieces up without a lock.
 #define SHARED_PIECE_MIN_POINTS 10000
 
 std::atomic<uint64_t> TileDataSource::livePieceBytes(0);
@@ -215,11 +217,13 @@ void TileDataSource::precomputeSharedPieces(const std::function<bool(TileCoordin
 	std::sort(jobs.begin(), jobs.end(), [](const Job &a, const Job &b) {
 		return a.z6 != b.z6 ? a.z6 < b.z6 : a.points != b.points ? a.points > b.points : a.key < b.key;
 	});
-	for (Job &job : jobs) {
+	for (size_t i = 0; i < jobs.size(); i++) {
+		Job &job = jobs[i];
 		pieceObjects.insert(std::get<0>(job.key));
 		job.promise = std::make_shared<std::promise<std::shared_ptr<const SharedPiece>>>();
-		sharedPieces.emplace(job.key, job.promise->get_future().share());
+		sharedPieces.emplace(job.key, PieceSlot { job.promise->get_future().share(), i });
 	}
+	pieceStarted.reset(new std::atomic<bool>[jobs.size()]());
 	pieceJobs = std::move(jobs);
 	nextPieceJob = 0;
 }
@@ -233,8 +237,11 @@ void TileDataSource::computeSharedPieces(int64_t handedOutZ6, uint64_t budgetByt
 
 void TileDataSource::computeSharedPiece(size_t i) {
 	const unsigned zoom = SHARED_PIECE_ZOOM;
+	if (pieceStarted[i].load(std::memory_order_relaxed) || pieceStarted[i].exchange(true)) return;
 	const auto &key = pieceJobs[i].key;
 	auto piece = std::make_shared<SharedPiece>();
+	// (also called from a tile's buildWayGeometry: see the POLYGON_ case)
+	const bool bypass = clipCacheBypass;
 	try {
 		clipCacheBypass = true;
 		clipNeededRepair = false;
@@ -254,16 +261,23 @@ void TileDataSource::computeSharedPiece(size_t i) {
 	} catch (std::exception &) {
 		// The tiles clip the whole polygon, and report the problem there
 	}
-	clipCacheBypass = false;
+	clipCacheBypass = bypass;
 	pieceJobs[i].promise->set_value(piece);
 	pieceJobs[i].promise.reset();	// the map's future keeps the piece, until its z6 tile is released
 }
 
-void TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
+uint64_t TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
 	const unsigned shift = SHARED_PIECE_ZOOM - CLUSTER_ZOOM;
-	for (auto &e : sharedPieces)
-		if ((std::get<1>(e.first) >> shift) == z6x && (std::get<2>(e.first) >> shift) == z6y)
-			e.second = std::shared_future<std::shared_ptr<const SharedPiece>>();
+	uint64_t bytes = 0;
+	for (auto &e : sharedPieces) {
+		std::shared_future<std::shared_ptr<const SharedPiece>> &future = e.second.piece;
+		if ((std::get<1>(e.first) >> shift) != z6x || (std::get<2>(e.first) >> shift) != z6y || !future.valid()) continue;
+		// (a piece no tile needed may still be being computed)
+		if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready && future.get())
+			bytes += future.get()->bytes;
+		future = std::shared_future<std::shared_ptr<const SharedPiece>>();
+	}
+	return bytes;
 }
 
 void TileDataSource::finalize(size_t threadNum) {
@@ -672,8 +686,9 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// A large polygon: clip from its shared piece
 				const unsigned shift = bbox.zoom - SHARED_PIECE_ZOOM;
 				auto it = sharedPieces.find(std::make_tuple(objectID, bbox.index.x >> shift, bbox.index.y >> shift));
-				if (it != sharedPieces.end() && it->second.valid()) {
-					const std::shared_ptr<const SharedPiece> &piece = it->second.get();	// waits if still being computed
+				if (it != sharedPieces.end() && it->second.piece.valid()) {
+					computeSharedPiece(it->second.job);	// if no thread has started it yet
+					const std::shared_ptr<const SharedPiece> &piece = it->second.piece.get();	// waits if still being computed
 					if (piece && piece->geom) {
 						cachedClip = piece->geom;
 						inputKnownValid = piece->valid;
@@ -836,27 +851,64 @@ void populateTilesAtZoom(
 		for (size_t i = 0; i < sources.size(); i++)
 			sources[i]->collectTilesWithObjectsAtZoom(zooms);
 	} else {
-		// Objects are kept per z6 tile. Each worker takes whole columns of z6
-		// tiles (so that it touches only its part of the bitmaps), sets bits in
-		// bitmaps of its own, and these are merged at the end.
-		std::atomic<size_t> nextColumn(0);
-		std::vector<std::vector<std::shared_ptr<TileCoordinatesSet>>> local(threadNum);
-		boost::asio::thread_pool pool(threadNum);
-		for (size_t t = 0; t < threadNum; t++) {
-			boost::asio::post(pool, [&, t]() {
-				auto& mine = local[t];
-				for (size_t zoom = 0; zoom < zooms.size(); zoom++)
-					mine.push_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
-				for (size_t column; (column = nextColumn++) < CLUSTER_ZOOM_WIDTH; )
-					for (size_t row = 0; row < CLUSTER_ZOOM_WIDTH; row++)
-						for (const auto source : sources)
-							source->collectTilesWithObjectsInShard(column * CLUSTER_ZOOM_WIDTH + row, mine);
-			});
+		// Objects are kept per z6 tile. Each worker takes z6 tiles, the ones with the most
+		// objects first (by columns, one column held a tenth of the planet's objects and ran on
+		// alone), sets bits in bitmaps of its own, and these are merged at the end, all threads
+		// merging their part of the bitmaps. A z6 tile's z12 tiles (z12ObjectCounts) are only
+		// counted by the thread that takes it. The sets don't depend on who set which bit.
+		std::vector<std::pair<size_t, size_t>> order;	// (objects, z6 tile)
+		for (size_t shard = 0; shard < CLUSTER_ZOOM_AREA; shard++) {
+			size_t n = 0;
+			for (const auto source : sources) n += source->shardObjectCount(shard);
+			if (n > 0) order.emplace_back(n, shard);
 		}
-		pool.join();
-		for (const auto& mine : local)
-			for (size_t zoom = 0; zoom < mine.size(); zoom++)
-				precise[zoom]->merge(static_cast<const PreciseTileCoordinatesSet&>(*mine[zoom]));
+		std::sort(order.begin(), order.end(), [](const std::pair<size_t, size_t>& a, const std::pair<size_t, size_t>& b) {
+			return a.first != b.first ? a.first > b.first : a.second < b.second;
+		});
+		std::atomic<size_t> nextShard(0);
+		std::vector<std::vector<std::shared_ptr<TileCoordinatesSet>>> local(threadNum);
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++) {
+				boost::asio::post(pool, [&, t]() {
+					auto& mine = local[t];
+					for (size_t zoom = 0; zoom < zooms.size(); zoom++)
+						mine.push_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
+					for (size_t k; (k = nextShard++) < order.size(); )
+						for (const auto source : sources)
+							source->collectTilesWithObjectsInShard(order[k].second, mine);
+				});
+			}
+			pool.join();
+		}
+		// Merge: (zoom, range of summary words) parts, each merging all threads' bitmaps
+		std::vector<std::tuple<size_t, size_t, size_t>> parts;
+		for (size_t zoom = 0; zoom < zooms.size(); zoom++) {
+			const size_t words = precise[zoom]->summaryWords();
+			const size_t step = std::max<size_t>(1, words / (threadNum * 4));
+			for (size_t from = 0; from < words; from += step) parts.emplace_back(zoom, from, std::min(words, from + step));
+		}
+		std::atomic<size_t> nextPart(0);
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++) {
+				boost::asio::post(pool, [&]() {
+					for (size_t k; (k = nextPart++) < parts.size(); ) {
+						const size_t zoom = std::get<0>(parts[k]);
+						for (const auto& mine : local)
+							precise[zoom]->mergeRange(static_cast<const PreciseTileCoordinatesSet&>(*mine[zoom]), std::get<1>(parts[k]), std::get<2>(parts[k]));
+					}
+				});
+			}
+			pool.join();
+		}
+		// The threads' bitmaps (32 MB each at z14) are freed on all threads too
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++)
+				boost::asio::post(pool, [&, t]() { local[t].clear(); });
+			pool.join();
+		}
 	}
 
 	for (size_t i = 0; i < sources.size(); i++)
