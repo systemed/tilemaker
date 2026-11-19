@@ -16,7 +16,8 @@
 #define stat64 __stat64
 #endif
 
-#if defined(__APPLE__)
+// stat64 is a glibc extension; elsewhere (macOS, musl, the BSDs) stat is already 64-bit
+#if !defined(_MSC_VER) && !defined(__GLIBC__)
 #define stat64 stat
 #endif
 
