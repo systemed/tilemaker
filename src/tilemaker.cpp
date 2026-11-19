@@ -149,9 +149,9 @@ int main(const int argc, const char* argv[]) {
 	bool hasClippingBox = false;
 	Box clippingBox;
 	double minLon=std::numeric_limits<double>::max(),
-				 maxLon=std::numeric_limits<double>::min(),
+				 maxLon=std::numeric_limits<double>::lowest(),
 				 minLat=std::numeric_limits<double>::max(),
-				 maxLat=std::numeric_limits<double>::min();
+				 maxLat=std::numeric_limits<double>::lowest();
 	if (!bboxElements.empty()) {
 		hasClippingBox = true;
 		minLon = bboxElementFromStr(bboxElements.at(0));
