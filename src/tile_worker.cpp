@@ -208,16 +208,20 @@ bool writeRing(
 	// vtzero doesn't like zero-length segments in rings
 	pair<int, int> lastXy = std::make_pair(0, 0);
 	int points = 0;
+	int64_t twiceArea = 0;
 	for (const Point& point : ring) {
 		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
 		if (points == 0 || xy != lastXy) {
+			if (points > 0)
+				twiceArea += int64_t(lastXy.first) * xy.second - int64_t(xy.first) * lastXy.second;
 			points++;
 			lastXy = xy;
 		}
 	}
 
-	// A ring has at least 4 points.
-	if (points <= 3)
+	// A ring has at least 4 points, and on the integer grid it must not have
+	// collapsed to a line (all points collinear).
+	if (points <= 3 || twiceArea == 0)
 		return false;
 
 	bool firstPoint = true;
