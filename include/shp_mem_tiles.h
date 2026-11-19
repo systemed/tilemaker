@@ -27,7 +27,8 @@ public:
 		const std::string& name,
 		uint minzoom,
 		int32_t score,
-		AttributeIndex attrIdx
+		AttributeIndex attrIdx,
+		bool knownValid = false // polygon: caller has checked it is valid
 	);
 
 	std::vector<uint> QueryMatchingGeometries(
