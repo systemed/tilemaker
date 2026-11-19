@@ -5,6 +5,8 @@
 #include <map>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
+#include <thread>
 
 #include "pmtiles.h"
 #include "helpers.h"
@@ -25,24 +27,49 @@ void PMTiles::open(std::string &filename) {
 void PMTiles::close(std::string &metadata) {
 	std::cout << "\nClosing pmtiles file" << std::flush;
 
-	// add all tiles to directories, writing leaf directories as we go
+	// Add all tiles to directories: low zooms to the root, the rest to leaf directories of up to
+	// LEAF_DIRECTORY_SIZE entries. The leaves are serialized and compressed on all cores (one after
+	// the other that took ~9 s for the planet), then written in order, so the file is the same.
 	std::vector<pmtiles::entryv3> rootEntries;
-	std::vector<pmtiles::entryv3> entries;
-	leafStart = outputStream.tellp();
-	if (isSparse) {
-		for (auto it : sparseIndex) {
-			appendTileEntry(it.first, it.second, rootEntries, entries);
+	std::vector<std::vector<pmtiles::entryv3>> leaves(1);
+	auto append = [&](uint64_t tileId, TileOffset offset) {
+		pmtiles::entryv3 entry = pmtiles::entryv3(tileId, offset.offset, offset.length, 1); // 1=RLE
+		if (tileId<FIRST_LEAF_TILE) {
+			// <z6 so root directory
+			appendWithRLE(rootEntries, entry);
+		} else {
+			appendWithRLE(leaves.back(), entry);
+			if (leaves.back().size()>=LEAF_DIRECTORY_SIZE) leaves.emplace_back();
 		}
+	};
+	if (isSparse) {
+		for (auto it : sparseIndex) append(it.first, it.second);
 	} else {
 		for (size_t tileId=0; tileId<denseIndex.size(); tileId++) {
-			if (denseIndex[tileId].length != 0xffffff) appendTileEntry(tileId, denseIndex[tileId], rootEntries, entries);
+			if (denseIndex[tileId].length != 0xffffff) append(tileId, denseIndex[tileId]);
 		}
 	}
+	if (leaves.back().empty()) leaves.pop_back();
+	leafStart = outputStream.tellp();
 	if (numTileEntries < ROOT_ONLY) {
-		rootEntries.insert(rootEntries.end(), entries.begin(), entries.end());
-		entries.clear();
+		for (auto const &leaf : leaves) rootEntries.insert(rootEntries.end(), leaf.begin(), leaf.end());
 	} else {
-		flushEntries(rootEntries,entries);
+		std::vector<std::string> compressedLeaves(leaves.size());
+		std::atomic<size_t> next(0);
+		auto compressLeaves = [&]() {
+			for (size_t i = next++; i < leaves.size(); i = next++)
+				compressedLeaves[i] = compress_string(pmtiles::serialize_directory(leaves[i]), Z_DEFAULT_COMPRESSION, true);
+		};
+		std::vector<std::thread> threads;
+		const size_t numThreads = std::min<size_t>(leaves.size(), std::max(1u, std::thread::hardware_concurrency()));
+		for (size_t t = 0; t < numThreads; t++) threads.emplace_back(compressLeaves);
+		for (auto &t : threads) t.join();
+		for (size_t i = 0; i < leaves.size(); i++) {
+			// write the leaf directory, and add a reference to it to the root directory
+			const uint64_t location = outputStream.tellp();
+			outputStream.write(compressedLeaves[i].c_str(), compressedLeaves[i].size());
+			rootEntries.emplace_back(pmtiles::entryv3(leaves[i][0].tile_id, location-leafStart, compressedLeaves[i].size(), 0));
+		}
 	}
 	uint64_t leafLength = static_cast<uint64_t>(outputStream.tellp()) - leafStart;
 
@@ -87,18 +114,7 @@ void PMTiles::close(std::string &metadata) {
 }
 
 // Add an entry either to the current leaf directory, or (for lowzoom) the root directory
-void PMTiles::appendTileEntry(uint64_t tileId, TileOffset offset, std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries) {
-	pmtiles::entryv3 entry = pmtiles::entryv3(tileId, offset.offset, offset.length, 1); // 1=RLE
-	if (tileId<FIRST_LEAF_TILE) {
-		// <z6 so root directory
-		appendWithRLE(rootEntries, entry);
-	} else {
-		appendWithRLE(entries, entry);
-		if (entries.size()>=LEAF_DIRECTORY_SIZE) flushEntries(rootEntries, entries);
-	}
-}
-
-// Handle run-length encoding for appendTileEntry
+// Handle run-length encoding for the directory entries
 void PMTiles::appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::entryv3 &entry) {
 	if (entries.empty() ||
 		entries.back().offset != entry.offset ||
@@ -108,25 +124,6 @@ void PMTiles::appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::ent
 			return;
 	}
 	entries.back().run_length++;
-}
-
-// Write a leaf directory to file, and add a reference to it to the root directory
-void PMTiles::flushEntries(std::vector<pmtiles::entryv3> &rootEntries, std::vector<pmtiles::entryv3> &entries) {
-	if (entries.size()==0) return;
-	uint64_t startId = entries[0].tile_id;
-	std::string directory = pmtiles::serialize_directory(entries);
-	std::string compressed = compress_string(directory, Z_DEFAULT_COMPRESSION, true);
-	entries.clear();
-
-	// write the leaf directory to disk
-	std::lock_guard<std::mutex> lock(fileMutex);
-	uint64_t location = outputStream.tellp();
-	uint64_t length = compressed.size();
-	outputStream.write(compressed.c_str(), compressed.size());
-
-	// append reference to the root directory
-	pmtiles::entryv3 rootEntry = pmtiles::entryv3(startId, location-leafStart, length, 0);
-	rootEntries.emplace_back(rootEntry);
 }
 
 // Write a tile to file and store it in the index
