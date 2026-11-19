@@ -286,5 +286,7 @@ void sortTileCoordinates(
 
 			return false;
 		}, 
-		threadNum);
+		// block_indirect_sort slows down badly with many threads: on the planet (346M tiles) it took
+		// 200-300 s at 96 threads instead of about 7 s at 16, with the threads spinning on its internal lock.
+		std::min<size_t>(threadNum, 16));
 }
