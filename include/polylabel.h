@@ -329,13 +329,13 @@ Cell getCentroidCell(const Polygon& polygon) {
     return Cell(area == 0 ? ring.at(0) : Point { ox + cx / area, oy + cy / area }, 0, polygon);
 }
 
-// Upper bound on pointToPolygonDist(p, polygon), from the edge nearest to `near.c`. The full scan
+// Upper bound on pointToPolygonDist(p, polygon), from the edge nearest to `nearCell.c`. The full scan
 // computes min over all edges of getSegDistSq(p, a, b) with the same arguments, so its result is
 // <= this edge's value; the margin covers FP contraction differences between call sites.
-inline double edgeDistBound(const Point& p, const Cell& near, const Polygon& polygon) {
-    const auto& ring = near.kr < 0 ? polygon.outer() : polygon.inners()[near.kr];
-    const Point& a = ring[near.ki];
-    const Point& b = ring[near.ki == 0 ? ring.size() - 1 : near.ki - 1];
+inline double edgeDistBound(const Point& p, const Cell& nearCell, const Polygon& polygon) {
+    const auto& ring = nearCell.kr < 0 ? polygon.outer() : polygon.inners()[nearCell.kr];
+    const Point& a = ring[nearCell.ki];
+    const Point& b = ring[nearCell.ki == 0 ? ring.size() - 1 : nearCell.ki - 1];
     return std::sqrt(getSegDistSq(p, a, b)) * (1 + 1e-12) + 1e-11;
 }
 

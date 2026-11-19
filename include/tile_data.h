@@ -2,10 +2,15 @@
 #ifndef _TILE_DATA_H
 #define _TILE_DATA_H
 
+#include <algorithm>
+#include <condition_variable>
 #include <map>
+#include <mutex>
 #include <set>
 #include <vector>
 #include <memory>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp>
 #include "append_vector.h"
 #include "clip_cache.h"
 #include "mmap_allocator.h"
@@ -31,38 +36,122 @@ template<typename OO> void finalizeObjects(
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator end,
 	typename std::vector<std::vector<OO>>& lowZoom
 	) {
-	size_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
 #ifdef CLOCK_MONOTONIC
 	timespec startTs, endTs;
 	clock_gettime(CLOCK_MONOTONIC, &startTs);
 #endif
-
-	int i = -1;
-	for (auto it = begin; it != end; it++) {
-		i++;
-		if (it->size() > 0 || i % 50 == 0 || i == 4095) {
-			std::cout << "\r" << name << ": finalizing z6 tile " << (i + 1) << "/" << CLUSTER_ZOOM_AREA;
-
+	const size_t shards = end - begin;
+	std::mutex progressMutex;
+	size_t done = 0;
+	auto reportDone = [&](size_t n) {
+		std::lock_guard<std::mutex> lock(progressMutex);
+		done += n;
+		std::cout << "\r" << name << ": finalizing z6 tile " << done << "/" << CLUSTER_ZOOM_AREA;
 #ifdef CLOCK_MONOTONIC
-			clock_gettime(CLOCK_MONOTONIC, &endTs);
-			uint64_t elapsedNs = 1e9 * (endTs.tv_sec - startTs.tv_sec) + endTs.tv_nsec - startTs.tv_nsec;
-			std::cout << " (" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)";
+		clock_gettime(CLOCK_MONOTONIC, &endTs);
+		uint64_t elapsedNs = 1e9 * (endTs.tv_sec - startTs.tv_sec) + endTs.tv_nsec - startTs.tv_nsec;
+		std::cout << " (" << std::to_string((uint32_t)(elapsedNs / 1e6)) << " ms)";
 #endif
-			std::cout << std::flush;
-		}
-		if (it->size() == 0)
-			continue;
+		std::cout << std::flush;
+	};
 
+	auto finalizeShard = [&](size_t i, size_t sortThreads) {
+		auto it = begin + i;
 		// We track a separate copy of low zoom objects to avoid scanning large
 		// lists of objects that may be on slow disk storage.
 		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
 			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
 				lowZoom[i].push_back(*objectIt);
 
-		sortOutputObjects<OO>(indexZoom, threadNum, it->begin(), it->end());
+		sortOutputObjects<OO>(indexZoom, sortThreads, it->begin(), it->end());
+	};
+
+	// Shards are independent. A shard with more than 1/threadNum of all objects
+	// (e.g. one of the few populated z6 tiles of a small extract) is sorted on its
+	// own using all threads. The others are sorted in parallel, one thread each,
+	// largest first.
+	size_t total = 0, empty = 0;
+	for (auto it = begin; it != end; it++) total += it->size();
+	std::vector<size_t> big, small;
+	for (size_t i = 0; i < shards; i++) {
+		const size_t n = (begin + i)->size();
+		if (n == 0) empty++;
+		else if (threadNum <= 1 || n * threadNum > total) big.push_back(i);
+		else small.push_back(i);
+	}
+	std::sort(small.begin(), small.end(), [&](size_t a, size_t b) { return (begin + a)->size() > (begin + b)->size(); });
+	reportDone(empty);
+
+	for (size_t i : big) {
+		finalizeShard(i, threadNum);
+		reportDone(1);
+	}
+
+	if (!small.empty()) {
+		// Each sort copies its shard into a buffer, so cap the objects being
+		// sorted at once (a single shard may always run).
+		const size_t budget = std::max<size_t>(total / 8, (begin + small.front())->size());
+		size_t inFlight = 0;
+		std::mutex budgetMutex;
+		std::condition_variable budgetFreed;
+		boost::asio::thread_pool pool(threadNum);
+		for (size_t i : small) {
+			boost::asio::post(pool, [&, i]() {
+				const size_t n = (begin + i)->size();
+				{
+					std::unique_lock<std::mutex> lock(budgetMutex);
+					budgetFreed.wait(lock, [&]() { return inFlight == 0 || inFlight + n <= budget; });
+					inFlight += n;
+				}
+				finalizeShard(i, 1);
+				{
+					std::lock_guard<std::mutex> lock(budgetMutex);
+					inFlight -= n;
+				}
+				budgetFreed.notify_all();
+				reportDone(1);
+			});
+		}
+		pool.join();
 	}
 
 	std::cout << std::endl;
+}
+
+// Set the tiles holding the objects of z6 tile i (shard), and their parent tiles.
+template<typename OO> void collectTilesWithObjectsInShardTemplate(
+	const unsigned int& indexZoom,
+	AppendVectorNS::AppendVector<OO>& shard,
+	const size_t i,
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
+) {
+	size_t maxZoom = zooms.size() - 1;
+	uint16_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
+	int64_t lastX = -1;
+	int64_t lastY = -1;
+	const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
+	const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+
+	for (size_t j = 0; j < shard.size(); j++) {
+		// Compute the x, y at the base zoom level
+		TileCoordinate baseX = z6x * z6OffsetDivisor + shard[j].x;
+		TileCoordinate baseY = z6y * z6OffsetDivisor + shard[j].y;
+
+		// Translate the x, y at the requested zoom level
+		TileCoordinate x = baseX / (1 << (indexZoom - maxZoom));
+		TileCoordinate y = baseY / (1 << (indexZoom - maxZoom));
+
+		if (lastX != x || lastY != y) {
+			lastX = x;
+			lastY = y;
+
+			for (int zoom = maxZoom; zoom >= 0; zoom--) {
+				zooms[zoom]->set(x, y);
+				x /= 2;
+				y /= 2;
+			}
+		}
+	}
 }
 
 template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
@@ -71,35 +160,8 @@ template<typename OO> void collectTilesWithObjectsAtZoomTemplate(
 	const size_t size,
 	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
 ) {
-	size_t maxZoom = zooms.size() - 1;
-	uint16_t z6OffsetDivisor = indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1;
-	int64_t lastX = -1;
-	int64_t lastY = -1;
-	for (size_t i = 0; i < size; i++) {
-		const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
-		const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
-
-		for (size_t j = 0; j < objects[i].size(); j++) {
-			// Compute the x, y at the base zoom level
-			TileCoordinate baseX = z6x * z6OffsetDivisor + objects[i][j].x;
-			TileCoordinate baseY = z6y * z6OffsetDivisor + objects[i][j].y;
-
-			// Translate the x, y at the requested zoom level
-			TileCoordinate x = baseX / (1 << (indexZoom - maxZoom));
-			TileCoordinate y = baseY / (1 << (indexZoom - maxZoom));
-
-			if (lastX != x || lastY != y) {
-				lastX = x;
-				lastY = y;
-
-				for (int zoom = maxZoom; zoom >= 0; zoom--) {
-					zooms[zoom]->set(x, y);
-					x /= 2;
-					y /= 2;
-				}
-			}
-		}
-	}
+	for (size_t i = 0; i < size; i++)
+		collectTilesWithObjectsInShardTemplate<OO>(indexZoom, objects[i], i, zooms);
 }
 
 template<typename OO>
@@ -310,6 +372,8 @@ public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
 
 	void collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
+	// The same for the objects of one z6 tile (0 <= shard < CLUSTER_ZOOM_AREA)
+	void collectTilesWithObjectsInShard(size_t shard, std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
 	void collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
@@ -436,7 +500,8 @@ public:
 
 void populateTilesAtZoom(
 	const std::vector<class TileDataSource *>& sources,
-	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms
+	std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms,
+	size_t threadNum = 1
 );
 
 #endif //_TILE_DATA_H

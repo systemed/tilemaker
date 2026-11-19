@@ -14,6 +14,8 @@ public:
 	virtual void set(TileCoordinate x, TileCoordinate y) = 0;
 	virtual size_t size() const = 0;
 	virtual size_t zoom() const = 0;
+	// Set every tile with minX <= x <= maxX and minY <= y <= maxY.
+	virtual void setBox(TileCoordinate minX, TileCoordinate maxX, TileCoordinate minY, TileCoordinate maxY);
 	// Visit every set tile in x-major, y-minor order.
 	virtual void forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const;
 };
@@ -30,7 +32,10 @@ public:
 	size_t size() const override;
 	size_t zoom() const override;
 	void set(TileCoordinate x, TileCoordinate y) override;
+	void setBox(TileCoordinate minX, TileCoordinate maxX, TileCoordinate minY, TileCoordinate maxY) override;
 	void forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const override;
+	// Add the tiles set in other, a set of the same zoom.
+	void merge(const PreciseTileCoordinatesSet& other);
 
 private:
 	unsigned int zoom_;
