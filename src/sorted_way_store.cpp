@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <atomic>
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <bitset>
 #include <cstring>
 #include <iostream>
@@ -278,20 +281,31 @@ void SortedWayStore::finalize(unsigned int threadNum) {
 	}
 	workerBuffers.clear();
 
-	// Empty the orphanage into the index.
-	std::vector<std::pair<WayID, std::vector<NodeID>>> copy;
-	for (const auto& entry: orphanage) {
-		for (const auto& orphan: entry.second)
-			copy.push_back(orphan);
-
-		// Orphans may come from different workers, and thus be unsorted.
-		std::sort(
-			copy.begin(),
-			copy.end(), 
-			[](auto const &a, auto const &b) { return a.first < b.first; }
-		);
-		publishGroup(copy);
-		copy.clear();
+	// Empty the orphanage into the index. The groups are independent and publishGroup is what the
+	// workers call during the pass anyway, so publish them from all threads: one after the other,
+	// the planet's leftover groups took ~10 s with every other thread idle.
+	std::vector<const std::vector<std::pair<WayID, std::vector<NodeID>>>*> orphanGroups;
+	for (const auto& entry: orphanage)
+		orphanGroups.push_back(&entry.second);
+	std::atomic<size_t> nextGroup(0);
+	auto publishOrphans = [&]() {
+		std::vector<std::pair<WayID, std::vector<NodeID>>> copy;
+		for (size_t i = nextGroup++; i < orphanGroups.size(); i = nextGroup++) {
+			copy.assign(orphanGroups[i]->begin(), orphanGroups[i]->end());
+			// Orphans may come from different workers, and thus be unsorted.
+			std::sort(
+				copy.begin(),
+				copy.end(),
+				[](auto const &a, auto const &b) { return a.first < b.first; }
+			);
+			publishGroup(copy);
+		}
+	};
+	{
+		boost::asio::thread_pool pool(std::max<unsigned int>(1, threadNum));
+		for (unsigned int t = 0; t < std::max<unsigned int>(1, threadNum); t++)
+			boost::asio::post(pool, publishOrphans);
+		pool.join();
 	}
 
 	orphanage.clear();
