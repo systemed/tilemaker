@@ -21,6 +21,12 @@ MU_TEST(test_append_vector) {
 
 	mu_check(vec[25] == 25);
 
+	const AppendVector<int32_t>& constVec = vec;
+	mu_check(constVec[25] == 25);
+	mu_check(constVec[8191] == 8191);
+	mu_check(constVec[8192] == 8192);
+	mu_check(constVec[9999] == 9999);
+
 	const AppendVector<int32_t>::Iterator& it = vec.begin();
 	mu_check(*it == 0);
 	mu_check(*(it + 1) == 1);
