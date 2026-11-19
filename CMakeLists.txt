@@ -221,7 +221,7 @@ endif()
 target_include_directories(tilemaker PRIVATE ${CMAKE_BINARY_DIR}) # for generated files
 target_link_libraries(tilemaker
 		${THREAD_LIB} ${CMAKE_DL_LIBS}
-		${LUA_LIBRARIES}
+		${LUA_LIBRARIES} ${LUAJIT_LIBRARIES}
 		shapelib::shp
 		SQLite::SQLite3
 		Rapidjson::rapidjson
