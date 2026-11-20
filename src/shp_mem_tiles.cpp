@@ -145,7 +145,7 @@ bool ShpMemTiles::mayIntersect(const std::string& layerName, const Box& box) con
 				return results;
 			},
 			[&](OutputObject const &oo) { // checkQuery
-				return geom::intersects(queryBox, retrieveMultiPolygon(oo.objectID));
+				return intersects(oo, queryBox);
 			}
 		).empty();
 	}
