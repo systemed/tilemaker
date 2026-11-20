@@ -1217,3 +1217,41 @@ bool rect_clip(const MultiPolygon &mp, Box const &bbox, MultiPolygon &out) {
 		if (!clipPolygon(rc, poly, out)) return false;
 	return true;
 }
+
+std::vector<Box> merge_nearby_boxes(std::vector<Box> boxes, double gap) {
+	// A merged box can grow to reach one it passed over, so repeat until a
+	// pass merges nothing.
+	bool merged = true;
+	while (merged) {
+		merged = false;
+		std::vector<Box> out;
+		for (const Box &box : boxes) {
+			const Box grown(
+				Point(box.min_corner().x() - gap, box.min_corner().y() - gap),
+				Point(box.max_corner().x() + gap, box.max_corner().y() + gap));
+			auto near = std::find_if(out.begin(), out.end(),
+				[&](const Box &other) { return geom::intersects(grown, other); });
+			if (near == out.end()) {
+				out.push_back(box);
+			} else {
+				geom::expand(*near, box);
+				merged = true;
+			}
+		}
+		boxes.swap(out);
+	}
+	return boxes;
+}
+
+std::vector<Box> multipolygon_index_boxes(const MultiPolygon &mp, double gap) {
+	const Box envelope = geom::return_envelope<Box>(mp);
+	if (mp.size() < 2) return { envelope };
+	std::vector<Box> outers;
+	double outersArea = 0;
+	for (const Polygon &poly : mp) {
+		outers.push_back(geom::return_envelope<Box>(poly.outer()));
+		outersArea += geom::area(outers.back());
+	}
+	if (geom::area(envelope) <= 4 * outersArea) return { envelope };
+	return merge_nearby_boxes(std::move(outers), gap);
+}
