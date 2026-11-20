@@ -1,6 +1,6 @@
 #include <iostream>
-#include "external/minunit.h"
 #include "shp_mem_tiles.h"
+#include "external/minunit.h"
 
 bool verbose = false;
 
