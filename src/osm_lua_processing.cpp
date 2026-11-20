@@ -400,40 +400,8 @@ lua_State *OsmLuaProcessing::newLuaState(LuaPool &pool) {
 	return L;
 }
 
-OsmLuaProcessing::OsmLuaProcessing(
-	OSMStore &osmStore,
-	const class Config &configIn,
-	class LayerDefinition &layers,
-	const string &luaFile,
-	const class ShpMemTiles &shpMemTiles, 
-	class OsmMemTiles &osmMemTiles,
-	AttributeStore &attributeStore,
-	class Declutter &declutter,
-	bool materializeGeometries,
-	bool isFirst) :
-	osmStore(osmStore),
-	luaStateHolder(newLuaState(luaPool)),
-	luaState(luaStateHolder.L),
-	shpMemTiles(shpMemTiles),
-	osmMemTiles(osmMemTiles),
-	attributeStore(attributeStore),
-	declutter(declutter),
-	config(configIn),
-	currentTags(NULL),
-	layers(layers),
-	materializeGeometries(materializeGeometries) {
-
-	sigusr1Handler.initialize();
-	if (vectorLayerMetadataMutexes.size() <= layers.layers.size()) {
-		vectorLayerMetadataMutexes.resize(layers.layers.size() + 1);
-	}
-
-	// ----	Initialise Lua
-	g_luaState = &luaState;
-	luaState.setErrorHandler(lua_error_handler);
-	luaState.dofile(luaFile.c_str());
-
-	osmLuaProcessing = this;
+// Register the functions a profile can call as Lua globals.
+static void registerLuaFunctions(kaguya::State &luaState) {
 	luaState["Id"] = &rawId;
 	luaState["OsmType"] = &rawOsmType;
 	luaState["AllKeys"] = &rawAllKeys;
@@ -491,6 +459,47 @@ OsmLuaProcessing::OsmLuaProcessing(
 	luaState["FindInRelation"] = &rawFindInRelation;
 	luaState["SetData"] = &rawSetData;
 	luaState["GetData"] = &rawGetData;
+}
+
+OsmLuaProcessing::OsmLuaProcessing(
+	OSMStore &osmStore,
+	const class Config &configIn,
+	class LayerDefinition &layers,
+	const string &luaFile,
+	const class ShpMemTiles &shpMemTiles, 
+	class OsmMemTiles &osmMemTiles,
+	AttributeStore &attributeStore,
+	class Declutter &declutter,
+	bool materializeGeometries,
+	bool isFirst) :
+	osmStore(osmStore),
+	luaStateHolder(newLuaState(luaPool)),
+	luaState(luaStateHolder.L),
+	shpMemTiles(shpMemTiles),
+	osmMemTiles(osmMemTiles),
+	attributeStore(attributeStore),
+	declutter(declutter),
+	config(configIn),
+	currentTags(NULL),
+	layers(layers),
+	materializeGeometries(materializeGeometries) {
+
+	sigusr1Handler.initialize();
+	if (vectorLayerMetadataMutexes.size() <= layers.layers.size()) {
+		vectorLayerMetadataMutexes.resize(layers.layers.size() + 1);
+	}
+
+	// ----	Initialise Lua
+	g_luaState = &luaState;
+	luaState.setErrorHandler(lua_error_handler);
+	osmLuaProcessing = this;
+	// The built-in functions are registered before the profile is loaded, so that it can keep them in
+	// locals at the top (local Find, Layer = Find, Layer), and again afterwards, so that they still
+	// replace profile functions of the same name, as before.
+	registerLuaFunctions(luaState);
+	luaState.dofile(luaFile.c_str());
+	registerLuaFunctions(luaState);
+
 	supportsRemappingShapefiles = !!luaState["attribute_function"];
 	supportsReadingRelations    = !!luaState["relation_scan_function"];
 	supportsPostScanRelations   = !!luaState["relation_postscan_function"];
