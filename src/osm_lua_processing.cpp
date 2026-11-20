@@ -651,7 +651,7 @@ std::vector<uint> OsmLuaProcessing::intersectsQuery(const string &layerName, boo
 			return results;
 		},
 		[&](OutputObject const &oo) { // checkQuery
-			return geom::intersects(geom, shpMemTiles.retrieveMultiPolygon(oo.objectID));
+			return shpMemTiles.intersects(oo, geom);
 		}
 	);
 	return ids;
