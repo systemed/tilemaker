@@ -23,8 +23,12 @@ namespace {
 }
 
 MU_TEST(test_may_intersect) {
-	Declutter declutter;
-	ShpMemTiles shp(1, 14, declutter);
+	// Static, not local: StoreGeometry leases this thread's stores from shp,
+	// and the thread_local LeasedStores hand them back to it (locking its
+	// storeMutex) when the main thread exits. Thread-locals are destroyed
+	// before statics, so shp is still alive then.
+	static Declutter declutter;
+	static ShpMemTiles shp(1, 14, declutter);
 	shp.CreateNamedLayerIndex("layer");
 
 	// Two small squares at opposite corners: the shape's bounding box, (0,0)-(10,10),
