@@ -535,14 +535,18 @@ int main(const int argc, const char* argv[]) {
 		tileError = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + ": " + what;
 		tileFailed = true;
 	};
+	// A write of the ordered writers failed (see OrderedBatches::guarded): stop as for a tile
+	auto writeFailed = [&]() { return sharedData.pmtiles.batches.failed() || sharedData.mbtiles.batches.failed(); };
 	const uint cutZoom = std::max<uint>(12, config.startZoom);
 	// Batches are handed out as threads become free rather than all posted up
 	// front: a planet has ~14M of them, and their queued handlers held GBs.
 	std::mutex batchMutex;
 	std::size_t nextBatchStart = 0;
-	auto nextBatch = [&](std::size_t &startIndex, std::size_t &batchSize) {
+	uint64_t nextBatchSeq = 0;
+	auto nextBatch = [&](std::size_t &startIndex, std::size_t &batchSize, uint64_t &seq) {
 		const std::lock_guard<std::mutex> lock(batchMutex);
 		startIndex = nextBatchStart;
+		seq = nextBatchSeq++;
 		// Compute how many tiles should be assigned to this batch --
 		// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
 		batchSize = 0;
@@ -570,17 +574,33 @@ int main(const int argc, const char* argv[]) {
 		return batchSize > 0;
 	};
 
+	// .pmtiles and .mbtiles are written in batch order, so the file doesn't depend on thread scheduling
+	const bool toPMTiles = options.outputMode == OptionsParser::OutputMode::PMTiles;
+	const bool toMBTiles = options.outputMode == OptionsParser::OutputMode::MBTiles;
+	// While an earlier batch is still being worked on, each thread may run ahead by about
+	// 64 MB of finished tiles. With less, threads often wait for a slow batch (mostly a
+	// dense z12 area), above all when two threads share a core and each runs at half speed.
+	const uint64_t maxHeldBytes = (64ull << 20) * options.threadNum;
+	if (toPMTiles) sharedData.pmtiles.batches.setMaxHeldBytes(maxHeldBytes);
+	if (toMBTiles) sharedData.mbtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	for (unsigned int t = 0; t < options.threadNum; t++) {
 		boost::asio::post(pool, [&]() {
 			std::size_t startIndex, batchSize;
-			while (nextBatch(startIndex, batchSize)) {
+			uint64_t seq;
+			while (true) {
+				if (toPMTiles) sharedData.pmtiles.batches.waitForRoom();
+				if (toMBTiles) sharedData.mbtiles.batches.waitForRoom();
+				if (tileFailed || writeFailed()) break;
+				if (!nextBatch(startIndex, batchSize, seq)) break;
+				if (toPMTiles) sharedData.pmtiles.batches.begin(seq);
+				if (toMBTiles) sharedData.mbtiles.batches.begin(seq);
 				clipCacheBatchId = ++batchCounter;
 				// A single-tile batch has no descendants to reuse its clips.
 				clipCacheNoStore = batchSize == 1;
 				std::vector<std::string> tileTimings;
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
-					if (tileFailed) return;
+					if (tileFailed || writeFailed()) break;
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
@@ -598,10 +618,10 @@ int main(const int argc, const char* argv[]) {
 						outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 					} catch (const std::exception& e) {
 						recordTileError(zoom, coords, e.what());
-						return;
+						break;
 					} catch (...) {
 						recordTileError(zoom, coords, "unknown exception");
-						return;
+						break;
 					}
 
 #ifdef CLOCK_MONOTONIC
@@ -621,6 +641,10 @@ int main(const int argc, const char* argv[]) {
 						std::cout << output << std::endl;
 				}
 
+				// Hand the batch over even if a tile failed, so no thread waits for it
+				if (toPMTiles) sharedData.pmtiles.batches.end();
+				if (toMBTiles) sharedData.mbtiles.batches.end();
+				if (tileFailed || writeFailed()) break;
 				tilesWritten += (endIndex - startIndex); 
 
 				if (io_mutex.try_lock()) {
@@ -648,6 +672,18 @@ int main(const int argc, const char* argv[]) {
 	pool.join();
 	if (tileFailed) {
 		cerr << endl << "Error writing tile " << tileError << endl;
+		return -1;
+	}
+	// A write that failed while the tiles were written (see OrderedBatches::guarded)
+	std::exception_ptr writeError = toPMTiles ? sharedData.pmtiles.batches.error() : toMBTiles ? sharedData.mbtiles.batches.error() : nullptr;
+	if (writeError) {
+		try {
+			std::rethrow_exception(writeError);
+		} catch (const std::exception& e) {
+			cerr << endl << "Error writing " << sharedData.outputFile << ": " << e.what() << endl;
+		} catch (...) {
+			cerr << endl << "Error writing " << sharedData.outputFile << endl;
+		}
 		return -1;
 	}
 
