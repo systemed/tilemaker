@@ -3,17 +3,24 @@
 #include <mutex>
 #include <cstring>
 #include <cstdlib>
-#include <deque>
-#include <memory>
 
 namespace PooledStringNS {
-	struct TableDeleter {
-		void operator()(char* table) const {
-			std::free(table);
+	// Fixed array: never reallocates, so unlocked readers are safe.
+	// Index is 24 bits; untouched pages are never committed.
+	const size_t MaxTables = 1 << 24;
+
+	struct Tables {
+		char **slots = static_cast<char **>(std::calloc(MaxTables, sizeof(char *)));
+		size_t count = 0;
+		~Tables() {
+			for (size_t i = 0; i < count; i++)
+				std::free(slots[i]);
+			std::free(slots);
 		}
 	};
 
-	std::deque<std::unique_ptr<char, TableDeleter>> tables;
+	Tables tablesStore;
+	char **const tables = tablesStore.slots;
 	std::mutex mutex;
 
 	const uint8_t ShortString = 0b00;
@@ -41,11 +48,13 @@ PooledString::PooledString(const std::string& str) {
 		if (spaceLeft < 0 || spaceLeft < str.size()) {
 			std::lock_guard<std::mutex> lock(mutex);
 			spaceLeft = 65536;
-			std::unique_ptr<char, TableDeleter> buffer(static_cast<char*>(std::malloc(spaceLeft)));
-			if (!buffer)
+			char *buffer = static_cast<char *>(std::malloc(spaceLeft));
+			if (!buffer || !tables)
 				throw std::runtime_error("PooledString could not malloc");
-			tables.emplace_back(std::move(buffer));
-			tableIndex = tables.size() - 1;
+			if (tablesStore.count >= MaxTables)
+				throw std::runtime_error("PooledString out of tables");
+			tables[tablesStore.count] = buffer;
+			tableIndex = tablesStore.count++;
 		}
 
 		storage[1] = tableIndex >> 16;
@@ -60,7 +69,7 @@ PooledString::PooledString(const std::string& str) {
 		storage[6] = length >> 8;
 		storage[7] = length;
 
-		memcpy(tables[tableIndex].get() + offset, str.data(), str.size());
+		memcpy(tables[tableIndex] + offset, str.data(), str.size());
 
 		spaceLeft -= str.size();
 	}
@@ -114,7 +123,7 @@ const char* PooledStringNS::PooledString::data() const {
 	uint32_t tableIndex = (storage[1] << 16) + (storage[2] << 8) + storage[3];
 	uint16_t offset = (storage[4] << 8) + storage[5];
 
-	const char* data = tables[tableIndex].get() + offset;
+	const char* data = tables[tableIndex] + offset;
 	return data;
 }
 
@@ -144,7 +153,7 @@ std::string PooledStringNS::PooledString::toString() const {
 		uint32_t tableIndex = (storage[1] << 16) + (storage[2] << 8) + storage[3];
 		uint16_t offset = (storage[4] << 8) + storage[5];
 
-		char* data = tables[tableIndex].get() + offset;
+		char* data = tables[tableIndex] + offset;
 		rv.append(data, size());
 		return rv;
 	}
