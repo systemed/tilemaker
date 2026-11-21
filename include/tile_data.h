@@ -8,7 +8,12 @@
 #include <mutex>
 #include <set>
 #include <vector>
+#include <unordered_set>
+#include <tuple>
 #include <memory>
+#include <functional>
+#include <future>
+#include <atomic>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 #include "append_vector.h"
@@ -19,14 +24,27 @@
 
 typedef std::vector<class TileDataSource *> SourceList;
 
+// The TileDataSources alive, for the store leases a thread keeps until it ends (leased_store.h): the
+// main thread gives its leases back at exit, after the sources are gone. A source is also told apart
+// by its number, as a new source can be at the address of a destroyed one.
+uint64_t registerLeaseSource(const TileDataSource *source);
+void unregisterLeaseSource(const TileDataSource *source);
+std::mutex &leaseSourcesMutex();
+bool leaseSourceAlive(const TileDataSource *source, uint64_t number);	// with leaseSourcesMutex() held
+
 class TileBbox;
 
+// lowZoom (if given): gets the objects with minZoom < CLUSTER_ZOOM, in their order before the sort
 template<typename OO> void sortOutputObjects(
     const unsigned int indexZoom,
     const size_t threadNum,
 	typename AppendVectorNS::AppendVector<OO>::Iterator begin,
-	typename AppendVectorNS::AppendVector<OO>::Iterator end
+	typename AppendVectorNS::AppendVector<OO>::Iterator end,
+	std::vector<OO>* lowZoom = nullptr
 );
+
+// Frees the calling thread's buffers of sortOutputObjects (threads that end free theirs)
+void releaseSortBuffers();
 
 template<typename OO> void finalizeObjects(
 	const std::string& name,
@@ -58,26 +76,23 @@ template<typename OO> void finalizeObjects(
 	auto finalizeShard = [&](size_t i, size_t sortThreads) {
 		auto it = begin + i;
 		// We track a separate copy of low zoom objects to avoid scanning large
-		// lists of objects that may be on slow disk storage.
-		for (auto objectIt = it->begin(); objectIt != it->end(); objectIt++)
-			if (objectIt->oo.minZoom < CLUSTER_ZOOM)
-				lowZoom[i].push_back(*objectIt);
-
-		sortOutputObjects<OO>(indexZoom, sortThreads, it->begin(), it->end());
+		// lists of objects that may be on slow disk storage. The sort collects them while it reads
+		// the shard anyway (on its threads).
+		sortOutputObjects<OO>(indexZoom, sortThreads, it->begin(), it->end(), &lowZoom[i]);
 	};
 
-	// Shards are independent. A shard with more than 1/threadNum of all objects
-	// (e.g. one of the few populated z6 tiles of a small extract) is sorted on its
-	// own using all threads. The others are sorted in parallel, one thread each,
-	// largest first.
+	// Shards are independent. They are sorted in parallel, largest first, as many at once as
+	// the memory budget below allows, each with threads in proportion to its share of the
+	// budget: a shard holding most objects (one of the few populated z6 tiles of a small
+	// extract) gets all of them, and the biggest of the planet don't run one after another.
 	size_t total = 0, empty = 0;
 	for (auto it = begin; it != end; it++) total += it->size();
 	std::vector<size_t> big, small;
 	for (size_t i = 0; i < shards; i++) {
 		const size_t n = (begin + i)->size();
 		if (n == 0) empty++;
-		else if (threadNum <= 1 || n * threadNum > total) big.push_back(i);
-		else small.push_back(i);
+		else if (threadNum <= 1) big.push_back(i);
+		else small.push_back(i);	// all in the pool below, the biggest with more threads
 	}
 	std::sort(small.begin(), small.end(), [&](size_t a, size_t b) { return (begin + a)->size() > (begin + b)->size(); });
 	reportDone(empty);
@@ -86,11 +101,12 @@ template<typename OO> void finalizeObjects(
 		finalizeShard(i, threadNum);
 		reportDone(1);
 	}
+	releaseSortBuffers();
 
 	if (!small.empty()) {
 		// Each sort copies its shard into a buffer, so cap the objects being
 		// sorted at once (a single shard may always run).
-		const size_t budget = std::max<size_t>(total / 8, (begin + small.front())->size());
+		const size_t budget = std::max<size_t>(total / 2, (begin + small.front())->size());
 		size_t inFlight = 0;
 		std::mutex budgetMutex;
 		std::condition_variable budgetFreed;
@@ -103,7 +119,14 @@ template<typename OO> void finalizeObjects(
 					budgetFreed.wait(lock, [&]() { return inFlight == 0 || inFlight + n <= budget; });
 					inFlight += n;
 				}
-				finalizeShard(i, 1);
+				// The budget lets only a few of the largest shards run at once: give each threads in
+				// proportion to its share of the budget, so that all of them are busy (the sort's
+				// result doesn't depend on its threads)
+				finalizeShard(i, std::max<size_t>(1, std::min<size_t>(threadNum, threadNum * n / budget)));
+				// Each thread kept the buffer of the biggest shard it sorted for the next sorts, which
+				// are smaller (biggest first): beyond the budget, every thread held one of the biggest
+				// shards' size. Big buffers go after their sort.
+				if (n * sizeof(OO) >= (64u << 20)) releaseSortBuffers();
 				{
 					std::lock_guard<std::mutex> lock(budgetMutex);
 					inFlight -= n;
@@ -118,6 +141,10 @@ template<typename OO> void finalizeObjects(
 	std::cout << std::endl;
 }
 
+// Objects per z12 tile ((x << 12) | y), counted while the tiles are collected when not empty: they
+// tell which batches will be slow. A z6 tile's z12 tiles are counted by the thread doing that shard.
+extern std::vector<uint32_t> z12ObjectCounts;
+
 // Set the tiles holding the objects of z6 tile i (shard), and their parent tiles.
 template<typename OO> void collectTilesWithObjectsInShardTemplate(
 	const unsigned int& indexZoom,
@@ -131,11 +158,13 @@ template<typename OO> void collectTilesWithObjectsInShardTemplate(
 	int64_t lastY = -1;
 	const size_t z6x = i / CLUSTER_ZOOM_WIDTH;
 	const size_t z6y = i % CLUSTER_ZOOM_WIDTH;
+	uint32_t *z12Counts = indexZoom >= 12 && !z12ObjectCounts.empty() ? z12ObjectCounts.data() : nullptr;
 
 	for (size_t j = 0; j < shard.size(); j++) {
 		// Compute the x, y at the base zoom level
 		TileCoordinate baseX = z6x * z6OffsetDivisor + shard[j].x;
 		TileCoordinate baseY = z6y * z6OffsetDivisor + shard[j].y;
+		if (z12Counts) z12Counts[((size_t)(baseX >> (indexZoom - 12)) << 12) | (baseY >> (indexZoom - 12))]++;
 
 		// Translate the x, y at the requested zoom level
 		TileCoordinate x = baseX / (1 << (indexZoom - maxZoom));
@@ -208,6 +237,24 @@ template<typename OO> void collectLowZoomObjectsForTile(
 	}
 }
 
+// The order the shards are sorted in (see sortOutputObjects) as a number: x and y (offsets in the
+// z6 tile, below 2^(indexZoom - CLUSTER_ZOOM)) bit-interleaved, x above y at each level.
+inline uint32_t indexSpreadBits(uint32_t v) {
+	v &= 0x0000FFFF;
+	v = (v | (v << 8)) & 0x00FF00FF;
+	v = (v | (v << 4)) & 0x0F0F0F0F;
+	v = (v | (v << 2)) & 0x33333333;
+	v = (v | (v << 1)) & 0x55555555;
+	return v;
+}
+inline uint32_t indexOrderKey(uint32_t x, uint32_t y) {
+	return (indexSpreadBits(x) << 1) | indexSpreadBits(y);
+}
+
+// When non-zero, getObjectsForTile keeps the objects shown up to this zoom rather than the tile's
+// own zoom (see the covered subtrees in tilemaker.cpp)
+extern thread_local unsigned objectsUpToZoom;
+
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& indexZoom,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
@@ -215,7 +262,8 @@ template<typename OO> void collectObjectsForTileTemplate(
 	size_t iEnd,
 	unsigned int zoom,
 	TileCoordinates dstIndex,
-	std::vector<OutputObjectID>& output
+	std::vector<OutputObjectID>& output,
+	bool* nonPolygon = nullptr	// if given: stop at the first object that isn't a polygon, and set it
 ) {
 	if (zoom < CLUSTER_ZOOM)
 		throw std::runtime_error("collectObjectsForTileTemplate should not be called for low zooms");
@@ -248,6 +296,31 @@ template<typename OO> void collectObjectsForTileTemplate(
 		// searching, too.
 		OutputObject dummyOo(POINT_, 0, 0, 0, 0);
 		const size_t bz = indexZoom;
+
+		// (At the index zoom itself, one index tile: the search below is as fast)
+		if (bz >= CLUSTER_ZOOM && bz - CLUSTER_ZOOM <= 8 * sizeof(Z6Offset) && clampedZoom < bz) {
+			// The shard is sorted by (x, y) compared at each zoom from CLUSTER_ZOOM to indexZoom, i.e. by
+			// indexOrderKey (x, y < 2^(indexZoom - CLUSTER_ZOOM)). The index tiles inside the tile are those
+			// with keys [key(needle), key(needle) + 4^(indexZoom - clampedZoom)): one range, found with
+			// binary searches on the key. The same objects, in the same order, as the loop below.
+			const uint32_t first = indexOrderKey(needleX, needleY);
+			const uint32_t last = first + (uint32_t(1) << (2 * (bz - clampedZoom)));
+			auto keyLess = [](const OO& a, uint32_t k) { return indexOrderKey(a.x, a.y) < k; };
+			auto from = std::lower_bound(objects[i].begin(), objects[i].end(), first, keyLess);
+			// Mostly a few objects (deep zooms): look at them one by one first
+			auto to = from;
+			unsigned steps = 0;
+			while (to != objects[i].end() && steps < 32 && keyLess(*to, last)) { ++to; ++steps; }
+			if (steps == 32) to = std::lower_bound(to, objects[i].end(), last, keyLess);
+			const unsigned upTo = objectsUpToZoom ? objectsUpToZoom : zoom;
+			for (; from != to; ++from) {
+				if (from->oo.minZoom <= upTo) {
+					if (nonPolygon && from->oo.geomType != POLYGON_) { *nonPolygon = true; return; }
+					output.push_back(outputObjectWithId(*from));
+				}
+			}
+			continue;
+		}
 
 		const OO targetXY = {dummyOo, needleX, needleY };
 		auto iter = std::lower_bound(
@@ -288,7 +361,8 @@ template<typename OO> void collectObjectsForTileTemplate(
 			TileCoordinate y = baseY / (1 << (indexZoom - clampedZoom));
 
 			if (dstIndex.x == x && dstIndex.y == y) {
-				if (iter->oo.minZoom <= zoom) {
+				if (iter->oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom)) {
+					if (nonPolygon && iter->oo.geomType != POLYGON_) { *nonPolygon = true; return; }
 					output.push_back(outputObjectWithId(*iter));
 				}
 			} else {
@@ -362,22 +436,46 @@ protected:
 	std::vector<multi_polygon_store_t> multipolygonStores;
 	// Per multipolygonStores entry: stored geometry is known to pass geom::is_valid
 	std::vector<std::vector<bool>> multipolygonValid;
+	// Validity checks still running (see checkValidityLater)
+	std::mutex deferredValidityMutex;
+	std::vector<std::pair<NodeID, std::future<bool>>> deferredValidity;
 	
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
 
-	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>> pendingSmallIndexObjects;
+	// Small index adds are staged per thread and moved to their shards in bulk (see flushStaging)
+	template<class OO> struct IndexStaging {
+		std::vector<OO> entries;
+		std::vector<uint16_t> shards;	// z6 index of each entry
+	};
+	struct alignas(64) IndexStagings {	// a cache line of its own: each is written by its thread only
+		IndexStaging<OutputObjectXY> objects;
+		IndexStaging<OutputObjectXYID> objectsWithIds;
+	};
+	std::mutex stagingMutex;
+	std::deque<IndexStagings> stagings;	// one per thread that added objects (guarded by stagingMutex)
+	uint64_t stagingEpoch;	// identifies this source's stagings in threads' caches (renewed by finalize)
 
 public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
+	~TileDataSource();
+	const uint64_t leaseNumber = registerLeaseSource(this);	// see registerLeaseSource
 
 	void collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 	// The same for the objects of one z6 tile (0 <= shard < CLUSTER_ZOOM_AREA)
 	void collectTilesWithObjectsInShard(size_t shard, std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
+	// Objects in the small index of z6 tile `shard`
+	size_t shardObjectCount(size_t shard) const {
+		return (shard < objects.size() ? objects[shard].size() : 0) + (shard < objectsWithIds.size() ? objectsWithIds[shard].size() : 0);
+	}
 
 	void collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 
-	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output);
+	// nonPolygon: see collectObjectsForTileTemplate (z6 and above)
+	void collectObjectsForTile(uint zoom, TileCoordinates dstIndex, std::vector<OutputObjectID>& output, bool* nonPolygon = nullptr);
+	// Whether the objects getObjectsForTile(zoom, dstIndex) returns are none (0), all polygons (1),
+	// or not (2), without sorting them: for the covered-subtree check
+	int objectKindsForTile(uint zoom, TileCoordinates dstIndex);
 	void finalize(size_t threadNum);
 
 	void addGeometryToIndex(
@@ -399,6 +497,13 @@ public:
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id, bool needsLock);
 	void addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	// As addObjectToSmallIndex(tile, oo, id) for each tile and the outputs each(tile, add) calls
+	// add(oo) for, taking a z6 tile's lock once per run of tiles in it
+	template<class Each> void addToSmallIndex(const std::vector<TileCoordinates>& tiles, uint64_t id, Each each);
+	IndexStagings& indexStaging();
+	void stageObject(IndexStagings& staging, size_t z6index, const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	void flushStagingIfFull(IndexStagings& staging);
+	template<class OO> void flushStaging(IndexStaging<OO>& staging, std::vector<AppendVectorNS::AppendVector<OO>>& shards);
 
 	void addObjectToLargeIndex(const Box& envelope, const OutputObject& oo, uint64_t id) {
 		std::lock_guard<std::mutex> lock(mutex);
@@ -412,11 +517,55 @@ public:
 
 	std::vector<OutputObjectID> getObjectsForTile(
 		const std::vector<bool>& sortOrders, 
+		const AttributeStore& attributeStore,
 		unsigned int zoom,
 		TileCoordinates coordinates
 	);
+	void orderStoredGeometryTies(std::vector<OutputObjectID>& data) const;
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+
+	// Large polygons are clipped once per SHARED_PIECE_ZOOM tile before the tiles are written,
+	// and deeper tiles clip from that piece instead of the whole polygon (see tile_data.cpp).
+	static constexpr unsigned SHARED_PIECE_ZOOM = 8;
+	// present(x, y): whether any tile below SHARED_PIECE_ZOOM tile x/y will be written
+	void precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum);
+	// Compute pieces in the order of their z6 tiles (x * 64 + y, the order the tiles are written in):
+	// those of z6 tiles up to handedOutZ6, and those after it while the pieces alive take less than
+	// budgetBytes. The tile threads call this after taking a group.
+	void computeSharedPieces(int64_t handedOutZ6, uint64_t budgetBytes);
+	// Drop the shared pieces inside a z6 tile, once no tile in it is still to be written. Returns
+	// about how many bytes they took.
+	uint64_t releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y);
+	// Whether objectID's polygon is kept in the multipolygon store (retrieveMultiPolygon)
+	virtual bool storesMultiPolygon(NodeID objectID) const { return true; }
+	struct SharedPiece {
+		std::shared_ptr<MultiPolygon> geom;	// null: no usable piece, clip the whole polygon
+		bool valid = false;
+		uint64_t bytes = 0;	// counted in livePieceBytes while the piece is alive
+		~SharedPiece() { livePieceBytes -= bytes; }
+	};
+	// The points of all pieces alive, of all sources
+	static std::atomic<uint64_t> livePieceBytes;
+	struct PieceSlot {
+		std::shared_future<std::shared_ptr<const SharedPiece>> piece;
+		size_t job;	// in pieceJobs
+	};
+	// Filled by precomputeSharedPieces, then only read while the tiles are written (no lock).
+	// releaseSharedPieces resets the pieces of a z6 tile no thread reads any more.
+	std::unordered_set<NodeID> pieceObjects;
+	std::map<std::tuple<NodeID, TileCoordinate, TileCoordinate>, PieceSlot> sharedPieces;
+	struct PieceJob {
+		std::tuple<NodeID, TileCoordinate, TileCoordinate> key;
+		uint64_t points;
+		std::shared_ptr<std::promise<std::shared_ptr<const SharedPiece>>> promise;
+		int64_t z6;
+	};
+	std::vector<PieceJob> pieceJobs;	// by z6 tile, largest polygon first
+	std::unique_ptr<std::atomic<bool>[]> pieceStarted;	// per job
+	std::atomic<size_t> nextPieceJob { 0 };
+	// Computes job i, unless a thread has started it already
+	void computeSharedPiece(size_t i);
 	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
@@ -488,6 +637,11 @@ public:
 
 	// knownValid: src has passed geom::is_valid (see polygonKnownValid)
 	NodeID storeMultiPolygon(const MultiPolygon& src, bool knownValid = false);
+	// Find out in the background whether a polygon stored with knownValid=false passes
+	// geom::is_valid: on a big lake with thousands of islands that takes ~10 s, which would
+	// otherwise hold up the end of reading. finishDeferredValidity records the results.
+	void checkValidityLater(NodeID objectID, MultiPolygon mp);
+	void finishDeferredValidity();
 
 	multi_polygon_t const &retrieveMultiPolygon(NodeID id) const {
 		const auto& shardId = getShard(id);

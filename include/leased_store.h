@@ -2,6 +2,7 @@
 #define _LEASED_STORE_H
 
 #include "tile_data.h"
+#include <tuple>
 
 // LeasedStore implements "leases" for generated geometries.
 //
@@ -45,23 +46,26 @@ inline std::vector<std::pair<size_t, TileDataSource::multi_polygon_store_t*>>& g
 
 template <class T>
 class LeasedStore {
-	std::vector<std::pair<TileDataSource*, std::pair<size_t, T*>>> leases;
+	std::vector<std::tuple<TileDataSource*, uint64_t, std::pair<size_t, T*>>> leases;	// source, its leaseNumber, lease
 
 public:
 	~LeasedStore() {
+		// Only to the sources still alive (see registerLeaseSource)
+		std::lock_guard<std::mutex> live(leaseSourcesMutex());
 		for (const auto& lease : leases) {
-			auto source = lease.first;
+			auto source = std::get<0>(lease);
+			if (!leaseSourceAlive(source, std::get<1>(lease))) continue;
 			std::lock_guard<std::mutex> lock(source->storeMutex);
 
 			std::vector<std::pair<size_t, T*>>& availableLeases = getAvailableLeases<T>(source);
-			availableLeases.push_back(lease.second);
+			availableLeases.push_back(std::get<2>(lease));
 		}
 	}
 
 	std::pair<size_t, T*> get(TileDataSource* source) {
 		for (const auto& lease : leases) {
-			if (lease.first == source)
-				return lease.second;
+			if (std::get<0>(lease) == source && std::get<1>(lease) == source->leaseNumber)
+				return std::get<2>(lease);
 		}
 
 		std::lock_guard<std::mutex> lock(source->storeMutex);
@@ -74,7 +78,7 @@ public:
 		std::pair<size_t, T*> entry = availableLeases.back();
 		availableLeases.pop_back();
 
-		leases.push_back(std::make_pair(source, entry));
+		leases.push_back(std::make_tuple(source, source->leaseNumber, entry));
 		return entry;
 	}
 

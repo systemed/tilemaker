@@ -12,7 +12,8 @@ void outputProc(
 	const AttributeStore& attributeStore,
 	const std::vector<std::vector<OutputObjectID>>& data,
 	TileCoordinates coordinates,
-	uint zoom
+	uint zoom,
+	std::string* rawTile = nullptr	// if given, receives the uncompressed tile
 );
 
 #endif //_TILE_WORKER_H

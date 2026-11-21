@@ -7,21 +7,14 @@
 #include "helpers.h"
 #include "visvalingam.h"
 #include "simplify_buildings.h"
+#include "tile_encode.h"
 #ifdef TILEMAKER_WITH_MLT
 #include "mlt_writer.h"
 #endif
 using namespace std;
 extern bool verbose;
 
-// The tile is written through one of these backends. Both expose the same builder API,
-// so the geometry and attribute code below is shared between the output formats.
-struct MvtBackend {
-	using LayerBuilder = vtzero::layer_builder;
-	using PointFeature = vtzero::point_feature_builder;
-	using LinestringFeature = vtzero::linestring_feature_builder;
-	using PolygonFeature = vtzero::polygon_feature_builder;
-	static void addRing(PolygonFeature& fbuilder, uint32_t points, bool /*outer*/) { fbuilder.add_ring(points); }
-};
+// MvtBackend and the feature encoding: see tile_encode.h
 
 #ifdef TILEMAKER_WITH_MLT
 struct MltBackend {
@@ -150,13 +143,6 @@ void writeMultiLinestring(
 	const MultiLinestring& mls,
 	MvtAttributeMemo* attrMemo
 ) {
-	typename Backend::LinestringFeature fbuilder{vtLayer};
-
-	if (sharedData.config.includeID && oo.id)
-		fbuilder.set_id(oo.id);
-
-	bool hadLine = false;
-
 	MultiLinestring tmp;
 	const MultiLinestring* toWrite = nullptr;
 
@@ -178,93 +164,8 @@ void writeMultiLinestring(
 		toWrite = &mls;
 	}
 
-	for (const Linestring& ls : *toWrite) {
-		if (ls.size() <= 1)
-			continue;
-
-		pair<int, int> lastXy = std::make_pair(0, 0);
-
-		// vtzero dislikes linesegments that have zero-length segments,
-		// e.g. where p(x) == p(x + 1). So filter those out.
-		int points = 0;
-		for (const Point& p : ls) {
-			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
-			if (points == 0 || xy != lastXy) {
-				points++;
-				lastXy = xy;
-			}
-		}
-
-		// A line has at least 2 points.
-		if (points <= 1)
-			continue;
-
-		hadLine = true;
-		fbuilder.add_linestring(points);
-		bool firstPoint = true;
-		for (const Point& p : ls) {
-			pair<int,int> xy = bbox.scaleLatpLon(p.get<1>(), p.get<0>());
-			if (firstPoint || xy != lastXy) {
-				// vtzero doesn't like linesegments with zero-length segments,
-				// so filter those out
-				fbuilder.set_point(xy.first, xy.second);
-				firstPoint = false;
-				lastXy = xy;
-			}
-		}
-	}
-
-	if (hadLine) {
-		// add the properties
-		oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
-		// call commit() when you are done
-		fbuilder.commit();
-	}
+	writeLinestringFeature<Backend>(vtLayer, sharedData.config.includeID, oo, bbox, *toWrite, attributeStore, zoom, attrMemo);
 }
-
-template<class Backend>
-bool writeRing(
-	typename Backend::PolygonFeature& fbuilder,
-	const Ring& ring,
-	bool outer
-) {
-	// vtzero doesn't like zero-length segments in rings
-	pair<int, int> lastXy = std::make_pair(0, 0);
-	int points = 0;
-	int64_t twiceArea = 0;
-	for (const Point& point : ring) {
-		pair<int, int> xy = std::make_pair(point.get<0>(), point.get<1>());
-		if (points == 0 || xy != lastXy) {
-			if (points > 0)
-				twiceArea += int64_t(lastXy.first) * xy.second - int64_t(xy.first) * lastXy.second;
-			points++;
-			lastXy = xy;
-		}
-	}
-
-	// A ring has at least 4 points, and on the integer grid it must not have
-	// collapsed to a line (all points collinear).
-	if (points <= 3 || twiceArea == 0)
-		return false;
-
-	bool firstPoint = true;
-	Backend::addRing(fbuilder, points, outer);
-	for (auto it = ring.rbegin(); it != ring.rend(); ++it) {
-    	const Point& point = *it;
-
-    	pair<int, int> xy =
-    		std::make_pair(point.get<0>(), point.get<1>());
-
-    	if (firstPoint || xy != lastXy) {
-    		firstPoint = false;
-    		lastXy = xy;
-    		fbuilder.set_point(xy.first, xy.second);
-    	}
-    }
-
-	return true;
-}
-
 
 template<class Backend>
 void writeMultiPolygon(
@@ -290,7 +191,7 @@ void writeMultiPolygon(
 	if (simplifyLevel>0) {
 		if (simplifyAlgo == LayerDef::VISVALINGAM) {
 			bool allValid = false;
-			current = simplifyVis(current, simplifyLevel/bbox.xscale, allValid);
+			simplifyVisInPlace(current, simplifyLevel/bbox.xscale, allValid);
 			const std::size_t numPoints = boost::geometry::num_points(current);
 			geom::remove_spikes(current);
 			knownPolygonsValid = allValid && !verbose && boost::geometry::num_points(current) == numPoints;
@@ -323,7 +224,9 @@ void writeMultiPolygon(
 	const bool mayRepair = (simplifyLevel > 0 || repairPolygons);
 
 	geom::validity_failure_type failure;
-	if (!knownPolygonsValid && (mayRepair || verbose) && !geom::is_valid(current, failure)) {
+	// The precheck (sound: "definitely valid" means Boost finds it valid too) answers most
+	// polygons without Boost; verbose wants Boost's reason for an invalid one
+	if (!knownPolygonsValid && (mayRepair || verbose) && (verbose || !multiPolygonDefinitelyValid(current)) && !geom::is_valid(current, failure)) {
 		if (verbose) {
 			cout << "output multipolygon has " << boost_validity_error(failure) << endl;
 
@@ -348,33 +251,7 @@ void writeMultiPolygon(
 		}
 	}
 
-	typename Backend::PolygonFeature fbuilder{vtLayer};
-
-	if (sharedData.config.includeID && oo.id)
-		fbuilder.set_id(oo.id);
-
-	bool hadPoly = false;
-
-	for (const auto& p : current) {
-		const Ring& ring = geom::exterior_ring(p);
-
-		// If we failed to write the outer, no need to write the inners.
-		if (!writeRing<Backend>(fbuilder, ring, true))
-			continue;
-
-		hadPoly = true;
-
-		const InteriorRing& interiors = geom::interior_rings(p);
-		for (const Ring& ring : interiors)
-			writeRing<Backend>(fbuilder, ring, false);
-	}
-
-	if (hadPoly) {
-		// add the properties
-		oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
-		// call commit() when you are done
-		fbuilder.commit();
-	}
+	writePolygonFeature<Backend>(vtLayer, sharedData.config.includeID, oo, current, attributeStore, zoom, attrMemo);
 }
 
 template<class Backend>
@@ -433,19 +310,10 @@ void ProcessObjects(
 				continue;
 			}
 
-			typename Backend::PointFeature fbuilder{vtLayer};
-			if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
-
-			fbuilder.add_points(multipoint.size());
-
 			if (verbose && multipoint.size() > 1)
 				std::cout << "Merging " << multipoint.size() << " points into a multipoint" << std::endl;
 
-			for (const auto &point : multipoint)
-				fbuilder.set_point(point.first, point.second);
-
-			oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
-			fbuilder.commit();
+			writePointFeature<Backend>(vtLayer, sharedData.config.includeID, oo, multipoint, attributeStore, zoom, attrMemo);
 
 			oo = *jt;
 		} else {
@@ -609,7 +477,8 @@ void outputProc(
 	const AttributeStore& attributeStore,
 	const std::vector<std::vector<OutputObjectID>>& data, 
 	TileCoordinates coordinates,
-	uint zoom
+	uint zoom,
+	std::string* rawTile
 ) {
 	TileBbox bbox(coordinates, zoom, sharedData.config.highResolution && zoom==sharedData.config.endZoom, zoom==sharedData.config.endZoom);
 	if (sharedData.config.clippingBoxFromJSON && (
@@ -646,8 +515,6 @@ void outputProc(
 	} else
 #endif
 	{
-		vtzero::tile_builder tile;
-
 		// Read existing tile if merging
 		std::string rawExistingTile;
 		if (sharedData.mergeSqlite) {
@@ -656,16 +523,14 @@ void outputProc(
 		vtzero::vector_tile existingTile{rawExistingTile};
 
 		thread_local MvtAttributeMemo attrMemo;
-		for (auto lt = sharedData.layers.layerOrder.begin(); lt != sharedData.layers.layerOrder.end(); ++lt) {
-			if (signalStop) break;
-			const std::string& layerName = sharedData.layers.layers[lt->at(0)].name;
-			vtzero::layer_builder vtLayer{tile, layerName, sharedData.config.mvtVersion, extent};
-			attrMemo.reset(vtLayer, zoom);
-			CopyExistingLayer(existingTile, layerName, vtLayer);
-			ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, *lt, sharedData, &attrMemo);
-		}
-		tile.serialize(outputdata);
+		encodeMvtTile(sharedData.layers, zoom, extent, sharedData.config.mvtVersion, data, sharedData.mergeSqlite, signalStop, attrMemo, outputdata,
+			[&](std::size_t group, vtzero::layer_builder& vtLayer) {
+				const std::vector<uint>& lt = sharedData.layers.layerOrder[group];
+				CopyExistingLayer(existingTile, sharedData.layers.layers[lt.at(0)].name, vtLayer);
+				ProcessLayer<MvtBackend>(sources, attributeStore, coordinates, zoom, data, vtLayer, bbox, lt, sharedData, &attrMemo);
+			});
 	}
+	if (rawTile) *rawTile = outputdata;
 
 	// Write to file or sqlite
 	if (sharedData.outputMode == OptionsParser::OutputMode::MBTiles) {
