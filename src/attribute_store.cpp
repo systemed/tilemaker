@@ -1,4 +1,5 @@
 #include "attribute_store.h"
+#include "stable_hash.h"
 
 #include <iostream>
 #include <algorithm>
@@ -53,6 +54,15 @@ const std::string& AttributeKeyStore::getKeyUnsafe(uint16_t index) const {
 	// NB: This is unsafe if called before the PBF has been fully read.
 	// If called during the output phase, it's safe.
 	return keys[index];
+}
+
+void AttributeKeyStore::finalize() {
+	finalized = true;
+	// keys2index is ordered by key string
+	ranks.assign(keys.size(), 0);
+	uint16_t rank = 0;
+	for (const auto& it : keys2index)
+		ranks[it.second] = ++rank;
 }
 
 // AttributePair
@@ -220,11 +230,18 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 		}
 	}
 
-	if (isHot) {
+	if (isHot && hotFull.load(std::memory_order_acquire)) {
+		// The hot shard is full, and so doesn't change any more: no lock needed
+		const auto& index = pairs[0].findWithHash(pair, hash);
+		if (index != -1) {
+			table.insert(&pairs[0][index], tag, index);
+			return index;
+		}
+	} else if (isHot) {
 		// This might be a popular pair, worth re-using.
 		// Have we already assigned it a hot ID?
 		std::lock_guard<std::mutex> lock(pairsMutex[0]);
-		const auto& index = pairs[0].find(pair);
+		const auto& index = pairs[0].findWithHash(pair, hash);
 		if (index != -1) {
 			table.insert(&pairs[0][index], tag, index);
 			return index;
@@ -232,11 +249,13 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 
 		if (!pairs[0].full()) {
 			pair.ensureStringIsOwned();
-			uint32_t offset = pairs[0].add(pair);
+			uint32_t offset = pairs[0].addAbsentWithHash(pair, hash);
 			uint32_t rv = (0 << (32 - SHARD_BITS)) + offset;
 			table.insert(&pairs[0][offset], tag, rv);
+			if (pairs[0].full()) hotFull.store(true, std::memory_order_release);
 			return rv;
 		}
+		hotFull.store(true, std::memory_order_release);
 	}
 
 	// This is either not a hot key, or there's no room for in the hot shard.
@@ -254,7 +273,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	if (tlsPairLookupsUncached % 1024 == 0)
 		lookupsUncached += 1024;
 
-	const auto& index = pairs[shard].find(pair);
+	const auto& index = pairs[shard].findWithHash(pair, hash);
 	if (index != -1) {
 		const uint32_t rv = (shard << (32 - SHARD_BITS)) + index;
 		table.insert(&pairs[shard][index], tag, rv);
@@ -262,7 +281,7 @@ uint32_t AttributePairStore::addPair(AttributePair& pair, bool isHot) {
 	}
 
 	pair.ensureStringIsOwned();
-	uint32_t offset = pairs[shard].add(pair);
+	uint32_t offset = pairs[shard].addAbsentWithHash(pair, hash);
 
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("pair shard overflow");
@@ -345,26 +364,38 @@ void AttributeStore::addAttribute(AttributeSet& attributeSet, std::string const 
 	bool isHot = v >= 0 && v <= 25;
 	attributeSet.addPair(pairStore.addPair(kv, isHot));
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
 	PooledString ps(&v);
 	AttributePair kv(keyIndex, ps, minzoom);
 	bool isHot = AttributePair::isHot(key, v);
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, bool v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = true; // All bools are eligible to be hot pairs
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, double v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = v >= 0 && v <= 25 && ceil(v) == v; // Whole numbers in 0..25 are eligible to be hot pairs
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
 }
-void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom) {
+uint32_t AttributeStore::pairIndexWithKeyIndex(uint16_t keyIndex, int v, char minzoom) {
 	AttributePair kv(keyIndex,v,minzoom);
 	bool isHot = v >= 0 && v <= 25;
-	attributeSet.addPair(pairStore.addPair(kv, isHot));
+	return pairStore.addPair(kv, isHot);
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, key, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
+}
+void AttributeStore::addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom) {
+	attributeSet.addPair(pairIndexWithKeyIndex(keyIndex, v, minzoom));
 }
 
 void AttributeSet::finalize() {
@@ -411,6 +442,12 @@ thread_local std::vector<AttributeIndex> cachedAttributeSetIndexes(256);
 
 thread_local uint64_t tlsSetLookups = 0;
 thread_local uint64_t tlsSetLookupsUncached = 0;
+void AttributeStore::noteLookup() {
+	tlsSetLookups++;
+	if (tlsSetLookups % 1024 == 0) {
+		lookups += 1024;
+	}
+}
 AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	// TODO: there's probably a way to use C++ types to distinguish a finalized
 	// and non-finalized AttributeSet, which would make this safer.
@@ -444,7 +481,7 @@ AttributeIndex AttributeStore::add(AttributeSet &attributes) {
 	if (tlsSetLookupsUncached % 1024 == 0)
 		lookupsUncached += 1024;
 
-	const uint32_t offset = sets[shard].add(attributes);
+	const uint32_t offset = sets[shard].addWithHash(attributes, hash);
 	if (offset >= (1 << (32 - SHARD_BITS)))
 		throw std::out_of_range("set shard overflow");
 
@@ -557,8 +594,57 @@ void AttributeStore::reset() {
 	pairIndexGeneration++;
 }
 
+int AttributeStore::comparePairsUnsafe(uint32_t a, uint32_t b) const {
+	if (a == b) return 0;
+	const AttributePair& p = pairStore.getPairUnsafe(a);
+	const AttributePair& q = pairStore.getPairUnsafe(b);
+	const uint16_t pRank = keyStore.getRankUnsafe(p.keyIndex), qRank = keyStore.getRankUnsafe(q.keyIndex);
+	if (pRank != qRank) return pRank < qRank ? -1 : 1;
+	if (p.minzoom != q.minzoom) return p.minzoom < q.minzoom ? -1 : 1;
+	if (p.valueType != q.valueType) return p.valueType < q.valueType ? -1 : 1;
+	if (p.hasStringValue()) {
+		if (p.pooledString() < q.pooledString()) return -1;
+		if (q.pooledString() < p.pooledString()) return 1;
+		return 0;
+	}
+	if (p.doubleValue_ < q.doubleValue_) return -1;
+	if (q.doubleValue_ < p.doubleValue_) return 1;
+	return 0;
+}
+
+int AttributeStore::compareContentUnsafe(AttributeIndex a, AttributeIndex b) const {
+	if (a == b) return 0;
+	boost::container::small_vector<uint32_t, 16> x, y;
+	forEachPairIndexCanonicalUnsafe(a, [&](uint32_t pairIndex) { x.push_back(pairIndex); });
+	forEachPairIndexCanonicalUnsafe(b, [&](uint32_t pairIndex) { y.push_back(pairIndex); });
+	for (size_t i = 0; i < x.size() && i < y.size(); i++) {
+		const int c = comparePairsUnsafe(x[i], y[i]);
+		if (c != 0) return c;
+	}
+	if (x.size() != y.size()) return x.size() < y.size() ? -1 : 1;
+	return 0;
+}
+
+uint64_t AttributeStore::contentHashUnsafe(AttributeIndex index) const {
+	// Sum of the pair hashes, so the (index dependent) pair order doesn't matter
+	uint64_t rv = 0;
+	forEachPairUnsafe(index, [&](const AttributePair& p) {
+		uint64_t h = stableCombine(keyStore.getRankUnsafe(p.keyIndex), static_cast<uint64_t>(p.minzoom));
+		h = stableCombine(h, static_cast<uint64_t>(p.valueType));
+		if (p.hasStringValue())
+			h = stableCombine(h, p.pooledString().data(), p.pooledString().size());
+		else
+			h = stableCombine(h, p.doubleValue_);
+		rv += h;
+	});
+	return rv;
+}
+
 void AttributeStore::finalize() {
 	finalized = true;
 	keyStore.finalize();
 	pairStore.finalize();
+	// Nothing is added from now on (the tiles read sets by index): the shards' hash indexes go.
+	// A planet's 46.8M sets are in 4096 shards of ~11,400, each with a table of 32K slots: 512 MB.
+	for (auto& shard : sets) shard.releaseIndex();
 }

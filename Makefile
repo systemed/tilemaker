@@ -84,7 +84,7 @@ else ifeq ($(TM_GIT_TAG)$(TM_GIT_DIRTY),$(TM_BASE_VERSION))
 else
   TM_VERSION ?= $(TM_BASE_VERSION)+g$(TM_GIT_SHA)$(TM_GIT_DIRTY)
 endif
-CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++14 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
+CXXFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c++17 -pthread -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 CFLAGS ?= -O3 -Wall -Wno-unknown-pragmas -Wno-sign-compare -std=c99 -fPIE -DTM_VERSION=$(TM_VERSION) $(CONFIG)
 DEPFLAGS := -MD -MP
 DEPS := $(wildcard src/*.d src/external/*.d src/external/libdeflate/lib/*.d src/external/libdeflate/lib/*/*.d server/*.d test/*.d)
@@ -161,6 +161,7 @@ test: \
 	test_geom \
 	test_helpers \
 	test_options_parser \
+	test_ordered_batches \
 	test_pbf_reader \
 	test_pooled_string \
 	test_relation_roles \
@@ -196,6 +197,7 @@ src/config_schema.h: resources/config-schema.json
 src/config_validator.o: src/config_schema.h
 
 test_correct: \
+	src/geom.o \
 	test/correct.test.o
 	$(CXX) $(CXXFLAGS) -o test.correct $^ $(INC) $(LIB) $(LDFLAGS) && ./test.correct
 
@@ -228,6 +230,10 @@ test_options_parser: \
 	src/options_parser.o \
 	test/options_parser.test.o
 	$(CXX) $(CXXFLAGS) -o test.options_parser $^ $(INC) $(LIB) $(LDFLAGS) && ./test.options_parser
+
+test_ordered_batches: \
+	test/ordered_batches.test.o
+	$(CXX) $(CXXFLAGS) -o test.ordered_batches $^ $(INC) $(LIB) $(LDFLAGS) && ./test.ordered_batches
 
 test_osm_store: \
 	test/osm_store.test.o

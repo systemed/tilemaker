@@ -3,7 +3,13 @@
 #define _PMTILES_H
 
 #include <fstream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 #include "external/pmtiles.hpp"
+#include "ordered_batches.h"
 
 struct TileOffset {
 	uint64_t offset : 40;
@@ -28,6 +34,14 @@ struct TileOffset {
 // PMTiles v3 tile type for MapLibre Tiles (not yet in external/pmtiles.hpp)
 #define TILETYPE_MLT 0x6
 
+// A tile waiting to be written: tiny tiles keep their raw data, so that a repeat
+// can reuse the earlier copy, and are only compressed if they're written
+struct PendingTile {
+	uint64_t tileId;
+	bool isTiny;
+	std::string data;	// after writeTile: the bytes flushTile appends to the file (empty if a repeat)
+};
+
 class PMTiles { 
 
 public:
@@ -37,23 +51,40 @@ public:
 	pmtiles::headerv3 header;
 	bool isSparse = true;
 	uint8_t tileType = pmtiles::TILETYPE_MVT;
+	int compressionLevel = 6;	// for tiles; the directories and metadata use the default
 
 	void open(std::string &filename);
 	void saveTile(int zoom, int x, int y, std::string &data);
 	void close(std::string &metadata);
 
+	// Tiles are written in batch order, so the file doesn't depend on thread scheduling
+	OrderedBatches<PendingTile> batches;
+
 private:
 	std::ofstream outputStream;
-	std::mutex fileMutex;	// guards file writes, numTilesWritten
-	std::mutex indexMutex;	// guards access to sparseIndex, denseIndex, tinyCache, numTilesAddressed
+	std::string filename;
+	std::vector<std::shared_ptr<void>> laterGarbage;	// freed with the object (see close)
+	std::vector<char> outputBuffer;	// a large stream buffer: one thread writes all tiles
+	// Tile data past the page cache (O_DIRECT), when the file system allows it - see pmtiles.cpp
+	struct DirectWriter;
+	std::unique_ptr<DirectWriter> direct;
+	uint64_t tileDataEnd = 0;	// bytes of tile data written so far (tellp() costs a flush and a seek per tile)
 	uint64_t leafStart = 0;
 	uint64_t numTilesWritten = 0;
 	uint64_t numTilesAddressed = 0;
 	uint64_t numTileEntries = 0;
 	std::map<uint64_t, TileOffset> sparseIndex;
-	std::vector<TileOffset> denseIndex;
+	// The dense index (tile id -> offset) in blocks, allocated when their first tile is placed: one
+	// vector up to the highest id so far took the planet's whole id range (2.9 GB) as soon as the
+	// first tiles of the last Hilbert quarter were written, twice that while it grew, and an extract
+	// all of its ids' range. Ids from denseSize on have no tile, nor have those of a missing block.
+	static constexpr unsigned DENSE_BLOCK_BITS = 14;
+	std::vector<std::unique_ptr<TileOffset[]>> denseIndex;
+	uint64_t denseSize = 0;
 	std::unordered_map<std::string, TileOffset> tinyCache;
 
+	void writeTile(PendingTile &tile);	// with batches.writeMutex() held: places the tile
+	void flushTile(PendingTile &tile);	// in the same order, by one thread at a time: writes its bytes
 	void appendWithRLE(std::vector<pmtiles::entryv3> &entries, pmtiles::entryv3 &entry);
 };
 

@@ -2,9 +2,10 @@
 #define DEQUE_MAP_H
 
 #include <algorithm>
-#include <boost/range/irange.hpp>
-#include <cstring>
+#include <cstdint>
 #include <deque>
+#include <functional>
+#include <string>
 #include <vector>
 
 // A class which looks deep within the soul of some instance of
@@ -13,6 +14,8 @@
 //
 // Used to translate an 8-byte pointer into a 4-byte ID that can be
 // used repeatedly.
+//
+// T needs operator== and operator<, and a hash() member (std::string uses std::hash).
 template <class T>
 class DequeMap {
 public:
@@ -28,71 +31,66 @@ public:
 	// add the item and return its index.
 	// Otherwise, return -1.
 	int32_t add(const T& entry) {
-		// Search to see if we've already got this entry.
-		const auto offsets = boost::irange<uint32_t>(0, keys.size());
-		const auto it = std::lower_bound(
-			offsets.begin(),
-			offsets.end(),
-			entry,
-			[&](const auto &e, auto id) {
-				return objects.at(keys[e]) < id;
-			}
-		);
+		return addWithHash(entry, rawHash(entry));
+	}
 
-		// We do, return its index.
-		if (it != offsets.end() && objects[keys[*it]] == entry)
-			return keys[*it];
+	// As add/find, with rawHash = entry.hash() (std::hash for std::string) given
+	int32_t addWithHash(const T& entry, uint64_t rawHash) {
+		const uint64_t h = mix(rawHash);
+		const int32_t found = lookup(entry, h);
+		if (found >= 0)
+			return found;
+		return addNew(entry, h);
+	}
+	int32_t findWithHash(const T& entry, uint64_t rawHash) const {
+		return lookup(entry, mix(rawHash));
+	}
+	// As addWithHash, for an entry known not to be in the map
+	int32_t addAbsentWithHash(const T& entry, uint64_t rawHash) {
+		return addNew(entry, mix(rawHash));
+	}
 
+private:
+	int32_t addNew(const T& entry, uint64_t h) {
 		if (maxSize > 0 && objects.size() >= maxSize)
 			return -1;
 
 		// We don't, so store it...
 		const uint32_t newIndex = objects.size();
 		objects.push_back(entry);
+		sortedValid = false;
 
-		// ...and add its index to our keys vector.
-		const uint32_t keysOffset = it == offsets.end() ? offsets.size() : *it;
-
-		const uint32_t desiredSize = keys.size() + 1;
-
-		// Amortize growth
-		if (keys.capacity() < desiredSize)
-			keys.reserve(keys.capacity() * 1.5);
-
-		keys.resize(desiredSize);
-
-		// Unless we're adding to the end, we need to shuffle existing keys down
-		// to make room for our new index.
-		if (keysOffset != newIndex) {
-			std::memmove(&keys[keysOffset + 1], &keys[keysOffset], sizeof(uint32_t) * (keys.size() - 1 - keysOffset));
+		// ...and index it, growing the table to keep it at most half full
+		if (2 * (objects.size() + 1) > slots.size()) {
+			size_t size = std::max<size_t>(16, slots.size() * 2);
+			while (2 * (objects.size() + 1) > size) size *= 2;	// after releaseIndex
+			std::vector<uint32_t> old(size, 0);
+			slots.swap(old);
+			for (uint32_t i = 0; i < newIndex; i++)
+				insertSlot(hashOf(objects[i]), i);
 		}
-
-		keys[keysOffset] = newIndex;
+		insertSlot(h, newIndex);
 		return newIndex;
 	}
 
+public:
 	void clear() {
 		objects.clear();
-		keys.clear();
+		slots.clear();
+		sorted.clear();
+		sortedValid = false;
+	}
+
+	// Frees the hash index, for a map that is only read by index from now on (operator[], at,
+	// iteration): 8-16 bytes an entry. Adding still works (the index is rebuilt first), and
+	// so does a lookup (comparing with every entry), so nothing breaks if it is used again.
+	void releaseIndex() {
+		std::vector<uint32_t>().swap(slots);
 	}
 
 	// Returns the index of `entry` if present, -1 otherwise.
 	int32_t find(const T& entry) const {
-		const auto offsets = boost::irange<uint32_t>(0, keys.size());
-		const auto it = std::lower_bound(
-			offsets.begin(),
-			offsets.end(),
-			entry,
-			[&](const auto &e, auto id) {
-				return objects.at(keys[e]) < id;
-			}
-		);
-
-		// We do, return its index.
-		if (it != offsets.end() && objects[keys[*it]] == entry)
-			return keys[*it];
-
-		return -1;
+		return lookup(entry, hashOf(entry));
 	}
 
 	inline const T& operator[](uint32_t index) const {
@@ -105,28 +103,74 @@ public:
 
 	size_t size() const { return objects.size(); }
 
+	// Iterates in the order of T's operator<
 	struct iterator {
 		const DequeMap<T>& dm;
 		size_t offset;
 		iterator(const DequeMap<T>& dm, size_t offset): dm(dm), offset(offset) {}
 		void operator++() { offset++; }
 		bool operator!=(iterator& other) { return offset != other.offset; }
-		const T& operator*() const { return dm.objects[dm.keys[offset]]; }
+		const T& operator*() const { return dm.objects[dm.sorted[offset]]; }
 	};
 
-	iterator begin() const { return iterator{*this, 0}; }
-	iterator end() const { return iterator{*this, keys.size()}; }
+	iterator begin() const {
+		if (!sortedValid) {
+			sorted.resize(objects.size());
+			for (uint32_t i = 0; i < sorted.size(); i++) sorted[i] = i;
+			std::sort(sorted.begin(), sorted.end(), [&](uint32_t a, uint32_t b) { return objects[a] < objects[b]; });
+			sortedValid = true;
+		}
+		return iterator{*this, 0};
+	}
+	iterator end() const { return iterator{*this, objects.size()}; }
 
 private:
+	template <class U> static uint64_t rawHash(const U& entry) { return entry.hash(); }
+	static uint64_t rawHash(const std::string& entry) { return std::hash<std::string>()(entry); }
+
+	// The entries of one DequeMap often share bits of their hash (sharded by it), so mix it
+	static uint64_t hashOf(const T& entry) {
+		return mix(rawHash(entry));
+	}
+	static uint64_t mix(uint64_t h) {
+		h ^= h >> 33; h *= 0xff51afd7ed558ccdULL;
+		h ^= h >> 33; h *= 0xc4ceb9fe1a85ec53ULL;
+		h ^= h >> 33;
+		return h;
+	}
+
+	int32_t lookup(const T& entry, uint64_t h) const {
+		if (slots.empty()) {
+			// No index: empty, or released (releaseIndex)
+			for (size_t i = 0; i < objects.size(); i++)
+				if (objects[i] == entry) return i;
+			return -1;
+		}
+		const size_t mask = slots.size() - 1;
+		for (size_t i = h & mask; slots[i] != 0; i = (i + 1) & mask)
+			if (objects[slots[i] - 1] == entry)
+				return slots[i] - 1;
+		return -1;
+	}
+
+	void insertSlot(uint64_t h, uint32_t index) {
+		const size_t mask = slots.size() - 1;
+		size_t i = h & mask;
+		while (slots[i] != 0) i = (i + 1) & mask;
+		slots[i] = index + 1;
+	}
+
 	uint32_t maxSize;
 
 	// Using a deque is necessary, as it provides pointer-stability for previously
 	// added objects when it grows the storage (as opposed to, e.g., vector).
 	std::deque<T> objects;
 
-	// Whereas `objects` is ordered by insertion-time, `keys` is sorted such that
-	// objects[key[0]] < objects[key[1]] < ... < objects[key[$]]
-	// operator< of T.
-	std::vector<uint32_t> keys;
+	// Open-addressing hash table of the objects: index + 1, 0 = empty
+	std::vector<uint32_t> slots;
+
+	// For iteration only: object indexes in the order of operator<
+	mutable std::vector<uint32_t> sorted;
+	mutable bool sortedValid = false;
 };
 #endif

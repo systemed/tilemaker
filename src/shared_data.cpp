@@ -296,6 +296,7 @@ Config::Config() {
 	clippingBoxFromJSON = false;
 	baseZoom = 0;
 	combineBelow = 0;
+	compressionLevel = 6;
 	tileFormat = TileFormat::MVT;
 }
 
@@ -333,6 +334,13 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 	compressOpt    = jsonConfig["settings"]["compress"].GetString();
 	combineBelow   = jsonConfig["settings"].HasMember("combine_below") ? jsonConfig["settings"]["combine_below"].GetUint() : 0;
 	mvtVersion     = jsonConfig["settings"].HasMember("mvt_version") ? jsonConfig["settings"]["mvt_version"].GetUint() : 2;
+	if (jsonConfig["settings"].HasMember("compression_level")) {
+		if (!jsonConfig["settings"]["compression_level"].IsInt() || jsonConfig["settings"]["compression_level"].GetInt() < 1 || jsonConfig["settings"]["compression_level"].GetInt() > 12) {
+			cerr << "\"compression_level\" should be a whole number from 1 (fastest) to 12 (smallest) in JSON file." << endl;
+			exit (EXIT_FAILURE);
+		}
+		compressionLevel = jsonConfig["settings"]["compression_level"].GetInt();
+	}
 	std::string tileFormatOpt = jsonConfig["settings"].HasMember("tile_format") ? jsonConfig["settings"]["tile_format"].GetString() : "mvt";
 	if      (tileFormatOpt == "mvt") { tileFormat = TileFormat::MVT; }
 	else if (tileFormatOpt == "mlt") {
@@ -372,6 +380,7 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 
 	// Check config is valid
 	if (endZoom > baseZoom) { cerr << "maxzoom must be the same or smaller than basezoom." << endl; exit (EXIT_FAILURE); }
+	if (endZoom > 29) { cerr << "maxzoom must be 29 or smaller." << endl; exit (EXIT_FAILURE); }
 	if (! compressOpt.empty()) {
 		if      (compressOpt == "gzip"   ) { gzip = true;  }
 		else if (compressOpt == "deflate") { gzip = false; }

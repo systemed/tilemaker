@@ -54,6 +54,20 @@ MU_TEST(test_deque_map) {
 	mu_check(boundedMap.add("bar") == 0);
 	mu_check(boundedMap.add("bar") == 0);
 	mu_check(boundedMap.full());
+
+	// Without the index, entries keep their indexes; lookups and adds still work
+	strs.releaseIndex();
+	mu_check(strs.size() == 4);
+	mu_check(strs[2] == "aardvark");
+	mu_check(strs.find("quux") == 3);
+	mu_check(strs.find("zebra") == -1);
+	mu_check(strs.add("bar") == 1);
+	for (int i = 0; i < 100; i++)
+		mu_check(strs.add("s" + std::to_string(i)) == 4 + i);
+	mu_check(strs.find("s0") == 4);
+	mu_check(strs.find("s99") == 103);
+	mu_check(strs.add("foo") == 0);
+	mu_check(strs.size() == 104);
 }
 
 MU_TEST_SUITE(test_suite_deque_map) {

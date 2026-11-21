@@ -9,6 +9,9 @@
 #include <atomic>
 #include <boost/functional/hash.hpp>
 #include <boost/container/flat_map.hpp>
+#include <boost/container/small_vector.hpp>
+#include <algorithm>
+#include <cstring>
 #include <vector>
 #include <protozero/data_view.hpp>
 #include "pooled_string.h"
@@ -30,11 +33,16 @@ public:
 	uint16_t key2index(const std::string& key);
 	const std::string& getKey(uint16_t index) const;
 	const std::string& getKeyUnsafe(uint16_t index) const;
-	void finalize() { finalized = true; }
+	// Position of the key in alphabetical order. Unlike the key index, which is
+	// handed out in first-use order (i.e. depends on thread scheduling), it is
+	// the same in every run. Only valid after finalize().
+	uint16_t getRankUnsafe(uint16_t index) const { return ranks[index]; }
+	void finalize();
 	std::atomic<uint32_t> keys2indexSize;
 
 private:
 	bool finalized;
+	std::vector<uint16_t> ranks;
 	mutable std::mutex keys2indexMutex;
 	// NB: we use a deque, not a vector, because a deque never invalidates
 	// pointers to its members as long as you only push_back
@@ -152,14 +160,29 @@ struct AttributePair {
 		return true;
 	}
 
+	// Hashes the string 8 bytes at a time (the hash only picks shards and hash table slots)
+	static uint64_t hashBytes(uint64_t h, const char* p, size_t n) {
+		h ^= n * 0x9E3779B97F4A7C15ULL;
+		while (n >= 8) {
+			uint64_t w; memcpy(&w, p, 8);
+			h = (h ^ w) * 0xff51afd7ed558ccdULL; h ^= h >> 32;
+			p += 8; n -= 8;
+		}
+		if (n > 0) {
+			uint64_t w = 0; memcpy(&w, p, n);
+			h = (h ^ w) * 0xc4ceb9fe1a85ec53ULL; h ^= h >> 29;
+		}
+		h *= 0x94d049bb133111ebULL; h ^= h >> 31;
+		return h;
+	}
+
 	size_t hash() const {
 		std::size_t rv = minzoom;
 		boost::hash_combine(rv, keyIndex);
 		boost::hash_combine(rv, valueType);
 
 		if(hasStringValue()) {
-			const char* data = pooledString().data();
-			boost::hash_range(rv, data, data + pooledString().size());
+			rv = hashBytes(rv, pooledString().data(), pooledString().size());
 		} else if(hasFloatValue())
 			boost::hash_combine(rv, doubleValue_);
 		else if(hasIntValue())
@@ -206,7 +229,11 @@ public:
 			pairs.emplace_back();
 	}
 
-	void finalize() { finalized = true; }
+	// Nothing is added from now on: the shards' hash indexes go (the tiles read pairs by index)
+	void finalize() {
+		finalized = true;
+		for (auto& shard : pairs) shard.releaseIndex();
+	}
 	const AttributePair& getPair(uint32_t i) const;
 	const AttributePair& getPairUnsafe(uint32_t i) const;
 	uint32_t addPair(AttributePair& pair, bool isHot);
@@ -216,6 +243,9 @@ private:
 	friend class AttributeStore;
 	std::vector<DequeMap<AttributePair>> pairs;
 	bool finalized;
+	// Set (under its lock) once the hot shard is full: from then on it never changes, so it is
+	// looked up without the lock
+	std::atomic<bool> hotFull{false};
 	// We refer to all attribute pairs by index.
 	//
 	// Each shard is responsible for a portion of the key space.
@@ -439,6 +469,24 @@ struct AttributeStore {
 		}
 		attrSet->forEachPair(fn);
 	}
+	// As forEachPairIndexUnsafe, but in an order that is the same in every run
+	// (by key name), not by pair index, which depends on thread scheduling.
+	template<class F>
+	void forEachPairIndexCanonicalUnsafe(AttributeIndex index, F&& fn) const {
+		boost::container::small_vector<uint32_t, 16> order;
+		forEachPairIndexUnsafe(index, [&](uint32_t pairIndex) { order.push_back(pairIndex); });
+		if (order.size() > 1)
+			std::sort(order.begin(), order.end(), [this](uint32_t a, uint32_t b) {
+				return comparePairsUnsafe(a, b) < 0;
+			});
+		for (const uint32_t pairIndex : order)
+			fn(pairIndex);
+	}
+	// Order and hash attribute pairs/sets by content (key names and values), not by
+	// index, so that they are the same in every run. Only valid after finalize().
+	int comparePairsUnsafe(uint32_t a, uint32_t b) const;
+	int compareContentUnsafe(AttributeIndex a, AttributeIndex b) const;
+	uint64_t contentHashUnsafe(AttributeIndex index) const;
 	void reset(); // used for testing
 	size_t size() const;
 	void reportSize() const;
@@ -453,6 +501,14 @@ struct AttributeStore {
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, double v, char minzoom);
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, int v, char minzoom);
 	void addAttributeWithKeyIndex(AttributeSet& attributeSet, uint16_t keyIndex, bool v, char minzoom);
+	// The pair index that addAttributeWithKeyIndex adds to the set. It is the same for the same
+	// arguments for as long as the store lives, so callers may keep it.
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, std::string const &key, const protozero::data_view v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, double v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, int v, char minzoom);
+	uint32_t pairIndexWithKeyIndex(uint16_t keyIndex, bool v, char minzoom);
+	// Counts an object whose AttributeIndex the caller knew without add() (for reportSize)
+	void noteLookup();
 	
 	AttributeStore():
 		finalized(false),
