@@ -343,6 +343,10 @@ bool SortedNodeStore::contains(size_t shard, NodeID id) const {
 	const uint64_t nodeMaskByte = (id % ChunkSize) / 8;
 	const uint64_t nodeMaskBit = id % 8;
 
+	// An id beyond the last group (2^34 and up) has no node, as in insert
+	if (groupIndex >= groups.size())
+		return false;
+
 	GroupInfo* groupPtr = groups[groupIndex];
 
 	if (groupPtr == nullptr)
