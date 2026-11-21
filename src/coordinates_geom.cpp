@@ -1,4 +1,7 @@
 #include "coordinates_geom.h"
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
 
 using namespace std;
 namespace geom = boost::geometry;
@@ -31,11 +34,81 @@ pair<int,int> TileBbox::scaleLatpLon(double latp, double lon) const {
 	return pair<int,int>(x,y);
 }
 
+#ifdef __SSE2__
+// scaleLatpLon() of a point (x lon, y latp), both lanes at once, as doubles (x low, y high).
+// Same subtraction and division per lane; floor() by truncation, minus one where that rounded
+// up. Returns false if a lane doesn't fit an int (the caller then uses scaleLatpLon(), whose
+// out of range conversion this would not reproduce).
+static inline bool scaleLatpLon2(__m128d v, __m128d hiMinuend, __m128d loSubtrahend, __m128d scale, __m128d &out) {
+	// lanes: (lon - minLon, maxLatp - latp)
+	const __m128d a = _mm_move_sd(hiMinuend, v);   // (lon, maxLatp)
+	const __m128d b = _mm_move_sd(v, loSubtrahend); // (minLon, latp)
+	const __m128d d = _mm_div_pd(_mm_sub_pd(a, b), scale);
+	const __m128i t = _mm_cvttpd_epi32(d);           // truncated; INT_MIN if NaN or out of range
+	if (_mm_movemask_epi8(_mm_cmpeq_epi32(t, _mm_set_epi32(0, 0, INT32_MIN, INT32_MIN))) & 0xff) return false;
+	const __m128d up = _mm_cmpgt_pd(_mm_cvtepi32_pd(t), d);
+	const __m128i f = _mm_add_epi32(t, _mm_shuffle_epi32(_mm_castpd_si128(up), _MM_SHUFFLE(3, 3, 2, 0)));
+	out = _mm_cvtepi32_pd(f);
+	return true;
+}
+#endif
+
+void TileBbox::scaleLine(std::vector<std::pair<int,int>> &pts, Linestring const &src) const {
+#ifdef __SSE2__
+	// scale every point first (independent divisions), then drop repeats in place
+	const size_t n = src.size();
+	pts.resize(n);
+	const __m128d hiMinuend = _mm_set_pd(maxLatp, 0), loSubtrahend = _mm_set_sd(minLon), scale = _mm_set_pd(yscale, xscale);
+	for (size_t k = 0; k < n; k++) {
+		const Point &i = src[k];
+		__m128d sp;
+		if (scaleLatpLon2(_mm_loadu_pd(reinterpret_cast<const double*>(&i)), hiMinuend, loSubtrahend, scale, sp)) {
+			// sp holds two ints as doubles: converting back is exact
+			const __m128i t = _mm_cvttpd_epi32(sp);
+			pts[k].first = _mm_cvtsi128_si32(t);
+			pts[k].second = _mm_cvtsi128_si32(_mm_shuffle_epi32(t, _MM_SHUFFLE(1, 1, 1, 1)));
+		} else
+			pts[k] = scaleLatpLon(i.y(), i.x());
+	}
+	size_t w = n ? 1 : 0;
+	for (size_t r = 1; r < n; r++)
+		if (pts[r] != pts[w - 1]) pts[w++] = pts[r];
+	pts.resize(w);
+#else
+	pts.clear();
+	for (auto const &i : src) {
+		const std::pair<int,int> xy = scaleLatpLon(i.y(), i.x());
+		if (pts.empty() || xy != pts.back()) pts.push_back(xy);
+	}
+#endif
+}
+
 // Scaling with naive self-intersection check - if we've added the new point
 // within the last 5 points, then backtrack to the last time we added it
 void TileBbox::scaleRing(Ring &points, Ring const &src) const {
 	points.clear();
 	points.reserve(src.size());
+#ifdef __SSE2__
+	const __m128d hiMinuend = _mm_set_pd(maxLatp, 0), loSubtrahend = _mm_set_sd(minLon), scale = _mm_set_pd(yscale, xscale);
+	for(auto const &i: src) {
+		__m128d sp;
+		if (!scaleLatpLon2(_mm_loadu_pd(reinterpret_cast<const double*>(&i)), hiMinuend, loSubtrahend, scale, sp)) {
+			auto scaled = scaleLatpLon(i.y(), i.x());
+			sp = _mm_set_pd(scaled.second, scaled.first);
+		}
+		const size_t n = points.size();
+		const double *d = reinterpret_cast<const double*>(points.data());
+		size_t j = 1;
+		for (; j < 5 && n >= 1 + j; j++)
+			if (_mm_movemask_pd(_mm_cmpeq_pd(_mm_loadu_pd(d + 2 * (n - j)), sp)) == 3) break;
+		if (j < 5 && n >= 1 + j) points.resize(n - j + 1);
+		else {
+			Point p;
+			_mm_storeu_pd(reinterpret_cast<double*>(&p), sp);
+			points.push_back(p);
+		}
+	}
+#else
 	for(auto const &i: src) {
 		auto scaled = scaleLatpLon(i.y(), i.x()); // -> .first is x, .second is y
 		bool found = false;
@@ -48,6 +121,7 @@ void TileBbox::scaleRing(Ring &points, Ring const &src) const {
 		}
 		if (!found) points.push_back(Point(scaled.first,scaled.second));
 	}
+#endif
 }
 
 // Scaling that only drops points repeating their immediate predecessor. Used as
@@ -236,7 +310,8 @@ static inline void pushTile(std::vector<TileCoordinates> &tiles, TileCoordinate 
 template<typename T>
 void impl_insertIntermediateTilesVec(T const &points, uint baseZoom, std::vector<TileCoordinates> &tiles) {
 	const size_t start = tiles.size();
-	const double scale = scalbn(1.0, (int)(uint8_t)baseZoom);
+	const unsigned zoom = (uint8_t)baseZoom;
+	const double scale = zoom < 32 ? double(1u << zoom) : scalbn(1.0, (int)zoom);	// exactly 2^zoom
 	TileCoordinate tileX1 = 0, tileY1 = 0;
 	for (auto it = points.begin(); it != points.end(); ++it) {
 		// Calculate p2 tile (same arithmetic as lon2tilexf/latp2tileyf)
@@ -248,6 +323,8 @@ void impl_insertIntermediateTilesVec(T const &points, uint baseZoom, std::vector
 			tileX1 = tileX2; tileY1 = tileY2;
 			continue;
 		}
+		// Most points are in the tile of the previous one, which is the last tile pushed: nothing to add
+		if (tileX2 == tileX1 && tileY2 == tileY1) continue;
 
 		// Supercover line algorithm from http://eugen.dedu.free.fr/projects/bresenham/
 		int i;                       // loop counter

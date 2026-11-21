@@ -100,6 +100,12 @@ class MvtAttributeMemo {
 public:
 	void reset(vtzero::layer_builder& layer, char zoom);
 
+	// Is the memo set up for this layer and zoom?
+	bool usableFor(const vtzero::layer_builder& l, char z) const { return layer == &l && zoom == z; }
+
+	// Returns the [key, value] index pairs for the set (count pairs)
+	const uint32_t* resolve(const AttributeStore& attributeStore, AttributeIndex index, uint32_t& count);
+
 private:
 	friend class OutputObject;
 
@@ -114,12 +120,15 @@ private:
 		void clear();
 	};
 
-	// Returns the [key, value] index pairs for the set (count pairs)
-	const uint32_t* resolve(const AttributeStore& attributeStore, AttributeIndex index, uint32_t& count);
 	void resolvePair(const AttributeStore& attributeStore, uint32_t pairIndex, uint32_t& key, uint32_t& value);
 
 	vtzero::layer_builder* layer = nullptr;
 	char zoom = 0;
+	// The pairs of an attribute set in canonical order (forEachPairIndexCanonicalUnsafe), kept across
+	// layers and tiles: AttributeIndex -> [begin, end) in canonPairs
+	const AttributeStore* canonStore = nullptr;
+	Table canon;
+	std::vector<uint32_t> canonPairs;
 	uint32_t layerGen = 0;  // validity of keyGen entries
 	Table sets;             // AttributeIndex -> [begin, end) in entries
 	Table pairs;            // pair index -> key, value index (key NO_INDEX: not written at this zoom)

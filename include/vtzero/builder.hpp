@@ -83,9 +83,22 @@ namespace vtzero {
          */
         template <typename TString>
         detail::layer_builder_impl* add_layer(TString&& name, uint32_t version, uint32_t extent) {
+            auto& pool = recycled();
+            if (!pool.empty()) {
+                m_layers.push_back(std::move(pool.back()));
+                pool.pop_back();
+                m_layers.back()->reinit(std::forward<TString>(name), version, extent);
+                return m_layers.back().get();
+            }
             auto* ptr = new detail::layer_builder_impl{std::forward<TString>(name), version, extent};
             m_layers.emplace_back(ptr);
             return ptr;
+        }
+
+        // Layers of destroyed tile_builders of this thread, for reuse by add_layer()
+        static std::vector<std::unique_ptr<detail::layer_builder_impl>>& recycled() {
+            thread_local std::vector<std::unique_ptr<detail::layer_builder_impl>> pool;
+            return pool;
         }
 
     public:
@@ -94,7 +107,17 @@ namespace vtzero {
         tile_builder() = default;
 
         /// Destructor
-        ~tile_builder() noexcept = default;
+        ~tile_builder() noexcept {
+            try {
+                auto& pool = recycled();
+                for (auto& layer : m_layers) {
+                    if (pool.size() >= 32) break;
+                    if (layer && layer->recyclable()) pool.push_back(std::move(layer));
+                }
+            } catch (...) {
+                // the remaining layers are freed
+            }
+        }
 
         /// Tile builders can not be copied.
         tile_builder(const tile_builder&) = delete;
@@ -298,6 +321,15 @@ namespace vtzero {
          * will be copied completely over to the new layer including its
          * geometry and all its properties.
          */
+        /**
+         * Add a feature that is already encoded as a vector tile Feature
+         * message (the bytes of the message, without its tag and length).
+         */
+        void add_encoded_feature(const char* data, std::size_t size) {
+            m_layer->message().add_message(detail::pbf_layer::features, data, size);
+            m_layer->increment_feature_count();
+        }
+
         void add_feature(const feature& feature);
 
     }; // class layer_builder

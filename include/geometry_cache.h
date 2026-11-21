@@ -14,10 +14,10 @@
 template <class T>
 class GeometryCache {
 public:
-	// 64 x 32 entries: the cache only lives for one tile batch (see clear()), so a
+	// 256 x 32 entries: the cache only lives for one tile batch (see clear()), so a
 	// smaller table loses few hits and pins much less heap in every tile thread.
 	// Keep bucket size small so linear search is fast.
-	enum : size_t { NUM_BUCKETS = 64, BUCKET_SIZE = 32 };
+	enum : size_t { NUM_BUCKETS = 256, BUCKET_SIZE = 32 };
 
 	GeometryCache():
 		offsets(NUM_BUCKETS),

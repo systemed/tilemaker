@@ -26,6 +26,8 @@ public:
 	TileBbox(TileCoordinates i, uint z, bool h, bool e);
 
 	std::pair<int,int> scaleLatpLon(double latp, double lon) const;
+	// scaleLatpLon() of every point of a line, without points repeating their predecessor
+	void scaleLine(std::vector<std::pair<int,int>> &dst, Linestring const &src) const;
 	void scaleRing(Ring &dst, Ring const &src) const;
 	Ring scaleRing(Ring const &src) const;
 	void scaleRingNoBacktrack(Ring &dst, Ring const &src) const;

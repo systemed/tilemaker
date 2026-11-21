@@ -102,7 +102,12 @@ private:
 		uint effectiveShards
 	);
 	bool ScanWays(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys);
-	bool ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys);
+	// Relation blocks: member ways of the largest multipolygon to be processed, found by the
+	// relation scan (by block offset), so that the blocks with the slowest relations are read first
+	std::mutex relationBlockCostMutex;
+	std::map<uint64_t, uint64_t> relationBlockCost;
+
+	bool ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys, uint64_t& cost);
 	bool ReadRelations(
 		OsmLuaProcessing& output,
 		PbfReader::PrimitiveGroup& pg,
@@ -110,7 +115,8 @@ private:
 		const BlockMetadata& blockMetadata,
 		const SignificantTags& wayKeys,
 		uint shard,
-		uint effectiveShards
+		uint effectiveShards,
+		int onlyPass = -1	// 0: only relations with many member ways, 1: only the others
 	);
 
 	inline bool relationIsType(const PbfReader::Relation& rel, int typeKey, int val) {

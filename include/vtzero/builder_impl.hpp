@@ -167,6 +167,33 @@ namespace vtzero {
 
             ~layer_builder_impl() noexcept = default;
 
+            // Start again as a new, empty layer created from scratch: the
+            // same state as after the constructor above, but the buffers
+            // keep their memory.
+            template <typename TString>
+            void reinit(TString&& name, uint32_t version, uint32_t extent) {
+                m_data_view = data_view{};
+                m_data.clear();
+                m_keys_data.clear();
+                m_values_data.clear();
+                m_num_features = 0;
+                m_version = version;
+                m_num_keys = 0;
+                m_num_values = 0;
+                // clear() keeps the bucket array, which is cleared again on every reuse
+                if (m_keys_index.bucket_count() > 64) map_type{}.swap(m_keys_index); else m_keys_index.clear();
+                if (m_values_index.bucket_count() > 64) map_type{}.swap(m_values_index); else m_values_index.clear();
+                m_pbf_message_layer.add_uint32(detail::pbf_layer::version, version);
+                m_pbf_message_layer.add_string(detail::pbf_layer::name, std::forward<TString>(name));
+                m_pbf_message_layer.add_uint32(detail::pbf_layer::extent, extent);
+            }
+
+            // Worth keeping for reinit()? (not a copied layer, not much memory)
+            bool recyclable() const noexcept {
+                return !m_data_view.data() &&
+                       m_data.capacity() + m_keys_data.capacity() + m_values_data.capacity() <= (64U << 10U);
+            }
+
             layer_builder_impl(const layer_builder_impl&) = delete;
             layer_builder_impl& operator=(const layer_builder_impl&) = delete;
 
