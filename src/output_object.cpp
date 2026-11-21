@@ -42,8 +42,8 @@ static void writeAttributesTo(
 	FeatureBuilder& fbuilder,
 	char zoom
 ) {
-	attributeStore.forEachPairUnsafe(attributes, [&](const AttributePair& pair) {
-		const AttributePair* it = &pair;
+	attributeStore.forEachPairIndexCanonicalUnsafe(attributes, [&](uint32_t pairIndex) {
+		const AttributePair* it = &attributeStore.pairStore.getPairUnsafe(pairIndex);
 		if (it->minzoom > zoom) return;
 
 		// TODO: consider taking a data view that is stable
@@ -179,7 +179,7 @@ const uint32_t* MvtAttributeMemo::resolve(const AttributeStore& attributeStore, 
 	if (pairs.used >= MEMO_MAX_PAIRS)
 		pairs.clear();
 	const uint32_t begin = entries.size();
-	attributeStore.forEachPairIndexUnsafe(index, [&](uint32_t pairIndex) {
+	attributeStore.forEachPairIndexCanonicalUnsafe(index, [&](uint32_t pairIndex) {
 		uint32_t key, value;
 		if (const Table::Slot* s = pairs.find(pairIndex)) {
 			key = s->a;

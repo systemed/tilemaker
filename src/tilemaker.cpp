@@ -29,6 +29,9 @@
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/filewritestream.h"
 #include "rapidjson/error/en.h"
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>	// sysconf
+#endif
 
 #ifndef _MSC_VER
 #include <sys/resource.h>
@@ -93,6 +96,40 @@ void sortTileCoordinates(
  *
  * Worker threads write the output tiles, and start in the outputProc function.
  */
+// Memory this process may use: physical RAM, or the cgroup (v2/v1) limit if lower; 0 if unknown
+static uint64_t availableMemoryBytes() {
+	uint64_t bytes = 0;
+#if defined(__unix__) || defined(__APPLE__)
+	const long pages = sysconf(_SC_PHYS_PAGES), pageSize = sysconf(_SC_PAGESIZE);
+	if (pages > 0 && pageSize > 0) bytes = (uint64_t)pages * (uint64_t)pageSize;
+#endif
+#ifdef __linux__
+	// The limits of the process's cgroup and the ones above it, from /proc/self/cgroup: "0::/path"
+	// (v2), or "N:...memory...:/path" (v1). Only in a container is the process's cgroup the root
+	// (a systemd service or scope is not).
+	std::ifstream cgroups("/proc/self/cgroup");
+	std::string line;
+	while (std::getline(cgroups, line)) {
+		const size_t a = line.find(':'), b = line.find(':', a + 1);
+		if (a == std::string::npos || b == std::string::npos) continue;
+		const std::string controllers = "," + line.substr(a + 1, b - a - 1) + ",";
+		std::string dir, file;
+		if (line.compare(0, a, "0") == 0 && controllers == ",,") { dir = "/sys/fs/cgroup"; file = "/memory.max"; }
+		else if (controllers.find(",memory,") != std::string::npos) { dir = "/sys/fs/cgroup/memory"; file = "/memory.limit_in_bytes"; }
+		else continue;
+		std::string path = line.substr(b + 1);
+		while (true) {
+			std::ifstream f(dir + path + file);
+			unsigned long long limit = 0;	// ("max": no limit)
+			if (f >> limit && limit > 0 && (bytes == 0 || limit < bytes)) bytes = limit;
+			if (path.empty() || path == "/") break;
+			path.resize(path.find_last_of('/'));
+		}
+	}
+#endif
+	return bytes;
+}
+
 int main(const int argc, const char* argv[]) {
 #ifdef __GLIBC__
 	// glibc raises its mmap threshold dynamically (up to 32/64 MB) once a large
@@ -523,6 +560,19 @@ int main(const int argc, const char* argv[]) {
 	// Cluster tiles: breadth-first for z0..z5, depth-first for z6
 	sortTileCoordinates(config.baseZoom, options.threadNum, tileCoordinates);
 
+	// Shared pieces of large polygons, for the SHARED_PIECE_ZOOM tiles below which a tile is written
+	{
+		const unsigned pieceZoom = TileDataSource::SHARED_PIECE_ZOOM;
+		std::vector<bool> piecePresent((size_t)1 << (2 * pieceZoom), false);
+		for (auto const &t : tileCoordinates)
+			if (t.first > pieceZoom)
+				piecePresent[((size_t)(t.second.x >> (t.first - pieceZoom)) << pieceZoom) + (t.second.y >> (t.first - pieceZoom))] = true;
+		auto present = [&](TileCoordinate x, TileCoordinate y) {
+			return x < (1u << pieceZoom) && y < (1u << pieceZoom) && piecePresent[((size_t)x << pieceZoom) + y];
+		};
+		for (auto source : sources) source->precomputeSharedPieces(present, options.threadNum);
+	}
+
 	std::atomic<uint64_t> batchCounter(0);
 	// First error from a tile-writing worker; reported after pool.join()
 	// (an exception escaping a pool thread would call std::terminate)
@@ -535,14 +585,35 @@ int main(const int argc, const char* argv[]) {
 		tileError = "z" + std::to_string(zoom) + "/" + std::to_string(coords.x) + "/" + std::to_string(coords.y) + ": " + what;
 		tileFailed = true;
 	};
+	// A write of the ordered writers failed (see OrderedBatches::guarded): stop as for a tile
+	auto writeFailed = [&]() { return sharedData.pmtiles.batches.failed() || sharedData.mbtiles.batches.failed(); };
 	const uint cutZoom = std::max<uint>(12, config.startZoom);
 	// Batches are handed out as threads become free rather than all posted up
 	// front: a planet has ~14M of them, and their queued handlers held GBs.
 	std::mutex batchMutex;
 	std::size_t nextBatchStart = 0;
-	auto nextBatch = [&](std::size_t &startIndex, std::size_t &batchSize) {
+	uint64_t nextBatchSeq = 0;
+	// Shared pieces (TileDataSource::precomputeSharedPieces) lie inside one z6 tile. Tiles from z6 on
+	// are written z6 tile by z6 tile, so once the hand-out has moved past a z6 tile and none of its
+	// batches is still running, no tile needs its pieces any more.
+	std::vector<uint32_t> z6Running(CLUSTER_ZOOM_WIDTH * CLUSTER_ZOOM_WIDTH, 0);
+	std::atomic<int64_t> z6HandedOut(-1);	// changed under batchMutex; read without it for the pieces
+	// The pieces are computed ahead of the hand-out while those alive take less than this: all
+	// computed at the start, the planet's took about 5 GB, more than the tile phase's other memory.
+	const uint64_t pieceBudget = std::max<uint64_t>(256ull << 20, availableMemoryBytes() / 32);
+	auto z6Of = [&](std::size_t i) -> int64_t {
+		const unsigned z = tileCoordinates[i].first;
+		if (z < CLUSTER_ZOOM) return -1;
+		return (int64_t)(tileCoordinates[i].second.x >> (z - CLUSTER_ZOOM)) * CLUSTER_ZOOM_WIDTH + (tileCoordinates[i].second.y >> (z - CLUSTER_ZOOM));
+	};
+	auto releaseZ6 = [&](int64_t b) {
+		for (auto source : sources) source->releaseSharedPieces(b / CLUSTER_ZOOM_WIDTH, b % CLUSTER_ZOOM_WIDTH);
+	};
+	static thread_local std::vector<int64_t> batchZ6;	// z6 tiles of the batch this thread is working on
+	auto nextBatch = [&](std::size_t &startIndex, std::size_t &batchSize, uint64_t &seq) {
 		const std::lock_guard<std::mutex> lock(batchMutex);
 		startIndex = nextBatchStart;
+		seq = nextBatchSeq++;
 		// Compute how many tiles should be assigned to this batch --
 		// higher-zoom tiles are cheaper to compute, lower-zoom tiles more expensive.
 		batchSize = 0;
@@ -567,20 +638,48 @@ int main(const int argc, const char* argv[]) {
 			batchSize++;
 		}
 		nextBatchStart += batchSize;
+		batchZ6.clear();
+		for (std::size_t i = startIndex; i < startIndex + batchSize; i++) {
+			const int64_t b = z6Of(i);
+			if (b >= 0 && (batchZ6.empty() || batchZ6.back() != b)) batchZ6.push_back(b);
+		}
+		for (int64_t b : batchZ6) z6Running[b]++;
+		if (!batchZ6.empty() && batchZ6.back() != z6HandedOut) {
+			if (z6HandedOut >= 0 && z6Running[z6HandedOut] == 0) releaseZ6(z6HandedOut);
+			z6HandedOut = batchZ6.back();
+		}
 		return batchSize > 0;
 	};
 
+	// .pmtiles and .mbtiles are written in batch order, so the file doesn't depend on thread scheduling
+	const bool toPMTiles = options.outputMode == OptionsParser::OutputMode::PMTiles;
+	const bool toMBTiles = options.outputMode == OptionsParser::OutputMode::MBTiles;
+	// While an earlier batch is still being worked on, each thread may run ahead by about
+	// 64 MB of finished tiles. With less, threads often wait for a slow batch (mostly a
+	// dense z12 area), above all when two threads share a core and each runs at half speed.
+	const uint64_t maxHeldBytes = (64ull << 20) * options.threadNum;
+	if (toPMTiles) sharedData.pmtiles.batches.setMaxHeldBytes(maxHeldBytes);
+	if (toMBTiles) sharedData.mbtiles.batches.setMaxHeldBytes(maxHeldBytes);
 	for (unsigned int t = 0; t < options.threadNum; t++) {
 		boost::asio::post(pool, [&]() {
 			std::size_t startIndex, batchSize;
-			while (nextBatch(startIndex, batchSize)) {
+			uint64_t seq;
+			while (true) {
+				if (toPMTiles) sharedData.pmtiles.batches.waitForRoom();
+				if (toMBTiles) sharedData.mbtiles.batches.waitForRoom();
+				if (tileFailed || writeFailed()) break;
+				if (!nextBatch(startIndex, batchSize, seq)) break;
+				// Shared pieces for the tiles coming up (see TileDataSource::precomputeSharedPieces)
+				for (auto source : sources) source->computeSharedPieces(z6HandedOut.load(), pieceBudget);
+				if (toPMTiles) sharedData.pmtiles.batches.begin(seq);
+				if (toMBTiles) sharedData.mbtiles.batches.begin(seq);
 				clipCacheBatchId = ++batchCounter;
 				// A single-tile batch has no descendants to reuse its clips.
 				clipCacheNoStore = batchSize == 1;
 				std::vector<std::string> tileTimings;
 				std::size_t endIndex = std::min(tileCoordinates.size(), startIndex + batchSize);
 				for(std::size_t i = startIndex; i < endIndex; ++i) {
-					if (tileFailed) return;
+					if (tileFailed || writeFailed()) break;
 					unsigned int zoom = tileCoordinates[i].first;
 					TileCoordinates coords = tileCoordinates[i].second;
 
@@ -593,15 +692,15 @@ int main(const int argc, const char* argv[]) {
 					try {
 						std::vector<std::vector<OutputObjectID>> data;
 						for (auto source : sources) {
-							data.emplace_back(source->getObjectsForTile(sortOrders, zoom, coords));
+							data.emplace_back(source->getObjectsForTile(sortOrders, attributeStore, zoom, coords));
 						}
 						outputProc(sharedData, sources, attributeStore, data, coords, zoom);
 					} catch (const std::exception& e) {
 						recordTileError(zoom, coords, e.what());
-						return;
+						break;
 					} catch (...) {
 						recordTileError(zoom, coords, "unknown exception");
-						return;
+						break;
 					}
 
 #ifdef CLOCK_MONOTONIC
@@ -621,6 +720,15 @@ int main(const int argc, const char* argv[]) {
 						std::cout << output << std::endl;
 				}
 
+				{
+					const std::lock_guard<std::mutex> lock(batchMutex);
+					for (int64_t b : batchZ6)
+						if (--z6Running[b] == 0 && b != z6HandedOut) releaseZ6(b);
+				}
+				// Hand the batch over even if a tile failed, so no thread waits for it
+				if (toPMTiles) sharedData.pmtiles.batches.end();
+				if (toMBTiles) sharedData.mbtiles.batches.end();
+				if (tileFailed || writeFailed()) break;
 				tilesWritten += (endIndex - startIndex); 
 
 				if (io_mutex.try_lock()) {
@@ -648,6 +756,18 @@ int main(const int argc, const char* argv[]) {
 	pool.join();
 	if (tileFailed) {
 		cerr << endl << "Error writing tile " << tileError << endl;
+		return -1;
+	}
+	// A write that failed while the tiles were written (see OrderedBatches::guarded)
+	std::exception_ptr writeError = toPMTiles ? sharedData.pmtiles.batches.error() : toMBTiles ? sharedData.mbtiles.batches.error() : nullptr;
+	if (writeError) {
+		try {
+			std::rethrow_exception(writeError);
+		} catch (const std::exception& e) {
+			cerr << endl << "Error writing " << sharedData.outputFile << ": " << e.what() << endl;
+		} catch (...) {
+			cerr << endl << "Error writing " << sharedData.outputFile << endl;
+		}
 		return -1;
 	}
 
