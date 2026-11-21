@@ -8,7 +8,12 @@
 #include <mutex>
 #include <set>
 #include <vector>
+#include <unordered_set>
+#include <tuple>
 #include <memory>
+#include <functional>
+#include <future>
+#include <atomic>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp>
 #include "append_vector.h"
@@ -18,6 +23,14 @@
 #include "tile_data_base.h"
 
 typedef std::vector<class TileDataSource *> SourceList;
+
+// The TileDataSources alive, for the store leases a thread keeps until it ends (leased_store.h): the
+// main thread gives its leases back at exit, after the sources are gone. A source is also told apart
+// by its number, as a new source can be at the address of a destroyed one.
+uint64_t registerLeaseSource(const TileDataSource *source);
+void unregisterLeaseSource(const TileDataSource *source);
+std::mutex &leaseSourcesMutex();
+bool leaseSourceAlive(const TileDataSource *source, uint64_t number);	// with leaseSourcesMutex() held
 
 class TileBbox;
 
@@ -208,6 +221,10 @@ template<typename OO> void collectLowZoomObjectsForTile(
 	}
 }
 
+// When non-zero, getObjectsForTile keeps the objects shown up to this zoom rather than the tile's
+// own zoom (see the covered subtrees in tilemaker.cpp)
+extern thread_local unsigned objectsUpToZoom;
+
 template<typename OO> void collectObjectsForTileTemplate(
 	const unsigned int& indexZoom,
 	typename std::vector<AppendVectorNS::AppendVector<OO>>::iterator objects,
@@ -288,7 +305,7 @@ template<typename OO> void collectObjectsForTileTemplate(
 			TileCoordinate y = baseY / (1 << (indexZoom - clampedZoom));
 
 			if (dstIndex.x == x && dstIndex.y == y) {
-				if (iter->oo.minZoom <= zoom) {
+				if (iter->oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom)) {
 					output.push_back(outputObjectWithId(*iter));
 				}
 			} else {
@@ -362,14 +379,30 @@ protected:
 	std::vector<multi_polygon_store_t> multipolygonStores;
 	// Per multipolygonStores entry: stored geometry is known to pass geom::is_valid
 	std::vector<std::vector<bool>> multipolygonValid;
+	// Validity checks still running (see checkValidityLater)
+	std::mutex deferredValidityMutex;
+	std::vector<std::pair<NodeID, std::future<bool>>> deferredValidity;
 	
 	ClipCache<MultiPolygon> multiPolygonClipCache;
 	ClipCache<MultiLinestring> multiLinestringClipCache;
 
-	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>> pendingSmallIndexObjects;
+	// Small index adds are staged per thread and moved to their shards in bulk (see flushStaging)
+	template<class OO> struct IndexStaging {
+		std::vector<OO> entries;
+		std::vector<uint16_t> shards;	// z6 index of each entry
+	};
+	struct alignas(64) IndexStagings {	// a cache line of its own: each is written by its thread only
+		IndexStaging<OutputObjectXY> objects;
+		IndexStaging<OutputObjectXYID> objectsWithIds;
+	};
+	std::mutex stagingMutex;
+	std::deque<IndexStagings> stagings;	// one per thread that added objects (guarded by stagingMutex)
+	uint64_t stagingEpoch;	// identifies this source's stagings in threads' caches (renewed by finalize)
 
 public:
 	TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID);
+	~TileDataSource();
+	const uint64_t leaseNumber = registerLeaseSource(this);	// see registerLeaseSource
 
 	void collectTilesWithObjectsAtZoom(std::vector<std::shared_ptr<TileCoordinatesSet>>& zooms);
 	// The same for the objects of one z6 tile (0 <= shard < CLUSTER_ZOOM_AREA)
@@ -399,6 +432,13 @@ public:
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
 	void addObjectToSmallIndex(const TileCoordinates& index, const OutputObject& oo, uint64_t id, bool needsLock);
 	void addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	// As addObjectToSmallIndex(tile, oo, id) for each tile and the outputs each(tile, add) calls
+	// add(oo) for, taking a z6 tile's lock once per run of tiles in it
+	template<class Each> void addToSmallIndex(const std::vector<TileCoordinates>& tiles, uint64_t id, Each each);
+	IndexStagings& indexStaging();
+	void stageObject(IndexStagings& staging, size_t z6index, const TileCoordinates& index, const OutputObject& oo, uint64_t id);
+	void flushStagingIfFull(IndexStagings& staging);
+	template<class OO> void flushStaging(IndexStaging<OO>& staging, std::vector<AppendVectorNS::AppendVector<OO>>& shards);
 
 	void addObjectToLargeIndex(const Box& envelope, const OutputObject& oo, uint64_t id) {
 		std::lock_guard<std::mutex> lock(mutex);
@@ -412,11 +452,49 @@ public:
 
 	std::vector<OutputObjectID> getObjectsForTile(
 		const std::vector<bool>& sortOrders, 
+		const AttributeStore& attributeStore,
 		unsigned int zoom,
 		TileCoordinates coordinates
 	);
+	void orderStoredGeometryTies(std::vector<OutputObjectID>& data) const;
 
 	virtual Geometry buildWayGeometry(OutputGeometryType const geomType, NodeID const objectID, const TileBbox &bbox);
+
+	// Large polygons are clipped once per SHARED_PIECE_ZOOM tile before the tiles are written,
+	// and deeper tiles clip from that piece instead of the whole polygon (see tile_data.cpp).
+	static constexpr unsigned SHARED_PIECE_ZOOM = 8;
+	// present(x, y): whether any tile below SHARED_PIECE_ZOOM tile x/y will be written
+	void precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum);
+	// Compute pieces in the order of their z6 tiles (x * 64 + y, the order the tiles are written in):
+	// those of z6 tiles up to handedOutZ6, and those after it while the pieces alive take less than
+	// budgetBytes. The tile threads call this after taking a batch.
+	void computeSharedPieces(int64_t handedOutZ6, uint64_t budgetBytes);
+	// Drop the shared pieces inside a z6 tile, once no tile in it is still to be written
+	void releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y);
+	// Whether objectID's polygon is kept in the multipolygon store (retrieveMultiPolygon)
+	virtual bool storesMultiPolygon(NodeID objectID) const { return true; }
+	struct SharedPiece {
+		std::shared_ptr<MultiPolygon> geom;	// null: no usable piece, clip the whole polygon
+		bool valid = false;
+		uint64_t bytes = 0;	// counted in livePieceBytes while the piece is alive
+		~SharedPiece() { livePieceBytes -= bytes; }
+	};
+	// The points of all pieces alive, of all sources
+	static std::atomic<uint64_t> livePieceBytes;
+	// Filled by precomputeSharedPieces, then only read while the tiles are written (no lock).
+	// releaseSharedPieces resets the pieces of a z6 tile no thread reads any more.
+	std::unordered_set<NodeID> pieceObjects;
+	std::map<std::tuple<NodeID, TileCoordinate, TileCoordinate>, std::shared_future<std::shared_ptr<const SharedPiece>>> sharedPieces;
+	struct PieceJob {
+		std::tuple<NodeID, TileCoordinate, TileCoordinate> key;
+		uint64_t points;
+		std::shared_ptr<std::promise<std::shared_ptr<const SharedPiece>>> promise;
+		int64_t z6;
+	};
+	std::vector<PieceJob> pieceJobs;	// by z6 tile, largest polygon first
+	std::atomic<size_t> nextPieceJob { 0 };
+	// Computes job i
+	void computeSharedPiece(size_t i);
 	virtual LatpLon buildNodeGeometry(NodeID const objectID, const TileBbox &bbox) const;
 
 	void open() {
@@ -488,6 +566,11 @@ public:
 
 	// knownValid: src has passed geom::is_valid (see polygonKnownValid)
 	NodeID storeMultiPolygon(const MultiPolygon& src, bool knownValid = false);
+	// Find out in the background whether a polygon stored with knownValid=false passes
+	// geom::is_valid: on a big lake with thousands of islands that takes ~10 s, which would
+	// otherwise hold up the end of reading. finishDeferredValidity records the results.
+	void checkValidityLater(NodeID objectID, MultiPolygon mp);
+	void finishDeferredValidity();
 
 	multi_polygon_t const &retrieveMultiPolygon(NodeID id) const {
 		const auto& shardId = getShard(id);

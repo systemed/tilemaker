@@ -118,8 +118,9 @@ private:
 	std::vector<std::pair<void*, size_t>> allocatedMemory;
 
 	// The orphanage stores nodes that come from groups that may be worked on by
-	// multiple threads. They'll get folded into the index during finalize()
-	std::map<WayID, std::vector<std::pair<WayID, std::vector<NodeID>>>> orphanage;
+	// multiple threads. They'll get folded into the index during finalize().
+	// Per group, the pieces handed in (each one thread's ways of that group, moved in whole).
+	std::map<WayID, std::vector<std::vector<std::pair<WayID, std::vector<NodeID>>>>> orphanage;
 	std::vector<std::vector<std::pair<WayID, std::vector<NodeID>>>> workerBuffers;
 
 	std::atomic<uint64_t> totalWays;
@@ -128,7 +129,8 @@ private:
 	std::atomic<uint64_t> totalGroupSpace;
 	std::atomic<uint64_t> totalChunks;
 
-	void collectOrphans(const std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans);
+	// Moves the ways (all of one group) into the orphanage; leaves orphans empty
+	void collectOrphans(std::vector<std::pair<WayID, std::vector<NodeID>>>& orphans);
 	void publishGroup(const std::vector<std::pair<WayID, std::vector<NodeID>>>& ways);
 };
 
