@@ -26,12 +26,14 @@ way_memo = true
 -- Tag values way_function only tests for being empty and copies unchanged into these attributes:
 -- the memo replays such ways with each way's own value
 -- (ref: also its length, into ref_length)
-way_memo_values = { name = { "name:latin" }, ["addr:housenumber"] = { "housenumber" }, ref = { "ref", ref_length = "length" } }
+-- name: only without other languages, as SetNameAttributes then compares them with name
+local name_memo = (preferred_language == nil and #additional_languages == 0) and { preferred_language_attribute } or nil
+way_memo_values = { name = name_memo, ["addr:housenumber"] = { "housenumber" }, ref = { "ref", ref_length = "length" } }
 -- way_function uses NextRelation() only to test for a relation, and the relations' tags only through FindInRelation
 way_memo_relations = true
 -- node_function, likewise (the same tags: node_function only tests them for being empty and copies them unchanged)
 node_memo = true
-node_memo_values = { name = { "name:latin" }, ["addr:housenumber"] = { "housenumber" } }
+node_memo_values = { name = name_memo, ["addr:housenumber"] = { "housenumber" } }
 
 -- Enter/exit Tilemaker
 function init_function(name,is_first)
