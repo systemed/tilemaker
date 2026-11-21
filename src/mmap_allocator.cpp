@@ -98,13 +98,15 @@ static mmap_dir_t mmap_dir;
 std::vector< mmap_shm_ptr > mmap_shm_regions;  
 size_t mmap_shm::mmap_file_size = 0;
 
-std::mutex mmap_allocator_mutex;
+// Never destroyed (nor the two lists below): thread_regions_t's destructor uses them, and the
+// main thread's thread-locals are destroyed after the statics on some platforms (macOS)
+std::mutex &mmap_allocator_mutex = *new std::mutex;
 
 // Regions of threads that have exited, for reuse by new threads. Every thread
 // pool (one per .shp/GeoJSON layer, per .pbf read phase) starts new threads, and
 // a new region (or 1GB store file) for each of them would never be released.
-std::vector<mmap_file_ptr> free_mmap_files;
-std::vector<mmap_shm_ptr> free_mmap_shm_regions;
+std::vector<mmap_file_ptr> &free_mmap_files = *new std::vector<mmap_file_ptr>();
+std::vector<mmap_shm_ptr> &free_mmap_shm_regions = *new std::vector<mmap_shm_ptr>();
 
 // The regions the current thread allocates from
 struct thread_regions_t
@@ -195,6 +197,12 @@ bool mmap_dir_t::is_open()
 {
 	if(!mmap_dir_filename.empty()) {
 		try {
+			// The files of exited threads, kept for reuse: let them go first, so that they are
+			// deleted below (free_mmap_files is never destroyed)
+			{
+				std::lock_guard<std::mutex> lock(mmap_allocator_mutex);
+				free_mmap_files.clear();
+			}
 			// Unmapping and deleting a big store (planet: ~140 GB in ~300 files)
 			// takes half a minute on one thread, so release the files from several.
 			const size_t threads = std::min<size_t>(files.size(), std::min(16u, std::max(1u, std::thread::hardware_concurrency())));
