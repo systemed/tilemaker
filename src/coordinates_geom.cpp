@@ -236,7 +236,8 @@ static inline void pushTile(std::vector<TileCoordinates> &tiles, TileCoordinate 
 template<typename T>
 void impl_insertIntermediateTilesVec(T const &points, uint baseZoom, std::vector<TileCoordinates> &tiles) {
 	const size_t start = tiles.size();
-	const double scale = scalbn(1.0, (int)(uint8_t)baseZoom);
+	const unsigned zoom = (uint8_t)baseZoom;
+	const double scale = zoom < 32 ? double(1u << zoom) : scalbn(1.0, (int)zoom);	// exactly 2^zoom
 	TileCoordinate tileX1 = 0, tileY1 = 0;
 	for (auto it = points.begin(); it != points.end(); ++it) {
 		// Calculate p2 tile (same arithmetic as lon2tilexf/latp2tileyf)
@@ -248,6 +249,8 @@ void impl_insertIntermediateTilesVec(T const &points, uint baseZoom, std::vector
 			tileX1 = tileX2; tileY1 = tileY2;
 			continue;
 		}
+		// Most points are in the tile of the previous one, which is the last tile pushed: nothing to add
+		if (tileX2 == tileX1 && tileY2 == tileY1) continue;
 
 		// Supercover line algorithm from http://eugen.dedu.free.fr/projects/bresenham/
 		int i;                       // loop counter

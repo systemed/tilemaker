@@ -138,6 +138,27 @@ namespace PbfReader {
 		void readDenseNodes(protozero::data_view data);
 	};
 
+	// DenseNodes iteration, inline (called per node)
+	inline bool DenseNodes::Iterator::operator!=(Iterator& other) const {
+		return offset != other.offset;
+	}
+
+	inline void DenseNodes::Iterator::operator++() {
+		offset++;
+
+		if (offset < nodes.ids.size()) {
+			node.id = nodes.ids[offset];
+			node.lon = nodes.lons[offset];
+			node.lat = nodes.lats[offset];
+			node.tagStart = nodes.tagStart[offset];
+			node.tagEnd = nodes.tagEnd[offset];
+		}
+	}
+
+	inline DenseNodes::Node& DenseNodes::Iterator::operator*() {
+		return node;
+	}
+
 	struct Way {
 		uint64_t id;
 		std::vector<uint32_t> keys;

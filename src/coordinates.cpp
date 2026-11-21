@@ -1,6 +1,8 @@
 #include "coordinates.h"
 #include <math.h>
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 TileCoordinates_::TileCoordinates_() {
 	this->x = 0;
@@ -22,6 +24,79 @@ static inline double clamp(double value, double limit) {
 }
 double lat2latp(double lat) { return rad2deg(log(tan(deg2rad(clamp(lat,85.06)+90.0)/2.0))); }
 double latp2lat(double latp) { return rad2deg(atan(exp(deg2rad(latp)))*2.0)-90.0; }
+
+// Fast exact int(lat2latp(lat / 1e7) * 1e7) for latitudes in 1e-7 degrees (the conversion of every
+// node read from the .osm.pbf).
+//
+// A piecewise polynomial (degree 5, 1024 intervals over [0, 85.06] degrees, |lat|; the function is
+// odd) approximates lat2latp(lat) * 1e7. Where it is more than Margin (1e-3, in 1e-7 degrees)
+// away from an integer, the truncation of lat2latp's result is the same integer: the polynomial is
+// within ~1e-5 of the exact function, lat2latp's double result within ~2e-6 (rounding of tan's
+// argument near the clamp, log/tan within an ulp). Otherwise (0.2% of the latitudes, and beyond the
+// clamp at +-85.06) lat2latp itself is called. Checked against lat2latp for every latitude up to +-86 degrees (and samples beyond).
+namespace {
+namespace latp_e7 {
+	constexpr int N = 1024;
+	constexpr double Limit = 85.06;	// lat2latp's clamp
+	constexpr double Margin = 1e-3;
+	constexpr uint32_t MaxFast = 850599999;	// |lat| up to this: below the clamp
+	struct Table {
+		double scale;	// intervals per degree
+		double scalePerE7;	// intervals per 1e-7 degree
+		double c[N][6];	// per interval, monomial coefficients in t in [-1, 1]
+		Table() {
+			scale = N / Limit;
+			scalePerE7 = scale / 10000000.0;
+			const double pi = 3.14159265358979323846;
+			for (int i = 0; i < N; i++) {
+				// Chebyshev interpolation at 6 nodes, then the monomial coefficients
+				const double lo = i / scale, hi = (i + 1) / scale;
+				double f[6], ch[6] = {};
+				for (int j = 0; j < 6; j++) {
+					const double t = std::cos(pi * (j + 0.5) / 6);
+					f[j] = lat2latp((lo + hi) / 2 + t * (hi - lo) / 2) * 10000000.0;
+				}
+				for (int k = 0; k < 6; k++) {
+					double s = 0;
+					for (int j = 0; j < 6; j++) s += f[j] * std::cos(pi * k * (j + 0.5) / 6);
+					ch[k] = s * (k == 0 ? 1.0 : 2.0) / 6;
+				}
+				// T0 = 1, T1 = t, T2 = 2t^2-1, T3 = 4t^3-3t, T4 = 8t^4-8t^2+1, T5 = 16t^5-20t^3+5t
+				c[i][0] = ch[0] - ch[2] + ch[4];
+				c[i][1] = ch[1] - 3 * ch[3] + 5 * ch[5];
+				c[i][2] = 2 * ch[2] - 8 * ch[4];
+				c[i][3] = 4 * ch[3] - 20 * ch[5];
+				c[i][4] = 8 * ch[4];
+				c[i][5] = 16 * ch[5];
+			}
+		}
+	};
+	inline const Table& table() { static const Table t; return t; }
+
+	inline int32_t exact(int32_t lat) { return int(lat2latp(double(lat) / 10000000.0) * 10000000.0); }
+
+	inline int32_t convert(int32_t lat) {
+		const Table& tb = table();
+		const uint32_t ua = lat < 0 ? 0u - uint32_t(lat) : uint32_t(lat);
+		if (ua > MaxFast) return exact(lat);
+		const double s = double(ua) * tb.scalePerE7;
+		int i = int(s);
+		if (i >= N) i = N - 1;
+		const double t = 2 * (s - i) - 1;
+		const double* c = tb.c[i];
+		const double t2 = t * t;
+		const double v = (c[0] + c[1] * t) + t2 * ((c[2] + c[3] * t) + t2 * (c[4] + c[5] * t));
+		// the truncation of every value within Margin of v (v - Margin >= 0: truncation = floor)
+		const double vlo = v - Margin;
+		if (!(vlo >= 0)) return exact(lat);
+		const int64_t lo = int64_t(vlo);
+		if (lo != int64_t(v + Margin)) return exact(lat);
+		return lat < 0 ? -int32_t(lo) : int32_t(lo);
+	}
+}
+}
+
+int32_t lat2latpE7(int32_t lat) { return latp_e7::convert(lat); }
 
 // Tile conversions
 double lon2tilexf(double lon, uint8_t z) { return scalbn((lon+180.0) * (1/360.0), (int)z); }
