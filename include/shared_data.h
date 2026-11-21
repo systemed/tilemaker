@@ -94,6 +94,7 @@ public:
 	uint baseZoom, startZoom, endZoom;
 	TileFormat tileFormat;
 	uint mvtVersion, combineBelow;
+	int compressionLevel;	// libdeflate level for tiles (1..12)
 	bool includeID, compress, gzip, highResolution;
 	std::string compressOpt;
 	bool clippingBoxFromJSON;

@@ -2,6 +2,7 @@
 #define _APPEND_VECTOR_H
 
 #include "mmap_allocator.h"
+#include <algorithm>
 #include <vector>
 #include <queue>
 #include <cstdint>
@@ -186,6 +187,22 @@ namespace AppendVectorNS {
 			}
 
 			count++;
+		}
+
+		// The same as push_back of each of p[0, n)
+		void append(const T* p, size_t n) {
+			while (n > 0) {
+				auto& vec = vecs.back();
+				if (vec.capacity() == 0)
+					vec.reserve(APPEND_VECTOR_SIZE);
+				const size_t take = std::min(n, vec.capacity() - vec.size());
+				vec.insert(vec.end(), p, p + take);
+				p += take; n -= take; count += take;
+				if (vec.size() == vec.capacity()) {
+					vecs.push_back(std::vector<T, mmap_allocator<T>>());
+					vecs.back().reserve(APPEND_VECTOR_SIZE);
+				}
+			}
 		}
 
 		size_t count;

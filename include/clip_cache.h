@@ -16,6 +16,9 @@ class TileBbox;
 extern thread_local uint64_t clipCacheBatchId;
 // Set when the current batch can't reuse clips (a single tile), so add() is skipped.
 extern thread_local bool clipCacheNoStore;
+// Set while a shared piece of a large polygon is computed (TileDataSource::precomputeSharedPieces):
+// the batch cache is then neither read nor written.
+extern thread_local bool clipCacheBypass;
 
 template <class T>
 class ClipCache {
@@ -36,6 +39,8 @@ public:
 	}
 
 	Entry getEntry(uint zoom, TileCoordinate x, TileCoordinate y, NodeID objectID) const {
+		if (clipCacheBypass)
+			return Entry();
 		// Look for a previously clipped version at z-1, z-2, ... (nearest ancestor first)
 		LocalStore& s = local(zoom, TileCoordinates(x, y));
 		Entry rv;
@@ -59,7 +64,7 @@ public:
 	void add(const TileBbox& bbox, const NodeID objectID, const T& output, bool valid = false) {
 		// The point of caching is to reuse the clip, so caching at the terminal zoom is
 		// pointless.
-		if (bbox.zoom == baseZoom || clipCacheNoStore)
+		if (bbox.zoom == baseZoom || clipCacheNoStore || clipCacheBypass)
 			return;
 
 		// Levels beyond MAX_LEVELS could never be looked up by a child tile anyway

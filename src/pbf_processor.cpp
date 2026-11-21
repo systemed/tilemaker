@@ -56,7 +56,7 @@ bool PbfProcessor::ReadNodes(OsmLuaProcessing& output, PbfReader::PrimitiveGroup
 		}
 		lastNodeId = nodeId;
 
-		LatpLon latplon = { int(lat2latp(double(node.lat)/10000000.0)*10000000.0), node.lon };
+		LatpLon latplon = { lat2latpE7(node.lat), node.lon };
 
 		tags.reset();
 		// For tagged nodes, call Lua, then save the OutputObject
@@ -125,7 +125,7 @@ bool PbfProcessor::ReadWays(
 			for (int k=0; k<pbfWay.lats.size(); k++) {
 				int lat = pbfWay.lats[k];
 				int lon = pbfWay.lons[k];
-				LatpLon ll = { int(lat2latp(double(lat)/10000000.0)*10000000.0), lon };
+				LatpLon ll = { lat2latpE7(lat), lon };
 				llVec.push_back(ll);
 			}
 		} else {
@@ -227,7 +227,7 @@ bool PbfProcessor::ScanWays(OsmLuaProcessing& output, PbfReader::PrimitiveGroup&
 	return true;
 }
 
-bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys) {
+bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveGroup& pg, const PbfReader::PrimitiveBlock& pb, const SignificantTags& wayKeys, uint64_t& cost) {
 	// Scan relations to see which ways we need to save
 	if (pg.relations().empty())
 		return false;
@@ -236,6 +236,8 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 
 	int typeKey = findStringPosition(pb, "type");
 	int mpKey   = findStringPosition(pb, "multipolygon");
+	// Member ways of the group's relations, handed to the store in one go
+	std::vector<WayID> usedWays;
 
 	for (const PbfReader::Relation& pbfRelation : pg.relations()) {
 		bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
@@ -253,6 +255,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 		} else {
 			if (!wayKeys.filter(tags))
 				continue;
+			cost = std::max<uint64_t>(cost, pbfRelation.memids.size());
 		}
 		osmStore.usedRelations.set(relid);
 		for (int n=0; n < pbfRelation.memids.size(); n++) {
@@ -276,7 +279,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 				}
 			} else if (pbfRelation.types[n] == PbfReader::Relation::MemberType::WAY) {
 				if (lastID >= pow(2,42)) throw std::runtime_error("Way ID in relation "+std::to_string(relid)+" negative or too large: "+std::to_string(lastID));
-				osmStore.mark_way_used(static_cast<WayID>(lastID));
+				usedWays.push_back(static_cast<WayID>(lastID));
 				if (isAccepted) {
 					const auto& roleView = pb.stringTable[pbfRelation.roles_sid[n]];
 					std::string role(roleView.data(), roleView.size());
@@ -285,6 +288,7 @@ bool PbfProcessor::ScanRelations(OsmLuaProcessing& output, PbfReader::PrimitiveG
 			}
 		}
 	}
+	osmStore.mark_ways_used(usedWays);
 	return true;
 }
 
@@ -295,7 +299,8 @@ bool PbfProcessor::ReadRelations(
 	const BlockMetadata& blockMetadata,
 	const SignificantTags& wayKeys,
 	uint shard,
-	uint effectiveShards
+	uint effectiveShards,
+	int onlyPass
 ) {
 	// ----	Read relations
 	if (pg.relations().empty())
@@ -321,10 +326,17 @@ bool PbfProcessor::ReadRelations(
 	int innerKey= findStringPosition(pb, "inner");
 	int outerKey= findStringPosition(pb, "outer");
 	if (typeKey >-1) {
+	// Two passes: first the relations with many member ways (the slow multipolygons), so that a
+	// block read early doesn't start its slowest relation only after all the others
+	const std::size_t heavyMembers = 1000;
+	for (int pass = 0; pass < 2; pass++) {
+		if (onlyPass >= 0 && pass != onlyPass) continue;
 		int j = -1;
 		for (const PbfReader::Relation& pbfRelation : pg.relations()) {
 			j++;
 			if (j % blockMetadata.chunks != blockMetadata.chunk)
+				continue;
+			if ((pbfRelation.memids.size() >= heavyMembers) != (pass == 0))
 				continue;
 
 			bool isMultiPolygon = relationIsType(pbfRelation, typeKey, mpKey);
@@ -385,6 +397,7 @@ bool PbfProcessor::ReadRelations(
 				cerr << endl << err.what() << endl;
 			}
 		}
+	}
 	}
 
 	osmStore.relations_insert_front(relations);
@@ -473,6 +486,11 @@ bool PbfProcessor::ReadBlock(
 	// Keep count of groups read during this phase.
 	std::size_t read_groups = 0;
 
+	// Relations: first the slow ones (many member ways) of all the block's groups, then the rest
+	if (phase == ReadPhase::Relations)
+		for (auto& pg : pb.groups())
+			ReadRelations(output, pg, pb, blockMetadata, wayKeys, shard, effectiveShards, 0);
+
 	int primitiveGroupSize = 0;
 	for (auto& pg : pb.groups()) {
 		primitiveGroupSize++;
@@ -533,7 +551,13 @@ bool PbfProcessor::ReadBlock(
 
 		if(phase == ReadPhase::RelationScan) {
 			osmStore.ensureUsedWaysInited();
-			bool done = ScanRelations(output, pg, pb, wayKeys);
+			uint64_t cost = 0;
+			bool done = ScanRelations(output, pg, pb, wayKeys, cost);
+			if (cost > 0) {
+				std::lock_guard<std::mutex> lock(relationBlockCostMutex);
+				uint64_t &c = relationBlockCost[blockMetadata.offset];
+				c = std::max(c, cost);
+			}
 			if(done) { 
 				if (ioMutex.try_lock()) {
 					size_t scanProgress = 100*blocksProcessed.load()/blocksToProcess.load();
@@ -559,7 +583,7 @@ bool PbfProcessor::ReadBlock(
 		}
 
 		if(phase == ReadPhase::Relations) {
-			bool done = ReadRelations(output, pg, pb, blockMetadata, wayKeys, shard, effectiveShards);
+			bool done = ReadRelations(output, pg, pb, blockMetadata, wayKeys, shard, effectiveShards, 1);
 			if(done) { 
 				output_progress();
 				++read_groups;
@@ -799,13 +823,50 @@ int PbfProcessor::ReadPbfFile(
 			if (phase == ReadPhase::Nodes || phase == ReadPhase::Ways)
 				batchSize = (filteredBlocks.size() / (threadNum * 8)) + 1;
 
+			// Relations: the blocks with the largest multipolygons (member ways) first. A few huge
+			// multipolygons (Lake Huron: 19 s) in a late block ran on alone after all others.
+			std::vector<std::pair<std::size_t, BlockMetadata>> ordered(filteredBlocks.begin(), filteredBlocks.end());
+			if (phase == ReadPhase::Relations && !relationBlockCost.empty()) {
+				auto costOf = [&](const BlockMetadata& b) {
+					auto c = relationBlockCost.find(b.offset);
+					return c == relationBlockCost.end() ? uint64_t(0) : c->second;
+				};
+				std::stable_sort(ordered.begin(), ordered.end(), [&](const std::pair<std::size_t, BlockMetadata>& a, const std::pair<std::size_t, BlockMetadata>& b) {
+					return costOf(a.second) > costOf(b.second);
+				});
+			}
+			// Relations: the blocks handed out last (two per thread) are read in 3 parts each, which
+			// different threads take (as for an extract with few blocks, see above). A block takes
+			// ~1 s on a planet, but up to 2.4 s, and how long isn't known before: the last ones ran
+			// on alone for ~0.7 s. Each part parses the whole block again (~0.04 s).
+			if (phase == ReadPhase::Relations && threadNum > 1) {
+				const size_t tailPerThread = 2, parts = 3;
+				const size_t tail = std::min(ordered.size(), (size_t)threadNum * tailPerThread);
+				if (tail > 0 && parts > 1) {
+					std::vector<std::pair<std::size_t, BlockMetadata>> split(ordered.begin(), ordered.end() - tail);
+					for (auto b = ordered.end() - tail; b != ordered.end(); b++) {
+						if (b->second.chunks != 1) { split.push_back(*b); continue; }
+						for (size_t c = 0; c < parts; c++) {
+							auto part = *b;
+							part.second.chunks = parts;
+							part.second.chunk = c;
+							split.push_back(part);
+						}
+					}
+					ordered.swap(split);
+				}
+			}
 			size_t consumed = 0;
-			auto it = filteredBlocks.begin();
-			while(it != filteredBlocks.end()) {
+			auto it = ordered.begin();
+			while(it != ordered.end()) {
 				std::vector<IndexedBlockMetadata> blockRange;
-				blockRange.reserve(batchSize);
-				size_t max = consumed + batchSize;
-				for (; consumed < max && it != filteredBlocks.end(); consumed++) {
+				// Batches shrink towards the end of the phase (each at most a share of what is left),
+				// so that the last ones don't run on alone: 24 blocks each on a planet took seconds
+				const size_t left = ordered.size() - consumed;
+				const size_t thisBatch = std::max<size_t>(1, std::min<size_t>(batchSize, left / (threadNum * 2)));
+				blockRange.reserve(thisBatch);
+				size_t max = consumed + thisBatch;
+				for (; consumed < max && it != ordered.end(); consumed++) {
 					IndexedBlockMetadata ibm;
 					memcpy(&ibm, &it->second, sizeof(BlockMetadata));
 					ibm.index = it->first;

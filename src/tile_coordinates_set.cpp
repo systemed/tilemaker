@@ -134,6 +134,23 @@ void PreciseTileCoordinatesSet::merge(const PreciseTileCoordinatesSet& other) {
 		summary[s] |= other.summary[s];
 }
 
+void PreciseTileCoordinatesSet::mergeRange(const PreciseTileCoordinatesSet& other, size_t sBegin, size_t sEnd) {
+	if (other.zoom_ != zoom_)
+		throw std::invalid_argument("PreciseTileCoordinatesSet::mergeRange: zooms differ");
+	sEnd = std::min(sEnd, summary.size());
+	for (size_t s = sBegin; s < sEnd; s++) {
+		uint64_t bits = other.summary[s];
+		summary[s] |= bits;
+		while (bits) {
+			const size_t block = s * 64 + countTrailingZeros(bits);
+			bits &= bits - 1;
+			const size_t wEnd = std::min((block + 1) * 64, numWords);
+			for (size_t w = block * 64; w < wEnd; w++)
+				tiles[w] |= other.tiles[w];
+		}
+	}
+}
+
 void PreciseTileCoordinatesSet::forEachSet(const std::function<void(TileCoordinate x, TileCoordinate y)>& f) const {
 	// loc = x * 2^zoom + y, so ascending loc order is x-major, y-minor.
 	// Only blocks marked in the summary can hold set bits; visiting them in
