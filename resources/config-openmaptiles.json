@@ -41,6 +41,9 @@
 		"version": "3.0",
 		"description": "Tile config based on OpenMapTiles schema",
 		"compress": "gzip",
+		"metadata": {
+			"attribution": "<a href=\"https://www.openmaptiles.org/\" target=\"_blank\">&copy; OpenMapTiles</a> <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\">&copy; OpenStreetMap contributors</a>"
+		},
 		"filemetadata": {
 			"tilejson": "2.0.0", 
 			"scheme": "xyz", 
