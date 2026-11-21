@@ -99,6 +99,9 @@ You can add optional parameters to layers:
 * `declutter_below` - thin out point features below this zoom level, so only the most important appear when zoomed out (see 'Decluttering point features' below)
 * `declutter_distance` - how far apart (in pixels) decluttered features should be kept - defaults to 40
 * `declutter_threshold` - the score a feature needs to appear at the layer's `minzoom`; this halves at each subsequent zoom level - defaults to 0 (no threshold)
+* `cluster_below` - below this zoom level, write nearby point features with identical attributes as a single point (see 'Clustering point features' below)
+* `cluster_distance` - how near (in pixels) points must be to cluster at the zoom level `cluster_below-1` - defaults to 32
+* `cluster_ratio` - (optional: the default value is 1.0) the actual distance will be `cluster_distance * pow(cluster_ratio, (cluster_below-1) - <current zoom>)`
 
 `write_to` enables you to combine different layer specs within one outputted layer. For example:
 
@@ -134,6 +137,28 @@ In your Lua profile, give each point a `Score()`, typically calculated from OSM 
 Starting at the layer's `minzoom`, tilemaker takes the features whose score is at least `declutter_threshold` (highest score first), and places each one that isn't within `declutter_distance` of a feature already placed. It then moves up a zoom level, halving the threshold so that less important features are included. Anything still unplaced by the time we reach `declutter_below` is written from that zoom level upwards.
 
 A feature whose `MinZoom()` is above the zoom being considered isn't eligible for it. Only point features are decluttered, not lines or polygons.
+
+### Clustering point features
+
+At medium zoom levels, you may want to show that an area has (for example) cafes or bicycle parking, without the clutter of an icon for every one. Clustering replaces a group of nearby points that have identical attributes with a single point.
+
+    "poi": {
+      "minzoom": 12, "maxzoom": 14,
+      "cluster_below": 14, "cluster_distance": 32
+    }
+
+```lua
+    local amenity = Find("amenity")
+    if amenity=="cafe" or amenity=="pub" or amenity=="bicycle_parking" then
+      Layer("poi", false)
+      Attribute("class", amenity)
+      Attribute("name", Find("name"), 14)
+    end
+```
+
+Here, at z12 and z13 each group of pubs within 32 pixels of each other is written as one pub, placed at the pub nearest the middle of the group. A lone pub some way from the others is kept as its own point. At z14 the names are included, so every pub is written individually.
+
+Points are compared by the attributes they are written with at that zoom level, so attributes that only appear at higher zooms (such as `name` above) don't prevent clustering. Clustering happens within each tile, so a group lying across a tile boundary may be shown once in each tile. Only point features are clustered, not lines or polygons.
 
 ### Additional metadata
 

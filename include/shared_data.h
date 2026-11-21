@@ -43,6 +43,10 @@ struct LayerDef {
 	uint declutterBelow = 0;			// zoom below which point features are thinned out by Score()
 	double declutterDistance = 40;		// how far apart (in 256px screen pixels) they should be kept
 	double declutterThreshold = 0;		// score needed at the layer's minzoom (halves at each zoom)
+	// Clustering: also set after addLayer()
+	uint clusterBelow = 0;				// zoom below which nearby identical points are written as one
+	double clusterDistance = 32;		// how near (in 256px screen pixels) points must be to cluster at clusterBelow-1
+	double clusterRatio = 1.0;			// multiplier applied to clusterDistance at each lower zoom
 	// Geometry repair: also set after addLayer().
 	// Polygons that simplification may have broken are always repaired. With
 	// repairPolygons, polygons that were merely clipped and quantised onto the
