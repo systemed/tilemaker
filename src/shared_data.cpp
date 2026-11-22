@@ -447,6 +447,14 @@ void Config::readConfig(rapidjson::Document &jsonConfig, bool &hasClippingBox, B
 			if (it->value.HasMember("declutter_threshold")) layerDef.declutterThreshold = it->value["declutter_threshold"].GetDouble();
 		}
 
+		// Clustering (writing nearby points with identical attributes as one)
+		if (it->value.HasMember("cluster_below")) {
+			LayerDef &layerDef = layers.layers[layerNum];
+			layerDef.clusterBelow = it->value["cluster_below"].GetInt();
+			if (it->value.HasMember("cluster_distance")) layerDef.clusterDistance = it->value["cluster_distance"].GetDouble();
+			if (it->value.HasMember("cluster_ratio"   )) layerDef.clusterRatio    = it->value["cluster_ratio"   ].GetDouble();
+		}
+
 		cout << "Layer " << layerName << " (z" << minZoom << "-" << maxZoom << ")";
 		if (it->value.HasMember("write_to")) { cout << " -> " << it->value["write_to"].GetString(); }
 		cout << endl;

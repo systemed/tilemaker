@@ -99,6 +99,7 @@ all: tilemaker server
 
 tilemaker: \
 	src/attribute_store.o \
+	src/cluster.o \
 	src/config_validator.o \
 	src/coordinates_geom.o \
 	src/coordinates.o \
@@ -155,6 +156,7 @@ tilemaker: \
 test: \
 	test_append_vector \
 	test_attribute_store \
+	test_cluster \
 	test_config_validator \
 	test_correct \
 	test_deque_map \
@@ -183,6 +185,14 @@ test_attribute_store: \
 	src/pooled_string.o \
 	test/attribute_store.test.o
 	$(CXX) $(CXXFLAGS) -o test.attribute_store $^ $(INC) $(LIB) $(LDFLAGS) && ./test.attribute_store
+
+test_cluster: \
+	src/mmap_allocator.o \
+	src/attribute_store.o \
+	src/cluster.o \
+	src/pooled_string.o \
+	test/cluster.test.o
+	$(CXX) $(CXXFLAGS) -o test.cluster $^ $(INC) $(LIB) $(LDFLAGS) && ./test.cluster
 
 test_config_validator: \
 	src/config_validator.o \

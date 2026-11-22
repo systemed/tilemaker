@@ -7,6 +7,7 @@
 #include "helpers.h"
 #include "visvalingam.h"
 #include "simplify_buildings.h"
+#include "cluster.h"
 #ifdef TILEMAKER_WITH_MLT
 #include "mlt_writer.h"
 #endif
@@ -377,6 +378,39 @@ void writeMultiPolygon(
 	}
 }
 
+// Points well beyond the tile's extent aren't written
+static bool pointInTileExtent(const pair<int,int> &xy, const TileBbox &bbox) {
+	const int tile_extent = bbox.hires ? 8192 : 4096;
+	const int margin = 256; // Just in case something happens near the edges.
+	return xy.first >= -margin && xy.first <= tile_extent + margin &&
+	       xy.second >= -margin && xy.second <= tile_extent + margin;
+}
+
+template<class Backend>
+void writePoints(
+	const AttributeStore& attributeStore,
+	const SharedData& sharedData,
+	typename Backend::LayerBuilder& vtLayer,
+	const OutputObjectID& oo,
+	unsigned zoom,
+	const std::vector<std::pair<int,int>>& points,
+	MvtAttributeMemo* attrMemo
+) {
+	typename Backend::PointFeature fbuilder{vtLayer};
+	if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
+
+	fbuilder.add_points(points.size());
+
+	if (verbose && points.size() > 1)
+		std::cout << "Merging " << points.size() << " points into a multipoint" << std::endl;
+
+	for (const auto &point : points)
+		fbuilder.set_point(point.first, point.second);
+
+	oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
+	fbuilder.commit();
+}
+
 template<class Backend>
 void ProcessObjects(
 	TileDataSource* source,
@@ -389,6 +423,7 @@ void ProcessObjects(
 	bool repairPolygons,
 	double filterArea,
 	bool combinePoints,
+	double clusterDistance,
 	bool combineLines,
 	bool combinePolygons,
 	unsigned zoom,
@@ -396,57 +431,61 @@ void ProcessObjects(
 	typename Backend::LayerBuilder& vtLayer,
 	MvtAttributeMemo* attrMemo
 ) {
+	// Points awaiting clustering, grouped by the attributes they'll be written with
+	struct ClusterGroup {
+		std::vector<std::pair<int,int>> points;
+		std::vector<OutputObjectID> objects;
+	};
+	std::vector<ClusterGroup> clusterGroups;
+	std::unordered_map<AttributeIndex, size_t> groupBySet;
+	std::unordered_map<std::string, size_t> groupByKey;
+	std::string attributeKey;
+
 	for (auto jt = ooSameLayerBegin; jt != ooSameLayerEnd; ++jt) {
 		OutputObjectID oo = *jt;
 		if (zoom < oo.oo.minZoom) { continue; }
 
-		if (oo.oo.geomType == POINT_) {
+		if (oo.oo.geomType == POINT_ && clusterDistance > 0) {
+			LatpLon pos = source->buildNodeGeometry(oo.oo.objectID, bbox);
+			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
+			if (!pointInTileExtent(xy, bbox)) continue;
+
+			// Group by the attributes as written at this zoom, which may match even
+			// where the attribute sets differ (e.g. a name only shown when zoomed in)
+			const AttributeIndex attributes = oo.oo.attributes;
+			size_t group;
+			auto bySet = groupBySet.find(attributes);
+			if (bySet != groupBySet.end()) {
+				group = bySet->second;
+			} else {
+				clusterAttributeKey(attributeStore, attributes, zoom, attributeKey);
+				auto byKey = groupByKey.emplace(attributeKey, clusterGroups.size());
+				if (byKey.second) clusterGroups.emplace_back();
+				group = byKey.first->second;
+				groupBySet.emplace(attributes, group);
+			}
+			clusterGroups[group].points.push_back(xy);
+			clusterGroups[group].objects.push_back(oo);
+
+		} else if (oo.oo.geomType == POINT_) {
 			// The very first point; below we check if there are more compatible points
 			// so that we can write a multipoint instead of many point features
 
 			std::vector<std::pair<int, int>> multipoint;
-			const int tile_extent = bbox.hires ? 8192 : 4096;
-			const int margin = 256; // Just in case something happens near the edges.
 
 			LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 			pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-
-			// Filter out points that are way beyond the reasonable tile extent
-			if (xy.first >= -margin && xy.first <= tile_extent + margin &&
-				xy.second >= -margin && xy.second <= tile_extent + margin) {
-				multipoint.push_back(xy);
-			}
+			if (pointInTileExtent(xy, bbox)) multipoint.push_back(xy);
 
 			while (jt<(ooSameLayerEnd-1) && oo.oo.compatible((jt+1)->oo) && combinePoints) {
 				jt++;
 				LatpLon pos = source->buildNodeGeometry(jt->oo.objectID, bbox);
 				pair<int,int> xy = bbox.scaleLatpLon(pos.latp/10000000.0, pos.lon/10000000.0);
-
-				if (xy.first >= -margin && xy.first <= tile_extent + margin &&
-					xy.second >= -margin && xy.second <= tile_extent + margin) {
-					multipoint.push_back(xy);
-				}
+				if (pointInTileExtent(xy, bbox)) multipoint.push_back(xy);
 			}
 
-			if (multipoint.empty()) {
-				oo = *jt;
-				continue;
-			}
-
-			typename Backend::PointFeature fbuilder{vtLayer};
-			if (sharedData.config.includeID && oo.id) fbuilder.set_id(oo.id);
-
-			fbuilder.add_points(multipoint.size());
-
-			if (verbose && multipoint.size() > 1)
-				std::cout << "Merging " << multipoint.size() << " points into a multipoint" << std::endl;
-
-			for (const auto &point : multipoint)
-				fbuilder.set_point(point.first, point.second);
-
-			oo.oo.writeAttributes(attributeStore, fbuilder, zoom, attrMemo);
-			fbuilder.commit();
-
+			if (!multipoint.empty())
+				writePoints<Backend>(attributeStore, sharedData, vtLayer, oo, zoom, multipoint, attrMemo);
 			oo = *jt;
 		} else {
 			Geometry g;
@@ -501,6 +540,21 @@ void ProcessObjects(
 				writeMultiLinestring<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, boost::get<MultiLinestring>(g), attrMemo);
 			else if (oo.oo.geomType == POLYGON_)
 				writeMultiPolygon<Backend>(attributeStore, sharedData, vtLayer, bbox, oo, zoom, simplifyLevel, simplifyAlgo, repairPolygons, boost::get<MultiPolygon>(g), attrMemo);
+		}
+	}
+
+	for (const ClusterGroup &group : clusterGroups) {
+		std::vector<size_t> representatives = clusterPoints(group.points, clusterDistance);
+		if (verbose && representatives.size() < group.points.size())
+			std::cout << "Clustering " << group.points.size() << " points into " << representatives.size() << std::endl;
+
+		if (combinePoints) {
+			std::vector<std::pair<int,int>> multipoint;
+			for (size_t i : representatives) multipoint.push_back(group.points[i]);
+			writePoints<Backend>(attributeStore, sharedData, vtLayer, group.objects[representatives.front()], zoom, multipoint, attrMemo);
+		} else {
+			for (size_t i : representatives)
+				writePoints<Backend>(attributeStore, sharedData, vtLayer, group.objects[i], zoom, { group.points[i] }, attrMemo);
 		}
 	}
 }
@@ -581,6 +635,11 @@ void ProcessLayer(
 		if (zoom < ld.filterBelow) { 
 			filterArea = meter2degp(ld.filterArea, latp) * pow(2.0, (ld.filterBelow-1) - zoom);
 		}
+		double clusterDistance = 0.0;
+		if (zoom < ld.clusterBelow) {
+			const double extent = bbox.hires ? 8192.0 : 4096.0;
+			clusterDistance = ld.clusterDistance * pow(ld.clusterRatio, (ld.clusterBelow-1) - zoom) * extent / 256.0;
+		}
 		for (size_t i=0; i<sources.size(); i++) {
 			// Loop through output objects
 			auto ooListSameLayer = getObjectsAtSubLayer(data[i], layerNum);
@@ -589,7 +648,7 @@ void ProcessLayer(
 			ProcessObjects<Backend>(sources[i], attributeStore,
 				ooListSameLayer.first, end, sharedData, 
 				simplifyLevel, ld.simplifyAlgo, ld.repairPolygons,
-				filterArea, ld.combinePoints, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, attrMemo);
+				filterArea, ld.combinePoints, clusterDistance, zoom < ld.combineLinesBelow, zoom < ld.combinePolygonsBelow, zoom, bbox, vtLayer, attrMemo);
 		}
 	}
 	if (verbose && std::time(0)-start>3) {

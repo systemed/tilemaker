@@ -157,6 +157,7 @@ configure_file(
 
 file(GLOB tilemaker_src_files
 	src/attribute_store.cpp
+	src/cluster.cpp
 	src/config_validator.cpp
 	src/coordinates.cpp
 	src/coordinates_geom.cpp
