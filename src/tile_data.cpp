@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <iostream>
@@ -6,6 +7,8 @@
 #include "tile_data.h"
 #include "coordinates_geom.h"
 #include "leased_store.h"
+#include <unordered_map>
+#include "stable_hash.h"
 #include <ciso646>
 
 using namespace std;
@@ -45,6 +48,34 @@ thread_local LeasedStore<TileDataSource::point_store_t> pointStore;
 thread_local LeasedStore<TileDataSource::linestring_store_t> linestringStore;
 thread_local LeasedStore<TileDataSource::multi_linestring_store_t> multilinestringStore;
 thread_local LeasedStore<TileDataSource::multi_polygon_store_t> multipolygonStore;
+
+// Never destroyed: the thread-locals that use them may be destroyed after the statics (macOS)
+static std::unordered_map<const TileDataSource *, uint64_t> &leaseSources() {
+	static std::unordered_map<const TileDataSource *, uint64_t> &sources = *new std::unordered_map<const TileDataSource *, uint64_t>();
+	return sources;
+}
+std::mutex &leaseSourcesMutex() {
+	static std::mutex &m = *new std::mutex;
+	return m;
+}
+uint64_t registerLeaseSource(const TileDataSource *source) {
+	static uint64_t last = 0;
+	std::lock_guard<std::mutex> lock(leaseSourcesMutex());
+	const uint64_t number = ++last;
+	leaseSources()[source] = number;
+	return number;
+}
+void unregisterLeaseSource(const TileDataSource *source) {
+	std::lock_guard<std::mutex> lock(leaseSourcesMutex());
+	leaseSources().erase(source);
+}
+bool leaseSourceAlive(const TileDataSource *source, uint64_t number) {
+	const auto it = leaseSources().find(source);
+	return it != leaseSources().end() && it->second == number;
+}
+TileDataSource::~TileDataSource() {
+	unregisterLeaseSource(this);
+}
 
 TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool includeID)
 	:
@@ -88,6 +119,134 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
 thread_local uint64_t clipCacheBatchId = 0;
 thread_local bool clipCacheNoStore = false;
+thread_local bool clipCacheBypass = false;
+thread_local bool clipNeededRepair = false;	// set when a POLYGON_ clip went down the repair path
+thread_local bool clipResultValid = false;	// whether the last POLYGON_ clip is known to be valid
+
+// Shared pieces. Every tile batch that needs a large polygon (often 100,000+ points) used to copy
+// it from the store and clip it from scratch, at every zoom. Instead, polygons with at least
+// SHARED_PIECE_MIN_POINTS points are clipped once per SHARED_PIECE_ZOOM tile before the tiles are
+// written, and tiles below clip from that piece. A piece only depends on the polygon and the tile,
+// never on the thread or the order, so the output stays the same for any thread count.
+//
+// The pieces are known up front and computed by all threads ahead of the tiles that need them:
+// computed on demand, a slow piece (up to ~15 s on the planet) held up every thread whose tiles
+// needed it, a third of the tile phase on a 96-thread planet run. They are computed in the order
+// of their z6 tiles, the order the tiles are written in, as far ahead as a memory budget allows
+// (all of them at the start on a large machine; all at once, a planet's took about 5 GB). A thread
+// that takes a batch first starts the pieces of the z6 tiles handed out so far, so only a tile that
+// needs a piece still being computed waits for it. The map itself doesn't change, so the tiles look
+// pieces up without a lock.
+#define SHARED_PIECE_MIN_POINTS 10000
+
+std::atomic<uint64_t> TileDataSource::livePieceBytes(0);
+
+void TileDataSource::precomputeSharedPieces(const std::function<bool(TileCoordinate, TileCoordinate)> &present, unsigned threadNum) {
+	const unsigned zoom = SHARED_PIECE_ZOOM;
+	if (zoom > indexZoom) return;
+	const unsigned shift = indexZoom - zoom;
+	// Candidates: polygons in the large-object index (those spanning 16+ index tiles), with the
+	// index tiles they cover
+	std::map<NodeID, Box> boxes;
+	auto add = [&](const Box &box, const OutputObject &oo) {
+		if (oo.geomType != POLYGON_ || !storesMultiPolygon(oo.objectID)) return;
+		auto it = boxes.find(oo.objectID);
+		if (it == boxes.end()) boxes.emplace(oo.objectID, box);
+		else boost::geometry::expand(it->second, box);
+	};
+	for (auto const &r : boxRtree) add(r.first, r.second);
+	for (auto const &r : boxRtreeWithIds) add(r.first, r.second.oo);
+	if (boxes.empty()) return;
+	const std::vector<std::pair<NodeID, Box>> candidates(boxes.begin(), boxes.end());
+
+	// The pieces each candidate needs: tiles below which a tile is written, that its envelope reaches
+	using Job = PieceJob;
+	std::vector<Job> jobs;
+	std::mutex jobsMutex;
+	std::atomic<size_t> next(0);
+	auto findJobs = [&]() {
+		std::vector<Job> local;
+		for (size_t i = next++; i < candidates.size(); i = next++) {
+			const NodeID objectID = candidates[i].first;
+			uint64_t points = 0;
+			Box envelope;
+			boost::geometry::assign_inverse(envelope);
+			for (auto const &p : retrieveMultiPolygon(objectID)) {
+				points += p.outer().size();
+				for (auto const &inner : p.inners()) points += inner.size();
+				for (auto const &pt : p.outer()) boost::geometry::expand(envelope, pt);
+			}
+			if (points < SHARED_PIECE_MIN_POINTS) continue;
+			const Box &box = candidates[i].second;
+			const TileCoordinate x0 = (TileCoordinate)box.min_corner().x() >> shift, x1 = (TileCoordinate)box.max_corner().x() >> shift;
+			const TileCoordinate y0 = (TileCoordinate)box.min_corner().y() >> shift, y1 = (TileCoordinate)box.max_corner().y() >> shift;
+			for (TileCoordinate x = x0; x <= x1; x++)
+				for (TileCoordinate y = y0; y <= y1; y++)
+					if (present(x, y) && boost::geometry::intersects(envelope, TileBbox(TileCoordinates(x, y), zoom, false, false).clippingBox))
+						local.push_back(Job { std::make_tuple(objectID, x, y), points, nullptr,
+							(int64_t)(x >> (zoom - CLUSTER_ZOOM)) * CLUSTER_ZOOM_WIDTH + (y >> (zoom - CLUSTER_ZOOM)) });
+		}
+		std::lock_guard<std::mutex> lock(jobsMutex);
+		jobs.insert(jobs.end(), local.begin(), local.end());
+	};
+	{
+		boost::asio::thread_pool pool(threadNum);
+		for (unsigned t = 0; t < threadNum; t++) boost::asio::post(pool, findJobs);
+		pool.join();
+	}
+	std::sort(jobs.begin(), jobs.end(), [](const Job &a, const Job &b) {
+		return a.z6 != b.z6 ? a.z6 < b.z6 : a.points != b.points ? a.points > b.points : a.key < b.key;
+	});
+	for (Job &job : jobs) {
+		pieceObjects.insert(std::get<0>(job.key));
+		job.promise = std::make_shared<std::promise<std::shared_ptr<const SharedPiece>>>();
+		sharedPieces.emplace(job.key, job.promise->get_future().share());
+	}
+	pieceJobs = std::move(jobs);
+	nextPieceJob = 0;
+}
+
+void TileDataSource::computeSharedPieces(int64_t handedOutZ6, uint64_t budgetBytes) {
+	for (size_t i = nextPieceJob.load(); i < pieceJobs.size(); i = nextPieceJob.load()) {
+		if (pieceJobs[i].z6 > handedOutZ6 && livePieceBytes.load(std::memory_order_relaxed) >= budgetBytes) return;
+		if (nextPieceJob.compare_exchange_weak(i, i + 1)) computeSharedPiece(i);
+	}
+}
+
+void TileDataSource::computeSharedPiece(size_t i) {
+	const unsigned zoom = SHARED_PIECE_ZOOM;
+	const auto &key = pieceJobs[i].key;
+	auto piece = std::make_shared<SharedPiece>();
+	try {
+		clipCacheBypass = true;
+		clipNeededRepair = false;
+		Geometry g = buildWayGeometry(POLYGON_, std::get<0>(key), TileBbox(TileCoordinates(std::get<1>(key), std::get<2>(key)), zoom, false, false));
+		// A piece that needed the repair path can be wrong (once a lake came out empty), and
+		// every tile below it would inherit that: leave those tiles to clip the whole polygon.
+		if (!clipNeededRepair) {
+			piece->geom = std::make_shared<MultiPolygon>(std::move(boost::get<MultiPolygon>(g)));
+			// buildWayGeometry has just checked it (for a huge piece, is_valid takes seconds)
+			piece->valid = clipResultValid;
+			for (const auto &polygon : *piece->geom) {
+				piece->bytes += polygon.outer().size() * sizeof(Point);
+				for (const auto &inner : polygon.inners()) piece->bytes += inner.size() * sizeof(Point);
+			}
+			livePieceBytes += piece->bytes;
+		}
+	} catch (std::exception &) {
+		// The tiles clip the whole polygon, and report the problem there
+	}
+	clipCacheBypass = false;
+	pieceJobs[i].promise->set_value(piece);
+	pieceJobs[i].promise.reset();	// the map's future keeps the piece, until its z6 tile is released
+}
+
+void TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
+	const unsigned shift = SHARED_PIECE_ZOOM - CLUSTER_ZOOM;
+	for (auto &e : sharedPieces)
+		if ((std::get<1>(e.first) >> shift) == z6x && (std::get<2>(e.first) >> shift) == z6y)
+			e.second = std::shared_future<std::shared_ptr<const SharedPiece>>();
+}
 
 void TileDataSource::finalize(size_t threadNum) {
 	uint64_t finalized = 0;
@@ -331,6 +490,18 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			auto cachedEntry = multiPolygonClipCache.getEntry(bbox.zoom, bbox.index.x, bbox.index.y, objectID);
 			std::shared_ptr<MultiPolygon> cachedClip = cachedEntry.geom;
 			bool inputKnownValid = cachedClip == nullptr ? polygonKnownValid(objectID) : cachedEntry.valid;
+			if (cachedClip == nullptr && bbox.zoom > SHARED_PIECE_ZOOM && pieceObjects.count(objectID)) {
+				// A large polygon: clip from its shared piece
+				const unsigned shift = bbox.zoom - SHARED_PIECE_ZOOM;
+				auto it = sharedPieces.find(std::make_tuple(objectID, bbox.index.x >> shift, bbox.index.y >> shift));
+				if (it != sharedPieces.end() && it->second.valid()) {
+					const std::shared_ptr<const SharedPiece> &piece = it->second.get();	// waits if still being computed
+					if (piece && piece->geom) {
+						cachedClip = piece->geom;
+						inputKnownValid = piece->valid;
+					}
+				}
+			}
 
 			MultiPolygon uncached;
 
@@ -402,6 +573,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// fast_clip was the identity on a geometry that already passed
 				// is_valid, so correct() is a no-op and it is still valid.
 				multiPolygonClipCache.add(bbox, objectID, mp, true);
+				clipResultValid = true;
 				return mp;
 			}
 			geom::correct(mp);
@@ -418,12 +590,14 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				if (rect_clip(cachedClip == nullptr && !keepUncached ? original : input, box, clipped) &&
 				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
 					multiPolygonClipCache.add(bbox, objectID, clipped, true);
+					clipResultValid = true;
 					return clipped;
 				}
 			}
 			if (!valid)
 				valid = geom::is_valid(mp,failure);
 			if (!valid) {
+				clipNeededRepair = true;
 				if (verbose) {
 					// Build the whole line first and emit it with a single stream write:
 					// tilemaker runs multi-threaded and chained operator<< calls are not
@@ -459,6 +633,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 					repairMultiPolygon(output, objectID, &outputValid);
 					// Children of this tile can then take the fast paths for valid input
 					multiPolygonClipCache.add(bbox, objectID, output, outputValid);
+					clipResultValid = outputValid;
 					return output;
 				} else if (!valid) {
 					// occasionally also wrong_topological_dimension, disconnected_interior:
@@ -469,6 +644,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 
 			multiPolygonClipCache.add(bbox, objectID, mp, valid);
+			clipResultValid = valid;
 			return mp;
 		}
 
@@ -550,20 +726,126 @@ void populateTilesAtZoom(
 
 void sortOutputObjectIDs(
 	const std::vector<bool>& sortOrders, 
+	const AttributeStore& attributeStore,
 	std::vector<OutputObjectID>& data
 );
 
 std::vector<OutputObjectID> TileDataSource::getObjectsForTile(
 	const std::vector<bool>& sortOrders, 
+	const AttributeStore& attributeStore,
 	unsigned int zoom,
 	TileCoordinates coordinates
 ) {
 	std::vector<OutputObjectID> data;
 	collectObjectsForTile(zoom, coordinates, data);
 	collectLargeObjectsForTile(zoom, coordinates, data);
-	sortOutputObjectIDs(sortOrders, data);
+	sortOutputObjectIDs(sortOrders, attributeStore, data);
 	data.erase(unique(data.begin(), data.end()), data.end());
+	orderStoredGeometryTies(data);
 	return data;
+}
+
+namespace {
+struct GeometryTieKey {
+	double x, y;      // first point
+	uint64_t points;  // number of points
+	uint64_t hash;    // of all points, only computed when the above are equal
+	OutputObjectID o;
+};
+
+// Adds a ring/linestring to the key: first point and point count, or (withHash) the hash of all points
+template<class R>
+void addToTieKey(GeometryTieKey& key, const R& ring, bool withHash) {
+	if (withHash) {
+		key.hash = stableCombine(key.hash, static_cast<uint64_t>(ring.size()));
+		for (const auto& p : ring) {
+			key.hash = stableCombine(key.hash, static_cast<double>(p.x()));
+			key.hash = stableCombine(key.hash, static_cast<double>(p.y()));
+		}
+		return;
+	}
+	if (key.points == 0 && !ring.empty()) {
+		key.x = ring.front().x();
+		key.y = ring.front().y();
+	}
+	key.points += ring.size();
+}
+
+void geometryTieKey(const TileDataSource& source, GeometryTieKey& key, bool withHash) {
+	const NodeID objectID = key.o.oo.objectID;
+	switch (key.o.oo.geomType) {
+		case POINT_: {
+			const Point& p = source.retrievePoint(objectID);
+			addToTieKey(key, std::array<Point, 1>{p}, withHash);
+			break;
+		}
+		case LINESTRING_:
+			addToTieKey(key, source.retrieveLinestring(objectID), withHash);
+			break;
+		case MULTILINESTRING_:
+			for (const auto& ls : source.retrieveMultiLinestring(objectID))
+				addToTieKey(key, ls, withHash);
+			break;
+		case POLYGON_:
+			for (const auto& poly : source.retrieveMultiPolygon(objectID)) {
+				addToTieKey(key, poly.outer(), withHash);
+				for (const auto& inner : poly.inners())
+					addToTieKey(key, inner, withHash);
+			}
+			break;
+	}
+}
+}
+
+// Geometries stored at runtime (relations, shapefiles, ...) have an objectID that
+// depends on which thread stored them, so the sort ties objects that share layer,
+// z_order, type, attributes and id in an arbitrary order. Order such runs by
+// geometry instead. OSM ways and nodes carry their OSM id in the objectID, and
+// sort after stored geometries, so they never need this.
+void TileDataSource::orderStoredGeometryTies(std::vector<OutputObjectID>& data) const {
+	const NodeID storedLimit = 1ull << TILE_DATA_ID_SIZE;
+	auto tied = [](const OutputObjectID& a, const OutputObjectID& b) {
+		return a.oo.layer == b.oo.layer && a.oo.z_order == b.oo.z_order && a.oo.geomType == b.oo.geomType &&
+		       a.oo.attributes == b.oo.attributes && a.id == b.id;
+	};
+
+	std::vector<GeometryTieKey> keys;
+	size_t i = 0;
+	while (i < data.size()) {
+		size_t j = i + 1;
+		if (data[i].oo.objectID < storedLimit)
+			while (j < data.size() && data[j].oo.objectID < storedLimit && tied(data[i], data[j])) j++;
+		if (j - i < 2) { i = j; continue; }
+
+		keys.clear();
+		for (size_t k = i; k < j; k++) {
+			keys.push_back(GeometryTieKey{0, 0, 0, 0, data[k]});
+			geometryTieKey(*this, keys.back(), false);
+		}
+		auto byPoint = [](const GeometryTieKey& a, const GeometryTieKey& b) {
+			if (a.x != b.x) return a.x < b.x;
+			if (a.y != b.y) return a.y < b.y;
+			return a.points < b.points;
+		};
+		std::sort(keys.begin(), keys.end(), byPoint);
+
+		// Still tied: hash all points (identical geometries may stay in any order)
+		for (size_t a = 0; a < keys.size(); ) {
+			size_t b = a + 1;
+			while (b < keys.size() && !byPoint(keys[a], keys[b])) b++;
+			if (b - a > 1) {
+				for (size_t k = a; k < b; k++) geometryTieKey(*this, keys[k], true);
+				std::sort(keys.begin() + a, keys.begin() + b, [](const GeometryTieKey& p, const GeometryTieKey& q) {
+					if (p.hash != q.hash) return p.hash < q.hash;
+					return p.o.oo.objectID < q.o.oo.objectID;
+				});
+			}
+			a = b;
+		}
+
+		for (size_t k = i; k < j; k++) data[k] = keys[k - i].o;
+		i = j;
+	}
 }
 
 // ------------------------------------
