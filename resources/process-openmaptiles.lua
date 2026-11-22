@@ -72,6 +72,31 @@ function capitalLevel(capital)
 	return capital_al
 end
 
+-- Places that aren't decluttered (written to "place" through the "place_region" layer)
+regionPlaces = Set { "continent", "country", "state", "province", "island" }
+
+-- Importance of a city, town, village... for decluttering (Score) and the order of labels in a tile (ZOrder):
+-- the population plus a bonus by type, or a typical population where there is none
+function placeScore(place, population, capital_al)
+	local score = 0
+	if population then
+		if     capital_al == 2   then score = 1000000 + population
+		elseif place == "city"   then score = 10000 + population
+		elseif place == "town"   then score = 2000 + population
+		elseif place == "village" then score = 500 + population
+		else score = population end
+	else
+		if     capital_al == 2   then score = 5000000
+		elseif place == "city"   then score = 200000
+		elseif place == "town"   then score = 17000
+		elseif place == "village" or place == "suburb" or place == "quarter" then score = 1500
+		elseif place == "neighbourhood" then score = 500
+		elseif place == "hamlet" or place == "locality" then score = 100
+		end
+	end
+	return score
+end
+
 -- Calculate rank for place nodes
 -- place: value of place=*
 -- popuplation: population as number
@@ -179,7 +204,15 @@ function node_function()
 		elseif place == "island"      then mz=12
 		end
 
-		Layer("place", false)
+		if regionPlaces[place] then
+			Layer("place_region", false)
+		else
+			-- the most important first in the tile (z_order_ascending false), so that renderers place their labels first
+			local score = placeScore(place, tonumber(Find("population")), capital)
+			Layer("place", false)
+			Score(score)
+			ZOrder(math.floor(math.log(score + 1) / math.log(10) * 16))
+		end
 		Attribute("class", place)
 		MinZoom(mz)
 		if rank then AttributeInteger("rank", rank) end
@@ -420,7 +453,7 @@ function way_function()
 	if landuse == "meadow" and Find("meadow")=="agricultural" then landuse="farmland" end
 
 	if place == "island" then
-		LayerAsCentroid("place")
+		LayerAsCentroid("place_region")
 		Attribute("class", place)
 		MinZoom(10)
 		local pop = tonumber(Find("population")) or 0
