@@ -12,8 +12,13 @@
 #include <utility>
 #include <vector>
 #include <mutex>
+#include <thread>
+#include <memory>
 #include <unordered_set>
 #include <boost/container/flat_map.hpp>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 #include <protozero/data_view.hpp>
 
 extern bool verbose;
@@ -53,32 +58,76 @@ struct DataViewLessThan {
 class UsedWays {
 
 private:
-	// Sparse list of used way IDs: only member ways of accepted relations
-	// are inserted, which is a tiny fraction of all ways. Appended unsorted
-	// during the relation scan, then sorted/deduplicated by finalize().
-	// If the used set is large relative to the ID range (planet-scale inputs),
-	// finalize() switches to a dense bitmap, which is then smaller and faster.
-	std::vector<WayID> ids;
-	std::vector<bool> dense;
+	// Member ways of accepted relations. While the relations are scanned, each thread collects its
+	// own list (insertMany, no lock); finalize() turns them into the set: a bitmap if it is dense
+	// relative to the ID range (planet-scale inputs), else a sorted list.
+	struct Collected { std::vector<WayID> ids; };
+	std::mutex registryMutex;
+	std::vector<std::unique_ptr<Collected>> collected;	// one per thread that inserted
+	std::vector<WayID> ids;	// sparse set (sorted, unique)
+	std::vector<uint64_t> dense;	// dense set: bit i of word i/64
 	bool isDense = false;
-	size_t dedupAt = 1 << 20;
 	std::atomic<bool> sorted{true};
 	mutable std::mutex mutex;
+	const uint64_t instance = nextInstance();	// never reused, unlike the address
 
-	void dedupLocked() {
-		std::sort(ids.begin(), ids.end());
-		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+	static uint64_t nextInstance() {
+		static std::atomic<uint64_t> next(0);
+		return next++;
 	}
 
+	std::vector<WayID> &mine() {
+		thread_local std::vector<std::pair<uint64_t, std::vector<WayID> *>> lists;
+		for (auto &e : lists) if (e.first == instance) return *e.second;
+		std::lock_guard<std::mutex> lock(registryMutex);
+		collected.emplace_back(new Collected());
+		lists.emplace_back(instance, &collected.back()->ids);
+		return collected.back()->ids;
+	}
+
+	// All collected lists (and the sparse list) into the set; with mutex held
 	void finalizeLocked() {
-		dedupLocked();
-		if (!ids.empty() && ids.size() * 64 > ids.back()) {
-			dense.resize(ids.back() + 1);
-			for (WayID id : ids) dense[id] = true;
-			isDense = true;
-			ids.clear();
+		std::vector<std::vector<WayID> *> lists;
+		{
+			std::lock_guard<std::mutex> lock(registryMutex);
+			for (auto &c : collected) if (!c->ids.empty()) lists.push_back(&c->ids);
 		}
-		ids.shrink_to_fit();
+		size_t total = ids.size();
+		WayID maxId = ids.empty() ? 0 : ids.back();
+		for (auto *l : lists) {
+			total += l->size();
+			for (WayID id : *l) maxId = std::max(maxId, id);
+		}
+		if (!isDense && total > 0 && total * 64 > maxId) {
+			// dense: set the bits on all threads (atomic OR, as lists overlap)
+			dense.assign(maxId / 64 + 1, 0);
+			isDense = true;
+			for (WayID id : ids) dense[id / 64] |= uint64_t(1) << (id % 64);
+			std::vector<WayID>().swap(ids);
+		}
+		if (isDense) {
+			for (auto *l : lists) for (WayID id : *l) if (id / 64 >= dense.size()) dense.resize(id / 64 + 1, 0);
+			std::atomic<size_t> next(0);
+			const unsigned workers = std::max(1u, std::min<unsigned>(std::thread::hardware_concurrency(), lists.size()));
+			std::vector<std::thread> threads;
+			for (unsigned t = 0; t < workers; t++)
+				threads.emplace_back([&]() {
+					for (size_t k = next++; k < lists.size(); k = next++)
+						for (WayID id : *lists[k])
+#ifdef _MSC_VER
+							_InterlockedOr64(reinterpret_cast<volatile __int64 *>(&dense[id / 64]), static_cast<__int64>(uint64_t(1) << (id % 64)));
+#else
+							__atomic_fetch_or(&dense[id / 64], uint64_t(1) << (id % 64), __ATOMIC_RELAXED);
+#endif
+				});
+			for (auto &t : threads) t.join();
+		} else {
+			for (auto *l : lists) ids.insert(ids.end(), l->begin(), l->end());
+			std::sort(ids.begin(), ids.end());
+			ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+			ids.shrink_to_fit();
+		}
+		for (auto *l : lists) std::vector<WayID>().swap(*l);
 		sorted.store(true, std::memory_order_release);
 	}
 
@@ -89,27 +138,23 @@ public:
 		std::lock_guard<std::mutex> lock(mutex);
 		if (inited) return;
 		inited = true;
-		ids.reserve(1 << 16);
+	}
+
+	// Mark ways as used (collected per thread until finalize)
+	void insertMany(const std::vector<WayID> &wayids) {
+		if (wayids.empty()) return;
+		std::vector<WayID> &list = mine();
+		list.insert(list.end(), wayids.begin(), wayids.end());
+		sorted.store(false, std::memory_order_relaxed);
 	}
 
 	// Mark a way as used
 	void insert(WayID wayid) {
-		std::lock_guard<std::mutex> lock(mutex);
-		if (isDense) {
-			if (wayid >= dense.size()) dense.resize(wayid + 1);
-			dense[wayid] = true;
-			return;
-		}
-		ids.push_back(wayid);
+		mine().push_back(wayid);
 		sorted.store(false, std::memory_order_relaxed);
-		// Bound memory when ways are members of many relations (e.g. routes)
-		if (ids.size() >= dedupAt) {
-			dedupLocked();
-			dedupAt = std::max(dedupAt, ids.size() * 2);
-		}
 	}
 
-	// Sort and deduplicate; call once all inserts are done, before any at()
+	// Build the set; call once all inserts are done, before any at()
 	void finalize() {
 		std::lock_guard<std::mutex> lock(mutex);
 		finalizeLocked();
@@ -122,18 +167,21 @@ public:
 			if (!sorted.load(std::memory_order_relaxed)) finalizeLocked();
 		}
 		if (isDense)
-			return wayid < dense.size() && dense[wayid];
+			return wayid / 64 < dense.size() && ((dense[wayid / 64] >> (wayid % 64)) & 1);
 		return std::binary_search(ids.begin(), ids.end(), wayid);
 	}
 
 	void clear() {
 		std::lock_guard<std::mutex> lock(mutex);
+		{
+			std::lock_guard<std::mutex> lock2(registryMutex);
+			for (auto &c : collected) std::vector<WayID>().swap(c->ids);
+		}
 		ids.clear();
 		ids.shrink_to_fit();
 		dense.clear();
 		dense.shrink_to_fit();
 		isDense = false;
-		dedupAt = 1 << 20;
 		sorted.store(true, std::memory_order_release);
 	}
 };
@@ -149,10 +197,81 @@ private:
 	mutable std::vector<std::mutex> mutex;
 	RelationRoles relationRoles;
 
+	// Every way is looked up once while reading ways, mostly not found. relationsForWays is
+	// sharded by way id % 128, and each shard (a map) is ordered by way id: wayIndex holds each
+	// shard as a sorted array (filled during the relation scan, before; rebuilt on first use after
+	// relationsForWays changed). Ways are read in id order, so a reader that keeps where it was
+	// in each shard (WayCursor) finds the next way a few entries further on, in the same cache
+	// lines, instead of a random access into one big table.
+	using WayRelations = std::vector<std::pair<RelationID, uint16_t>>;
+	struct WayIndexSlot { WayID id; WayRelations* relations; };
+	std::vector<std::vector<WayIndexSlot>> wayIndex;
+	std::atomic<bool> wayIndexStale { true };
+	std::mutex wayIndexMutex;
+	void ensureWayIndex() {
+		if (wayIndexStale.load(std::memory_order_acquire)) {
+			std::lock_guard<std::mutex> lock(wayIndexMutex);
+			if (wayIndexStale.load(std::memory_order_relaxed)) {
+				std::vector<std::vector<WayIndexSlot>> index(relationsForWays.size());
+				for (size_t s = 0; s < relationsForWays.size(); s++) {
+					index[s].reserve(relationsForWays[s].size());
+					for (auto& entry : relationsForWays[s]) index[s].push_back({ entry.first, &entry.second });
+				}
+				wayIndex.swap(index);
+				wayIndexStale.store(false, std::memory_order_release);
+			}
+		}
+	}
+	// The way's entry in shard `slots` (nullptr: none), searched from `pos` onwards when the way
+	// isn't before it (galloping), else in [0, pos); `pos` is left at the way's position
+	static WayRelations* findInShard(const std::vector<WayIndexSlot>& slots, WayID wayid, uint32_t& pos) {
+		const size_t n = slots.size();
+		size_t lo, hi;	// the way's position is in [lo, hi]
+		if (pos < n && slots[pos].id <= wayid) {
+			lo = pos; size_t step = 1;
+			while (lo + step < n && slots[lo + step].id < wayid) { lo += step; step *= 2; }
+			hi = std::min(lo + step, n);
+		} else {
+			lo = 0; hi = std::min<size_t>(pos, n);
+		}
+		const auto it = std::lower_bound(slots.begin() + lo, slots.begin() + hi, wayid,
+			[](const WayIndexSlot& s, WayID id) { return s.id < id; });
+		pos = it - slots.begin();
+		return it != slots.end() && it->id == wayid ? it->relations : nullptr;
+	}
+	WayRelations* findWay(WayID wayid) {
+		ensureWayIndex();
+		uint32_t pos = 0;
+		return findInShard(wayIndex[wayid % wayIndex.size()], wayid, pos);
+	}
+
+public:
+	// A reader's positions in wayIndex, see findWayRelations
+	struct WayCursor { std::vector<uint32_t> pos; };
+	// The relations way `wayid` is in (nullptr: none), as relations_for_way; for a reader going
+	// through ways in id order, with its own cursor
+	const WayRelations* findWayRelations(WayID wayid, WayCursor& cursor) {
+		ensureWayIndex();
+		if (cursor.pos.size() != wayIndex.size()) cursor.pos.assign(wayIndex.size(), 0);
+		const size_t shard = wayid % wayIndex.size();
+		return findInShard(wayIndex[shard], wayid, cursor.pos[shard]);
+	}
+
 public:
 	std::map<RelationID, std::vector<std::pair<RelationID, uint16_t>>> relationsForRelations;
 
 	RelationScanStore(): relationsForWays(128), relationsForNodes(128), relationTags(128), mutex(128) {}
+
+	// Frees what was scanned: only the Lua functions use it, while the .pbf files are read. With the
+	// bundled profile (administrative boundaries) it took ~1.1 GB on a planet, kept to the end.
+	void clear() {
+		for (auto& shard : relationsForWays) shard.clear();
+		for (auto& shard : relationsForNodes) shard.clear();
+		for (auto& shard : relationTags) shard.clear();
+		relationsForRelations.clear();
+		std::vector<std::vector<WayIndexSlot>>().swap(wayIndex);
+		wayIndexStale.store(true, std::memory_order_release);
+	}
 
 	// Keep each member's parent relations ordered by relation id: relations are scanned on
 	// several threads, so appending would make the order NextRelation() returns depend on
@@ -168,6 +287,7 @@ public:
 		const size_t shard = wayid % mutex.size();
 		std::lock_guard<std::mutex> lock(mutex[shard]);
 		insertByRelation(relationsForWays[shard][wayid], relid, roleId);
+		wayIndexStale.store(true, std::memory_order_release);
 	}
 	void relation_contains_node(RelationID relid, NodeID nodeId, std::string role) {
 		uint16_t roleId = relationRoles.getOrAddRole(role);
@@ -191,8 +311,7 @@ public:
 		relationTags[shard][relid][key] = value;
 	}
 	bool way_in_any_relations(WayID wayid) {
-		const size_t shard = wayid % mutex.size();
-		return relationsForWays[shard].find(wayid) != relationsForWays[shard].end();
+		return findWay(wayid) != nullptr;
 	}
 	bool node_in_any_relations(NodeID nodeId) {
 		const size_t shard = nodeId % mutex.size();
@@ -203,6 +322,8 @@ public:
 	}
 	std::string getRole(uint16_t roleId) const { return relationRoles.getRole(roleId); }
 	const std::vector<std::pair<WayID, uint16_t>>& relations_for_way(WayID wayid) {
+		if (WayRelations* relations = findWay(wayid)) return *relations;
+		// Not a member of any relation (callers check first): as before, an empty list
 		const size_t shard = wayid % mutex.size();
 		return relationsForWays[shard][wayid];
 	}
@@ -358,6 +479,7 @@ public:
 	void relations_sort(unsigned int threadNum);
 
 	void mark_way_used(WayID i) { used_ways.insert(i); }
+	void mark_ways_used(const std::vector<WayID> &ids) { used_ways.insertMany(ids); }
 	bool way_is_used(WayID i) { return used_ways.at(i); }
 
 	void ensureUsedWaysInited();
@@ -366,12 +488,59 @@ public:
 	using tag_map_t = boost::container::flat_map<std::string, std::string>;
 
 	void clear();
+	// Once all .pbf files are read: frees the relation scan and the set of used ways, which only
+	// reading needs (the node, way and relation stores stay, the tiles are built from them)
+	void releaseReadingState();
 	void reportSize() const;
 
 	// Relation -> MultiPolygon or MultiLinestring
 	MultiPolygon wayListMultiPolygon(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd, WayVec::const_iterator innerBegin, WayVec::const_iterator innerEnd) const;
 	MultiLinestring wayListMultiLinestring(WayVec::const_iterator outerBegin, WayVec::const_iterator outerEnd) const;
-	void mergeMultiPolygonWays(std::vector<LatpLonDeque> &results, std::map<WayID,bool> &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
+	// A ring or line being joined from ways: points added at either end, in one buffer with room
+	// in front (instead of a std::deque)
+	struct LatpLonChain {
+		std::vector<LatpLon> buf;
+		size_t head = 0;	// the points are buf[head...]
+		LatpLonChain() = default;
+		template<class It> LatpLonChain(It b, It e) : buf(b, e) { }
+		explicit LatpLonChain(std::vector<LatpLon> &&v) : buf(std::move(v)) { }
+		const LatpLon &front() const { return buf[head]; }
+		const LatpLon &back() const { return buf.back(); }
+		std::vector<LatpLon>::const_iterator begin() const { return buf.cbegin() + head; }
+		std::vector<LatpLon>::const_iterator end() const { return buf.cend(); }
+		size_t size() const { return buf.size() - head; }
+		template<class It> void append(It b, It e) { buf.insert(buf.end(), b, e); }
+		template<class It> void prepend(It b, It e) {
+			const size_t n = std::distance(b, e);
+			if (n > head) {
+				// move the points back, leaving room for these and as many again as there are
+				const size_t count = size(), room = n + count;
+				std::vector<LatpLon> grown(room + count);
+				std::copy(begin(), end(), grown.begin() + room);
+				buf.swap(grown);
+				head = room;
+			}
+			head -= n;
+			std::copy(b, e, buf.begin() + head);
+		}
+	};
+	// The ways merged (mergeMultiPolygonWays): a short list, a hash set once there are many
+	class DoneWays {
+		std::vector<WayID> few;
+		std::unordered_set<WayID> many;
+	public:
+		bool has(WayID w) const {
+			if (!many.empty()) return many.count(w) > 0;
+			return std::find(few.begin(), few.end(), w) != few.end();
+		}
+		void add(WayID w) {
+			if (!many.empty()) { many.insert(w); return; }
+			if (std::find(few.begin(), few.end(), w) != few.end()) return;
+			few.push_back(w);
+			if (few.size() > 32) many.insert(few.begin(), few.end());
+		}
+	};
+	void mergeMultiPolygonWays(std::vector<LatpLonChain> &results, DoneWays &done, WayVec::const_iterator itBegin, WayVec::const_iterator itEnd) const;
 
 	///It is not really meaningful to try using a relation as a linestring. Not normally used but included
 	///if Lua script attempts to do this.

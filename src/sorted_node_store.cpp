@@ -15,6 +15,10 @@
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
+#include <immintrin.h>
+#define SORTED_NODE_STORE_SSSE3_DECODE
+#endif
 
 namespace SortedNodeStoreTypes {
 	const uint16_t GroupSize = 256;
@@ -33,7 +37,15 @@ namespace SortedNodeStoreTypes {
 	struct CachedChunk {
 		uint64_t nodeMask[4];
 		uint32_t rankBase[4];
-		LatpLon nodes[ChunkSize];
+		// nodes[0 .. decoded - 1] are valid; the rest is decoded on demand (see extendChunk)
+		uint32_t decoded;
+		uint32_t count;
+		// the two streamvbyte streams: keys, and the data of the next group of 4 to decode
+		const uint8_t* latpKeys;
+		const uint8_t* lonKeys;
+		const uint8_t* latpNext;
+		const uint8_t* lonNext;
+		LatpLon nodes[ChunkSize + 4];
 	};
 
 	struct ChunkCache {
@@ -159,15 +171,6 @@ namespace SortedNodeStoreTypes {
 		return ptr->nodes[nodeOffset];
 	}
 
-	inline LatpLon cachedNode(const CachedChunk& cached, NodeID id) {
-		const size_t nodeIndex = id % ChunkSize;
-		const size_t w = nodeIndex / 64;
-		const uint64_t bit = 1ull << (nodeIndex % 64);
-		const uint64_t word = cached.nodeMask[w];
-		if (!(word & bit))
-			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
-		return cached.nodes[cached.rankBase[w] + popcount64(word & (bit - 1))];
-	}
 
 	// Same as svb_zigzag_decode_32 in streamvbyte_zigzag.c.
 	inline int32_t zigzagDecode(uint32_t val) {
@@ -200,6 +203,76 @@ namespace SortedNodeStoreTypes {
 		return val;
 	}
 
+#ifdef SORTED_NODE_STORE_SSSE3_DECODE
+	// streamvbyte decoding tables: for each key byte (4 x 2-bit length codes), the pshufb
+	// pattern that spreads its 4..16 data bytes into 4 uint32 lanes, and the bytes it uses.
+	struct SvbTables {
+		alignas(16) uint8_t shuffle[256][16];
+		uint8_t length[256];
+		SvbTables() {
+			for (unsigned key = 0; key < 256; key++) {
+				unsigned offset = 0;
+				for (unsigned lane = 0; lane < 4; lane++) {
+					const unsigned bytes = ((key >> (2 * lane)) & 3) + 1;
+					for (unsigned b = 0; b < 4; b++)
+						shuffle[key][lane * 4 + b] = b < bytes ? offset + b : 0x80;
+					offset += bytes;
+				}
+				length[key] = offset;
+			}
+		}
+	};
+	const SvbTables svbTables;
+	const bool cpuHasSsse3 = [] { __builtin_cpu_init(); return __builtin_cpu_supports("ssse3") != 0; }();
+
+	__attribute__((target("ssse3")))
+	inline __m128i svbDecodeDeltas(const uint8_t*& data, uint8_t key, __m128i prev) {
+		__m128i v = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)data), _mm_load_si128((const __m128i*)svbTables.shuffle[key]));
+		data += svbTables.length[key];
+		// zigzag decode, then the running sum: lane i = prev + d0 + .. + di (mod 2^32)
+		v = _mm_xor_si128(_mm_srli_epi32(v, 1), _mm_sub_epi32(_mm_setzero_si128(), _mm_and_si128(v, _mm_set1_epi32(1))));
+		v = _mm_add_epi32(v, _mm_slli_si128(v, 4));
+		v = _mm_add_epi32(v, _mm_slli_si128(v, 8));
+		return _mm_add_epi32(v, prev);
+	}
+
+#ifndef SORTED_NODE_STORE_LAZY_QUADS
+#define SORTED_NODE_STORE_LAZY_QUADS 4
+#endif
+	// Values are decoded on demand in steps of this many groups of 4.
+	const size_t LazyQuads = SORTED_NODE_STORE_LAZY_QUADS;
+
+	// Fused streamvbyte + zigzag delta decode of both streams, 4 values at a time, writing
+	// interleaved LatpLons: extends c.nodes so that nodes[rank] is valid (rank < c.count).
+	// Writes whole groups of 4, i.e. up to 3 entries past nodes[count - 1]; the values there
+	// are garbage and never read. Reads up to 15 bytes past the end of the lon stream, as
+	// streamvbyte's own decoder does (each group is followed by STREAMVBYTE_PADDING).
+	__attribute__((target("ssse3"), noinline))
+	void extendChunk(CachedChunk& c, size_t rank) {
+		const size_t keyLen = (c.count - 1 + 3) / 4;
+		// nodes[k] for k >= 1 is the (k - 1)-th delta of group (k - 1) / 4
+		size_t q = (c.decoded - 1) / 4;
+		const size_t qEnd = std::min(keyLen, ((rank - 1) / 4 / LazyQuads + 1) * LazyQuads);
+		const uint8_t* latpPtr = c.latpNext;
+		const uint8_t* lonPtr = c.lonNext;
+		__m128i prevLatp = _mm_set1_epi32(c.nodes[c.decoded - 1].latp);
+		__m128i prevLon = _mm_set1_epi32(c.nodes[c.decoded - 1].lon);
+		LatpLon* dst = c.nodes + 1;
+		for (; q < qEnd; q++) {
+			const __m128i a = svbDecodeDeltas(latpPtr, c.latpKeys[q], prevLatp);
+			const __m128i b = svbDecodeDeltas(lonPtr, c.lonKeys[q], prevLon);
+			prevLatp = _mm_shuffle_epi32(a, 0xFF);
+			prevLon = _mm_shuffle_epi32(b, 0xFF);
+			static_assert(sizeof(LatpLon) == 8, "LatpLon is {int32 latp, int32 lon}");
+			_mm_storeu_si128((__m128i*)(dst + 4 * q), _mm_unpacklo_epi32(a, b));
+			_mm_storeu_si128((__m128i*)(dst + 4 * q + 2), _mm_unpackhi_epi32(a, b));
+		}
+		c.latpNext = latpPtr;
+		c.lonNext = lonPtr;
+		c.decoded = std::min<uint32_t>(c.count, 1 + 4 * qEnd);
+	}
+#endif
+
 	// Decode a compressed chunk into `out`, in rank order.
 	void decodeChunk(const CompressedChunkInfo* ptr, CachedChunk& out) {
 		const size_t latpSize = (ptr->flags >> 10) & ((1 << 10) - 1);
@@ -220,6 +293,21 @@ namespace SortedNodeStoreTypes {
 		int32_t lon = ptr->firstLon;
 		out.nodes[0] = { latp, lon };
 		LatpLon* dst = out.nodes + 1;
+		out.count = count;
+
+#ifdef SORTED_NODE_STORE_SSSE3_DECODE
+		if (cpuHasSsse3) {
+			// decoded on demand by cachedNode
+			const size_t keyLen = (n + 3) / 4;
+			out.decoded = 1;
+			out.latpKeys = latpData;
+			out.lonKeys = lonData;
+			out.latpNext = latpData + keyLen;
+			out.lonNext = lonData + keyLen;
+			return;
+		}
+#endif
+		out.decoded = count;
 
 		if (n < 64) {
 			// Fused scalar streamvbyte + zigzag delta decode of both streams.
@@ -264,6 +352,44 @@ namespace SortedNodeStoreTypes {
 			lon = addDelta(lon, lonDeltas[k]);
 			dst[k] = { latp, lon };
 		}
+	}
+
+	// Cache an uncompressed chunk too: copy its nodes, so that later lookups in it are hits
+	// rather than a walk of the group and chunk index each time.
+	inline void fillUncompressed(const UncompressedChunkInfo* ptr, CachedChunk& out) {
+		uint32_t count = 0;
+		for (size_t w = 0; w < 4; w++) {
+			const uint64_t word = loadMaskWord(ptr->nodeMask + w * 8);
+			out.nodeMask[w] = word;
+			out.rankBase[w] = count;
+			count += popcount64(word);
+		}
+		memcpy(out.nodes, ptr->nodes, count * sizeof(LatpLon));
+		out.count = count;
+		out.decoded = count;
+	}
+
+	// Fill a cache entry from the chunk at basePtr, compressed or not.
+	inline void fillEntry(const ChunkInfoBase* basePtr, CachedChunk& out) {
+		if (basePtr->flags & ChunkCompressed)
+			decodeChunk((const CompressedChunkInfo*)basePtr, out);
+		else
+			fillUncompressed((const UncompressedChunkInfo*)basePtr, out);
+	}
+
+	inline LatpLon cachedNode(CachedChunk& cached, NodeID id) {
+		const size_t nodeIndex = id % ChunkSize;
+		const size_t w = nodeIndex / 64;
+		const uint64_t bit = 1ull << (nodeIndex % 64);
+		const uint64_t word = cached.nodeMask[w];
+		if (!(word & bit))
+			throw std::out_of_range("SortedNodeStore: node " + std::to_string(id) + " missing, no node");
+		const size_t rank = cached.rankBase[w] + popcount64(word & (bit - 1));
+#ifdef SORTED_NODE_STORE_SSSE3_DECODE
+		if (rank >= cached.decoded)
+			extendChunk(cached, rank);
+#endif
+		return cached.nodes[rank];
 	}
 
 	struct ThreadStorage {
@@ -398,11 +524,9 @@ LatpLon SortedNodeStore::at(const NodeID id) const {
 		return cachedNode(cache.entries[cacheIndex], id);
 
 	const ChunkInfoBase* basePtr = findChunk(groups.data(), id);
-	if (!(basePtr->flags & ChunkCompressed))
-		return uncompressedNode(basePtr, id);
 
 	CachedChunk& entry = cache.entries[cacheIndex];
-	decodeChunk((const CompressedChunkInfo*)basePtr, entry);
+	fillEntry(basePtr, entry);
 	cache.keys[cacheIndex] = key;
 	return cachedNode(entry, id);
 }
@@ -411,7 +535,7 @@ void SortedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
 	ChunkCache& cache = getChunkCache();
 	// Consecutive ids usually share a chunk: reuse its cache entry directly.
 	uint64_t lastChunkId = ~0ull;
-	const CachedChunk* entry = nullptr;
+	CachedChunk* entry = nullptr;
 
 	for (size_t i = 0; i < n; i++) {
 		const NodeID id = ids[i];
@@ -431,12 +555,7 @@ void SortedNodeStore::at(const NodeID* ids, size_t n, LatpLon* out) const {
 		const size_t cacheIndex = chunkCacheIndex(key);
 		if (cache.keys[cacheIndex] != key) {
 			const ChunkInfoBase* basePtr = findChunk(groups.data(), id);
-			if (!(basePtr->flags & ChunkCompressed)) {
-				lastChunkId = ~0ull;
-				out[i] = uncompressedNode(basePtr, id);
-				continue;
-			}
-			decodeChunk((const CompressedChunkInfo*)basePtr, cache.entries[cacheIndex]);
+			fillEntry(basePtr, cache.entries[cacheIndex]);
 			cache.keys[cacheIndex] = key;
 		}
 		entry = &cache.entries[cacheIndex];

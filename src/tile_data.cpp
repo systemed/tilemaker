@@ -1,18 +1,36 @@
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <sstream>
+#include <type_traits>
 #include "tile_data.h"
+#include <tuple>
 #include "coordinates_geom.h"
 #include "leased_store.h"
 #include <unordered_map>
 #include "stable_hash.h"
+#include "clip_line.h"
+
+thread_local unsigned objectsUpToZoom = 0;
+std::vector<uint32_t> z12ObjectCounts;
 #include <ciso646>
 
 using namespace std;
 extern bool verbose;
+
+namespace {
+// Each thread's staging for the source it last added to; epochs are unique across sources
+std::atomic<uint64_t> nextStagingEpoch(1);
+thread_local uint64_t tlsStagingEpoch = 0;
+thread_local void* tlsStaging = nullptr;	// TileDataSource::IndexStagings
+// Entries staged per thread before they are moved to the shards
+const size_t INDEX_STAGING_SIZE = 1024;
+}
 
 // Human-readable name for a Boost.Geometry validity failure, used for diagnostics.
 static const char* validityFailureName(geom::validity_failure_type failure) {
@@ -82,6 +100,7 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	includeID(includeID),
 	z6OffsetDivisor(indexZoom >= CLUSTER_ZOOM ? (1 << (indexZoom - CLUSTER_ZOOM)) : 1),
 	objectsMutex(threadNum * 4),
+	stagingEpoch(0),
 	objects(CLUSTER_ZOOM_AREA),
 	lowZoomObjects(CLUSTER_ZOOM_AREA),
 	objectsWithIds(CLUSTER_ZOOM_AREA),
@@ -101,6 +120,8 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 		throw std::out_of_range("TileDataSource: indexZoom cannot be higher than 14, but was " + std::to_string(indexZoom));
 
 
+	stagingEpoch = nextStagingEpoch++;
+
 	shardBits = 0;
 	numShards = 1;
 	while(numShards < threadNum) {
@@ -116,7 +137,6 @@ TileDataSource::TileDataSource(size_t threadNum, unsigned int indexZoom, bool in
 	}
 }
 
-thread_local std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>* tlsPendingSmallIndexObjects = nullptr;
 thread_local uint64_t clipCacheBatchId = 0;
 thread_local bool clipCacheNoStore = false;
 thread_local bool clipCacheBypass = false;
@@ -133,10 +153,10 @@ thread_local bool clipResultValid = false;	// whether the last POLYGON_ clip is 
 // computed on demand, a slow piece (up to ~15 s on the planet) held up every thread whose tiles
 // needed it, a third of the tile phase on a 96-thread planet run. They are computed in the order
 // of their z6 tiles, the order the tiles are written in, as far ahead as a memory budget allows
-// (all of them at the start on a large machine; all at once, a planet's took about 5 GB). A thread
-// that takes a batch first starts the pieces of the z6 tiles handed out so far, so only a tile that
-// needs a piece still being computed waits for it. The map itself doesn't change, so the tiles look
-// pieces up without a lock.
+// (all of them at the start on a large machine; all at once, a planet's took about 5 GB). Only a
+// tile that needs a piece still being computed waits for it, and one that needs a piece not
+// started yet (a slow group handed out ahead of its place) computes it. The map itself doesn't
+// change, so the tiles look pieces up without a lock.
 #define SHARED_PIECE_MIN_POINTS 10000
 
 std::atomic<uint64_t> TileDataSource::livePieceBytes(0);
@@ -197,11 +217,13 @@ void TileDataSource::precomputeSharedPieces(const std::function<bool(TileCoordin
 	std::sort(jobs.begin(), jobs.end(), [](const Job &a, const Job &b) {
 		return a.z6 != b.z6 ? a.z6 < b.z6 : a.points != b.points ? a.points > b.points : a.key < b.key;
 	});
-	for (Job &job : jobs) {
+	for (size_t i = 0; i < jobs.size(); i++) {
+		Job &job = jobs[i];
 		pieceObjects.insert(std::get<0>(job.key));
 		job.promise = std::make_shared<std::promise<std::shared_ptr<const SharedPiece>>>();
-		sharedPieces.emplace(job.key, job.promise->get_future().share());
+		sharedPieces.emplace(job.key, PieceSlot { job.promise->get_future().share(), i });
 	}
+	pieceStarted.reset(new std::atomic<bool>[jobs.size()]());
 	pieceJobs = std::move(jobs);
 	nextPieceJob = 0;
 }
@@ -215,8 +237,11 @@ void TileDataSource::computeSharedPieces(int64_t handedOutZ6, uint64_t budgetByt
 
 void TileDataSource::computeSharedPiece(size_t i) {
 	const unsigned zoom = SHARED_PIECE_ZOOM;
+	if (pieceStarted[i].load(std::memory_order_relaxed) || pieceStarted[i].exchange(true)) return;
 	const auto &key = pieceJobs[i].key;
 	auto piece = std::make_shared<SharedPiece>();
+	// (also called from a tile's buildWayGeometry: see the POLYGON_ case)
+	const bool bypass = clipCacheBypass;
 	try {
 		clipCacheBypass = true;
 		clipNeededRepair = false;
@@ -236,34 +261,40 @@ void TileDataSource::computeSharedPiece(size_t i) {
 	} catch (std::exception &) {
 		// The tiles clip the whole polygon, and report the problem there
 	}
-	clipCacheBypass = false;
+	clipCacheBypass = bypass;
 	pieceJobs[i].promise->set_value(piece);
 	pieceJobs[i].promise.reset();	// the map's future keeps the piece, until its z6 tile is released
 }
 
-void TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
+uint64_t TileDataSource::releaseSharedPieces(TileCoordinate z6x, TileCoordinate z6y) {
 	const unsigned shift = SHARED_PIECE_ZOOM - CLUSTER_ZOOM;
-	for (auto &e : sharedPieces)
-		if ((std::get<1>(e.first) >> shift) == z6x && (std::get<2>(e.first) >> shift) == z6y)
-			e.second = std::shared_future<std::shared_ptr<const SharedPiece>>();
+	uint64_t bytes = 0;
+	for (auto &e : sharedPieces) {
+		std::shared_future<std::shared_ptr<const SharedPiece>> &future = e.second.piece;
+		if ((std::get<1>(e.first) >> shift) != z6x || (std::get<2>(e.first) >> shift) != z6y || !future.valid()) continue;
+		// (a piece no tile needed may still be being computed)
+		if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready && future.get())
+			bytes += future.get()->bytes;
+		future = std::shared_future<std::shared_ptr<const SharedPiece>>();
+	}
+	return bytes;
 }
 
 void TileDataSource::finalize(size_t threadNum) {
+	// The objects the threads have staged last (at most INDEX_STAGING_SIZE + one object's tiles per
+	// thread). The order within a shard doesn't matter: shards are sorted below.
+	// Nothing adds to the small index after finalize (shapefiles, GeoJSON, Lua and declutter all
+	// run before). Renewing the epoch makes threads' cached staging pointers stale.
 	uint64_t finalized = 0;
-	for (const auto& vec : pendingSmallIndexObjects) {
-		for (const auto& tuple : vec) {
-			finalized++;
-			addObjectToSmallIndexUnsafe(std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple));
-		}
+	for (IndexStagings& staging : stagings) {
+		finalized += staging.objects.entries.size() + staging.objectsWithIds.entries.size();
+		flushStaging(staging.objects, objects);
+		flushStaging(staging.objectsWithIds, objectsWithIds);
 	}
+	std::deque<IndexStagings>().swap(stagings);
+	stagingEpoch = nextStagingEpoch++;
 
-	// Nothing adds to the small index after finalize (shapefiles, GeoJSON,
-	// Lua and declutter all run before), so release the pending storage.
-	// TLS pointers of other (finished) threads now dangle; they are never used again.
-	std::deque<std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>>().swap(pendingSmallIndexObjects);
-	tlsPendingSmallIndexObjects = nullptr;
-
-	std::cout << "indexed " << finalized << " contended objects" << std::endl;
+	std::cout << "indexed " << finalized << " staged objects" << std::endl;
 
 	finalizeObjects<OutputObjectXY>(name(), threadNum, indexZoom, objects.begin(), objects.end(), lowZoomObjects);
 	finalizeObjects<OutputObjectXYID>(name(), threadNum, indexZoom, objectsWithIds.begin(), objectsWithIds.end(), lowZoomObjectsWithIds);
@@ -280,22 +311,112 @@ void TileDataSource::addObjectToSmallIndex(const TileCoordinates& index, const O
 	}
 
 	const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
-	auto& mutex = objectsMutex[z6index % objectsMutex.size()];
+	IndexStagings& staging = indexStaging();
+	stageObject(staging, z6index, index, oo, id);
+	flushStagingIfFull(staging);
+}
 
-
-	if (mutex.try_lock()) {
-		addObjectToSmallIndexUnsafe(index, oo, id);
-		mutex.unlock();
-	} else {
-		// add to tlsPendingSmallIndexObjects
-		if (tlsPendingSmallIndexObjects == nullptr) {
-			std::lock_guard<std::mutex> lock(objectsMutex[0]);
-			pendingSmallIndexObjects.push_back(std::vector<std::tuple<TileCoordinates, OutputObject, uint64_t>>());
-			tlsPendingSmallIndexObjects = &pendingSmallIndexObjects.back();
-		}
-
-		tlsPendingSmallIndexObjects->push_back(std::make_tuple(index, oo, id));
+TileDataSource::IndexStagings& TileDataSource::indexStaging() {
+	if (tlsStagingEpoch != stagingEpoch) {
+		std::lock_guard<std::mutex> lock(stagingMutex);
+		stagings.emplace_back();
+		if (!includeID) stagings.back().objects.entries.reserve(INDEX_STAGING_SIZE + 64);
+		tlsStaging = &stagings.back();
+		tlsStagingEpoch = stagingEpoch;
 	}
+	return *static_cast<IndexStagings*>(tlsStaging);
+}
+
+void TileDataSource::stageObject(IndexStagings& staging, size_t z6index, const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
+	const size_t z6x = z6index / CLUSTER_ZOOM_WIDTH, z6y = z6index % CLUSTER_ZOOM_WIDTH;
+	const Z6Offset x = index.x - (z6x * z6OffsetDivisor), y = index.y - (z6y * z6OffsetDivisor);
+	if (id == 0 || !includeID) {
+		staging.objects.entries.push_back({ oo, x, y });
+		staging.objects.shards.push_back(z6index);
+	} else {
+		staging.objectsWithIds.entries.push_back({ oo, x, y, id });
+		staging.objectsWithIds.shards.push_back(z6index);
+	}
+}
+
+void TileDataSource::flushStagingIfFull(IndexStagings& staging) {
+	if (staging.objects.entries.size() >= INDEX_STAGING_SIZE) flushStaging(staging.objects, objects);
+	if (staging.objectsWithIds.entries.size() >= INDEX_STAGING_SIZE) flushStaging(staging.objectsWithIds, objectsWithIds);
+}
+
+// Moves the staged entries to their shards: grouped by shard (a counting sort), then one lock and
+// one bulk append per shard, instead of a lock per object (and z6 run). Shards whose lock is busy
+// are done after the others, then waiting for the lock: its holder only appends.
+template<class OO>
+void TileDataSource::flushStaging(IndexStaging<OO>& staging, std::vector<AppendVectorNS::AppendVector<OO>>& shards) {
+	const size_t n = staging.entries.size();
+	if (n == 0) return;
+	const uint16_t* z6 = staging.shards.data();
+	size_t same = 1;
+	while (same < n && z6[same] == z6[0]) same++;
+	if (same == n) {
+		std::lock_guard<std::mutex> lock(objectsMutex[z6[0] % objectsMutex.size()]);
+		shards[z6[0]].append(staging.entries.data(), n);
+	} else {
+		static_assert(std::is_trivially_copyable<OO>::value && sizeof(OO) % sizeof(uint64_t) == 0, "staged as raw words");
+		thread_local std::vector<uint32_t> counts(CLUSTER_ZOOM_AREA, 0);
+		thread_local std::vector<uint16_t> touched;
+		thread_local std::vector<uint32_t> begins;
+		thread_local std::vector<size_t> busy;
+		thread_local std::vector<uint64_t> sortedWords;	// OO isn't default constructible
+		touched.clear(); busy.clear();
+		for (size_t k = 0; k < n; k++)
+			if (counts[z6[k]]++ == 0) touched.push_back(z6[k]);
+		begins.resize(touched.size() + 1);
+		uint32_t offset = 0;
+		for (size_t t = 0; t < touched.size(); t++) {
+			begins[t] = offset;
+			const uint32_t c = counts[touched[t]];
+			counts[touched[t]] = offset;
+			offset += c;
+		}
+		begins[touched.size()] = offset;
+		sortedWords.resize(n * sizeof(OO) / sizeof(uint64_t));
+		OO* sorted = reinterpret_cast<OO*>(sortedWords.data());
+		for (size_t k = 0; k < n; k++)
+			std::memcpy(static_cast<void*>(&sorted[counts[z6[k]]++]), &staging.entries[k], sizeof(OO));
+		for (size_t t = 0; t < touched.size(); t++) {
+			counts[touched[t]] = 0;
+			std::unique_lock<std::mutex> lock(objectsMutex[touched[t] % objectsMutex.size()], std::try_to_lock);
+			if (lock.owns_lock()) shards[touched[t]].append(sorted + begins[t], begins[t + 1] - begins[t]);
+			else busy.push_back(t);
+		}
+		for (size_t t : busy) {
+			std::lock_guard<std::mutex> lock(objectsMutex[touched[t] % objectsMutex.size()]);
+			shards[touched[t]].append(sorted + begins[t], begins[t + 1] - begins[t]);
+		}
+		if (sortedWords.capacity() > 16 * INDEX_STAGING_SIZE * sizeof(OO) / sizeof(uint64_t)) std::vector<uint64_t>().swap(sortedWords);
+	}
+	staging.entries.clear();
+	staging.shards.clear();
+	// one huge object (a long line) can leave a big buffer
+	if (staging.entries.capacity() > 16 * INDEX_STAGING_SIZE) {
+		std::vector<OO>().swap(staging.entries);
+		std::vector<uint16_t>().swap(staging.shards);
+		staging.entries.reserve(INDEX_STAGING_SIZE + 64);
+	}
+}
+
+template<class Each>
+void TileDataSource::addToSmallIndex(const std::vector<TileCoordinates>& tiles, uint64_t id, Each each) {
+	IndexStagings& staging = indexStaging();
+	for (const TileCoordinates& tile : tiles) {
+		const size_t z6x = tile.x / z6OffsetDivisor;
+		const size_t z6y = tile.y / z6OffsetDivisor;
+		if (z6x >= 64 || z6y >= 64) {
+			// addObjectToSmallIndex reports and ignores it
+			each(tile, [&](const OutputObject& oo) { addObjectToSmallIndex(tile, oo, id); });
+			continue;
+		}
+		const size_t z6index = z6x * CLUSTER_ZOOM_WIDTH + z6y;
+		each(tile, [&](const OutputObject& oo) { stageObject(staging, z6index, tile, oo, id); });
+	}
+	flushStagingIfFull(staging);
 }
 
 void TileDataSource::addObjectToSmallIndexUnsafe(const TileCoordinates& index, const OutputObject& oo, uint64_t id) {
@@ -361,7 +482,8 @@ void TileDataSource::collectTilesWithLargeObjectsAtZoom(std::vector<std::shared_
 void TileDataSource::collectObjectsForTile(
 	uint zoom,
 	TileCoordinates dstIndex,
-	std::vector<OutputObjectID>& output
+	std::vector<OutputObjectID>& output,
+	bool* nonPolygon
 ) {
 	if (zoom < CLUSTER_ZOOM) {
 		collectLowZoomObjectsForTile<OutputObjectXY>(indexZoom, lowZoomObjects, zoom, dstIndex, output);
@@ -384,8 +506,50 @@ void TileDataSource::collectObjectsForTile(
 		iEnd = iStart + 1;
 	}
 
-	collectObjectsForTileTemplate<OutputObjectXY>(indexZoom, objects.begin(), iStart, iEnd, zoom, dstIndex, output);
-	collectObjectsForTileTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), iStart, iEnd, zoom, dstIndex, output);
+	collectObjectsForTileTemplate<OutputObjectXY>(indexZoom, objects.begin(), iStart, iEnd, zoom, dstIndex, output, nonPolygon);
+	if (nonPolygon && *nonPolygon) return;
+	collectObjectsForTileTemplate<OutputObjectXYID>(indexZoom, objectsWithIds.begin(), iStart, iEnd, zoom, dstIndex, output, nonPolygon);
+}
+
+int TileDataSource::objectKindsForTile(uint zoom, TileCoordinates dstIndex) {
+	// The objects collected are those getObjectsForTile sorts, deduplicates and orders: the same
+	// kinds, and some object if any
+	thread_local std::vector<OutputObjectID> collected;
+	collected.clear();
+	bool nonPolygon = false;
+	collectObjectsForTile(zoom, dstIndex, collected, &nonPolygon);
+	if (nonPolygon) return 2;
+	collectLargeObjectsForTile(zoom, dstIndex, collected);
+	for (const auto& o : collected)
+		if (o.oo.geomType != POLYGON_) return 2;
+	const bool any = !collected.empty();
+	if (collected.capacity() > (1u << 16)) std::vector<OutputObjectID>().swap(collected);
+	return any ? 1 : 0;
+}
+
+namespace {
+// The large objects of the tiles the thread is working in, from LARGE_OBJECT_CACHE_ZOOM down: the
+// tiles of a LARGE_OBJECT_CACHE_ZOOM tile come one after another, depth first. Per zoom, the objects
+// that intersect the current tile at that zoom (whatever their minZoom), in the order the rtree query
+// for its box returns them.
+const unsigned LARGE_OBJECT_CACHE_ZOOM = 12;
+struct LargeObjectLevel {
+	bool valid = false;
+	TileCoordinates index{0, 0};
+	std::vector<std::pair<Box, OutputObject>> objects;
+	std::vector<std::pair<Box, OutputObjectID>> objectsWithIds;
+};
+struct LargeObjectCache {
+	const TileDataSource* source = nullptr;
+	std::vector<LargeObjectLevel> levels;	// by zoom
+};
+thread_local std::vector<LargeObjectCache> tlsLargeObjects;	// one per source
+
+Box indexBox(TileCoordinates tile, unsigned zoom, unsigned indexZoom) {
+	const int scale = 1 << (indexZoom - zoom);
+	return Box(geom::make<Point>(tile.x * scale, tile.y * scale),
+	           geom::make<Point>((tile.x + 1) * scale - 1, (tile.y + 1) * scale - 1));
+}
 }
 
 // Copy objects from the large index into output
@@ -405,13 +569,78 @@ void TileDataSource::collectLargeObjectsForTile(
 	TileCoordinates srcIndex2((dstIndex.x+1)*scale-1, (dstIndex.y+1)*scale-1);
 	Box box = Box(geom::make<Point>(srcIndex1.x, srcIndex1.y),
 	              geom::make<Point>(srcIndex2.x, srcIndex2.y));
+	const unsigned upToZoom = objectsUpToZoom ? objectsUpToZoom : zoom;
+	if (clampedZoom >= LARGE_OBJECT_CACHE_ZOOM && indexZoom >= LARGE_OBJECT_CACHE_ZOOM) {
+		// The rtree query visits the nodes depth first in a fixed order and returns the values that
+		// intersect the box in that order. A value intersecting a box lies in nodes that intersect it,
+		// and those intersect any larger box too. So the query for a tile returns the values of the
+		// query for an enclosing box that intersect the tile, in the same order: each tile's objects
+		// are filtered from those of its parent (from one query per LARGE_OBJECT_CACHE_ZOOM tile).
+		std::vector<LargeObjectCache>& caches = tlsLargeObjects;
+		size_t c = 0;
+		while (c < caches.size() && caches[c].source != this) c++;
+		if (c == caches.size()) { caches.emplace_back(); caches.back().source = this; }
+		std::vector<LargeObjectLevel>& levels = caches[c].levels;
+		if (levels.size() < clampedZoom + 1) levels.resize(clampedZoom + 1);
+		// Bring the levels above this tile up to date
+		for (unsigned z = LARGE_OBJECT_CACHE_ZOOM; z < clampedZoom; z++) {
+			const TileCoordinates tile(dstIndex.x >> (clampedZoom - z), dstIndex.y >> (clampedZoom - z));
+			LargeObjectLevel& level = levels[z];
+			if (level.valid && level.index.x == tile.x && level.index.y == tile.y) continue;
+			level.valid = true;
+			level.index = tile;
+			level.objects.clear();
+			level.objectsWithIds.clear();
+			const Box levelBox = indexBox(tile, z, indexZoom);
+			if (z == LARGE_OBJECT_CACHE_ZOOM) {
+				for (auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(levelBox)))
+					level.objects.push_back(result);
+				for (auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(levelBox)))
+					level.objectsWithIds.push_back(result);
+			} else {
+				for (auto const& result: levels[z - 1].objects)
+					if (boost::geometry::intersects(result.first, levelBox)) level.objects.push_back(result);
+				for (auto const& result: levels[z - 1].objectsWithIds)
+					if (boost::geometry::intersects(result.first, levelBox)) level.objectsWithIds.push_back(result);
+			}
+			for (unsigned d = z + 1; d < levels.size(); d++) levels[d].valid = false;
+		}
+		if (clampedZoom == LARGE_OBJECT_CACHE_ZOOM) {
+			// The top of the cache: this tile's own objects (its descendants filter them)
+			LargeObjectLevel& level = levels[clampedZoom];
+			if (!level.valid || level.index.x != dstIndex.x || level.index.y != dstIndex.y) {
+				level.valid = true;
+				level.index = dstIndex;
+				level.objects.clear();
+				level.objectsWithIds.clear();
+				for (auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+					level.objects.push_back(result);
+				for (auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box)))
+					level.objectsWithIds.push_back(result);
+				for (unsigned d = clampedZoom + 1; d < levels.size(); d++) levels[d].valid = false;
+			}
+			for (auto const& result: level.objects)
+				if (result.second.minZoom <= upToZoom) output.push_back({result.second, 0});
+			for (auto const& result: level.objectsWithIds)
+				if (result.second.oo.minZoom <= upToZoom) output.push_back({result.second.oo, result.second.id});
+			return;
+		}
+		const LargeObjectLevel& parent = levels[clampedZoom - 1];
+		for (auto const& result: parent.objects)
+			if (result.second.minZoom <= upToZoom && boost::geometry::intersects(result.first, box))
+				output.push_back({result.second, 0});
+		for (auto const& result: parent.objectsWithIds)
+			if (result.second.oo.minZoom <= upToZoom && boost::geometry::intersects(result.first, box))
+				output.push_back({result.second.oo, result.second.id});
+		return;
+	}
 	for(auto const& result: boxRtree | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
-		if (result.second.minZoom <= zoom)
+		if (result.second.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom))
 			output.push_back({result.second, 0});
 	}
 
 	for(auto const& result: boxRtreeWithIds | boost::geometry::index::adaptors::queried(boost::geometry::index::intersects(box))) {
-		if (result.second.oo.minZoom <= zoom)
+		if (result.second.oo.minZoom <= (objectsUpToZoom ? objectsUpToZoom : zoom))
 			output.push_back({result.second.oo, result.second.id});
 	}
 }
@@ -425,44 +654,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 		}
 
 		case LINESTRING_: {
-			auto const &ls = retrieveLinestring(objectID);
-
-			MultiLinestring out;
-			if(ls.empty())
-				return out;
-
-			Box extBox = bbox.getExtendBox();
-			const double minX = extBox.min_corner().x(), maxX = extBox.max_corner().x();
-			const double minY = extBox.min_corner().y(), maxY = extBox.max_corner().y();
-			auto pointInsideExtBox = [minX, maxX, minY, maxY](const Point& p) {
-				return p.x() >= minX && p.x() <= maxX && p.y() >= minY && p.y() <= maxY;
-			};
-			bool needsIntersection = !pointInsideExtBox(ls[0]);
-
-			Linestring current_ls;
-			geom::append(current_ls, ls[0]);
-
-			for(size_t i = 1; i < ls.size(); ++i) {
-				boost::geometry::model::segment<Point> segment(ls[i-1], ls[i]);
-				if(!geom::intersects(segment, bbox.clippingBox)) {
-					if(current_ls.size() > 1)
-						out.push_back(std::move(current_ls));
-					current_ls.clear();
-				}
-				geom::append(current_ls, ls[i]);
-				if (!needsIntersection)
-					needsIntersection = !pointInsideExtBox(ls[i]);
-			}
-
-			if(current_ls.size() > 1)
-				out.push_back(std::move(current_ls));
-
-			if (!needsIntersection)
-				return out;
-
-			MultiLinestring result;
-			geom::intersection(out, extBox, result);
-			return result;
+			return clip_linestring_for_tile(retrieveLinestring(objectID), bbox.clippingBox, bbox.getExtendBox());
 		}
 
 		case MULTILINESTRING_: {
@@ -494,8 +686,9 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				// A large polygon: clip from its shared piece
 				const unsigned shift = bbox.zoom - SHARED_PIECE_ZOOM;
 				auto it = sharedPieces.find(std::make_tuple(objectID, bbox.index.x >> shift, bbox.index.y >> shift));
-				if (it != sharedPieces.end() && it->second.valid()) {
-					const std::shared_ptr<const SharedPiece> &piece = it->second.get();	// waits if still being computed
+				if (it != sharedPieces.end() && it->second.piece.valid()) {
+					computeSharedPiece(it->second.job);	// if no thread has started it yet
+					const std::shared_ptr<const SharedPiece> &piece = it->second.piece.get();	// waits if still being computed
 					if (piece && piece->geom) {
 						cachedClip = piece->geom;
 						inputKnownValid = piece->valid;
@@ -512,50 +705,8 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 
 			const auto &input = cachedClip == nullptr ? uncached : *cachedClip;
 
-			Box box = bbox.clippingBox;
-			
-			if (bbox.endZoom) {
-				for(auto const &p: input) {
-					for(auto const &inner: p.inners()) {
-						for(std::size_t i = 0; i < inner.size() - 1; ++i) 
-						{
-							Point p1 = inner[i];
-							Point p2 = inner[i + 1];
-
-							if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
-								box.min_corner() = Point(	
-									std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
-									std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
-								box.max_corner() = Point(	
-									std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
-									std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
-							}
-						}
-					}
-
-					for(std::size_t i = 0; i < p.outer().size() - 1; ++i) {
-						Point p1 = p.outer()[i];
-						Point p2 = p.outer()[i + 1];
-
-						if(geom::within(p1, bbox.clippingBox) != geom::within(p2, bbox.clippingBox)) {
-							box.min_corner() = Point(	
-								std::min(box.min_corner().x(), std::min(p1.x(), p2.x())), 
-								std::min(box.min_corner().y(), std::min(p1.y(), p2.y())));
-							box.max_corner() = Point(	
-								std::max(box.max_corner().x(), std::max(p1.x(), p2.x())), 
-								std::max(box.max_corner().y(), std::max(p1.y(), p2.y())));
-						}
-					}
-				}
-
-				Box extBox = bbox.getExtendBox();
-				box.min_corner() = Point(	
-					std::max(box.min_corner().x(), extBox.min_corner().x()), 
-					std::max(box.min_corner().y(), extBox.min_corner().y()));
-				box.max_corner() = Point(	
-					std::min(box.max_corner().x(), extBox.max_corner().x()), 
-					std::min(box.max_corner().y(), extBox.max_corner().y()));
-			}
+			// At the end zoom, the box takes in both ends of every segment crossing its border
+			Box box = bbox.endZoom ? tile_clip_box_end_zoom(input, bbox.clippingBox, bbox.getExtendBox()) : bbox.clippingBox;
 
 			MultiPolygon mp;
 			// rect_clip below needs the input as it was before fast_clip. For a large valid
@@ -564,11 +715,12 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			if (cachedClip == nullptr && inputKnownValid)
 				for (auto const &p : uncached) inputPoints += geom::num_points(p);
 			const bool keepUncached = inputPoints > 1000;
-			if (cachedClip == nullptr && !keepUncached)
+			bool modified;
+			if (cachedClip == nullptr && !keepUncached) {
 				mp = std::move(uncached);
-			else
-				geom::assign(mp, input);
-			bool modified = fast_clip(mp, box);
+				modified = fast_clip(mp, box);
+			} else
+				modified = fast_clip_copy(input, box, mp);
 			if (inputKnownValid && !modified) {
 				// fast_clip was the identity on a geometry that already passed
 				// is_valid, so correct() is a no-op and it is still valid.
@@ -578,7 +730,7 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 			}
 			geom::correct(mp);
 			geom::validity_failure_type failure = geom::validity_failure_type::no_failure;
-			bool valid = multiPolygonDefinitelyValid(mp);
+			bool valid = modified ? multiPolygonDefinitelyValidClipped(mp, box) : multiPolygonDefinitelyValid(mp);
 			if (!valid && inputKnownValid) {
 				// fast_clip leaves zero-width bridges along the box edge where a concave
 				// polygon leaves and re-enters the box. Clip the valid input exactly
@@ -588,14 +740,16 @@ Geometry TileDataSource::buildWayGeometry(OutputGeometryType const geomType,
 				if (cachedClip == nullptr && !keepUncached) populateMultiPolygon(original, objectID);
 				MultiPolygon clipped;
 				if (rect_clip(cachedClip == nullptr && !keepUncached ? original : input, box, clipped) &&
-				    (multiPolygonDefinitelyValid(clipped) || geom::is_valid(clipped))) {
+				    (multiPolygonDefinitelyValidAfterClip(clipped) || [&] { RingPointIndexScope pointIndex; return geom::is_valid(clipped); }())) {
 					multiPolygonClipCache.add(bbox, objectID, clipped, true);
 					clipResultValid = true;
 					return clipped;
 				}
 			}
-			if (!valid)
+			if (!valid) {
+				RingPointIndexScope pointIndex;
 				valid = geom::is_valid(mp,failure);
+			}
 			if (!valid) {
 				clipNeededRepair = true;
 				if (verbose) {
@@ -697,27 +851,64 @@ void populateTilesAtZoom(
 		for (size_t i = 0; i < sources.size(); i++)
 			sources[i]->collectTilesWithObjectsAtZoom(zooms);
 	} else {
-		// Objects are kept per z6 tile. Each worker takes whole columns of z6
-		// tiles (so that it touches only its part of the bitmaps), sets bits in
-		// bitmaps of its own, and these are merged at the end.
-		std::atomic<size_t> nextColumn(0);
-		std::vector<std::vector<std::shared_ptr<TileCoordinatesSet>>> local(threadNum);
-		boost::asio::thread_pool pool(threadNum);
-		for (size_t t = 0; t < threadNum; t++) {
-			boost::asio::post(pool, [&, t]() {
-				auto& mine = local[t];
-				for (size_t zoom = 0; zoom < zooms.size(); zoom++)
-					mine.push_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
-				for (size_t column; (column = nextColumn++) < CLUSTER_ZOOM_WIDTH; )
-					for (size_t row = 0; row < CLUSTER_ZOOM_WIDTH; row++)
-						for (const auto source : sources)
-							source->collectTilesWithObjectsInShard(column * CLUSTER_ZOOM_WIDTH + row, mine);
-			});
+		// Objects are kept per z6 tile. Each worker takes z6 tiles, the ones with the most
+		// objects first (by columns, one column held a tenth of the planet's objects and ran on
+		// alone), sets bits in bitmaps of its own, and these are merged at the end, all threads
+		// merging their part of the bitmaps. A z6 tile's z12 tiles (z12ObjectCounts) are only
+		// counted by the thread that takes it. The sets don't depend on who set which bit.
+		std::vector<std::pair<size_t, size_t>> order;	// (objects, z6 tile)
+		for (size_t shard = 0; shard < CLUSTER_ZOOM_AREA; shard++) {
+			size_t n = 0;
+			for (const auto source : sources) n += source->shardObjectCount(shard);
+			if (n > 0) order.emplace_back(n, shard);
 		}
-		pool.join();
-		for (const auto& mine : local)
-			for (size_t zoom = 0; zoom < mine.size(); zoom++)
-				precise[zoom]->merge(static_cast<const PreciseTileCoordinatesSet&>(*mine[zoom]));
+		std::sort(order.begin(), order.end(), [](const std::pair<size_t, size_t>& a, const std::pair<size_t, size_t>& b) {
+			return a.first != b.first ? a.first > b.first : a.second < b.second;
+		});
+		std::atomic<size_t> nextShard(0);
+		std::vector<std::vector<std::shared_ptr<TileCoordinatesSet>>> local(threadNum);
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++) {
+				boost::asio::post(pool, [&, t]() {
+					auto& mine = local[t];
+					for (size_t zoom = 0; zoom < zooms.size(); zoom++)
+						mine.push_back(std::make_shared<PreciseTileCoordinatesSet>(zoom));
+					for (size_t k; (k = nextShard++) < order.size(); )
+						for (const auto source : sources)
+							source->collectTilesWithObjectsInShard(order[k].second, mine);
+				});
+			}
+			pool.join();
+		}
+		// Merge: (zoom, range of summary words) parts, each merging all threads' bitmaps
+		std::vector<std::tuple<size_t, size_t, size_t>> parts;
+		for (size_t zoom = 0; zoom < zooms.size(); zoom++) {
+			const size_t words = precise[zoom]->summaryWords();
+			const size_t step = std::max<size_t>(1, words / (threadNum * 4));
+			for (size_t from = 0; from < words; from += step) parts.emplace_back(zoom, from, std::min(words, from + step));
+		}
+		std::atomic<size_t> nextPart(0);
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++) {
+				boost::asio::post(pool, [&]() {
+					for (size_t k; (k = nextPart++) < parts.size(); ) {
+						const size_t zoom = std::get<0>(parts[k]);
+						for (const auto& mine : local)
+							precise[zoom]->mergeRange(static_cast<const PreciseTileCoordinatesSet&>(*mine[zoom]), std::get<1>(parts[k]), std::get<2>(parts[k]));
+					}
+				});
+			}
+			pool.join();
+		}
+		// The threads' bitmaps (32 MB each at z14) are freed on all threads too
+		{
+			boost::asio::thread_pool pool(threadNum);
+			for (size_t t = 0; t < threadNum; t++)
+				boost::asio::post(pool, [&, t]() { local[t].clear(); });
+			pool.join();
+		}
 	}
 
 	for (size_t i = 0; i < sources.size(); i++)
@@ -889,21 +1080,24 @@ void TileDataSource::addGeometryToIndex(
 	try {
 		insertIntermediateTiles(geom, indexZoom, tiles);
 
-		bool polygonExists = false;
+		bool polygonExists = false, otherExists = false;
+		for (const auto& output : outputs) {
+			if (output.geomType == POLYGON_) polygonExists = true;
+			else otherExists = true;
+		}
+		if (tiles.empty()) polygonExists = false;
 		TileCoordinate minTileX = std::numeric_limits<TileCoordinate>::max(), maxTileX = 0, minTileY = std::numeric_limits<TileCoordinate>::max(), maxTileY = 0;
 		for (const TileCoordinates& index : tiles) {
 			minTileX = std::min(index.x, minTileX);
 			minTileY = std::min(index.y, minTileY);
 			maxTileX = std::max(index.x, maxTileX);
 			maxTileY = std::max(index.y, maxTileY);
-			for (const auto& output : outputs) {
-				if (output.geomType == POLYGON_) {
-					polygonExists = true;
-					continue;
-				}
-				addObjectToSmallIndex(index, output, id); // not a polygon
-			}
 		}
+		if (otherExists)
+			addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+				for (const auto& output : outputs)
+					if (output.geomType != POLYGON_) add(output); // not a polygon
+			});
 
 		// for polygon, fill inner tiles
 		if (polygonExists) {
@@ -921,9 +1115,7 @@ void TileDataSource::addGeometryToIndex(
 					if (!tilesetFilled) {
 						fillCoveredTiles(tiles); tilesetFilled = true;
 					}
-					for (const TileCoordinates& index : tiles) {
-						addObjectToSmallIndex(index, output, id);
-					}
+					addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) { add(output); });
 				}
 			}
 		}
@@ -942,11 +1134,9 @@ void TileDataSource::addGeometryToIndex(
 	for (const auto& ls : geom) {
 		tiles.clear();
 		insertIntermediateTiles(ls, indexZoom, tiles);
-		for (const TileCoordinates& index : tiles) {
-			for (const auto& output : outputs) {
-				addObjectToSmallIndex(index, output, id);
-			}
-		}
+		addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+			for (const auto& output : outputs) add(output);
+		});
 	}
 	releaseIfHuge(tiles);
 }
@@ -988,16 +1178,16 @@ void TileDataSource::addGeometryToIndex(
 			boxes.push_back(envelope);
 	}
 
-	for (auto& output : outputs) {
-		if (tileSetSize >= 16) {
+	if (tileSetSize >= 16) {
+		for (auto& output : outputs) {
 			for (const Box& box : boxes)
 				addObjectToLargeIndex(box, output, id);
-		} else {
-			// Smaller objects - add to each individual tile index
-			for (const TileCoordinates& index : tiles) {
-				addObjectToSmallIndex(index, output, id);
-			}
 		}
+	} else {
+		// Smaller objects - add to each individual tile index
+		addToSmallIndex(tiles, id, [&](const TileCoordinates&, auto&& add) {
+			for (const auto& output : outputs) add(output);
+		});
 	}
 	releaseIfHuge(tiles);
 }
@@ -1027,14 +1217,12 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src, bool knownVali
 	multi_polygon_t dst;
 	dst.resize(src.size());
 	for(std::size_t i = 0; i < src.size(); ++i) {
-		dst[i].outer().resize(src[i].outer().size());
-		boost::geometry::assign(dst[i].outer(), src[i].outer());
+		// (the same points: a range copy, one allocation per ring)
+		dst[i].outer().assign(src[i].outer().begin(), src[i].outer().end());
 
 		dst[i].inners().resize(src[i].inners().size());
-		for(std::size_t j = 0; j < src[i].inners().size(); ++j) {
-			dst[i].inners()[j].resize(src[i].inners()[j].size());
-			boost::geometry::assign(dst[i].inners()[j], src[i].inners()[j]);
-		}
+		for(std::size_t j = 0; j < src[i].inners().size(); ++j)
+			dst[i].inners()[j].assign(src[i].inners()[j].begin(), src[i].inners()[j].end());
 	}
 
 	NodeID offset = store.second->size();
@@ -1043,6 +1231,22 @@ NodeID TileDataSource::storeMultiPolygon(const MultiPolygon& src, bool knownVali
 	multipolygonValid[store.first].push_back(knownValid);
 	NodeID rv = (store.first << (TILE_DATA_ID_SIZE - shardBits)) + offset;
 	return rv;
+}
+
+void TileDataSource::checkValidityLater(NodeID objectID, MultiPolygon mp) {
+	auto valid = std::async(std::launch::async, [mp = std::move(mp)]() { RingPointIndexScope pointIndex; return geom::is_valid(mp); });
+	std::lock_guard<std::mutex> lock(deferredValidityMutex);
+	deferredValidity.emplace_back(objectID, std::move(valid));
+}
+
+void TileDataSource::finishDeferredValidity() {
+	for (auto& entry : deferredValidity) {
+		const bool valid = entry.second.get();
+		auto& flags = multipolygonValid[getShard(entry.first)];
+		const auto offset = getId(entry.first);
+		if (offset < flags.size()) flags[offset] = valid;
+	}
+	deferredValidity.clear();
 }
 
 NodeID TileDataSource::storeMultiLinestring(const MultiLinestring& src) {

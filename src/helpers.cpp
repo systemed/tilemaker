@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include "external/libdeflate/libdeflate.h"
 #include "helpers.h"
+#include <vector>
 
 #ifdef _MSC_VER
 #define stat64 __stat64
@@ -110,25 +111,20 @@ std::string compress_string(const std::string& str,
 	if (compressionlevel != compressor.level)
 		compressor.setLevel(compressionlevel);
 
-	std::string rv;
-	if (asGzip) {
-		size_t maxSize = libdeflate_gzip_compress_bound(compressor.compressor, str.size());
-		rv.resize(maxSize);
-
-		size_t compressedSize = libdeflate_gzip_compress(compressor.compressor, str.data(), str.size(), &rv[0], maxSize);
-		if (compressedSize == 0)
-			throw std::runtime_error("libdeflate_gzip_compress failed");
-		rv.resize(compressedSize);
-	} else {
-		size_t maxSize = libdeflate_zlib_compress_bound(compressor.compressor, str.size());
-		rv.resize(maxSize);
-
-		size_t compressedSize = libdeflate_zlib_compress(compressor.compressor, str.data(), str.size(), &rv[0], maxSize);
-		if (compressedSize == 0)
-			throw std::runtime_error("libdeflate_zlib_compress failed");
-		rv.resize(compressedSize);
-	}
-
+	// Compress into a scratch buffer and return a string of exactly the compressed size. A string
+	// resized down from the compression bound keeps the bound (about the uncompressed size) as its
+	// capacity: the tiles held for the ordered writer then took several times the memory counted.
+	thread_local std::vector<char> scratch;
+	const size_t maxSize = asGzip ? libdeflate_gzip_compress_bound(compressor.compressor, str.size())
+	                              : libdeflate_zlib_compress_bound(compressor.compressor, str.size());
+	if (scratch.size() < maxSize) scratch.resize(maxSize);
+	const size_t compressedSize = asGzip
+		? libdeflate_gzip_compress(compressor.compressor, str.data(), str.size(), scratch.data(), maxSize)
+		: libdeflate_zlib_compress(compressor.compressor, str.data(), str.size(), scratch.data(), maxSize);
+	if (compressedSize == 0)
+		throw std::runtime_error(asGzip ? "libdeflate_gzip_compress failed" : "libdeflate_zlib_compress failed");
+	std::string rv(scratch.data(), compressedSize);
+	if (scratch.size() > (64u << 20)) std::vector<char>().swap(scratch);	// e.g. a huge metadata or leaf
 	return rv;
 }
 
