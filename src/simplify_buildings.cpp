@@ -21,10 +21,24 @@ typedef boost::geometry::index::rtree<rtree_val, boost::geometry::index::quadrat
 // Low-level geometry helpers
 // ============================================================
 
-static double seg_len(const Point &a, const Point &b) {
+static double seg_len2(const Point &a, const Point &b) {
 	double dx = b.x()-a.x(), dy = b.y()-a.y();
-	return std::sqrt(dx*dx + dy*dy);
+	return dx*dx + dy*dy;
 }
+
+static double seg_len(const Point &a, const Point &b) {
+	return std::sqrt(seg_len2(a, b));
+}
+
+// Squared sine/cosine of the angle tolerances, so that angles can be tested
+// with dot and cross products rather than trigonometry
+static const double COLLINEAR_COS2 = std::pow(std::cos(BuildingSimplifyConfig::COLLINEAR_TOL * M_PI / 180.0), 2);
+static const double SNAP_SIN2 = std::pow(std::sin(BuildingSimplifyConfig::SNAP_TOL * M_PI / 180.0), 2);
+static const double PARALLEL_TOL2 = BuildingSimplifyConfig::PARALLEL_TOL * BuildingSimplifyConfig::PARALLEL_TOL;
+
+// Rings with at most this many segments are checked for self-intersection by
+// testing every segment, rather than by building an rtree
+static const size_t BRUTE_FORCE_SEGMENTS = 64;
 
 static Box make_box(const Point &a, const Point &b) {
 	Box box;
@@ -72,9 +86,20 @@ static bool properly_intersects(const Point &l1, const Point &l2,
 	return (tol < lv && lv < 1.0-tol) && (tol < gv && gv < 1.0-tol);
 }
 
-// Query the rtree for segments that properly intersect (a→b), skipping the four
-// segments listed in `skip` (identified by exact endpoint coordinates — these are
-// the segments being replaced in the current candidate operation).
+// Whether segment p1→p2 is one of the four in `skip` (identified by exact endpoint
+// coordinates — these are the segments being replaced in the current candidate operation)
+static bool is_skipped(const Point &p1, const Point &p2, const std::array<seg_pts,4> &skip) {
+	for (auto const &sk : skip) {
+		if ((p1.x()==sk.first.x()  && p1.y()==sk.first.y() &&
+		     p2.x()==sk.second.x() && p2.y()==sk.second.y()) ||
+		    (p1.x()==sk.second.x() && p1.y()==sk.second.y() &&
+		     p2.x()==sk.first.x()  && p2.y()==sk.first.y()))
+			return true;
+	}
+	return false;
+}
+
+// Query the rtree for segments that properly intersect (a→b), other than those in `skip`
 static bool hits_rtree(const Point &a, const Point &b,
                         const seg_rtree &rt,
                         const std::array<seg_pts,4> &skip,
@@ -84,16 +109,25 @@ static bool hits_rtree(const Point &a, const Point &b,
 	                               boost::geometry::index::intersects(bbox))) {
 		const Point &p1 = v.second.first;
 		const Point &p2 = v.second.second;
-		bool is_skip = false;
-		for (auto const &sk : skip) {
-			if ((p1.x()==sk.first.x()  && p1.y()==sk.first.y() &&
-			     p2.x()==sk.second.x() && p2.y()==sk.second.y()) ||
-			    (p1.x()==sk.second.x() && p1.y()==sk.second.y() &&
-			     p2.x()==sk.first.x()  && p2.y()==sk.first.y())) {
-				is_skip = true; break;
-			}
-		}
-		if (!is_skip && properly_intersects(a, b, p1, p2, tol)) return true;
+		if (!is_skipped(p1, p2, skip) && properly_intersects(a, b, p1, p2, tol)) return true;
+	}
+	return false;
+}
+
+// As hits_rtree, but testing each segment of the (open) ring in turn
+static bool hits_ring(const Point &a, const Point &b,
+                      const std::vector<Point> &ring,
+                      const std::array<seg_pts,4> &skip,
+                      double tol) {
+	const double minX = std::min(a.x(), b.x()), maxX = std::max(a.x(), b.x());
+	const double minY = std::min(a.y(), b.y()), maxY = std::max(a.y(), b.y());
+	const size_t m = ring.size();
+	for (size_t k = 0; k < m; k++) {
+		const Point &p1 = ring[k];
+		const Point &p2 = ring[k+1 == m ? 0 : k+1];
+		if (std::max(p1.x(), p2.x()) < minX || std::min(p1.x(), p2.x()) > maxX ||
+		    std::max(p1.y(), p2.y()) < minY || std::min(p1.y(), p2.y()) > maxY) continue;
+		if (!is_skipped(p1, p2, skip) && properly_intersects(a, b, p1, p2, tol)) return true;
 	}
 	return false;
 }
@@ -121,21 +155,34 @@ static double turn_angle(const Point &from, const Point &turn, const Point &to) 
 	return deg - 360.0 * std::floor(deg / 360.0);
 }
 
-// Remove points whose turn angle is within tol° of 180° (collinear with neighbours).
-static void remove_collinear(std::vector<Point> &ring) {
-	bool changed = true;
-	while (changed) {
-		changed = false;
-		size_t n = ring.size();
-		for (size_t i = 1; i+1 < n; i++) {
-			double a = turn_angle(ring[i-1], ring[i], ring[i+1]);
-			if (a >= 180.0-BuildingSimplifyConfig::COLLINEAR_TOL && a <= 180.0+BuildingSimplifyConfig::COLLINEAR_TOL) {
-				ring.erase(ring.begin() + i);
-				changed = true;
-				break;
-			}
-		}
+// Whether the turn angle at 'turn' is within COLLINEAR_TOL° of 180°: that is, the
+// directions to its neighbours are at least 180°-COLLINEAR_TOL apart
+static bool is_collinear(const Point &from, const Point &turn, const Point &to) {
+	double ux = from.x()-turn.x(), uy = from.y()-turn.y();
+	double vx = to.x()-turn.x(),   vy = to.y()-turn.y();
+	double uu = ux*ux + uy*uy, vv = vx*vx + vy*vy;
+	if (uu == 0.0 || vv == 0.0) {
+		// A repeated point has no direction: take the angle as atan2 defines it
+		double a = turn_angle(from, turn, to);
+		return a >= 180.0-BuildingSimplifyConfig::COLLINEAR_TOL && a <= 180.0+BuildingSimplifyConfig::COLLINEAR_TOL;
 	}
+	double dot = ux*vx + uy*vy;
+	return dot < 0.0 && dot*dot >= COLLINEAR_COS2 * uu * vv;
+}
+
+// Remove points whose turn angle is within tol° of 180° (collinear with neighbours),
+// earliest first. The first and last points are kept.
+static void remove_collinear(std::vector<Point> &ring) {
+	size_t n = ring.size();
+	if (n < 3) return;
+	size_t kept = 1;	// ring[0..kept) survive so far
+	for (size_t j = 1; j < n; j++) {
+		// ring[j] is the next point: a removal changes the previous kept point's
+		// neighbours, so it may now be collinear too
+		while (kept >= 2 && is_collinear(ring[kept-2], ring[kept-1], ring[j])) kept--;
+		ring[kept++] = ring[j];
+	}
+	ring.resize(kept);
 }
 
 // ============================================================
@@ -155,13 +202,11 @@ static Point line_intersection(const Point &pL1, const Point &pL2,
 	double a1=yL1-yL2, b1=xL2-xL1, c1=(yL2-yL1)*xL1-(xL2-xL1)*yL1;
 	double a2=yM1-yM2, b2=xM2-xM1, c2=(yM2-yM1)*xM1-(xM2-xM1)*yM1;
 
-	// Angle between the two lines
-	double ang = std::atan2(a2*b1-a1*b2, a1*a2+b1*b2) * (180.0/M_PI) + 180.0;
-
-	// Snap to 90°: drop perpendicular from pM2 onto line L
-	// (future: use fast atan2 from https://mazzo.li/posts/vectorized-atan2.html if needed)
-	if ((ang > 90.0-BuildingSimplifyConfig::SNAP_TOL && ang < 90.0+BuildingSimplifyConfig::SNAP_TOL) ||
-	    (ang > 270.0-BuildingSimplifyConfig::SNAP_TOL && ang < 270.0+BuildingSimplifyConfig::SNAP_TOL)) {
+	// Snap to 90°: drop perpendicular from pM2 onto line L. The lines are within
+	// SNAP_TOL° of a right angle when the cosine of the angle between them is
+	// within sin(SNAP_TOL) of zero.
+	double dot = a1*a2 + b1*b2, cross = a2*b1 - a1*b2;
+	if (dot*dot < SNAP_SIN2 * (dot*dot + cross*cross)) {
 		double denom = (xL2-xL1)*(xL2-xL1) + (yL2-yL1)*(yL2-yL1);
 		if (denom < 1e-20) return Point((xL2+xM1)/2.0, (yL2+yM1)/2.0);
 		double t = ((xM2-xL1)*(xL2-xL1) + (yM2-yL1)*(yL2-yL1)) / denom;
@@ -182,39 +227,65 @@ static void simplify_open_ring(std::vector<Point> &ring,
                                const seg_rtree* other_rt = nullptr) {
 	remove_collinear(ring);
 
+	const double shortest2 = cfg.distance_filter * cfg.distance_filter;
+	const double area2 = cfg.area_filter * cfg.area_filter;
+	const double narrow2 = cfg.area_narrow * cfg.area_narrow;
+	std::vector<double> segs2;
+	std::vector<size_t> candidates;
+	std::vector<Point> new_ring;
+
 	while (true) {
 		size_t m = ring.size();
 		if (m < 4) break;
 
-		// segs[k] = |ring[k] → ring[(k+1)%m]|
-		std::vector<double> segs(m);
-		for (size_t k = 0; k < m; k++)
-			segs[k] = seg_len(ring[k], ring[(k+1)%m]);
+		// segs2[k] = |ring[k] → ring[(k+1)%m]|²
+		segs2.resize(m);
+		candidates.clear();
+		for (size_t k = 0; k < m; k++) {
+			segs2[k] = seg_len2(ring[k], ring[(k+1)%m]);
+			if (segs2[k] < shortest2) candidates.push_back(k);
+		}
+		if (candidates.empty()) break;
 
-		// Build fresh rtree from current ring for this pass
+		// The shortest stub that passes every check is removed (the earliest, if
+		// several are equally short), so try them shortest first
+		std::sort(candidates.begin(), candidates.end(), [&](size_t a, size_t b) {
+			return segs2[a] != segs2[b] ? segs2[a] < segs2[b] : a < b;
+		});
+
+		// Long rings are checked for self-intersection with an rtree, built when first needed
+		const bool use_rtree = m > BRUTE_FORCE_SEGMENTS;
 		seg_rtree rt;
-		for (size_t k = 0; k < m; k++)
-			rtree_add(rt, ring[k], ring[(k+1)%m]);
+		bool rt_built = false;
+		auto hits_self = [&](const Point &a, const Point &b, const std::array<seg_pts,4> &skip) {
+			if (!use_rtree) return hits_ring(a, b, ring, skip, BuildingSimplifyConfig::INTERSECT_TOL);
+			if (!rt_built) {
+				std::vector<rtree_val> values;
+				values.reserve(m);
+				for (size_t k = 0; k < m; k++)
+					values.push_back({make_box(ring[k], ring[(k+1)%m]), {ring[k], ring[(k+1)%m]}});
+				rt = seg_rtree(values.begin(), values.end());
+				rt_built = true;
+			}
+			return hits_rtree(a, b, rt, skip, BuildingSimplifyConfig::INTERSECT_TOL);
+		};
 
-		double shortest = cfg.distance_filter;
 		int    best     = -1;
 		Point  best_xy;
 
-		for (size_t k = 0; k < m; k++) {
-			if (segs[k] >= shortest) continue;
-
-			double d1 = segs[k];
-			double d2 = segs[(k+1)%m];
+		for (size_t k : candidates) {
+			double d1 = segs2[k];
+			double d2 = segs2[(k+1)%m];
 
 			// Area filter: skip if the stub area d1*d2 is too large,
 			// unless one side is a narrow sliver (area_narrow exception).
-			if (d1*d2 > cfg.area_filter && d1 >= cfg.area_narrow && d2 >= cfg.area_narrow)
+			if (d1*d2 > area2 && d1 >= narrow2 && d2 >= narrow2)
 				continue;
 
 			// Indices of the six points surrounding the stub.
 			// The stub to remove: ring[k] → ring[kp1] → ring[kp2]
 			// (ring[k] is replaced; ring[kp1] and ring[kp2] are deleted)
-			size_t km1=(k+m-1)%m, km2=(k+m-2)%m;
+			size_t km1=(k+m-1)%m;
 			size_t kp1=(k+1)%m, kp2=(k+2)%m, kp3=(k+3)%m;
 
 			// Reject if the two outer lines are nearly parallel.
@@ -222,8 +293,7 @@ static void simplify_open_ring(std::vector<Point> &ring,
 				double dx_L = ring[k].x()-ring[km1].x(), dy_L = ring[k].y()-ring[km1].y();
 				double dx_M = ring[kp3].x()-ring[kp2].x(), dy_M = ring[kp3].y()-ring[kp2].y();
 				double cross = dx_L*dy_M - dy_L*dx_M;
-				double scale = std::sqrt((dx_L*dx_L+dy_L*dy_L) * (dx_M*dx_M+dy_M*dy_M));
-				if (std::abs(cross) < BuildingSimplifyConfig::PARALLEL_TOL * scale) continue;
+				if (cross*cross < PARALLEL_TOL2 * (dx_L*dx_L+dy_L*dy_L) * (dx_M*dx_M+dy_M*dy_M)) continue;
 			}
 
 			// Intersection of line(ring[km1],ring[k]) and line(ring[kp2],ring[kp3])
@@ -231,11 +301,11 @@ static void simplify_open_ring(std::vector<Point> &ring,
 			                             ring[kp2], ring[kp3]);
 
 			// Reject if the new path (km1→xy→kp3) is longer than the old detour
-			double old_len = segs[km1] + segs[k] + segs[kp1] + segs[kp2];
+			double old_len = std::sqrt(segs2[km1]) + std::sqrt(segs2[k]) + std::sqrt(segs2[kp1]) + std::sqrt(segs2[kp2]);
 			double new_len = seg_len(xy, ring[km1]) + seg_len(xy, ring[kp3]);
 			if (new_len > old_len) continue;
 
-			// Self-intersection check via rtree.
+			// Self-intersection check.
 			// The four segments being replaced are skipped; any other intersection rejects.
 			std::array<seg_pts,4> skip = {{
 				{ring[km1], ring[k]},    // segs[km1]
@@ -243,8 +313,8 @@ static void simplify_open_ring(std::vector<Point> &ring,
 				{ring[kp1], ring[kp2]}, // segs[kp1]
 				{ring[kp2], ring[kp3]}, // segs[kp2]
 			}};
-			if (hits_rtree(ring[km1], xy,        rt, skip, BuildingSimplifyConfig::INTERSECT_TOL)) continue;
-			if (hits_rtree(xy,        ring[kp3], rt, skip, BuildingSimplifyConfig::INTERSECT_TOL)) continue;
+			if (hits_self(ring[km1], xy,        skip)) continue;
+			if (hits_self(xy,        ring[kp3], skip)) continue;
 
 			// Cross-ring check (e.g. simplified inners when processing the outer)
 			if (other_rt) {
@@ -252,9 +322,9 @@ static void simplify_open_ring(std::vector<Point> &ring,
 				if (hits_foreign(xy,        ring[kp3], *other_rt, BuildingSimplifyConfig::INTERSECT_TOL)) continue;
 			}
 
-			shortest = segs[k];
 			best     = (int)k;
 			best_xy  = xy;
+			break;
 		}
 
 		if (best < 0) break;
@@ -264,13 +334,12 @@ static void simplify_open_ring(std::vector<Point> &ring,
 		size_t k   = (size_t)best;
 		size_t kp1 = (k+1)%m, kp2 = (k+2)%m;
 
-		std::vector<Point> new_ring;
-		new_ring.reserve(m-2);
+		new_ring.clear();
 		for (size_t i = 0; i < m; i++) {
 			if (i == kp1 || i == kp2) continue;
 			new_ring.push_back(i == k ? best_xy : ring[i]);
 		}
-		ring = std::move(new_ring);
+		ring.swap(new_ring);
 	}
 }
 
