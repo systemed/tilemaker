@@ -20,6 +20,11 @@
 // rings don't change while they run (is_valid, and the ring selection of one
 // overlay call). The index refers to a ring by its address; it is dropped when
 // the scope ends.
+//
+// Inside a scope, rings of moderate size also get their bounding box cached: a
+// point clearly outside it is outside the ring without walking any segment. That
+// helps overlay (union_ of combine_polygons_below), which tests a point of every
+// ring without turns against every polygon of the other geometry.
 
 #include <algorithm>
 #include <cmath>
@@ -122,14 +127,58 @@ private:
 	std::vector<uint32_t> start, entries, wide;
 };
 
+// The bounding box of a ring, widened by far more than Boost's epsilon (as the bands
+// of the index are). The winding strategy can't count a crossing for a point outside
+// it, nor find the point on a segment, so the answer for such a point is "outside".
+template<typename RingT>
+class RingBox {
+public:
+	explicit RingBox(RingT const &ring) : size(ring.size()), data(ring.empty() ? nullptr : &ring[0]) {
+		usable = false;
+		if (ring.empty()) return;
+		double x0 = std::numeric_limits<double>::max(), y0 = x0;
+		double x1 = std::numeric_limits<double>::lowest(), y1 = x1;
+		for (auto const &p : ring) {
+			double const x = boost::geometry::get<0>(p), y = boost::geometry::get<1>(p);
+			if (!std::isfinite(x) || !std::isfinite(y)) return;
+			x0 = std::min(x0, x); x1 = std::max(x1, x);
+			y0 = std::min(y0, y); y1 = std::max(y1, y);
+		}
+		double const margin = 1e-9 * std::max({ 1.0, std::abs(x0), std::abs(x1), std::abs(y0), std::abs(y1) });
+		minX = x0 - margin; maxX = x1 + margin;
+		minY = y0 - margin; maxY = y1 + margin;
+		usable = true;
+	}
+
+	bool matches(RingT const &r) const {
+		return r.size() == size && (size == 0 || &r[0] == data);
+	}
+
+	// NaN compares false, so it is never "clearly outside"
+	template<typename PointT>
+	bool clearlyOutside(PointT const &point) const {
+		if (!usable) return false;
+		double const px = boost::geometry::get<0>(point), py = boost::geometry::get<1>(point);
+		return px < minX || px > maxX || py < minY || py > maxY;
+	}
+
+private:
+	std::size_t size;
+	void const *data;
+	bool usable;
+	double minX = 0, minY = 0, maxX = 0, maxY = 0;
+};
+
 // Rings with fewer points are walked as before
 constexpr std::size_t kMinRingSize = 1024;
 // A ring is indexed when it is tested for the third time in a scope
 constexpr unsigned kQueriesBeforeIndex = 2;
+// Rings with at least this many points get the bounding box test in a scope
+constexpr std::size_t kMinBoxRingSize = 32;
 
 template<typename RingT>
 struct Cache {
-	struct Entry { unsigned queries = 0; std::unique_ptr<Index<RingT>> index; };
+	struct Entry { unsigned queries = 0; std::unique_ptr<Index<RingT>> index; std::unique_ptr<RingBox<RingT>> box; };
 	unsigned depth = 0;
 	std::unordered_map<RingT const *, Entry> entries;
 };
@@ -204,15 +253,20 @@ struct point_in_geometry<Ring, ring_tag>
 		auto const pir = ring_point_index::pointInRingStrategy(strategy, point, ring);
 		using pir_t = std::decay_t<decltype(pir)>;
 		if constexpr (ring_point_index::IsCartesianWinding<pir_t>::value) {
-			if (ring.size() >= ring_point_index::kMinRingSize) {
+			if (ring.size() >= ring_point_index::kMinBoxRingSize) {
 				auto &c = ring_point_index::cache<Ring>();
 				if (c.depth > 0) {
 					auto &entry = c.entries[&ring];
-					if (entry.index && !entry.index->matches(ring)) { entry.index.reset(); entry.queries = 0; }
-					if (!entry.index && ++entry.queries > ring_point_index::kQueriesBeforeIndex)
-						entry.index = std::make_unique<ring_point_index::Index<Ring>>(ring);
-					int result;
-					if (entry.index && entry.index->apply(point, pir, result)) return result;
+					if (!entry.box || !entry.box->matches(ring))
+						entry.box = std::make_unique<ring_point_index::RingBox<Ring>>(ring);
+					if (entry.box->clearlyOutside(point)) return -1;
+					if (ring.size() >= ring_point_index::kMinRingSize) {
+						if (entry.index && !entry.index->matches(ring)) { entry.index.reset(); entry.queries = 0; }
+						if (!entry.index && ++entry.queries > ring_point_index::kQueriesBeforeIndex)
+							entry.index = std::make_unique<ring_point_index::Index<Ring>>(ring);
+						int result;
+						if (entry.index && entry.index->apply(point, pir, result)) return result;
+					}
 				}
 			}
 		}
