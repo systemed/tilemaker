@@ -742,6 +742,9 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value={{date 'YYYY-MM-DD[T]HH-mm'}}
+            type=raw,value=latest
 
       - name: Create and push the multi-platform image
         working-directory: ${{ runner.temp }}/digests
