@@ -224,7 +224,67 @@ MU_TEST(test_simplify_hole_near_outer) {
 	mu_check(geom::is_valid(p));
 }
 
+// Within a RingPointIndexScope, point-in-ring tests answer from the ring's cached box
+// or from the index (ring_point_index.h). They must give the answers of the walk over
+// the whole ring: inside, on the boundary and outside, near the box and far from it.
+static MultiPolygon starPolygon(double cx, double cy, double radius, int points) {
+	std::string wkt = "MULTIPOLYGON(((";
+	for (int i = 0; i <= points; i++) {
+		const double a = 2 * M_PI * (i % points) / points;
+		const double r = radius * (i % 2 ? 0.6 : 1.0);
+		if (i) wkt += ",";
+		wkt += std::to_string(cx + r * std::cos(a)) + " " + std::to_string(cy + r * std::sin(a));
+	}
+	wkt += ")))";
+	return fromWkt(wkt.c_str());
+}
+
+static int pointInRingAnswer(Point const &p, Ring const &r) {
+	return boost::geometry::within(p, r) ? 1 : boost::geometry::covered_by(p, r) ? 0 : -1;
+}
+
+MU_TEST(test_ring_point_index_scope) {
+	// 2000 points (indexed and boxed) and 40 points (boxed only)
+	for (int n : { 2000, 40 }) {
+		const MultiPolygon mp = starPolygon(10, 50, 3, n);
+		mu_check(mp.size() == 1);
+		const Ring &ring = mp[0].outer();
+
+		std::vector<Point> points;
+		for (std::size_t i = 0; i + 1 < ring.size(); i++) {
+			points.push_back(ring[i]);
+			points.push_back(Point((ring[i].x() + ring[i + 1].x()) / 2, (ring[i].y() + ring[i + 1].y()) / 2));
+		}
+		for (int i = -10; i <= 10; i++)
+			for (int j = -10; j <= 10; j++)
+				points.push_back(Point(10 + i * 0.4, 50 + j * 0.4));
+		Box box;
+		boost::geometry::envelope(ring, box);
+		for (double d : { 1e-12, 1e-6, 1.0 }) {
+			points.push_back(Point(box.min_corner().x() - d, 50));
+			points.push_back(Point(box.max_corner().x() + d, 50));
+			points.push_back(Point(10, box.min_corner().y() - d));
+			points.push_back(Point(10, box.max_corner().y() + d));
+		}
+
+		std::vector<int> walked;
+		for (auto const &p : points) walked.push_back(pointInRingAnswer(p, ring));
+		int differences = 0, inside = 0, outside = 0, boundary = 0;
+		{
+			RingPointIndexScope pointIndex;
+			for (std::size_t i = 0; i < points.size(); i++) {
+				const int answer = pointInRingAnswer(points[i], ring);
+				if (answer != walked[i]) differences++;
+				(answer > 0 ? inside : answer < 0 ? outside : boundary)++;
+			}
+		}
+		mu_check(differences == 0);
+		mu_check(inside > 0 && outside > 0 && boundary > 0);
+	}
+}
+
 MU_TEST_SUITE(test_suite_geom) {
+	MU_RUN_TEST(test_ring_point_index_scope);
 	MU_RUN_TEST(test_rect_clip_concave);
 	MU_RUN_TEST(test_rect_clip_holes);
 	MU_RUN_TEST(test_rect_clip_trivial);
