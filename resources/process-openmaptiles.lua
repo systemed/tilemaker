@@ -92,8 +92,8 @@ INVALID_ZOOM = 99
 
 -- Process node/way tags
 aerodromeValues = Set { "international", "public", "regional", "military", "private" }
-unpavedValues = Set { "unpaved", "artificial_turf", "clay", "compacted", "crushed_limestone", "dirt", "dirt/sand", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "gravel_turf", "ground", "ice", "mud", "pebblestone", "rock", "rocky", "rocks", "salt", "sand", "shells", "snow", "soil", "stepping_stones", "stone", "woodchips" }
-pavedValues = Set { "paved", "acrylic", "asphalt", "brick", "bricks", "cement", "chipseal", "cobblestone", "concrete", "concrete:lanes", "concrete:plates", "granite", "interlock", "metal", "metal_grid", "paving_stones", "plastic", "rubber", "sett", "tartan", "unhewn_cobblestone", "wood", "grade1" }
+unpavedValues = Set { "unpaved", "artificial_turf", "clay", "carpet", "compacted", "crushed_limestone", "dirt", "dirt/sand", "earth", "fine_gravel", "grass", "grass_paver", "gravel", "ground", "ice", "laterite", "mud", "pebblestone", "rock", "rocky", "rocks", "salt", "sand", "shells", "snow", "soil", "stepping_stones", "stone", "woodchips" }
+pavedValues = Set { "paved", "acrylic", "asphalt", "brick", "bricks", "cement", "chipseal", "cobblestone", "cobblestone:flattened", "concrete", "concrete:lanes", "concrete:plates", "fibre_reinforced_polymer_grate", "granite", "interlock", "metal", "metal_grid", "paving_stones", "paving_stones:lanes", "plastic", "resin_bound", "rubber", "sett", "tartan", "tiles", "unhewn_cobblestone", "wood" }
 
 -- Process node tags
 
