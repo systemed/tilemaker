@@ -2385,3 +2385,113 @@ std::vector<Box> multipolygon_index_boxes(const MultiPolygon &mp, double gap) {
 	if (geom::area(envelope) <= 4 * outersArea) return { envelope };
 	return merge_nearby_boxes(std::move(outers), gap);
 }
+
+namespace {
+std::vector<std::pair<Segment, unsigned>> ringEdges(const MultiPolygon &mp) {
+	std::vector<std::pair<Segment, unsigned>> edges;
+	for (unsigned polygon = 0; polygon < mp.size(); polygon++) {
+		auto addRing = [&](const Ring &ring) {
+			for (std::size_t i = 0; i + 1 < ring.size(); i++)
+				edges.emplace_back(Segment(ring[i], ring[i + 1]), polygon);
+		};
+		addRing(mp[polygon].outer());
+		for (const Ring &inner : mp[polygon].inners()) addRing(inner);
+	}
+	return edges;
+}
+}
+
+IndexedMultiPolygon::IndexedMultiPolygon(const MultiPolygon &mp):
+	maxX(mp.empty() ? 0 : geom::return_envelope<Box>(mp).max_corner().x()),
+	edges(ringEdges(mp)) { // the range constructor bulk-loads (packs) the tree
+	for (const Polygon &poly : mp)
+		if (!poly.outer().empty()) polygonVertices.push_back(poly.outer().front());
+}
+
+bool IndexedMultiPolygon::covers(const Point &p) const {
+	// Count, per polygon, the edges a ray from p towards +x crosses: an odd
+	// count is inside that polygon. An edge counts if it straddles the ray's y
+	// (half-open, so a vertex on the ray counts once) and crosses it at or
+	// right of p. A point on an edge is on the boundary, which covers()
+	// includes.
+	const Box ray(p, Point(std::max(maxX, p.x()), p.y()));
+	std::vector<unsigned> crossed; // polygon indices, one per crossing
+	for (auto it = edges.qbegin(boost::geometry::index::intersects(ray)); it != edges.qend(); ++it) {
+		const Point &a = it->first.first, &b = it->first.second;
+		if (geom::intersects(it->first, p)) return true;
+		if ((a.y() > p.y()) == (b.y() > p.y())) continue;
+		const double x = a.x() + (p.y() - a.y()) * (b.x() - a.x()) / (b.y() - a.y());
+		if (x >= p.x()) crossed.push_back(it->second);
+	}
+	std::sort(crossed.begin(), crossed.end());
+	for (std::size_t i = 0; i < crossed.size(); ) {
+		std::size_t j = i;
+		while (j < crossed.size() && crossed[j] == crossed[i]) j++;
+		if ((j - i) % 2 == 1) return true;
+		i = j;
+	}
+	return false;
+}
+
+bool IndexedMultiPolygon::crossesEdge(const Segment &s) const {
+	const Box box = geom::return_envelope<Box>(s);
+	for (auto it = edges.qbegin(boost::geometry::index::intersects(box)); it != edges.qend(); ++it)
+		if (geom::intersects(s, it->first)) return true;
+	return false;
+}
+
+bool IndexedMultiPolygon::crossesRing(const Ring &ring) const {
+	for (std::size_t i = 0; i + 1 < ring.size(); i++)
+		if (crossesEdge(Segment(ring[i], ring[i + 1]))) return true;
+	return false;
+}
+
+bool IndexedMultiPolygon::hasPolygonInside(const Polygon &poly) const {
+	// No edges cross (checked first), so each of our polygons is wholly
+	// inside `poly` or wholly outside it, and one vertex tells which.
+	for (const Point &vertex : polygonVertices)
+		if (geom::covered_by(vertex, poly)) return true;
+	return false;
+}
+
+bool IndexedMultiPolygon::intersects(const Point &p) const {
+	return covers(p);
+}
+
+bool IndexedMultiPolygon::intersects(const Box &box) const {
+	// An edge in or across the box, or the box wholly inside.
+	for (auto it = edges.qbegin(boost::geometry::index::intersects(box)); it != edges.qend(); ++it)
+		if (geom::intersects(it->first, box)) return true;
+	return covers(box.min_corner());
+}
+
+bool IndexedMultiPolygon::intersects(const Linestring &ls) const {
+	if (ls.empty()) return false;
+	for (std::size_t i = 0; i + 1 < ls.size(); i++)
+		if (crossesEdge(Segment(ls[i], ls[i + 1]))) return true;
+	// No crossing: the line is wholly inside or wholly outside.
+	return covers(ls.front());
+}
+
+bool IndexedMultiPolygon::intersects(const MultiLinestring &mls) const {
+	for (const Linestring &ls : mls)
+		if (intersects(ls)) return true;
+	return false;
+}
+
+bool IndexedMultiPolygon::intersects(const Polygon &poly) const {
+	if (poly.outer().empty()) return false;
+	if (crossesRing(poly.outer())) return true;
+	for (const Ring &inner : poly.inners())
+		if (crossesRing(inner)) return true;
+	// No crossing: poly is wholly inside us, or one of our polygons is wholly
+	// inside poly, or they're apart.
+	return covers(poly.outer().front()) || hasPolygonInside(poly);
+}
+
+bool IndexedMultiPolygon::intersects(const MultiPolygon &other) const {
+	for (const Polygon &poly : other)
+		if (intersects(poly)) return true;
+	return false;
+}
+

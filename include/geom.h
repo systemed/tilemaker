@@ -121,6 +121,45 @@ std::vector<Box> merge_nearby_boxes(std::vector<Box> boxes, double gap);
 // of the antimeridian have an envelope spanning every longitude.
 std::vector<Box> multipolygon_index_boxes(const MultiPolygon &mp, double gap);
 
+// A multipolygon with an R-tree of its edges, for answering many intersects()
+// queries against it. geom::intersects() re-examines every edge of the
+// multipolygon on each call, which dominates when a large geometry (a national
+// forest with 100k+ points) is tested against millions of small ones; with the
+// index a query only looks at the edges near it.
+//
+// Same results as geom::intersects(): a query intersects the multipolygon if
+// an edge of one crosses or touches an edge of the other, or if one lies wholly
+// inside the other, which a point of each settles. A point is inside if it's
+// inside any one polygon, so polygons that overlap or nest (invalid, but
+// common in OSM) give the same answer as geom::intersects() too.
+class IndexedMultiPolygon {
+public:
+	explicit IndexedMultiPolygon(const MultiPolygon &mp);
+
+	bool intersects(const Point &p) const;
+	bool intersects(const Box &box) const;
+	bool intersects(const Linestring &ls) const;
+	bool intersects(const MultiLinestring &mls) const;
+	bool intersects(const Polygon &poly) const;
+	bool intersects(const MultiPolygon &mp) const;
+
+private:
+	// Whether p is inside or on the multipolygon: inside any one polygon,
+	// by the even-odd rule over its rings.
+	bool covers(const Point &p) const;
+	// Whether a segment crosses or touches any edge.
+	bool crossesEdge(const Segment &s) const;
+	bool crossesRing(const Ring &ring) const;
+	// Whether any of the multipolygon's polygons lies inside `poly`.
+	bool hasPolygonInside(const Polygon &poly) const;
+
+	std::vector<Point> polygonVertices; // the first vertex of each polygon
+	double maxX;
+	// Each edge, and the index of the polygon it belongs to.
+	using Edge = std::pair<Segment, unsigned>;
+	boost::geometry::index::rtree<Edge, boost::geometry::index::rstar<16>> edges;
+};
+
 // Cheap conservative validity tests, run before geom::is_valid. They return
 // true only when the geometry is certainly valid (is_valid would return true
 // with no_failure); false means "unsure" and the caller must run is_valid.
