@@ -37,7 +37,7 @@
 #include <sys/mman.h>	// madvise
 #endif
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <sys/resource.h>
 #endif
 #ifdef __GLIBC__
@@ -1497,7 +1497,7 @@ int main(const int argc, const char* argv[]) {
 		return -1;
 	}
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 	if (verbose) {
 		struct rusage r_usage;
 		getrusage(RUSAGE_SELF, &r_usage);
