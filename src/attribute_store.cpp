@@ -36,8 +36,8 @@ uint16_t AttributeKeyStore::key2index(const std::string& key) {
 	uint16_t newIndex = keys.size();
 
 	// This is very unlikely. We expect more like 50-100 keys.
-	if (newIndex >= 512)
-		throw std::out_of_range("more than 512 unique keys");
+	if (newIndex >= ATTRIBUTE_MAX_KEYS)
+		throw std::out_of_range("more than " + std::to_string(ATTRIBUTE_MAX_KEYS) + " unique keys");
 
 	keys.push_back(key);
 	keys2index[&keys[newIndex]] = newIndex;

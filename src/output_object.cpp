@@ -68,7 +68,7 @@ static void writeAttributesTo(
 static const uint32_t MEMO_MAX_ENTRIES = 1 << 16; // key/value indices, i.e. 32K properties
 static const uint32_t MEMO_MAX_SETS = 1 << 13;
 static const uint32_t MEMO_MAX_PAIRS = 1 << 14;
-static const size_t MEMO_KEYS = 1 << 9; // AttributePair::keyIndex is 9 bits
+static const size_t MEMO_KEYS = ATTRIBUTE_MAX_KEYS; // indexed by AttributePair::keyIndex
 static const uint32_t NO_INDEX = ~0u;
 static const uint32_t MEMO_MAX_CANON_SETS = 1 << 14;
 static const uint32_t MEMO_MAX_CANON_PAIRS = 1 << 18;

@@ -104,24 +104,25 @@ MU_TEST(test_attribute_store_reuses) {
 }
 
 MU_TEST(test_attribute_store_capacity) {
-	// We support a maximum of 511 attribute name, so confirm that we can roundtrip
-	// this value.
-	AttributePair pair(511, true, 0);
-	mu_check(pair.keyIndex == 511);
+	// We support a maximum of ATTRIBUTE_MAX_KEYS - 1 attribute names (511), so confirm
+	// that we can roundtrip this value.
+	const int maxKey = ATTRIBUTE_MAX_KEYS - 1;
+	AttributePair pair(maxKey, true, 0);
+	mu_check(pair.keyIndex == maxKey);
 
-	// Confirm that the attribute store will throw if we try to add more than 511 keys.
+	// Confirm that the attribute store will throw if we try to add more than that.
 	AttributeKeyStore keys;
 
-	for (int i = 1; i <= 511; i++) {
+	for (int i = 1; i <= maxKey; i++) {
 		const uint16_t keyIndex = keys.key2index("key" + std::to_string(i));
 		mu_check(keyIndex == i);
 	}
 
-	// Trying to add a 512th key should throw
+	// Trying to add one more key should throw
 	bool caughtException = false;
 
 	try {
-		keys.key2index("key512");
+		keys.key2index("key" + std::to_string(ATTRIBUTE_MAX_KEYS));
 	} catch (const std::out_of_range&) {
 		caughtException = true;
 	}
