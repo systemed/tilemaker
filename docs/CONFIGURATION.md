@@ -256,6 +256,8 @@ Multipolygon relations, which also run `way_function`, are replayed the same way
 
 `init_function(name, is_first)` and `exit_function` are called at the start and end of processing (once per thread). You can use this to output statistics or even to read a small amount of external data. `is_first` will be true only the first time `init_function` is called.
 
+Tilemaker's functions (`Find`, `Holds`, `Layer`, `Attribute` and the others below) are global variables that are already set when the profile is loaded. So a profile can keep the ones it calls most in locals at its top, which Lua reaches faster than globals: `local Find, Holds, Layer = Find, Holds, Layer`. A function the profile defines with the same name as one of tilemaker's is replaced by tilemaker's.
+
 Other functions are described below and in RELATIONS.md.
 
 ### Relations
