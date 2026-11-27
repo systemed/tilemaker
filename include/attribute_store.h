@@ -27,6 +27,13 @@ struct string_ptr_less_than {
 	}
 }; 
 
+// AttributePair stores the key index in ATTRIBUTE_KEY_BITS bits, so there can be
+// ATTRIBUTE_MAX_KEYS - 1 keys (index 0 is a sentinel). Raising it makes each pair
+// a byte bigger once the bitfields no longer fit in 16 bits.
+static const unsigned ATTRIBUTE_KEY_BITS = 9;
+static const unsigned ATTRIBUTE_MAX_KEYS = 1u << ATTRIBUTE_KEY_BITS;
+static_assert(ATTRIBUTE_KEY_BITS <= 15, "key indices are also kept as int16_t");
+
 class AttributeKeyStore {
 public:
 	AttributeKeyStore(): finalized(false), keys2indexSize(0) {}
@@ -54,7 +61,7 @@ enum class AttributePairType: uint8_t { String = 0, Float = 1, Bool = 2, Int = 3
 // AttributePair is a key/value pair (with minzoom)
 #pragma pack(push, 1)
 struct AttributePair {
-	unsigned short keyIndex : 9;
+	unsigned short keyIndex : ATTRIBUTE_KEY_BITS;
 	AttributePairType valueType : 2;
 	uint8_t minzoom : 5; // Support zooms from 0..31. In practice, we expect z16 to be the biggest minzoom.
 	union {
