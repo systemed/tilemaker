@@ -133,6 +133,9 @@ mmap_file::mmap_file(std::string const &filename, std::size_t offset)
 	// The mapped region stays valid without the file handle. Release it, so large --store runs
 	// with many threads (one ~1 GB file each, more as they fill) don't exhaust the open-files limit.
 	mapping = boost::interprocess::file_mapping();
+	// Lookups in the store are mostly random. With the default readahead, each page fault reads
+	// ~128 KB to use one 4 KB page, which on a planet with 16 GB RAM added up to 22 TB of reads.
+	region.advise(boost::interprocess::mapped_region::advice_random);
 }
 
 mmap_file::~mmap_file()
